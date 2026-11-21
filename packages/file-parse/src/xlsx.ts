@@ -191,7 +191,11 @@ function cellText(
     if (!Number.isInteger(index) || index < 0 || index >= shared.length) return ''
     return shared[index] ?? ''
   }
-  if (type === 'b') return value.trim() === '1' ? 'TRUE' : 'FALSE'
+  // xsd:boolean allows the literal true/false forms as well as 0/1; some producers use them.
+  if (type === 'b') {
+    const raw = value.trim().toLowerCase()
+    return raw === '1' || raw === 'true' ? 'TRUE' : 'FALSE'
+  }
   if (type === 'str') return decodeXlsxEscapes(value)
   return value
 }

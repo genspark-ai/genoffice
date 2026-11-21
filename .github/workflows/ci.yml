@@ -93,6 +93,17 @@ jobs:
           fi
           npm run check:theme-colors
 
+      # The Docs menu bar, ribbon and right-click menu share one command table; a
+      # click handler added to the ribbon or the right-click menu must run a command.
+      - name: Check Docs commands
+        env:
+          FORMAT_BASE_REF: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            FORMAT_BASE_REF=$(git rev-parse HEAD^1)
+          fi
+          npm run check:docs-commands
+
       # Inline text-layout decisions (script tests, face predicates, CJK ranges,
       # compat reads) stay in apps/docs/src/renderer/text-layout/, not in the emitters.
       - name: Check inline text-layout rules
@@ -250,7 +261,7 @@ jobs:
     # 22.04, not -latest: 24.04's AppArmor hardening blocks Electron renderer
     # spawn under xvfb even with --no-sandbox and the userns sysctl lifted
     runs-on: ubuntu-22.04
-    timeout-minutes: 45
+    timeout-minutes: 75
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

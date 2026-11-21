@@ -28,6 +28,7 @@ import {
   applyRevisions,
   applyRevisionsBy,
   collectRevisions,
+  coversWholeSentences,
   revisionCount,
   gotoRevision,
   rejectAllRevisions,
@@ -1263,6 +1264,23 @@ describe('moves and paragraph marks (genoffice#2086)', () => {
     again.editor.destroy()
   })
 
+  it('an ordinary insertion next to moved text stays an insertion', async () => {
+    const { editor } = await openEditor(
+      MOVE_XML.replace(R('delta'), `<w:ins w:id="5" ${AT}>${R('added')}</w:ins>`),
+    )
+    expect(
+      collectRevisions(editor.state.doc).map((r) => [
+        r.kind,
+        editor.state.doc.textBetween(r.from, r.to),
+      ]),
+    ).toEqual([
+      ['moveFrom', 'MOVED '],
+      ['moveTo', 'MOVED '],
+      ['ins', 'added'],
+    ])
+    editor.destroy()
+  })
+
   it('an empty moved paragraph is a block-level move: gone on accept at the source, kept on reject', async () => {
     const xml =
       `<w:p>${R('before')}</w:p>` +
@@ -1758,7 +1776,7 @@ describe('recorder: Delete, cross-paragraph cuts, paragraph marks, columns, AI a
 
 describe('moves (cut + paste, drag-drop)', () => {
   const trackedEditor = () => {
-    const editor = createEditor([para(text('one two three')), para(text('four'))])
+    const editor = createEditor([para(text('no. ok. three')), para(text('four'))])
     const storage = editor.storage.trackChanges as TrackChangesStorage
     storage.enabled = true
     storage.author = 'Alice'
@@ -1766,7 +1784,7 @@ describe('moves (cut + paste, drag-drop)', () => {
   }
   const textOf = (editor: Editor, r: { from: number; to: number }) =>
     editor.state.doc.textBetween(r.from, r.to)
-  // "two " sits at 5..9 in the first paragraph; the second paragraph's text ends at 20
+  // the sentence "ok. " sits at 5..9 in the first paragraph; the second paragraph's text ends at 20
   const cutThenPaste = (editor: Editor, pasted?: Fragment | ProseNode[]) => {
     const slice = editor.state.doc.slice(5, 9)
     editor.view.dispatch(editor.state.tr.delete(5, 9).setMeta('uiEvent', 'cut'))
@@ -1783,7 +1801,7 @@ describe('moves (cut + paste, drag-drop)', () => {
     expect(ranges.map((r) => r.kind)).toEqual(['moveFrom', 'moveTo'])
     expect(ranges[0].moveId).toMatch(/^move\d+$/)
     expect(ranges[1].moveId).toBe(ranges[0].moveId)
-    expect(ranges.map((r) => textOf(editor, r))).toEqual(['two ', 'two '])
+    expect(ranges.map((r) => textOf(editor, r))).toEqual(['ok. ', 'ok. '])
     expect(ranges.every((r) => r.author === 'Alice')).toBe(true)
     expect(revisionCount(ranges)).toBe(1)
     editor.destroy()
@@ -1796,6 +1814,28 @@ describe('moves (cut + paste, drag-drop)', () => {
     expect(ranges.map((r) => r.kind)).toEqual(['del', 'ins'])
     expect(ranges.some((r) => r.moveId)).toBe(false)
     editor.destroy()
+  })
+
+  it('less than a sentence stays a deletion and an insertion, cut + paste or dropped', () => {
+    for (const event of ['paste', 'drop'] as const) {
+      const editor = trackedEditor()
+      // "ok" without its full stop
+      const slice = editor.state.doc.slice(5, 7)
+      const tr = editor.state.tr.delete(5, 7)
+      if (event === 'paste') {
+        editor.view.dispatch(tr.setMeta('uiEvent', 'cut'))
+        editor.view.dispatch(
+          editor.state.tr
+            .insert(editor.state.doc.content.size - 1, slice.content)
+            .setMeta('uiEvent', 'paste'),
+        )
+      } else {
+        tr.insert(tr.doc.content.size - 1, slice.content).setMeta('uiEvent', 'drop')
+        editor.view.dispatch(tr)
+      }
+      expect(collectRevisions(editor.state.doc).map((r) => r.kind)).toEqual(['del', 'ins'])
+      editor.destroy()
+    }
   })
 
   it('a cut followed by typing is no longer a pending move', () => {
@@ -1811,7 +1851,7 @@ describe('moves (cut + paste, drag-drop)', () => {
 
   it('an unrelated deletion by the same author in the same second stays a deletion', () => {
     const editor = trackedEditor()
-    // "four" -> strike "fo" (16..18) first, then cut "two " and paste it
+    // "four" -> strike "fo" (16..18) first, then cut "ok. " and paste it
     editor.view.dispatch(editor.state.tr.delete(16, 18))
     const slice = editor.state.doc.slice(5, 9)
     editor.view.dispatch(editor.state.tr.delete(5, 9).setMeta('uiEvent', 'cut'))
@@ -1822,9 +1862,9 @@ describe('moves (cut + paste, drag-drop)', () => {
     )
     const ranges = collectRevisions(editor.state.doc)
     expect(ranges.map((r) => [r.kind, textOf(editor, r)])).toEqual([
-      ['moveFrom', 'two '],
+      ['moveFrom', 'ok. '],
       ['del', 'fo'],
-      ['moveTo', 'two '],
+      ['moveTo', 'ok. '],
     ])
     editor.destroy()
   })
@@ -1848,7 +1888,7 @@ describe('moves (cut + paste, drag-drop)', () => {
       const ranges = collectRevisions(editor.state.doc)
       applyRevisions(editor, [ranges[side]], 'accept')
       expect(collectRevisions(editor.state.doc)).toHaveLength(0)
-      expect(editor.state.doc.textContent).toBe('one threefourtwo ')
+      expect(editor.state.doc.textContent).toBe('no. threefourok. ')
       editor.destroy()
     }
   })
@@ -1860,7 +1900,7 @@ describe('moves (cut + paste, drag-drop)', () => {
       const ranges = collectRevisions(editor.state.doc)
       applyRevisions(editor, [ranges[side]], 'reject')
       expect(collectRevisions(editor.state.doc)).toHaveLength(0)
-      expect(editor.state.doc.textContent).toBe('one two threefour')
+      expect(editor.state.doc.textContent).toBe('no. ok. threefour')
       editor.destroy()
     }
   })
@@ -1883,8 +1923,56 @@ describe('moves (cut + paste, drag-drop)', () => {
     )
     expect(names).toHaveLength(2)
     expect(names[0]).toBe(names[1])
-    expect(xml).toMatch(/<w:moveFrom [^>]*><w:r><w:delText[^>]*>two <\/w:delText>/)
-    expect(xml).toMatch(/<w:moveTo [^>]*><w:r><w:t[^>]*>two <\/w:t>/)
+    expect(xml).toMatch(/<w:moveFrom [^>]*><w:r><w:t[^>]*>ok\. <\/w:t>/)
+    expect(xml).toMatch(/<w:moveTo [^>]*><w:r><w:t[^>]*>ok\. <\/w:t>/)
+    editor.destroy()
+  })
+})
+
+describe('coversWholeSentences', () => {
+  const doc = () => {
+    const editor = createEditor([
+      para(text('First one. Second one? Third')),
+      para(text('Heading')),
+      para(text('\u300c\u7532\u3002\u300d\u4e59\u3002')),
+    ])
+    const node = editor.state.doc
+    editor.destroy()
+    return node
+  }
+  // paragraph 1 text starts at 1: "First one. " 1..12, "Second one? " 12..24, "Third" 24..29
+  it.each([
+    ['a sentence with its trailing space', 12, 24, true],
+    ['a sentence without the trailing space', 12, 23, true],
+    ['the first sentence', 1, 12, true],
+    ['the last words of a paragraph that start a sentence', 24, 29, true],
+    ['a whole paragraph', 1, 29, true],
+    ['a whole paragraph without end punctuation', 31, 38, true],
+    ['from a sentence start across the paragraph end', 12, 31, true],
+    ['two whole paragraphs', 1, 38, true],
+    ['a word', 12, 18, false],
+    ['the end of a sentence without its start', 7, 12, false],
+    ['a sentence start that stops mid-sentence in the next paragraph', 12, 34, false],
+    ['a CJK sentence closed by a bracket', 40, 44, true],
+    ['a CJK sentence without its full stop', 44, 45, false],
+  ])('%s', (_name, from, to, expected) => {
+    expect(coversWholeSentences(doc(), from, to)).toBe(expected)
+  })
+
+  it('an inline object at a sentence boundary does not break the sentence', () => {
+    const editor = createEditor([
+      para(
+        text('Lead.'),
+        { type: 'hardBreak' },
+        text('Moved.'),
+        { type: 'hardBreak' },
+        text('Tail'),
+      ),
+    ])
+    // "Lead." 1..6, break, "Moved." 7..13, break, "Tail"
+    expect(coversWholeSentences(editor.state.doc, 7, 14)).toBe(true)
+    expect(coversWholeSentences(editor.state.doc, 7, 13)).toBe(true)
+    expect(coversWholeSentences(editor.state.doc, 9, 14)).toBe(false)
     editor.destroy()
   })
 })

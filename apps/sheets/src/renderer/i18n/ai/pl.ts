@@ -5,6 +5,7 @@ export const pl = {
   aiEmptyBuildTitle: 'Pozwól AI zbudować ten skoroszyt',
   aiEmptyBuildBody: 'Opisz potrzebną tabelę, dane lub wykres — AI utworzy je od razu.',
   aiGskLoginBtn: 'Zaloguj się do Genspark',
+  aiGskLoginOk: 'Zalogowano do Genspark',
   aiUndelivered: 'Nie wysłano',
   aiRetry: 'Ponów',
   aiOpenAssistant: 'Otwórz asystenta AI',

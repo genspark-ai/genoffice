@@ -106,7 +106,7 @@ describe('findTocRange', () => {
 describe('updateTocField', () => {
   it('regenerates a Word sdt TOC from the live headings, keeping the heading', async () => {
     const { editor, parsed } = await openDoc(SDT_TOC + heading('Chapter 1') + heading('Chapter 2'))
-    expect(updateTocField(editor, parsed.blocks)).toBe(true)
+    expect(updateTocField(editor, parsed.blocks, () => [1, 2])).toBe(true)
     expect(tocLineTitles(editor)).toEqual(['Chapter 1', 'Chapter 2'])
     expect(editor.state.doc.textContent).toContain('Contents')
 
@@ -120,6 +120,9 @@ describe('updateTocField', () => {
     expect(xml).not.toContain('Stale One')
     expect(xml).not.toContain('Stale Two')
     expect(xml).toContain('TOC \\o')
+    // the entries and their pages are the field's result: nothing is left for Word to update
+    expect(xml).not.toContain('w:dirty')
+    expect(xml).toMatch(/Chapter 2<\/w:t><\/w:r>.*?<w:tab\/><\/w:r><w:r>.*?<w:t>2<\/w:t>/)
   })
 
   it('refreshes stale entries of a TOC field', async () => {

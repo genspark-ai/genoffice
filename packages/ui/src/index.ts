@@ -1,3 +1,4 @@
+export { shortFileError } from './file-error'
 export { AiPanelSideButton } from './AiPanelSideButton'
 export { AiComposer } from './AiComposer'
 export { AiQueueStrip } from './AiQueueStrip'

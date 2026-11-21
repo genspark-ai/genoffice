@@ -106,7 +106,7 @@
 .set-dialog .set-nav > .set-nav-item:focus {
   outline: none;
 }
-.set-dialog .set-nav > .set-nav-item:focus-visible:not(.active) {
+.set-dialog .set-nav > .set-nav-item:focus-visible {
   box-shadow: inset 0 0 0 1px var(--st-line);
 }
 .set-dialog .set-nav > .fx-indicator {

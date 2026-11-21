@@ -5,7 +5,7 @@ import { isInTable, selectedRect } from '@tiptap/pm/tables'
 import type { TableAutoFitMode } from '@genoffice/docx-engine'
 import { useI18n, type StringKey } from '../i18n/locale'
 import { setTableAutoFit, updateSelectedTableAttrs } from '../editor/table-properties'
-import { setSelectedColumnWidth } from '../editor/table-sizing'
+import { setSelectedColumnPreferredWidth } from '../editor/table-sizing'
 import {
   editableOrToast,
   moveCaretInTable,
@@ -15,7 +15,9 @@ import {
 } from '../editor/table-ops'
 import { useModalKeys } from './modal-keys'
 import { LengthInput } from './LengthInput'
+import { UNIT_NAME_KEYS, useMeasurementUnit } from '../use-measurement'
 import { IconTableProperties } from './icons'
+import { Unavailable } from './Unavailable'
 
 export const TABLE_AUTO_FIT_OPTIONS: Array<[TableAutoFitMode, StringKey]> = [
   ['contents', 'ribbonAutoFitContents'],
@@ -193,8 +195,25 @@ export function rowPatchFor(
   return patch
 }
 
+export interface PreferredWidth {
+  cm: number
+  /** share of the table, used when the width is measured in percent */
+  pct: number
+  inPct: boolean
+  /** the whole grid, what a percent is a share of */
+  tableCm: number
+}
+
+/** Measure in: the width on screen is restated in the unit switched to */
+export function measureWidthIn(width: PreferredWidth, inPct: boolean): PreferredWidth {
+  if (inPct === width.inPct || !(width.tableCm > 0)) return { ...width, inPct }
+  return inPct
+    ? { ...width, inPct, pct: +Math.min(100, (width.cm / width.tableCm) * 100).toFixed(1) }
+    : { ...width, inPct, cm: +((width.pct / 100) * width.tableCm).toFixed(2) }
+}
+
 interface CellValue {
-  widthCm: number
+  width: PreferredWidth
   vAlign: CellVAlign
   sameMargins: boolean
   marginTopCm: number
@@ -202,6 +221,8 @@ interface CellValue {
   marginBottomCm: number
   marginLeftCm: number
   wrap: boolean
+  /** w:tcFitText */
+  fitText: boolean
 }
 
 interface Selection {
@@ -212,7 +233,7 @@ interface Selection {
   rows: number
   cols: number
   row: RowValue
-  columnWidthCm: number
+  width: PreferredWidth
   cell: CellValue
 }
 
@@ -228,6 +249,16 @@ function selectionOf(editor: Editor, sectionContentWidthPx: number): Selection |
   const widthPx =
     colwidth?.[rect.left - cellRect.left] ??
     (pct?.length === rect.map.width ? (pct[rect.left] / 100) * sectionContentWidthPx : 0)
+  const sharePct =
+    pct?.length === rect.map.width
+      ? (pct[rect.left] / pct.reduce((sum, p) => sum + p, 0)) * 100
+      : 100 / rect.map.width
+  const width: PreferredWidth = {
+    cm: +(widthPx / PX_PER_CM).toFixed(2),
+    pct: +sharePct.toFixed(1),
+    inPct: !!cellNode?.attrs.widthPct,
+    tableCm: sharePct > 0 ? widthPx / PX_PER_CM / (sharePct / 100) : 0,
+  }
   const heightTwips = Number(rowNode.attrs.heightTwips) || 0
   const margins = (cellNode?.attrs.cellMar as Record<string, number> | null) ?? null
   const tableMargins = (rect.table.attrs.cellMar as Record<string, number> | null) ?? {}
@@ -246,9 +277,9 @@ function selectionOf(editor: Editor, sectionContentWidthPx: number): Selection |
       allowBreak: !rowNode.attrs.cantSplit,
       repeatHeader: !!rowNode.attrs.repeatHeader,
     },
-    columnWidthCm: +(widthPx / PX_PER_CM).toFixed(2),
+    width,
     cell: {
-      widthCm: +(widthPx / PX_PER_CM).toFixed(2),
+      width,
       vAlign: vAlign === 'center' || vAlign === 'bottom' ? vAlign : 'top',
       sameMargins: margins === null,
       marginTopCm: cmOf(margins?.top ?? tableMargins.top),
@@ -256,6 +287,7 @@ function selectionOf(editor: Editor, sectionContentWidthPx: number): Selection |
       marginBottomCm: cmOf(margins?.bottom ?? tableMargins.bottom),
       marginLeftCm: cmOf(margins?.left ?? tableMargins.left, 108),
       wrap: !cellNode?.attrs.noWrap,
+      fitText: !!cellNode?.attrs.fitText,
     },
   }
 }
@@ -272,7 +304,6 @@ export function TablePropertiesDialog({
   onClose: () => void
 }) {
   const { t } = useI18n()
-  const keys = useModalKeys(onClose)
   const [tab, setTab] = useState<TablePropertiesTab>(initialTab)
   const [tableValue, setTableValue] = useState(() => tableValueOf(editor.getAttributes('docTable')))
   const [tableTouched, setTableTouched] = useState<Set<TableGroup>>(() => new Set())
@@ -280,10 +311,24 @@ export function TablePropertiesDialog({
   const [sel, setSel] = useState(() => selectionOf(editor, sectionContentWidthPx))
   const [row, setRow] = useState<RowValue | null>(sel?.row ?? null)
   const [rowTouched, setRowTouched] = useState<Set<keyof RowValue>>(() => new Set())
-  const [columnWidthCm, setColumnWidthCm] = useState(sel?.columnWidthCm ?? 0)
+  const [columnWidth, setColumnWidth] = useState<PreferredWidth | null>(sel?.width ?? null)
   const [columnTouched, setColumnTouched] = useState(false)
   const [cell, setCell] = useState<CellValue | null>(sel?.cell ?? null)
   const [cellTouched, setCellTouched] = useState<Set<keyof CellValue>>(() => new Set())
+  // Word keeps cell margins, wrap and fit behind the Cell tab's Options button
+  const [cellOptions, setCellOptions] = useState<{
+    cell: CellValue
+    touched: Set<keyof CellValue>
+  } | null>(null)
+  const cancelCellOptions = () => {
+    if (!cellOptions) return
+    setCell(cellOptions.cell)
+    setCellTouched(cellOptions.touched)
+    setCellOptions(null)
+  }
+  // Escape with the focus on neither dialog still only leaves Options
+  const keys = useModalKeys(cellOptions ? cancelCellOptions : onClose)
+  const unit = useMeasurementUnit()
   const tableAttrs = editor.getAttributes('docTable')
   const [altTitle, setAltTitle] = useState(String(tableAttrs.tblCaption ?? ''))
   const [altDescription, setAltDescription] = useState(String(tableAttrs.tblDescription ?? ''))
@@ -320,18 +365,27 @@ export function TablePropertiesDialog({
     if (Object.keys(patch).length) run(setRowProps(patch))
     setRowTouched(new Set())
   }
+  const commitWidth = (width: PreferredWidth) => {
+    if (!((width.inPct ? width.pct : width.cm) > 0)) return
+    run(
+      setSelectedColumnPreferredWidth(
+        width.inPct ? { pct: width.pct } : { px: Math.round(width.cm * PX_PER_CM) },
+        sectionContentWidthPx,
+      ),
+    )
+  }
   const commitColumn = () => {
-    if (!columnTouched || !(columnWidthCm > 0)) return
-    run(setSelectedColumnWidth(Math.round(columnWidthCm * PX_PER_CM), sectionContentWidthPx))
+    if (!columnTouched || !columnWidth) return
+    commitWidth(columnWidth)
     setColumnTouched(false)
   }
   const commitCell = () => {
     if (!cell || cellTouched.size === 0) return
-    if (cellTouched.has('widthCm') && cell.widthCm > 0)
-      run(setSelectedColumnWidth(Math.round(cell.widthCm * PX_PER_CM), sectionContentWidthPx))
+    if (cellTouched.has('width')) commitWidth(cell.width)
     const patch: Record<string, unknown> = {}
     if (cellTouched.has('vAlign')) patch.vAlign = cell.vAlign === 'top' ? null : cell.vAlign
     if (cellTouched.has('wrap')) patch.noWrap = cell.wrap ? null : true
+    if (cellTouched.has('fitText')) patch.fitText = cell.fitText ? true : null
     const marginKeys: Array<keyof CellValue> = [
       'sameMargins',
       'marginTopCm',
@@ -368,7 +422,7 @@ export function TablePropertiesDialog({
     const next = selectionOf(editor, sectionContentWidthPx)
     setSel(next)
     setRow(next?.row ?? null)
-    setColumnWidthCm(next?.columnWidthCm ?? 0)
+    setColumnWidth(next?.width ?? null)
     setCell(next?.cell ?? null)
   }
   const step = (dRow: number, dCol: number) => {
@@ -411,6 +465,49 @@ export function TablePropertiesDialog({
         />
       </span>
     </label>
+  )
+  const widthField = (width: PreferredWidth, onChange: (next: PreferredWidth) => void) => (
+    <div className="table-properties-inline table-properties-width">
+      <label className="table-dialog-check">
+        <Unavailable id="table-properties.preferred-width-check">
+          <input type="checkbox" checked disabled readOnly />
+        </Unavailable>
+        {t('ribbonPreferredWidth')}
+      </label>
+      {width.inPct ? (
+        <span className="table-properties-pct">
+          <input
+            type="number"
+            min={1}
+            max={100}
+            step={1}
+            aria-label={t('ribbonPreferredWidth')}
+            value={width.pct}
+            onChange={(e) => onChange({ ...width, pct: Number(e.target.value) || 0 })}
+          />
+          %
+        </span>
+      ) : (
+        <LengthInput
+          value={Math.round(width.cm * TWIPS_PER_CM)}
+          min={0}
+          max={50 * TWIPS_PER_CM}
+          ariaLabel={t('ribbonPreferredWidth')}
+          live
+          onCommit={(twips) => onChange({ ...width, cm: (twips ?? 0) / TWIPS_PER_CM })}
+        />
+      )}
+      <label>
+        {t('ribbonMeasureIn')}
+        <select
+          value={width.inPct ? 'pct' : 'len'}
+          onChange={(e) => onChange(measureWidthIn(width, e.target.value === 'pct'))}
+        >
+          <option value="len">{t(UNIT_NAME_KEYS[unit])}</option>
+          <option value="pct">{t('ribbonZoomPercent')}</option>
+        </select>
+      </label>
+    </div>
   )
   const rangeLabel = (a: number, b: number, one: StringKey, many: StringKey) =>
     b - a > 1 ? t(many, { a: a + 1, b }) : t(one, { n: a + 1 })
@@ -609,19 +706,13 @@ export function TablePropertiesDialog({
           </section>
         )}
 
-        {tab === 'column' && sel && (
+        {tab === 'column' && sel && columnWidth && (
           <section className="table-properties-card">
             <h3>{rangeLabel(sel.left, sel.right, 'ribbonColumnN', 'ribbonColumnsRange')}</h3>
-            <div className="table-properties-grid">
-              {cmInput(
-                columnWidthCm,
-                (n) => {
-                  setColumnWidthCm(n)
-                  setColumnTouched(true)
-                },
-                { label: t('ribbonPreferredWidth') },
-              )}
-            </div>
+            {widthField(columnWidth, (next) => {
+              setColumnWidth(next)
+              setColumnTouched(true)
+            })}
             <div className="table-properties-nav">
               <button type="button" disabled={sel.left === 0} onClick={() => step(0, -1)}>
                 {t('ribbonPreviousColumn')}
@@ -637,11 +728,7 @@ export function TablePropertiesDialog({
           <>
             <section className="table-properties-card">
               <h3>{t('ribbonGroupCellSize')}</h3>
-              <div className="table-properties-grid">
-                {cmInput(cell.widthCm, (n) => updateCell({ widthCm: n }), {
-                  label: t('ribbonPreferredWidth'),
-                })}
-              </div>
+              {widthField(cell.width, (next) => updateCell({ width: next }))}
             </section>
             <section className="table-properties-card">
               <h3>{t('ribbonCellVAlign')}</h3>
@@ -665,53 +752,14 @@ export function TablePropertiesDialog({
                 ))}
               </div>
             </section>
-            <section className="table-properties-card">
-              <h3>{t('ribbonCellMargins')}</h3>
-              <label className="table-dialog-check">
-                <input
-                  type="checkbox"
-                  checked={cell.sameMargins}
-                  onChange={(e) => updateCell({ sameMargins: e.target.checked })}
-                />
-                {t('ribbonSameAsTable')}
-              </label>
-              <div className="table-properties-grid">
-                {cmInput(
-                  cell.marginTopCm,
-                  (n) => updateCell({ marginTopCm: n, sameMargins: false }),
-                  {
-                    label: t('ribbonMarginTop'),
-                    disabled: cell.sameMargins,
-                  },
-                )}
-                {cmInput(
-                  cell.marginBottomCm,
-                  (n) => updateCell({ marginBottomCm: n, sameMargins: false }),
-                  { label: t('ribbonMarginBottom'), disabled: cell.sameMargins },
-                )}
-                {cmInput(
-                  cell.marginLeftCm,
-                  (n) => updateCell({ marginLeftCm: n, sameMargins: false }),
-                  {
-                    label: t('ribbonMarginLeft'),
-                    disabled: cell.sameMargins,
-                  },
-                )}
-                {cmInput(
-                  cell.marginRightCm,
-                  (n) => updateCell({ marginRightCm: n, sameMargins: false }),
-                  { label: t('ribbonMarginRight'), disabled: cell.sameMargins },
-                )}
-              </div>
-              <label className="table-dialog-check">
-                <input
-                  type="checkbox"
-                  checked={cell.wrap}
-                  onChange={(e) => updateCell({ wrap: e.target.checked })}
-                />
-                {t('ribbonCellWrapText')}
-              </label>
-            </section>
+            <div className="table-properties-nav">
+              <button
+                type="button"
+                onClick={() => setCellOptions({ cell, touched: new Set(cellTouched) })}
+              >
+                {t('ribbonPbOptions')}
+              </button>
+            </div>
           </>
         )}
 
@@ -752,6 +800,92 @@ export function TablePropertiesDialog({
           </button>
         </div>
       </div>
+      {cellOptions && cell && (
+        <div
+          className="modal-backdrop"
+          onKeyDown={(e) => {
+            if (e.key !== 'Escape') return
+            e.stopPropagation()
+            cancelCellOptions()
+          }}
+        >
+          <div
+            className="modal gs-form table-properties-dialog table-cell-options"
+            role="dialog"
+            aria-label={t('ribbonCellOptionsTitle')}
+          >
+            <h2>{t('ribbonCellOptionsTitle')}</h2>
+            <section className="table-properties-card">
+              <h3>{t('ribbonCellMargins')}</h3>
+              <label className="table-dialog-check">
+                <input
+                  type="checkbox"
+                  autoFocus
+                  checked={cell.sameMargins}
+                  onChange={(e) => updateCell({ sameMargins: e.target.checked })}
+                />
+                {t('ribbonSameAsTable')}
+              </label>
+              <div className="table-properties-grid">
+                {cmInput(
+                  cell.marginTopCm,
+                  (n) => updateCell({ marginTopCm: n, sameMargins: false }),
+                  {
+                    label: t('ribbonMarginTop'),
+                    disabled: cell.sameMargins,
+                  },
+                )}
+                {cmInput(
+                  cell.marginBottomCm,
+                  (n) => updateCell({ marginBottomCm: n, sameMargins: false }),
+                  { label: t('ribbonMarginBottom'), disabled: cell.sameMargins },
+                )}
+                {cmInput(
+                  cell.marginLeftCm,
+                  (n) => updateCell({ marginLeftCm: n, sameMargins: false }),
+                  {
+                    label: t('ribbonMarginLeft'),
+                    disabled: cell.sameMargins,
+                  },
+                )}
+                {cmInput(
+                  cell.marginRightCm,
+                  (n) => updateCell({ marginRightCm: n, sameMargins: false }),
+                  { label: t('ribbonMarginRight'), disabled: cell.sameMargins },
+                )}
+              </div>
+            </section>
+            <section className="table-properties-card">
+              <h3>{t('ribbonGroupHfOptions')}</h3>
+              <label className="table-dialog-check">
+                <input
+                  type="checkbox"
+                  checked={cell.wrap}
+                  onChange={(e) => updateCell({ wrap: e.target.checked })}
+                />
+                {t('ribbonCellWrapText')}
+              </label>
+              <label className="table-dialog-check">
+                <input
+                  type="checkbox"
+                  name="cell-fit-text"
+                  checked={cell.fitText}
+                  onChange={(e) => updateCell({ fitText: e.target.checked })}
+                />
+                {t('ribbonCellFitText')}
+              </label>
+            </section>
+            <div className="modal-actions">
+              <button type="button" onClick={cancelCellOptions}>
+                {t('ribbonCancel')}
+              </button>
+              <button type="button" className="primary" onClick={() => setCellOptions(null)}>
+                {t('ribbonOk')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

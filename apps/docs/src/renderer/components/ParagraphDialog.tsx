@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import type { Editor } from '@tiptap/core'
-import type { StyleInfo } from '@genoffice/docx-engine'
+import type { StyleInfo, StyleParaProps } from '@genoffice/docx-engine'
 import { Dropdown } from '@genoffice/ui'
 import { useI18n, type StringKey } from '../i18n/locale'
 import { setParaAttrs, activeParaAttrs } from './ribbon-tabs'
@@ -18,6 +18,8 @@ import {
   type SpecialByUnit,
   type SpecialIndent,
 } from './paragraph-special-indent'
+import { ParagraphAsianTab, type TypographyOptions } from './ParagraphAsianTab'
+import { asianTypographyAttrs, asianTypographyFromAttrs } from './paragraph-asian-typography'
 import {
   lineSpacingAttrs,
   lineSpacingFromAttrs,
@@ -25,6 +27,8 @@ import {
   type LineSpacingChoice,
   type LineSpacingState,
 } from './paragraph-line-spacing'
+import { paragraphDefaultProps } from './paragraph-default-props'
+import { Unavailable } from './Unavailable'
 
 const PT_PER_TWIP = 1 / 20
 
@@ -56,7 +60,12 @@ const SPECIAL_OPTIONS: Array<{ key: SpecialIndent; nameKey: StringKey }> = [
 /** Letter width: the indent bound when no section is known */
 const DEFAULT_PAGE_WIDTH = 12240
 
-type Tab = 'indents' | 'breaks'
+type Tab = 'indents' | 'breaks' | 'asian'
+const TAB_LABELS: Record<Tab, StringKey> = {
+  indents: 'appParaTabIndents',
+  breaks: 'appParaTabBreaks',
+  asian: 'appParaTabAsian',
+}
 
 const FLAG_KEYS = ['widowControl', 'keepNext', 'keepLines', 'suppressLineNumbers'] as const
 type FlagKey = (typeof FLAG_KEYS)[number]
@@ -66,11 +75,20 @@ const FLAG_LABELS: Record<FlagKey, StringKey> = {
   keepLines: 'appParaKeepLines',
   suppressLineNumbers: 'appParaSuppressLineNumbers',
 }
+type StyleFlagKey = FlagKey | 'pageBreakBefore' | 'contextualSpacing' | 'suppressAutoHyphens'
+const STYLE_FLAG_KEYS = [
+  ...FLAG_KEYS,
+  'pageBreakBefore',
+  'contextualSpacing',
+  'suppressAutoHyphens',
+] as const
+/** flags the style chain is not read for: the checkbox shows the paragraph's own value */
+type OwnFlagKey = 'mirrorIndents' | 'snapToGrid'
 
 /** Word shows the effective value: direct pPr, else the style chain, else the Word default */
 function resolvedFlag(
   attrs: Record<string, unknown>,
-  key: FlagKey | 'pageBreakBefore' | 'contextualSpacing',
+  key: StyleFlagKey,
   style: StyleInfo | undefined,
 ): boolean {
   const direct = attrs[key]
@@ -105,13 +123,22 @@ export function ParagraphDialog({
   onClose,
   styles,
   pageWidth = DEFAULT_PAGE_WIDTH,
+  typography,
+  onTabs,
+  onSetDefault,
 }: {
   editor: Editor
   onClose: () => void
+  /** the document's typography setting behind Asian Typography > Options… */
+  typography?: TypographyOptions
   /** ParsedDoc.styles: resolves the style-inherited state of the checkboxes */
   styles?: Map<string, StyleInfo>
   /** twips; Word lets indents go negative down to the page width */
   pageWidth?: number
+  /** Tabs…: the dialog has already applied and closed */
+  onTabs?: () => void
+  /** Set As Default: what the default paragraph style takes from the dialog */
+  onSetDefault?: (pPr: StyleParaProps) => void
 }) {
   const { t } = useI18n()
   const modalKeys = useModalKeys(onClose)
@@ -122,9 +149,10 @@ export function ParagraphDialog({
     (styles && [...styles.values()].find((s) => s.type === 'paragraph' && s.isDefault)) ||
     undefined
   const initFlags = () => {
-    const out = {} as Record<FlagKey | 'pageBreakBefore' | 'contextualSpacing', boolean>
-    for (const k of [...FLAG_KEYS, 'pageBreakBefore', 'contextualSpacing'] as const)
-      out[k] = resolvedFlag(attrs, k, paraStyle)
+    const out = {} as Record<StyleFlagKey | OwnFlagKey, boolean>
+    for (const k of STYLE_FLAG_KEYS) out[k] = resolvedFlag(attrs, k, paraStyle)
+    out.mirrorIndents = attrs.mirrorIndents === true
+    out.snapToGrid = attrs.snapToGrid !== false
     return out
   }
   const [flags, setFlags] = useState(initFlags)
@@ -148,44 +176,63 @@ export function ParagraphDialog({
   })
   const [spaceBefore, setSpaceBefore] = useState(twipsToPt(attrs.spaceBefore))
   const [spaceAfter, setSpaceAfter] = useState(twipsToPt(attrs.spaceAfter))
+  const [asian, setAsian] = useState(() => asianTypographyFromAttrs(attrs))
+  const [initialAsian] = useState(asian)
+
+  const spaceTwips = (pt: number) => Math.round(pt / PT_PER_TWIP)
+  // the character-unit By resolves its twips twin against the effective font
+  // size at the selection (w:firstLineChars semantics: the first run's size)
+  const specialAttrs = () =>
+    specialIndentAttrs(special, (effectiveSizeHalfPoints(editor, styles) ?? 20) * 10)
 
   const apply = () => {
-    if (!editor.isEditable) {
-      onClose()
-      return
-    }
-    const ptToTwips = (pt: number) => (pt > 0 ? Math.round(pt / PT_PER_TWIP) : null)
+    if (!editor.isEditable) return
+    const ptToTwips = (pt: number) => (pt > 0 ? spaceTwips(pt) : null)
     const spacing = lineSpacingAttrs(line)
     // align goes through setSelectionAlign so each paragraph resolves the
     // visual value against its own direction (null = start side)
     setSelectionAlign(editor, align)
-    // the character-unit By resolves its twips twin against the effective font
-    // size at the selection (w:firstLineChars semantics: the first run's size)
-    const charUnitTwips = (effectiveSizeHalfPoints(editor, styles) ?? 20) * 10
     // only touched checkboxes become direct pPr: an untouched one keeps showing the style through
     const changed: Record<string, unknown> = {}
-    for (const k of [...FLAG_KEYS, 'contextualSpacing'] as const)
-      if (flags[k] !== initialFlags[k]) changed[k] = flags[k]
-    if (flags.pageBreakBefore !== initialFlags.pageBreakBefore)
-      changed.pageBreakBefore = flags.pageBreakBefore
+    for (const k of STYLE_FLAG_KEYS) if (flags[k] !== initialFlags[k]) changed[k] = flags[k]
+    if (flags.mirrorIndents !== initialFlags.mirrorIndents)
+      changed.mirrorIndents = flags.mirrorIndents ? true : null
+    if (flags.snapToGrid !== initialFlags.snapToGrid)
+      changed.snapToGrid = flags.snapToGrid ? null : false
     setParaAttrs(editor, {
       ...spacing,
       indentLeft: indentLeft !== 0 ? indentLeft : null,
       indentRight: indentRight !== 0 ? indentRight : null,
-      ...specialIndentAttrs(special, charUnitTwips),
+      ...specialAttrs(),
       spaceBefore: ptToTwips(spaceBefore),
       spaceAfter: ptToTwips(spaceAfter),
       ...changed,
+      ...asianTypographyAttrs(asian, initialAsian),
     })
     if (initOutline.editable && outline !== initOutline.level)
       runUiOps(editor, [{ op: 'setOutlineLevel', target: { scope: 'selection' }, level: outline }])
-    onClose()
   }
 
-  const check = (key: FlagKey | 'pageBreakBefore' | 'contextualSpacing', label: string) => (
+  /** the paragraph's own formatting and what the dialog changed; the rest of the style stays */
+  const defaultProps = (): StyleParaProps =>
+    paragraphDefaultProps({
+      attrs,
+      align,
+      line: lineSpacingAttrs(line),
+      indentLeft,
+      indentRight,
+      firstLine: specialAttrs().indentFirstLine,
+      spaceBefore: spaceTwips(spaceBefore),
+      spaceAfter: spaceTwips(spaceAfter),
+      flags,
+      initialFlags,
+    })
+
+  const check = (key: StyleFlagKey | OwnFlagKey, label: string) => (
     <label className="font-check">
       <input
         type="checkbox"
+        name={key}
         checked={flags[key]}
         onChange={(e) => setFlags((f) => ({ ...f, [key]: e.target.checked }))}
       />
@@ -240,7 +287,7 @@ export function ParagraphDialog({
       <div className="modal">
         <h2>{t('appParagraph')}</h2>
         <div className="dlg-tabs" role="tablist">
-          {(['indents', 'breaks'] as const).map((k) => (
+          {(['indents', 'breaks', 'asian'] as const).map((k) => (
             <button
               key={k}
               type="button"
@@ -249,14 +296,17 @@ export function ParagraphDialog({
               className={tab === k ? 'active' : ''}
               onClick={() => setTab(k)}
             >
-              {t(k === 'indents' ? 'appParaTabIndents' : 'appParaTabBreaks')}
+              {t(TAB_LABELS[k])}
             </button>
           ))}
         </div>
-        {tab === 'breaks' ? (
+        {tab === 'asian' ? (
+          <ParagraphAsianTab state={asian} onChange={setAsian} typography={typography} />
+        ) : tab === 'breaks' ? (
           <div className="para-checks">
             {FLAG_KEYS.map((k) => check(k, t(FLAG_LABELS[k])))}
             {check('pageBreakBefore', t('appParaPageBreakBefore'))}
+            {check('suppressAutoHyphens', t('appParaDontHyphenate'))}
           </div>
         ) : (
           <>
@@ -339,9 +389,18 @@ export function ParagraphDialog({
               )}
             </div>
             <div className="font-dialog-row">
-              {indentInput(t('appIndentLeft'), indentLeft, setIndentLeft)}
-              {indentInput(t('appIndentRight'), indentRight, setIndentRight)}
+              {indentInput(
+                t(flags.mirrorIndents ? 'ribbonMarginInside' : 'appIndentLeft'),
+                indentLeft,
+                setIndentLeft,
+              )}
+              {indentInput(
+                t(flags.mirrorIndents ? 'ribbonMarginOutside' : 'appIndentRight'),
+                indentRight,
+                setIndentRight,
+              )}
             </div>
+            <div className="para-checks">{check('mirrorIndents', t('appParaMirrorIndents'))}</div>
             <div className="font-dialog-row">
               <label>
                 {t('appParaSpecial')}
@@ -401,16 +460,61 @@ export function ParagraphDialog({
               {numInput(t('appSpaceBefore'), spaceBefore, setSpaceBefore)}
               {numInput(t('appSpaceAfter'), spaceAfter, setSpaceAfter)}
             </div>
-            <div className="para-checks">
+            <div className="para-checks para-checks-wide">
               {check('contextualSpacing', t('appParaNoSpaceSameStyle'))}
+              <Unavailable id="paragraph.adjust-right-indent">
+                <label className="font-check">
+                  <input
+                    type="checkbox"
+                    name="adjustRightInd"
+                    checked={attrs.adjustRightInd !== false}
+                    disabled
+                    readOnly
+                  />
+                  {t('appParaAdjustRightInd')}
+                </label>
+              </Unavailable>
+              {check('snapToGrid', t('appParaSnapToGrid'))}
             </div>
           </>
         )}
         <div className="modal-actions">
+          {onTabs && (
+            <button
+              className="btn-ghost"
+              onClick={() => {
+                apply()
+                onClose()
+                onTabs()
+              }}
+            >
+              {t('ribbonTabsTitle')}…
+            </button>
+          )}
+          {onSetDefault && (
+            <button
+              className="btn-ghost"
+              disabled={!editor.isEditable}
+              onClick={() => {
+                const pPr = defaultProps()
+                apply()
+                onClose()
+                onSetDefault(pPr)
+              }}
+            >
+              {t('ribbonSetAsDefault')}
+            </button>
+          )}
           <button className="btn-ghost" onClick={onClose}>
             {t('appCancel')}
           </button>
-          <button className="btn-primary" onClick={apply}>
+          <button
+            className="btn-primary"
+            onClick={() => {
+              apply()
+              onClose()
+            }}
+          >
             {t('appOk')}
           </button>
         </div>

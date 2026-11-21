@@ -1,26 +1,12 @@
-/**
- * The PDF print dialog (#2461's split of the giant renderer components):
- * printer/copies/duplex + the queue's driver option groups, then the page
- * range and odd/even subset. Every field comes straight off usePrintJob's
- * return value — the dialog owns no state of its own.
- */
+/** The PDF print dialog; every field comes off usePrintJob's return value, it owns no state. */
 import { useI18n } from './i18n/locale'
-import { PRINT_DUPLEX_MODES, PRINT_SYSTEM_DIALOG, type PrintJobApi } from './usePrintJob'
+import { IS_MAC, PRINT_DUPLEX_MODES, PRINT_SYSTEM_DIALOG, type PrintJobApi } from './usePrintJob'
 import type { PageParity } from './print'
 import type { PrintDuplex } from '../shared/ipc'
 
-const IS_MAC = navigator.platform.toLowerCase().includes('mac')
-
-export function PrintDialog({
-  print,
-  printCurrentPage,
-}: {
-  print: PrintJobApi
-  printCurrentPage: number
-}) {
+export function PrintDialog({ print }: { print: PrintJobApi }) {
   const { t } = useI18n()
-  // The mask covers the whole app, so the dialog must mount only when open
-  // (the inline JSX this component replaced was `{printDlg && (...)}`).
+  // the mask covers the whole app, so mount only when open
   if (!print.printDlg) return null
   return (
     <div className="pdf-modal-mask" onClick={() => print.setPrintDlg(false)}>
@@ -147,7 +133,7 @@ export function PrintDialog({
             }}
           />
           <span>
-            {t('printRangeCurrent')} ({printCurrentPage})
+            {t('printRangeCurrent')} ({print.printCurrentPage})
           </span>
         </label>
         <label className="pdf-modal-row">

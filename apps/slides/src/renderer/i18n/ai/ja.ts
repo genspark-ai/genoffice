@@ -18,6 +18,7 @@ export const ja = {
   aiQcStopped: 'レイアウトチェックを停止しました',
   aiQcCapped: '残り {count} ページは未チェック(1回の上限)',
   aiGskLoginBtn: 'Genspark にサインイン',
+  aiGskLoginOk: 'Genspark にサインインしました',
   aiPanelTitle: 'Genspark',
   aiOpenAssistant: 'AI アシスタントを開く',
   aiFactCheckBtn: 'AI ファクトチェック',

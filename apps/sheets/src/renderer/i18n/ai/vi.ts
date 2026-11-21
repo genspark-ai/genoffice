@@ -5,6 +5,7 @@ export const vi = {
   aiEmptyBuildTitle: 'Để AI xây dựng sổ làm việc này cho bạn',
   aiEmptyBuildBody: 'Mô tả bảng, dữ liệu hoặc biểu đồ bạn cần — AI sẽ tạo trực tiếp tại chỗ.',
   aiGskLoginBtn: 'Đăng nhập vào Genspark',
+  aiGskLoginOk: 'Đã đăng nhập Genspark',
   aiUndelivered: 'Chưa gửi',
   aiRetry: 'Thử lại',
   aiOpenAssistant: 'Mở trợ lý AI',

@@ -23,6 +23,12 @@ export function isEastAsianFontName(name: string): boolean {
   return EAST_ASIAN_FONT_RE.test(name.normalize('NFKC'))
 }
 
+/** Word's font box: an East Asian face fills every font slot, a Latin face only the Latin ones */
+export const fontFamilyMarkAttrs = (name: string): Record<string, unknown> =>
+  isEastAsianFontName(name)
+    ? { font: name, fontAscii: name, eastAsiaFont: name, eaSlotEmpty: false }
+    : { fontAscii: name }
+
 /**
  * docDefaults w:eastAsia font for new blank documents, matching what Word
  * ships per market (zh → SimSun, ja → Yu Mincho, ko → Malgun Gothic,

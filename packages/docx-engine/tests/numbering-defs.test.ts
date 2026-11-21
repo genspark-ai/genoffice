@@ -13,6 +13,7 @@ import {
   saveDocx,
   type SaveBlock,
 } from '../src/index'
+import { unlinkListStyleXml } from '../src/patch'
 import { buildDocx, TINY_PNG_BASE64 } from './helpers/build-docx'
 
 const XML_DECL = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\r\n'
@@ -345,6 +346,275 @@ describe('w:numStyleLink indirection', () => {
       await buildDocx({ bodyXml: '<w:p><w:r><w:t>x</w:t></w:r></w:p>', numberingXml: cyclic }),
     )
     expect(doc.numbering.get('1')!.levels).toEqual({})
+  })
+})
+
+describe('named list styles', () => {
+  const LIST_STYLES =
+    '<w:style w:type="numbering" w:default="1" w:styleId="NoList"><w:name w:val="No List"/></w:style>' +
+    '<w:style w:type="numbering" w:styleId="Clauses" w:customStyle="1"><w:name w:val="Clauses"/>' +
+    '<w:pPr><w:numPr><w:numId w:val="2"/></w:numPr></w:pPr></w:style>'
+  const STYLED_NUMBERING =
+    XML_DECL +
+    '<w:numbering xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">' +
+    '<w:abstractNum w:abstractNumId="0"><w:numStyleLink w:val="Clauses"/></w:abstractNum>' +
+    '<w:abstractNum w:abstractNumId="1"><w:styleLink w:val="Clauses"/>' +
+    '<w:lvl w:ilvl="0"><w:start w:val="1"/><w:numFmt w:val="upperRoman"/><w:lvlText w:val="%1."/></w:lvl>' +
+    '</w:abstractNum>' +
+    '<w:num w:numId="1"><w:abstractNumId w:val="0"/></w:num>' +
+    '<w:num w:numId="2"><w:abstractNumId w:val="1"/></w:num>' +
+    '</w:numbering>'
+  const P = (text: string) => `<w:p><w:r><w:t>${text}</w:t></w:r></w:p>`
+  const originals = (doc: Awaited<ReturnType<typeof parseDocx>>): SaveBlock[] =>
+    doc.blocks
+      .filter((b) => !b.hidden && b.docxIndex !== null)
+      .map((b) => ({ kind: 'original', docxIndex: b.docxIndex! }))
+  const LEVELS = [
+    { numFmt: 'decimal', lvlText: '%1)', indentLeft: 360, hanging: 360 },
+    { numFmt: 'lowerLetter', lvlText: '%2)', indentLeft: 720, hanging: 360 },
+  ]
+
+  it('lists the styles of type numbering with the levels of their abstractNum', async () => {
+    const doc = await parseDocx(
+      await buildDocx({
+        bodyXml: P('x'),
+        extraStylesXml: LIST_STYLES,
+        numberingXml: STYLED_NUMBERING,
+      }),
+    )
+    expect(doc.listStyles?.map((s) => s.styleId)).toEqual(['NoList', 'Clauses'])
+    const [none, clauses] = doc.listStyles!
+    expect(none).toMatchObject({ name: 'No List', isDefault: true, levels: {} })
+    expect(none.numId).toBeUndefined()
+    expect(clauses).toMatchObject({ name: 'Clauses', numId: '2', custom: true })
+    expect(clauses.levels[0]).toMatchObject({ numFmt: 'upperRoman', lvlText: '%1.' })
+    expect(doc.numbering.get('1')!.listStyleId).toBe('Clauses')
+    expect(doc.numbering.get('2')!.listStyleId).toBe('Clauses')
+    expect(doc.styles.has('Clauses')).toBe(false)
+  })
+
+  it('styleNums: a new w:num over an abstractNum that only links to the existing style', async () => {
+    const doc = await parseDocx(
+      await buildDocx({
+        bodyXml: P('x'),
+        extraStylesXml: LIST_STYLES,
+        numberingXml: STYLED_NUMBERING,
+      }),
+    )
+    const saved = await saveDocx(doc, originals(doc), {
+      numbering: {
+        styleNums: [
+          {
+            numId: '7',
+            styleId: 'Clauses',
+            define: { name: 'Clauses', numId: '8', levels: LEVELS },
+          },
+        ],
+      },
+    })
+    const zip = await JSZip.loadAsync(saved)
+    const numXml = await zip.file('word/numbering.xml')!.async('string')
+    expect(numXml).toContain(
+      '<w:abstractNum w:abstractNumId="2"><w:multiLevelType w:val="multilevel"/><w:numStyleLink w:val="Clauses"/></w:abstractNum>',
+    )
+    expect(numXml).toContain('<w:num w:numId="7"><w:abstractNumId w:val="2"/></w:num>')
+    // the style is already there: nothing is defined a second time
+    expect(numXml).not.toContain('w:numId="8"')
+    expect(numXml.match(/<w:styleLink /g)).toHaveLength(1)
+    const stylesXml = await zip.file('word/styles.xml')!.async('string')
+    expect(stylesXml.match(/w:styleId="Clauses"/g)).toHaveLength(1)
+    const reparsed = await parseDocx(saved)
+    expect(reparsed.numbering.get('7')).toMatchObject({ listStyleId: 'Clauses' })
+    expect(reparsed.numbering.get('7')!.levels[0]).toMatchObject({ numFmt: 'upperRoman' })
+  })
+
+  it('a list style name and level text holding `$&` are written as typed', async () => {
+    const name = "Cost $& Tax $' $$"
+    const levels = [{ ...LEVELS[0], lvlText: '$&%1$$' }, ...LEVELS.slice(1)]
+    const doc = await parseDocx(await buildDocx({ bodyXml: P('x') }))
+    const saved = await saveDocx(doc, originals(doc), {
+      numbering: { styleDefs: [{ styleId: 'Costs', name, numId: '5', levels }] },
+    })
+    const zip = await JSZip.loadAsync(saved)
+    const stylesXml = await zip.file('word/styles.xml')!.async('string')
+    expect(stylesXml.match(/<\/w:styles>/g)).toHaveLength(1)
+    expect(
+      (await zip.file('word/numbering.xml')!.async('string')).match(/<\/w:numbering>/g),
+    ).toHaveLength(1)
+    const style = (await parseDocx(saved)).listStyles!.find((s) => s.styleId === 'Costs')!
+    expect(style.name).toBe(name)
+    expect(style.levels[0].lvlText).toBe('$&%1$$')
+  })
+
+  it('a deleted list style leaves `$$` level text whole in the lists that copied it', () => {
+    const xml =
+      '<w:numbering><w:abstractNum w:abstractNumId="1"><w:styleLink w:val="S"/>' +
+      '<w:lvl w:ilvl="0"><w:lvlText w:val="$$%1 $&amp;"/></w:lvl></w:abstractNum>' +
+      '<w:abstractNum w:abstractNumId="2"><w:numStyleLink w:val="S"/></w:abstractNum></w:numbering>'
+    expect(unlinkListStyleXml(xml, 'S')).toContain(
+      '<w:abstractNum w:abstractNumId="2"><w:lvl w:ilvl="0"><w:lvlText w:val="$$%1 $&amp;"/></w:lvl></w:abstractNum>',
+    )
+  })
+
+  it('styleDefs: a user-made list style is written though no list follows it, once', async () => {
+    const doc = await parseDocx(await buildDocx({ bodyXml: P('x') }))
+    const saved = await saveDocx(doc, originals(doc), {
+      numbering: {
+        styleDefs: [{ styleId: 'MyList', name: 'My List', numId: '5', levels: LEVELS }],
+        styleNums: [
+          {
+            numId: '6',
+            styleId: 'MyList',
+            define: { name: 'My List', numId: '7', levels: LEVELS, custom: true },
+          },
+        ],
+      },
+    })
+    const zip = await JSZip.loadAsync(saved)
+    const numXml = await zip.file('word/numbering.xml')!.async('string')
+    expect(numXml.match(/<w:styleLink w:val="MyList"\/>/g)).toHaveLength(1)
+    expect(numXml).not.toContain('w:numId="7"')
+    const stylesXml = await zip.file('word/styles.xml')!.async('string')
+    expect(stylesXml).toContain(
+      '<w:style w:type="numbering" w:customStyle="1" w:styleId="MyList"><w:name w:val="My List"/>',
+    )
+    const reparsed = await parseDocx(saved)
+    const style = reparsed.listStyles!.find((s) => s.styleId === 'MyList')!
+    expect(style).toMatchObject({ name: 'My List', numId: '5', custom: true })
+    expect(style.levels[1]).toMatchObject({ numFmt: 'lowerLetter', lvlText: '%2)' })
+    expect(reparsed.numbering.get('6')!.listStyleId).toBe('MyList')
+  })
+
+  it('removedStyles: the style goes, and the lists that followed it keep its levels as their own', async () => {
+    const item =
+      '<w:p><w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="1"/></w:numPr></w:pPr><w:r><w:t>x</w:t></w:r></w:p>'
+    const doc = await parseDocx(
+      await buildDocx({
+        bodyXml: item,
+        extraStylesXml: LIST_STYLES,
+        numberingXml: STYLED_NUMBERING,
+      }),
+    )
+    const saved = await saveDocx(doc, originals(doc), {
+      numbering: { removedStyles: ['Clauses'] },
+    })
+    const zip = await JSZip.loadAsync(saved)
+    const numXml = await zip.file('word/numbering.xml')!.async('string')
+    expect(numXml).not.toContain('tyleLink')
+    expect(numXml.match(/<w:lvl w:ilvl="0">/g)).toHaveLength(2)
+    const stylesXml = await zip.file('word/styles.xml')!.async('string')
+    expect(stylesXml).not.toContain('Clauses')
+    expect(stylesXml).toContain('w:styleId="NoList"')
+    const reparsed = await parseDocx(saved)
+    expect(reparsed.listStyles!.map((s) => s.styleId)).toEqual(['NoList'])
+    expect(reparsed.numbering.get('1')!.listStyleId).toBeUndefined()
+    expect(reparsed.numbering.get('1')!.levels[0]).toMatchObject({ numFmt: 'upperRoman' })
+    expect(computeListMarkers([{ numId: '1', ilvl: 0 }], reparsed.numbering)).toEqual(['I.'])
+  })
+
+  it('styleNums with define: writes the style, its abstractNum and the linking list into a document with neither', async () => {
+    const doc = await parseDocx(await buildDocx({ bodyXml: P('x') }))
+    const saved = await saveDocx(doc, originals(doc), {
+      numbering: {
+        styleNums: [
+          {
+            numId: '10',
+            styleId: '1ai',
+            define: { name: 'Outline List 1', numId: '11', levels: LEVELS },
+          },
+        ],
+      },
+    })
+    const zip = await JSZip.loadAsync(saved)
+    const numXml = await zip.file('word/numbering.xml')!.async('string')
+    const defining =
+      /<w:abstractNum w:abstractNumId="(\d+)"><w:multiLevelType w:val="multilevel"\/><w:styleLink w:val="1ai"\/><w:lvl /.exec(
+        numXml,
+      )
+    const linking =
+      /<w:abstractNum w:abstractNumId="(\d+)"><w:multiLevelType w:val="multilevel"\/><w:numStyleLink w:val="1ai"\/><\/w:abstractNum>/.exec(
+        numXml,
+      )
+    expect(defining).not.toBeNull()
+    expect(linking).not.toBeNull()
+    expect(numXml).toContain(
+      `<w:num w:numId="11"><w:abstractNumId w:val="${defining![1]}"/></w:num>`,
+    )
+    expect(numXml).toContain(
+      `<w:num w:numId="10"><w:abstractNumId w:val="${linking![1]}"/></w:num>`,
+    )
+    expect(numXml.lastIndexOf('<w:abstractNum ')).toBeLessThan(numXml.indexOf('<w:num '))
+    const stylesXml = await zip.file('word/styles.xml')!.async('string')
+    expect(stylesXml).toContain(
+      '<w:style w:type="numbering" w:styleId="1ai"><w:name w:val="Outline List 1"/>',
+    )
+    expect(stylesXml).toContain('<w:pPr><w:numPr><w:numId w:val="11"/></w:numPr></w:pPr></w:style>')
+
+    const reparsed = await parseDocx(saved)
+    const style = reparsed.listStyles!.find((s) => s.styleId === '1ai')!
+    expect(style).toMatchObject({ name: 'Outline List 1', numId: '11' })
+    expect(style.custom).toBeUndefined()
+    expect(style.levels[1]).toMatchObject({ numFmt: 'lowerLetter', lvlText: '%2)' })
+    expect(reparsed.numbering.get('10')!.listStyleId).toBe('1ai')
+    expect(
+      computeListMarkers(
+        [
+          { numId: '10', ilvl: 0 },
+          { numId: '10', ilvl: 1 },
+          { numId: '10', ilvl: 0 },
+        ],
+        reparsed.numbering,
+      ),
+    ).toEqual(['1)', 'a)', '2)'])
+  })
+
+  it('a package without a styles part gets one, with its relationship and content type', async () => {
+    const zip = await JSZip.loadAsync(await buildDocx({ bodyXml: P('x') }))
+    zip.remove('word/styles.xml')
+    for (const [name, pattern] of [
+      ['word/_rels/document.xml.rels', /<Relationship [^>]*Target="styles\.xml"[^>]*\/>/],
+      ['[Content_Types].xml', /<Override [^>]*PartName="\/word\/styles\.xml"[^>]*\/>/],
+    ] as const)
+      zip.file(name, (await zip.file(name)!.async('string')).replace(pattern, ''))
+    const doc = await parseDocx(await zip.generateAsync({ type: 'uint8array' }))
+    const saved = await saveDocx(doc, originals(doc), {
+      numbering: {
+        styleNums: [
+          {
+            numId: '10',
+            styleId: '1ai',
+            define: { name: 'Outline List 1', numId: '11', levels: LEVELS },
+          },
+        ],
+      },
+    })
+    const out = await JSZip.loadAsync(saved)
+    expect(await out.file('word/_rels/document.xml.rels')!.async('string')).toMatch(
+      /Type="[^"]*\/styles" Target="styles\.xml"|Target="styles\.xml"[^>]*Type="[^"]*\/styles"/,
+    )
+    expect(await out.file('[Content_Types].xml')!.async('string')).toContain(
+      'PartName="/word/styles.xml"',
+    )
+    expect((await parseDocx(saved)).listStyles?.map((s) => s.styleId)).toEqual(['1ai'])
+  })
+
+  it('two lists of one undefined style define it once', async () => {
+    const doc = await parseDocx(await buildDocx({ bodyXml: P('x') }))
+    const define = { name: 'Mine', numId: '11', levels: LEVELS }
+    const saved = await saveDocx(doc, originals(doc), {
+      numbering: {
+        styleNums: [
+          { numId: '10', styleId: 'Mine', define },
+          { numId: '12', styleId: 'Mine', define },
+        ],
+      },
+    })
+    const zip = await JSZip.loadAsync(saved)
+    const numXml = await zip.file('word/numbering.xml')!.async('string')
+    expect(numXml.match(/<w:styleLink /g)).toHaveLength(1)
+    expect(numXml.match(/<w:numStyleLink /g)).toHaveLength(2)
+    const stylesXml = await zip.file('word/styles.xml')!.async('string')
+    expect(stylesXml.match(/w:styleId="Mine"/g)).toHaveLength(1)
   })
 })
 

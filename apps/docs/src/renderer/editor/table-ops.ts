@@ -1,3 +1,4 @@
+import type { Editor } from '@tiptap/core'
 import type { Fragment, Node as PmNode, Schema } from '@tiptap/pm/model'
 import type { Command, EditorState, Transaction } from '@tiptap/pm/state'
 import { NodeSelection, TextSelection } from '@tiptap/pm/state'
@@ -372,15 +373,29 @@ export function splitCellsInto(rows: number, cols: number, mergeFirst: boolean):
   }
 }
 
-/** Split Table: the selection's first row starts a new table, an empty paragraph between */
+/**
+ * Split Table: the selection's first row starts a new table, an empty paragraph
+ * between; from the first row the paragraph goes above the table.
+ */
 export function splitTableAtSelection(): Command {
   return (state, dispatch) => {
     if (!isInTable(state)) return false
     const rect = selectedRect(state)
     const row = rect.top
-    if (row <= 0) return false
     const { table } = rect
     const tablePos = rect.tableStart - 1
+    if (row <= 0) {
+      // Word: in the first row there is nothing to cut off, so the table moves down a paragraph
+      const $table = state.doc.resolve(tablePos)
+      const paragraph = table.type.schema.nodes.docParagraph
+      if (!$table.parent.canReplaceWith($table.index(), $table.index(), paragraph)) return false
+      if (dispatch) {
+        const tr = state.tr.insert(tablePos, paragraph.create())
+        dispatch(tr.setSelection(TextSelection.create(tr.doc, tablePos + 1)).scrollIntoView())
+      }
+      return true
+    }
+    if (!dispatch) return true
     const g = gridOf(table)
     const schema = table.type.schema
     const upper: GridCell[] = []
@@ -422,7 +437,7 @@ export function splitTableAtSelection(): Command {
       lowerTable,
     ])
     caretIntoCell(tr, tablePos + upperTable.nodeSize + gap.nodeSize, lowerTable, 0, 0)
-    dispatch?.(tr.scrollIntoView())
+    dispatch(tr.scrollIntoView())
     return true
   }
 }
@@ -798,6 +813,33 @@ export function enterSelectedTable(
   if (!cells) return false
   dispatch?.(state.tr.setSelection(cells))
   return true
+}
+
+/**
+ * A right-click inside selected cells: the browser puts its caret where the press
+ * landed and the editor follows it a moment later. That one move is taken back, so
+ * the menu acts on the cells.
+ */
+export function keepCellSelection(editor: Editor, cells: CellSelection): void {
+  const stop = () => {
+    editor.off('transaction', restore)
+    window.clearTimeout(timer)
+  }
+  function restore({ transaction }: { transaction: Transaction }) {
+    if (transaction.docChanged) return stop()
+    const { selection, doc } = editor.state
+    const followed =
+      transaction.getMeta('pointer') === true &&
+      selection.empty &&
+      cells.ranges.some(
+        ({ $from, $to }) => selection.from >= $from.pos && selection.from <= $to.pos,
+      )
+    if (!followed) return
+    stop()
+    if (doc === cells.$anchorCell.doc) editor.view.dispatch(editor.state.tr.setSelection(cells))
+  }
+  const timer = window.setTimeout(stop, 300)
+  editor.on('transaction', restore)
 }
 
 /** the table move handle selects the whole table as a NodeSelection; cell commands need a caret inside */

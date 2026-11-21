@@ -25,12 +25,12 @@ const field = (pPr: string, instr: string, result: string) =>
   `${result}<w:r><w:fldChar w:fldCharType="end"/></w:r></w:p>`
 
 describe('field paragraphs (parse-fields)', () => {
-  it('carries the direct first-line and right indent of a CITATION paragraph, not the style left', async () => {
+  it('carries the direct first-line and right indent of a field paragraph, not the style left', async () => {
     const doc = await parseDocx(
       await buildDocx({
         bodyXml: field(
           '<w:pPr><w:ind w:right="240" w:firstLine="420"/><w:spacing w:before="60"/></w:pPr>',
-          'CITATION Smi24 \\l 1033',
+          'DOCPROPERTY Reference',
           '<w:r><w:t>(Smith 2024)</w:t></w:r>',
         ),
         stylesXml: stylesOf(''),
@@ -54,7 +54,7 @@ describe('field paragraphs (parse-fields)', () => {
       await buildDocx({
         bodyXml: field(
           '<w:pPr><w:ind w:start="0" w:end="120" w:hanging="200"/></w:pPr>',
-          'CITATION Doe21 \\l 1033',
+          'DOCPROPERTY Reference',
           '<w:r><w:t>Table 1</w:t></w:r>',
         ),
         stylesXml: stylesOf(''),
@@ -72,7 +72,7 @@ describe('field paragraphs (parse-fields)', () => {
       await buildDocx({
         bodyXml: field(
           '<w:pPr><w:spacing w:before="60"/></w:pPr>',
-          'CITATION Doe21 \\l 1033',
+          'DOCPROPERTY Reference',
           '<w:r><w:t>(Doe 2021)</w:t></w:r>',
         ),
         stylesXml: stylesOf(''),

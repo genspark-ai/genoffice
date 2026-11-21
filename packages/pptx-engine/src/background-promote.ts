@@ -103,8 +103,10 @@ export function promoteSlideBackground(slide: Slide, size: SlideSize): boolean {
   const fill = leading[leading.length - 1]!.fill
   if (fill?.type !== 'solid') return false
   slide.elements.splice(0, leading.length)
-  slide.bodyPrefix = patchSlideBackgroundXml(slide.bodyPrefix, fill.color)
-  slide.background = { type: 'solid', color: fill.color }
+  // the padding isOpaqueColor tolerates would be written as black
+  const color = fill.color.trim()
+  slide.bodyPrefix = patchSlideBackgroundXml(slide.bodyPrefix, color)
+  slide.background = { type: 'solid', color }
   slide.structureDirty = true
   return true
 }

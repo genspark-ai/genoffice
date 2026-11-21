@@ -83,7 +83,13 @@ export async function convertOdtToDocx(odt: Uint8Array): Promise<OdtToDocxResult
 
   const styles = new OdfStyles(pack.contentRoots, pack.stylesRoots)
   const drops = new Drops()
-  const ctx: WalkContext = { styles, families: ['text'], drops, images: [] }
+  const ctx: WalkContext = {
+    styles,
+    families: ['text'],
+    drops,
+    images: [],
+    repeatBudget: { slots: MAX_DOCUMENT_REPEAT_SLOTS },
+  }
   const drafts: Draft[] = []
   const listFrames: ListFrame[] = []
   let listCounter = 0
@@ -485,6 +491,8 @@ interface GridCell {
   /** built paragraph XML (links stripped: relationships live with generated blocks only) */
   contentXml: string
   fill: string | null
+  /** style:vertical-align of the cell style, in docx's vocabulary */
+  vAlign: 'center' | 'bottom' | null
 }
 
 const CELL_GEN_CTX = {
@@ -501,17 +509,19 @@ const MAX_GRID_COLUMNS = 1024
 
 function tableDraft(node: XNode, ctx: WalkContext): Draft {
   const columns = readColumns(node, ctx)
-  const rows = readRows(node)
+  const sources = rowNodes(node)
   // ODF lets the column list be narrower than the grid positions a row paints
   // (it is optional, and the fallback is a single column). placeCells stops at
   // the grid's last column, so the excess cells used to disappear without a
   // tally. Size the grid to the widest row, using the same placement rules.
   const painted = Math.min(
     MAX_GRID_COLUMNS,
-    rows.reduce((widest, row) => Math.max(widest, rowGridWidth(row)), 0),
+    sources.reduce((widest, row) => Math.max(widest, rowGridWidth(row)), 0),
   )
   while (columns.length < painted) columns.push({ widthEmu: null })
-  const grid = placeCells(rows, columns.length, ctx)
+  const rows = expandRows(sources, columns.length, ctx)
+  // a repeated row is the same node several times: build its cells once
+  const grid = placeCells(rows, columns.length, ctx, new WeakMap())
   const header = headerRows(node)
   return {
     kind: 'xml',
@@ -579,7 +589,25 @@ function readColumns(table: XNode, ctx: WalkContext): ColumnSpec[] {
   return out
 }
 
-function readRows(table: XNode): XNode[] {
+/**
+ * Ceilings on what `table:number-rows-repeated` may add to one table. The
+ * attribute is per row element, so small elements multiply without bound: 50
+ * rows each claiming 1048576 copies over a 64-column grid came out as 51,200
+ * rows / 3.3M cells / a 380 MB document.xml from a 578-byte .odt. Only the
+ * copies a repeat adds are budgeted (an explicit row is linear in the file's
+ * own size); the table shares the budget, and the copies it cannot hold are
+ * reported through `ctx.drops` instead of vanishing.
+ *
+ * The count keeps a narrow table's repeats cheap; the slot ceiling bounds the
+ * cells painted by a wide one (64 columns stop at 1024 rows, not 4096).
+ */
+const MAX_REPEATED_ROWS = 4096
+const MAX_TABLE_SLOTS = 65_536
+// tables multiply too: 40 of them at the table ceiling were a 305 MB document.xml
+const MAX_DOCUMENT_REPEAT_SLOTS = 4 * MAX_TABLE_SLOTS
+
+/** every `table:table-row` under a table, in document order; repeats not expanded yet */
+function rowNodes(table: XNode): XNode[] {
   const out: XNode[] = []
   const walk = (node: XNode): void => {
     for (const { name, node: child } of childElements(node)) {
@@ -596,10 +624,38 @@ function readRows(table: XNode): XNode[] {
   return out
 }
 
+function expandRows(sources: XNode[], columnCount: number, ctx: WalkContext): XNode[] {
+  const out: XNode[] = []
+  const rowBudget = Math.min(
+    MAX_REPEATED_ROWS,
+    Math.floor(MAX_TABLE_SLOTS / Math.max(1, columnCount)),
+  )
+  const columns = Math.max(1, columnCount)
+  const shared = ctx.repeatBudget
+  let repeated = 0
+  const push = (row: XNode): void => {
+    const text = attr(row, 'table:number-rows-repeated')
+    const repeat = clampRepeat(text)
+    // what the file asked for, before the per-element cap and the table budget
+    const asked = Number(text ?? '1')
+    const claimed = Number.isFinite(asked) && asked > 1 ? Math.floor(asked) : 1
+    // the row itself is never a repeat: only the copies after it spend budget
+    const left = shared ? Math.floor(shared.slots / columns) : Infinity
+    const budget = Math.max(0, Math.min(rowBudget - repeated, left))
+    const copies = 1 + Math.min(repeat - 1, budget)
+    repeated += copies - 1
+    if (shared) shared.slots -= (copies - 1) * columns
+    for (let index = 0; index < copies; index++) out.push(row)
+    if (copies < claimed) ctx.drops.add('repeated-table-rows', claimed - copies)
+  }
+  for (const row of sources) push(row)
+  return out
+}
+
 /**
  * Rows ODF asks a renderer to repeat at the top of every page:
  * `table:table-header-rows` wraps them, while `table:table-rows` holds the
- * ordinary ones. `readRows` flattens both containers into one list, so the
+ * ordinary ones. `rowNodes` flattens both containers into one list, so the
  * header nodes are collected here and marked when the grid is written — docx
  * carries the same instruction per row, as `w:tblHeader` in `w:trPr`.
  */
@@ -623,11 +679,18 @@ function clampRepeat(text: string | undefined, cap = 1024): number {
   return Math.min(value, cap)
 }
 
+/** what a cell node paints; identical for every copy a repeat asks for */
+interface CellContent {
+  contentXml: string
+  fill: string | null
+}
+
 /** resolve the occupancy grid: every (row, column) slot names the cell that paints it */
 function placeCells(
   rows: XNode[],
   columnCount: number,
   ctx: WalkContext,
+  built: WeakMap<XNode, CellContent>,
 ): Array<Array<GridCell | null>> {
   const occupancy: Array<Array<GridCell | null>> = []
   /** a row's cells in order; null marks a table:covered-table-cell placeholder */
@@ -636,7 +699,7 @@ function placeCells(
     for (const { name, node } of childElements(row)) {
       if (name === 'table:table-cell') {
         const repeat = clampRepeat(attr(node, 'table:number-columns-repeated'), 64)
-        for (let index = 0; index < repeat; index++) out.push(makeCell(node, ctx))
+        for (let index = 0; index < repeat; index++) out.push(makeCell(node, ctx, built))
       } else if (name === 'table:covered-table-cell') {
         const repeat = clampRepeat(attr(node, 'table:number-columns-repeated'), 64)
         for (let index = 0; index < repeat; index++) out.push(null)
@@ -685,7 +748,24 @@ function placeCells(
   return occupancy
 }
 
-function makeCell(node: XNode, ctx: WalkContext): GridCell {
+function makeCell(node: XNode, ctx: WalkContext, built: WeakMap<XNode, CellContent>): GridCell {
+  let content = built.get(node)
+  if (!content) {
+    content = buildCellContent(node, ctx)
+    built.set(node, content)
+  }
+  return {
+    row: -1,
+    column: -1,
+    colSpan: Math.max(1, Number(attr(node, 'table:number-columns-spanned') ?? '1') || 1),
+    rowSpan: Math.max(1, Number(attr(node, 'table:number-rows-spanned') ?? '1') || 1),
+    contentXml: content.contentXml,
+    fill: content.fill,
+    vAlign: ctx.styles.cellAlign(attr(node, 'table:style-name')),
+  }
+}
+
+function buildCellContent(node: XNode, ctx: WalkContext): CellContent {
   const blocks: GeneratedBlock[] = []
   const emitInto = (
     child: XNode,
@@ -748,14 +828,7 @@ function makeCell(node: XNode, ctx: WalkContext): GridCell {
   }
   const contentXml =
     blocks.map((block) => generateParagraphXml(block, CELL_GEN_CTX)).join('') || '<w:p/>'
-  return {
-    row: -1,
-    column: -1,
-    colSpan: Math.max(1, Number(attr(node, 'table:number-columns-spanned') ?? '1') || 1),
-    rowSpan: Math.max(1, Number(attr(node, 'table:number-rows-spanned') ?? '1') || 1),
-    contentXml,
-    fill: ctx.styles.cellFill(attr(node, 'table:style-name')),
-  }
+  return { contentXml, fill: ctx.styles.cellFill(attr(node, 'table:style-name')) }
 }
 
 function tableXml(
@@ -822,6 +895,8 @@ function tableXml(
       if (cell.colSpan > 1) tcPr.push(`<w:gridSpan w:val="${cell.colSpan}"/>`)
       if (cell.rowSpan > 1) tcPr.push('<w:vMerge w:val="restart"/>')
       if (cell.fill) tcPr.push(`<w:shd w:val="clear" w:color="auto" w:fill="${cell.fill}"/>`)
+      // vAlign follows shd in CT_TcPr
+      if (cell.vAlign) tcPr.push(`<w:vAlign w:val="${cell.vAlign}"/>`)
       parts.push(`<w:tc><w:tcPr>${tcPr.join('')}</w:tcPr>${cell.contentXml}</w:tc>`)
     })
     parts.push('</w:tr>')
