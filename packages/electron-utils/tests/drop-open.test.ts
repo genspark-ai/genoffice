@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
   DROP_OPEN_CHANNEL,
+  USER_FILE_PATHS_SEEN_CHANNEL,
   droppableFilePaths,
   installDropOpenBridge,
   partitionDropPayload,
@@ -180,10 +181,10 @@ describe('installDropOpenBridge', () => {
     resetInstallFlag()
   }
 
-  it('registers exactly one dragover and one drop listener', () => {
+  it('registers one dragover, a capture drop, a capture paste, and the open drop', () => {
     const win = install()
     try {
-      expect(win.recorded.map((r) => r.type)).toEqual(['dragover', 'drop'])
+      expect(win.recorded.map((r) => r.type)).toEqual(['dragover', 'drop', 'paste', 'drop'])
     } finally {
       uninstall(win)
     }
@@ -193,7 +194,7 @@ describe('installDropOpenBridge', () => {
     const win = install()
     try {
       installDropOpenBridge()
-      expect(win.recorded.length).toBe(2)
+      expect(win.recorded.length).toBe(4)
     } finally {
       uninstall(win)
     }
@@ -247,14 +248,19 @@ describe('installDropOpenBridge', () => {
     }
   })
 
-  it('stays silent when the page already handled the drop', async () => {
+  it('records a page-claimed drop in the ledger but never opens it', async () => {
     electronMocks.getPathForFile.mockImplementation((f: { name: string }) => `/tmp/${f.name}`)
     const win = install()
     try {
       const ev = fileDrag(['report.docx'], true)
       win.fire('drop', ev)
       await Promise.resolve()
-      expect(electronMocks.send).not.toHaveBeenCalled()
+      // the capture-phase ledger record must not depend on where the drop
+      // landed; the open bridge stays out of the way
+      expect(electronMocks.send).toHaveBeenCalledWith(USER_FILE_PATHS_SEEN_CHANNEL, [
+        '/tmp/report.docx',
+      ])
+      expect(electronMocks.send).not.toHaveBeenCalledWith(DROP_OPEN_CHANNEL, expect.anything())
     } finally {
       uninstall(win)
     }
@@ -285,6 +291,24 @@ describe('installDropOpenBridge', () => {
       await vi.waitFor(() =>
         expect(electronMocks.send).toHaveBeenCalledWith(DROP_OPEN_CHANNEL, ['/tmp/legacy.doc']),
       )
+    } finally {
+      uninstall(win)
+    }
+  })
+
+  it('records pasted OS files in the ledger without opening them', async () => {
+    electronMocks.getPathForFile.mockImplementation((f: { name: string }) => `/tmp/${f.name}`)
+    const win = install()
+    try {
+      win.fire('paste', {
+        clipboardData: { files: [{ name: 'report.docx' }, { name: 'photo.png' }] },
+      })
+      await Promise.resolve()
+      expect(electronMocks.send).toHaveBeenCalledWith(USER_FILE_PATHS_SEEN_CHANNEL, [
+        '/tmp/report.docx',
+        '/tmp/photo.png',
+      ])
+      expect(electronMocks.send).not.toHaveBeenCalledWith(DROP_OPEN_CHANNEL, expect.anything())
     } finally {
       uninstall(win)
     }

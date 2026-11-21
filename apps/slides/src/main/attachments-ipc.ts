@@ -8,7 +8,12 @@
 import { app, dialog, ipcMain } from 'electron'
 import { mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { basename, join } from 'node:path'
-import { showOpenDialogWithMemory } from '@genoffice/electron-utils'
+import {
+  isBesideDocument,
+  showOpenDialogWithMemory,
+  sharedPathGrants,
+} from '@genoffice/electron-utils'
+import { sessions } from './session-state'
 import { parseFileToText } from '@genoffice/file-parse'
 import type {
   AttachmentAddResult,
@@ -158,7 +163,7 @@ async function extractAttachmentText(filePath: string): Promise<string> {
 
 /** Register the slides:files-* attachment channels (called from registerSlidesIpc). */
 export function registerAttachmentIpc(): void {
-  ipcMain.handle('slides:files-pick', async (): Promise<AttachmentAddResult | null> => {
+  ipcMain.handle('slides:files-pick', async (e): Promise<AttachmentAddResult | null> => {
     const parent = dialogParent()
     const options = {
       title: tm('dlgAddAttachment'),
@@ -170,19 +175,40 @@ export function registerAttachmentIpc(): void {
     }
     const r = await showOpenDialogWithMemory(dialog, parent, options)
     if (r.canceled || r.filePaths.length === 0) return null
+    sharedPathGrants().grant(e.sender.id, r.filePaths)
     return collectAttachments(r.filePaths)
   })
 
-  ipcMain.handle('slides:files-add', (_e, paths: string[]) => collectAttachments(paths))
+  ipcMain.handle('slides:files-add', (_e, paths: string[]) => {
+    // panel drops and clipboard file pastes are recorded by the preload
+    // bridge before this runs, so the ledger already holds every path a
+    // real drop carried; minting a grant for renderer-named paths here
+    // would let a compromised renderer read whatever it names
+    return collectAttachments(paths)
+  })
+
+  /** Attachment reads verify against what this view's user put in front of
+   *  the app: the shared grant ledger (dialog picks, OS drops and clipboard
+   *  file pastes — the preload bridge records all three) plus files beside
+   *  the open deck. Everything else is refused — without this the extension
+   *  whitelist was the only bar between a compromised renderer and
+   *  arbitrary file reads. */
+  function canReadAttachment(wcId: number, filePath: string): boolean {
+    return (
+      sharedPathGrants().has(wcId, filePath) || isBesideDocument(sessions.get(wcId)?.path, filePath)
+    )
+  }
 
   ipcMain.handle(
     'slides:files-read',
     async (
-      _e,
+      e,
       filePath: string,
       offset: number,
       maxChars: number,
     ): Promise<AttachmentReadResult> => {
+      if (!canReadAttachment(e.sender.id, filePath))
+        return { ok: false, error: 'slides: path not granted to this view' }
       const name = basename(filePath)
       const ext = name.split('.').pop()?.toLowerCase() ?? ''
       if (!ATTACHMENT_EXTS.has(ext)) return { ok: false, error: tm('errUnsupportedExt', { ext }) }
@@ -207,7 +233,9 @@ export function registerAttachmentIpc(): void {
   )
 
   // Image attachments read raw bytes -> base64; AiPanel puts them into the user message's images for multimodal
-  ipcMain.handle('slides:files-read-image', (_e, filePath: string): AttachmentImageResult => {
+  ipcMain.handle('slides:files-read-image', (e, filePath: string): AttachmentImageResult => {
+    if (!canReadAttachment(e.sender.id, filePath))
+      return { ok: false, error: 'slides: path not granted to this view' }
     const name = basename(filePath)
     const ext = name.split('.').pop()?.toLowerCase() ?? ''
     const mime = ATTACHMENT_IMAGE_MIME[ext]
