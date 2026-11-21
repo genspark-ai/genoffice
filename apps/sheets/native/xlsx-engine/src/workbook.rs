@@ -152,12 +152,19 @@ pub(crate) fn worksheet_open_sources(
 
 /// Each worker has its own archive cursor. Keep results in sheet order and
 /// let the caller handle small sheets (or a failed thread spawn) inline.
+pub(crate) struct ScannedWorksheet {
+    pub(crate) dimensions: Option<SheetDimensions>,
+    pub(crate) envelope: String,
+}
+
 pub(crate) fn scan_worksheet_metadata_batch(
     path: &Path,
     sources: &[WorksheetOpenSource],
     headers: &[Option<SheetDimensions>],
+    untrusted_extents: &[bool],
+    colors: &ColorContext,
     cancelled: &AtomicBool,
-) -> VecDeque<Option<Result<String, SidecarError>>> {
+) -> VecDeque<Option<Result<ScannedWorksheet, SidecarError>>> {
     let needs_scan = |source: &WorksheetOpenSource, header: &Option<SheetDimensions>| {
         source.is_large() && header.is_none()
     };
@@ -174,7 +181,8 @@ pub(crate) fn scan_worksheet_metadata_batch(
         let scans: Vec<_> = sources
             .iter()
             .zip(headers)
-            .map(|(source, header)| {
+            .zip(untrusted_extents)
+            .map(|((source, header), &untrusted_extent)| {
                 if !needs_scan(source, header) {
                     return None;
                 }
@@ -182,7 +190,30 @@ pub(crate) fn scan_worksheet_metadata_batch(
                     .name("xlsx-sheet-metadata".into())
                     .spawn_scoped(scope, move || {
                         let mut archive = ZipArchive::new(File::open(path)?)?;
-                        visuals::read_worksheet_without_cells(&mut archive, &source.path, cancelled)
+                        // An untrusted extent is always counted in full. Its
+                        // count is independent of the shared workbook budget.
+                        let dimensions = if untrusted_extent {
+                            let mut budget = 0;
+                            Some(read_sheet_dimensions_inner(
+                                &mut archive,
+                                &source.path,
+                                colors,
+                                &mut budget,
+                                false,
+                                Some(cancelled),
+                            )?)
+                        } else {
+                            None
+                        };
+                        let envelope = visuals::read_worksheet_without_cells(
+                            &mut archive,
+                            &source.path,
+                            cancelled,
+                        )?;
+                        Ok(ScannedWorksheet {
+                            dimensions,
+                            envelope,
+                        })
                     })
                     .ok()
             })
@@ -246,13 +277,40 @@ pub(crate) fn normal_view_zoom(
         .filter(|value| *value != 100)
 }
 
+fn dimension_cell_attrs<R: std::io::BufRead>(
+    reader: &Reader<R>,
+    element: &BytesStart<'_>,
+    fallback: (usize, usize),
+) -> Result<((usize, usize), bool), SidecarError> {
+    let mut address = None;
+    let mut styled = false;
+    for attribute in element.attributes().with_checks(false) {
+        let attribute = attribute.map_err(|error| SidecarError::Workbook(error.to_string()))?;
+        match attribute.key.local_name().as_ref() {
+            b"r" if address.is_none() => {
+                let value = attribute.decode_and_unescape_value(reader.decoder())?;
+                address = Some(parse_address(&value).unwrap_or(fallback));
+            }
+            b"s" if !styled => {
+                attribute.decode_and_unescape_value(reader.decoder())?;
+                styled = true;
+            }
+            _ => {}
+        }
+        if styled && address.is_some() {
+            break;
+        }
+    }
+    Ok((address.unwrap_or(fallback), styled))
+}
+
 pub(crate) fn read_sheet_dimensions(
     archive: &mut ZipArchive<File>,
     worksheet_path: &str,
     colors: &ColorContext,
     count_budget: &mut usize,
 ) -> Result<SheetDimensions, SidecarError> {
-    read_sheet_dimensions_inner(archive, worksheet_path, colors, count_budget, false)
+    read_sheet_dimensions_inner(archive, worksheet_path, colors, count_budget, false, None)
 }
 
 pub(crate) fn read_progressive_sheet_header(
@@ -261,7 +319,8 @@ pub(crate) fn read_progressive_sheet_header(
     colors: &ColorContext,
 ) -> Result<Option<SheetDimensions>, SidecarError> {
     let mut budget = 0;
-    let header = read_sheet_dimensions_inner(archive, worksheet_path, colors, &mut budget, true)?;
+    let header =
+        read_sheet_dimensions_inner(archive, worksheet_path, colors, &mut budget, true, None)?;
     Ok(header.trusted_extent.then_some(header))
 }
 
@@ -271,6 +330,7 @@ fn read_sheet_dimensions_inner(
     colors: &ColorContext,
     count_budget: &mut usize,
     header_only: bool,
+    cancelled: Option<&AtomicBool>,
 ) -> Result<SheetDimensions, SidecarError> {
     let entry = zip_entry(archive, worksheet_path)?;
     let mut reader = Reader::from_reader(BufReader::new(entry));
@@ -307,6 +367,9 @@ fn read_sheet_dimensions_inner(
     let mut outline_summary_below = true;
     let mut outline_summary_right = true;
     let counted = loop {
+        if cancelled.is_some_and(|flag| flag.load(Ordering::Relaxed)) {
+            return Err(SidecarError::cancelled());
+        }
         match reader.read_event_into(&mut buffer)? {
             Event::Start(element) | Event::Empty(element)
                 if element.local_name().as_ref() == b"dimension" =>
@@ -501,26 +564,22 @@ fn read_sheet_dimensions_inner(
                 maximum_row = maximum_row.max(current_row);
             }
             Event::Start(element) if element.local_name().as_ref() == b"c" => {
-                let (row, column) = match attribute_value(&reader, &element, b"r")? {
-                    Some(address) => parse_address(&address).unwrap_or((current_row, next_column)),
-                    None => (current_row, next_column),
-                };
+                let ((row, column), styled) =
+                    dimension_cell_attrs(&reader, &element, (current_row, next_column))?;
                 next_column = column + 1;
                 maximum_row = maximum_row.max(row);
                 maximum_column = maximum_column.max(column);
-                open_cell_stored = Some(attribute_value(&reader, &element, b"s")?.is_some());
+                open_cell_stored = Some(styled);
                 open_cell_position = (row, column);
                 open_cell_has_value = false;
             }
             Event::Empty(element) if element.local_name().as_ref() == b"c" => {
-                let (row, column) = match attribute_value(&reader, &element, b"r")? {
-                    Some(address) => parse_address(&address).unwrap_or((current_row, next_column)),
-                    None => (current_row, next_column),
-                };
+                let ((row, column), styled) =
+                    dimension_cell_attrs(&reader, &element, (current_row, next_column))?;
                 next_column = column + 1;
                 maximum_row = maximum_row.max(row);
                 maximum_column = maximum_column.max(column);
-                if attribute_value(&reader, &element, b"s")?.is_some() {
+                if styled {
                     stored_cell_count += 1;
                 }
                 if dimension_trusted && stored_cell_count >= *count_budget {
@@ -623,12 +682,24 @@ pub(crate) fn read_shared_strings(
     archive: &mut ZipArchive<File>,
     colors: &ColorContext,
 ) -> Result<Vec<SharedString>, SidecarError> {
-    let Ok(entry) = zip_entry(archive, "xl/sharedStrings.xml") else {
-        return Ok(Vec::new());
-    };
-    let mut reader = Reader::from_reader(BufReader::new(entry));
-    let mut buffer = Vec::new();
     let mut strings = Vec::new();
+    visit_shared_strings(archive, colors, |entry| {
+        strings.push(entry);
+        Ok(())
+    })?;
+    Ok(strings)
+}
+
+pub(crate) fn visit_shared_strings(
+    archive: &mut ZipArchive<File>,
+    colors: &ColorContext,
+    mut visit: impl FnMut(SharedString) -> Result<(), SidecarError>,
+) -> Result<(), SidecarError> {
+    let Ok(entry) = zip_entry(archive, "xl/sharedStrings.xml") else {
+        return Ok(());
+    };
+    let mut reader = Reader::from_reader(BufReader::with_capacity(64 * 1024, entry));
+    let mut buffer = Vec::new();
     let mut current = String::new();
     let mut runs: Vec<RichRun> = Vec::new();
     let mut current_run: Option<RichRun> = None;
@@ -642,6 +713,12 @@ pub(crate) fn read_shared_strings(
                 current.clear();
                 runs.clear();
                 current_run = None;
+            }
+            Event::Empty(element) if element.local_name().as_ref() == b"si" => {
+                visit(SharedString {
+                    text: String::new(),
+                    runs: None,
+                })?;
             }
             Event::Start(element) if element.local_name().as_ref() == b"r" => {
                 current_run = Some(RichRun::default());
@@ -695,17 +772,17 @@ pub(crate) fn read_shared_strings(
                 }
                 let mut text = current.clone();
                 normalize_cell_text(&mut text);
-                strings.push(SharedString {
+                visit(SharedString {
                     text,
                     runs: qualify_runs(finished),
-                });
+                })?;
             }
             Event::Eof => break,
             _ => {}
         }
         buffer.clear();
     }
-    Ok(strings)
+    Ok(())
 }
 
 pub(crate) fn has_run_formatting(run: &RichRun) -> bool {

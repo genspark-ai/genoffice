@@ -515,7 +515,7 @@ fn parallel_metadata_scan_preserves_sheet_protection_after_cell_data() {
     let (_dir, path) = open_fixture(&[
         (
             first,
-            r#"<x:worksheet xmlns:x="urn:test"><x:sheetData><x:row/></x:sheetData><x:sheetProtection sheet="1"/></x:worksheet>"#,
+            r#"<x:worksheet xmlns:x="urn:test"><x:sheetData><x:row r="23"><x:c s="0" r="E23"/><x:c><x:v>1</x:v></x:c></x:row></x:sheetData><x:sheetProtection sheet="1"/></x:worksheet>"#,
         ),
         (middle, "<worksheet><sheetData/></worksheet>"),
         (
@@ -542,6 +542,8 @@ fn parallel_metadata_scan_preserves_sheet_protection_after_cell_data() {
         &path,
         &sources,
         &[None, None, None],
+        &[true, false, true],
+        &ColorContext::default(),
         &AtomicBool::new(false),
     );
     let parse = |xml: String| {
@@ -550,10 +552,15 @@ fn parallel_metadata_scan_preserves_sheet_protection_after_cell_data() {
             .sheet_protection
             .unwrap()
     };
-    let first = parse(scans.pop_front().unwrap().unwrap().unwrap());
-    assert!(first.protected && !first.allow.auto_filter);
+    let first = scans.pop_front().unwrap().unwrap().unwrap();
+    let dimensions = first.dimensions.unwrap();
+    assert_eq!((dimensions.row_count, dimensions.column_count), (23, 6));
+    assert_eq!(dimensions.stored_cell_count, Some(2));
+    assert_eq!(dimensions.value_cell_count, Some(1));
+    let protection = parse(first.envelope);
+    assert!(protection.protected && !protection.allow.auto_filter);
     assert!(scans.pop_front().unwrap().is_none());
-    let last = parse(scans.pop_front().unwrap().unwrap().unwrap());
+    let last = parse(scans.pop_front().unwrap().unwrap().unwrap().envelope);
     assert!(last.protected && last.allow.auto_filter);
 }
 
