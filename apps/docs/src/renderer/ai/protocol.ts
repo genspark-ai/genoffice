@@ -835,6 +835,8 @@ const REVISION_KIND_LABEL: Record<RevisionRange['kind'], string> = {
   cellMerge: 'table cells merged',
   numberingChange: 'numbering changed',
   sectPrChange: 'section formatting changed',
+  protectedDel: 'deleted (inside protected content)',
+  protectedIns: 'inserted (inside protected content)',
 }
 
 /** flat listing of every pending tracked change; backs the read_revisions tool */

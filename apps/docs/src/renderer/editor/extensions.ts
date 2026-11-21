@@ -4227,6 +4227,10 @@ export const DocProtected = Node.create({
       blockRevision: { default: null as Record<string, string> | null },
       /** JSON record of a section-break paragraph's tracked w:sectPrChange */
       sectPrChange: { default: null as string | null },
+      /** JSON summary of the tracked-change records inside a passthrough block's original bytes (a deleted field): the editor lists them and resolves them through revisionResolutions */
+      revisionRecords: { default: null as string | null },
+      /** JSON list of accept / reject steps replayed on the block's original bytes at save */
+      revisionResolutions: { default: null as string | null },
       blockType: { default: 'passthrough' },
       /** w:pStyle of field/TOC paragraphs: doc style CSS (spacing/line-height) targets data-style */
       styleId: { default: null as string | null },

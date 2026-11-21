@@ -10,7 +10,7 @@ import { isTiffMime, tiffToDataUrlAsync } from './tiff'
 import { ommlEndsWithBreak, ommlFragmentsOf, ommlToLatex, ommlToMathML } from './math'
 import { readMathPr, type MathLimits, type MathPr } from './math-pr'
 import { splitXmlChildren } from './generate'
-import { readPropChangeXml } from './revision-xml'
+import { dropStoryOwnedRecords, readPropChangeXml, readTrackedChangeRecords } from './revision-xml'
 import {
   NOTE_PART_PATH,
   parseNoteSeparator,
@@ -659,6 +659,19 @@ export async function parseDocx(
     const block = await buildBlock(el, i, xml, buildCtx, zoteroFieldParagraphs.get(el.start))
     await attachImageVector(block, xml, buildCtx)
     if (el.name === 'w:p') attachInlineContentControls(block, xml)
+    // a passthrough block's original bytes may carry tracked changes (a deleted
+    // field, records inside unknown content): the summary attr is what lets the
+    // editor list and resolve them (see readTrackedChangeRecords)
+    if (block.type === 'passthrough') {
+      const records = readTrackedChangeRecords(xml)
+      // records the block's own textbox display models list and resolve
+      // through the story path never ride the summary: once a decision
+      // leaves the display model (a reject), a summary copy would re-list as
+      // pending and Accept All could resolve it on the original bytes —
+      // saving the opposite of what the editor shows
+      const summary = dropStoryOwnedRecords(records, block.textboxes)
+      if (summary.length > 0) block.revisionRecords = summary
+    }
     blocks.push(block)
     buildCtx.floatTableAhead = floatTableColumnSpan(block, sectionAt(el.start))
   }

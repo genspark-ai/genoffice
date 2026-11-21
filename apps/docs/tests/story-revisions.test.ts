@@ -26,6 +26,7 @@ import {
   resolutionOf,
 } from '../src/renderer/editor/story-revisions'
 import { listRevisionEntries } from '../src/renderer/ai/revision-ops'
+import { collectRevisions } from '../src/renderer/editor/revisions'
 import type { HfSectionState } from '../src/renderer/hf-sections'
 import { buildDocx } from '../../../packages/docx-engine/tests/helpers/build-docx'
 
@@ -168,6 +169,14 @@ describe('enumeration', () => {
       ['r1', 'textbox', 'new'],
       ['r2', 'textbox', 'old'],
     ])
+    // the box's records are owned by the story path: the body pass must not
+    // list them again (a second listing would leave two resolution paths able
+    // to rewrite the same block's bytes)
+    expect(
+      collectRevisions(editor.state.doc).filter(
+        (r) => r.kind === 'protectedIns' || r.kind === 'protectedDel',
+      ),
+    ).toEqual([])
     editor.destroy()
   })
 })
@@ -301,3 +310,77 @@ function collectNoteRevisionsOf(note: NoteInfo) {
   editor.destroy()
   return out
 }
+
+describe('the textbox story path owns its records for good', () => {
+  it('a rejected box change never re-lists as a protected record, and Accept All cannot save the opposite', async () => {
+    const parsed = await parseDocx(await buildDocx({ bodyXml: TXBX_PARAGRAPH }))
+    const editor = new Editor({
+      extensions: editorExtensions,
+      content: blocksToPmDoc(parsed.blocks),
+    })
+    const revs = collectTextboxRevisions(editor.state.doc)
+    const node = editor.state.doc.nodeAt(0)!
+    const boxes = resolveTextboxes(
+      node.attrs.textboxes,
+      revs.map((r) => r.story),
+      'reject',
+    )
+    editor.view.dispatch(
+      editor.state.tr.setNodeMarkup(0, undefined, { ...node.attrs, textboxes: boxes }),
+    )
+    // the editor shows "Box old"; the body pass lists nothing new for the block
+    expect(collectTextboxRevisions(editor.state.doc)).toHaveLength(0)
+    const protectedLeft = collectRevisions(editor.state.doc).filter(
+      (r) => r.kind === 'protectedIns' || r.kind === 'protectedDel',
+    )
+    expect(protectedLeft).toEqual([])
+    // a save keeps the bytes' own records (still tracked changes, untouched
+    // by the reject) — but no resolution steps ride the block
+    const plan = pmDocToSavePlan(editor.getJSON() as PmNode, parsed.blocks)
+    const saved = await saveDocx(parsed, plan.saveBlocks)
+    const xml = await (await JSZip.loadAsync(saved)).file('word/document.xml')!.async('string')
+    expect(xml).toContain('old')
+    expect(xml).not.toContain('<w:delText>new')
+    // a paragraph-mark record inside the box (w:rPr/w:ins) has no display
+    // model — the story path lists run records only — so the summary keeps
+    // it and the XML replay stays the one path that can resolve it
+    const markXml =
+      '<w:p><w:r><w:drawing><wp:anchor behindDoc="0" simplePos="0" locked="0" layoutInCell="1" allowOverlap="1">' +
+      '<wp:simplePos x="0" y="0"/><wp:extent cx="6038850" cy="1704975"/>' +
+      '<a:graphic><a:graphicData uri="http://schemas.microsoft.com/office/word/2010/wordprocessingShape">' +
+      '<wps:wsp xmlns:wps="http://schemas.microsoft.com/office/word/2010/wordprocessingShape">' +
+      '<wps:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="6038850" cy="1704975"/></a:xfrm>' +
+      '<a:prstGeom prst="rect"><a:avLst/></a:prstGeom></wps:spPr>' +
+      '<wps:txbx><w:txbxContent><w:p><w:pPr><w:rPr><w:ins' +
+      ` w:id="9" w:author="Cara" w:date="2026-10-01T00:00:00Z"></w:ins></w:rPr></w:pPr>` +
+      '<w:r><w:t xml:space="preserve">Mark</w:t></w:r></w:p></w:txbxContent></wps:txbx></wps:wsp>' +
+      '</a:graphicData></a:graphic></wp:anchor></w:drawing></w:r></w:p>'
+    const markParsed = await parseDocx(await buildDocx({ bodyXml: markXml }))
+    const markEditor = new Editor({
+      extensions: editorExtensions,
+      content: blocksToPmDoc(markParsed.blocks),
+    })
+    const markListed = collectRevisions(markEditor.state.doc).filter(
+      (r) => r.kind === 'protectedIns' || r.kind === 'protectedDel',
+    )
+    expect(markListed.map((r) => [r.kind, r.author])).toEqual([['protectedIns', 'Cara']])
+    // and it resolves on the block bytes without a story entry duplicating it
+    const markNode = markEditor.state.doc.nodeAt(0)!
+    markEditor.view.dispatch(
+      markEditor.state.tr.setNodeMarkup(0, undefined, {
+        ...markNode.attrs,
+        revisionResolutions: JSON.stringify([{ mode: 'reject' }]),
+      }),
+    )
+    const markPlan = pmDocToSavePlan(markEditor.getJSON() as PmNode, markParsed.blocks)
+    const markSaved = await saveDocx(markParsed, markPlan.saveBlocks)
+    const savedXml = await (
+      await JSZip.loadAsync(markSaved)
+    )
+      .file('word/document.xml')!
+      .async('string')
+    expect(savedXml).not.toContain('w:author="Cara"')
+    markEditor.destroy()
+    editor.destroy()
+  })
+})
