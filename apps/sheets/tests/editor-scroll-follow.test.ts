@@ -76,6 +76,42 @@ describe('installEditorScrollFollow', () => {
     expect(calls).toEqual([])
   })
 
+  it('follows the viewport of a workbook opened after install', async () => {
+    const calls: string[] = []
+    const listeners = new Map<string, () => void>()
+    const viewportOf = (id: string) => ({
+      onScrollAfter$: {
+        subscribe: (fn: () => void) => {
+          listeners.set(id, fn)
+          return { unsubscribe: () => listeners.delete(id) }
+        },
+      },
+    })
+    const viewports: Record<string, unknown> = { placeholder: viewportOf('placeholder') }
+    let active = 'placeholder'
+    const renderManager = {
+      getRenderUnitById: (id: string) => ({ scene: { getViewport: () => viewports[id] ?? null } }),
+    }
+    const services = [bridgeThat(true, calls), resizeThat(calls), renderManager]
+    let next = 0
+    const follow = installEditorScrollFollow({
+      univer: { __getInjector: () => ({ get: () => services[next++] }) },
+      univerAPI: { getActiveWorkbook: () => ({ getId: () => active }) },
+    } as unknown as UniverRuntime)
+    expect([...listeners.keys()]).toEqual(['placeholder'])
+
+    viewports.file = viewportOf('file')
+    active = 'file'
+    document.dispatchEvent(new Event('pointerdown'))
+    expect([...listeners.keys()]).toEqual(['file'])
+
+    listeners.get('file')!()
+    await nextFrame()
+    expect(calls).toEqual(['position', 'fit'])
+    follow.dispose()
+    expect(listeners.size).toBe(0)
+  })
+
   it('is a no-op when a service is missing', () => {
     expect(() =>
       installEditorScrollFollow(runtimeWith(undefined, undefined)).dispose(),

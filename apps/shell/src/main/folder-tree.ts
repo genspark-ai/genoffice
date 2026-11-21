@@ -28,6 +28,7 @@ import type {
   RenameResult,
 } from '../shared/home-api'
 import { isValidRenameName } from './rename-validation'
+import { PerFolderWatch } from './per-folder-watch'
 import { statPathEntries } from './recent-files'
 import { mkdirDirs } from '@genoffice/electron-utils'
 
@@ -410,13 +411,17 @@ export function rebasePath(path: string, oldDir: string, newDir: string): string
 
 const WATCH_DEBOUNCE_MS = 250
 
+/** macOS and Windows watch a whole tree through one handle; elsewhere Node walks the tree inside `fs.watch` */
+const hasRecursiveWatch = (): boolean =>
+  process.platform === 'darwin' || process.platform === 'win32'
+
 /**
  * Watches the root recursively and reports the folders whose direct
  * contents changed, debounced. Changes from Finder / Explorer / other apps
  * show up in the tree the same way as our own edits.
  */
 export class FolderWatcher {
-  private watcher: FSWatcher | null = null
+  private watcher: FSWatcher | PerFolderWatch | null = null
   private pending = new Set<string>()
   private timer: NodeJS.Timeout | null = null
 
@@ -430,9 +435,11 @@ export class FolderWatcher {
     private readonly onChange: (dirs: string[]) => void,
   ) {
     try {
-      this.watcher = watch(root, { recursive: true, persistent: false }, (_event, filename) => {
-        this.note(filename)
-      })
+      this.watcher = hasRecursiveWatch()
+        ? watch(root, { recursive: true, persistent: false }, (_event, filename) => {
+            this.note(filename)
+          })
+        : new PerFolderWatch(root, (filename) => this.note(filename))
       this.watcher.on('error', () => this.close())
     } catch {
       this.watcher = null

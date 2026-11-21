@@ -9,6 +9,7 @@ export const ja = {
   aiStarterContinue: '今の内容の続きを書いて',
   aiStarterFillTemplate: '文書内のプレースホルダーを見つけて埋めて',
   aiGskLoginBtn: 'Genspark にサインイン',
+  aiGskLoginOk: 'Genspark にサインインしました',
   aiPanelTitle: 'Genspark',
   aiOpenAssistant: 'AI アシスタントを開く',
   aiSummarizeBtn: 'AI 要約',

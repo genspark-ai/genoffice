@@ -8,14 +8,19 @@ import { cssRunFontFamily, wordSlotFaces } from '../text-layout/font-rules'
 import { t } from '../i18n/locale'
 import { dkBackground } from './dark-page'
 import { runBorderDecls } from './run-border'
+import { eaLayoutDecls, fitTextDecls, parseEaLayoutAttr } from './asian-layout'
 import { fillInk } from './shading-ink'
 import { textColorDecls } from './text-color'
+import { emphasisDecls, otfFeatureSettings, parseOtfAttr, underlineDecls } from './run-typography'
 import { DEFAULT_BALLOON_MODE, type BalloonMode, type RevisionDisplayMode } from './revision-view'
 import { parseTextOutlineAttr, textOutlineDecl } from './text-outline'
 import {
   charScaleXDecls,
   doubleStrikeDecl,
-  glowDecl,
+  glowAndShadowDecl,
+  parseReflectionAttr,
+  parseTextShadowAttr,
+  reflectionDecl,
   paperColorEffect,
   parseGlowAttr,
   parseTextEffectAttr,
@@ -82,8 +87,24 @@ export const UnderlineMark = Mark.create({
       },
     ]
   },
-  renderHTML() {
-    return ['u', 0]
+  addAttributes() {
+    const attr = (name: string) => ({
+      default: null as string | null,
+      rendered: false,
+      // a style rule hands the declaration's value over, not an element
+      parseHTML: (el: HTMLElement) => el.getAttribute?.(name) ?? null,
+    })
+    // the run's own w:u w:val (null = single) and w:color (hex, null = the text colour)
+    return { line: attr('data-u-line'), color: attr('data-u-color') }
+  },
+  renderHTML({ mark }) {
+    const { line, color } = mark.attrs as { line: string | null; color: string | null }
+    const attrs: Record<string, string> = {}
+    if (line) attrs['data-u-line'] = line
+    if (color) attrs['data-u-color'] = color
+    const decls = underlineDecls(line, color)
+    if (decls.length > 0) attrs.style = decls.join(';')
+    return ['u', attrs, 0]
   },
   addKeyboardShortcuts() {
     return { 'Mod-u': () => this.editor.commands.toggleMark('underline') }
@@ -530,15 +551,24 @@ const CLIPBOARD_TEXT_STYLE_TYPES: Record<string, 'string' | 'number' | 'boolean'
   textEffect: 'string',
   dstrike: 'boolean',
   glow: 'string',
+  textShadow: 'string',
+  textReflection: 'string',
+  fxOwn: 'string',
   positionHalfPoints: 'number',
   bdr: 'string',
+  fitText: 'number',
+  eaLayout: 'string',
+  lang: 'string',
+  noProof: 'boolean',
   vertAlign: 'string',
   em: 'string',
+  otf: 'string',
   boldOff: 'boolean',
   italicOff: 'boolean',
   caps: 'string',
   vanish: 'boolean',
   vanishOwn: 'boolean',
+  bdrOwn: 'string',
   eaLang: 'string',
   styleId: 'string',
 }
@@ -643,13 +673,32 @@ export const TextStyleMark = Mark.create({
       dstrike: { default: null as boolean | null },
       // w14:glow as JSON {color,radiusPt,alpha}; saving is kept faithful by rawRPr
       glow: { default: null as string | null },
+      // w14:shadow as JSON {color,alpha,blurPt,distPt,dirDeg}
+      textShadow: { default: null as string | null },
+      // w14:reflection as JSON {startAlpha,endPos,blurPt,distPt}
+      textReflection: { default: null as string | null },
+      // the outline, shadow and glow set in the editor, as JSON (see TextFxOwn): what the save writes
+      fxOwn: { default: null as string | null, rendered: false },
       // w:position baseline shift (half-points)
       positionHalfPoints: { default: null as number | null },
-      // character border (w:bdr) as JSON {val,sz,color,space}; saving is kept faithful by rawRPr
+      // character border (w:bdr) as JSON {val,sz,color,space}, resolved through the style chain
       bdr: { default: null as string | null },
+      // the run's own w:bdr (what saves; `bdr` may be inherited): the same JSON, or 'none'
+      bdrOwn: { default: null as string | null, rendered: false },
+      // the run's own w:fitText width in twips; 0 is an explicit none
+      fitText: { default: null as number | null },
+      // the run's own w:eastAsianLayout as JSON (see asian-layout.ts); '{}' is an explicit none
+      eaLayout: { default: null as string | null },
+      // the run's own w:lang slots as JSON (proofing language); not rendered: a lang attribute
+      // on the page would change hyphenation and CJK font fallback
+      lang: { default: null as string | null, rendered: false },
+      // the run's own w:noProof: the text is not spell checked
+      noProof: { default: null as boolean | null, rendered: false },
       vertAlign: { default: null as 'superscript' | 'subscript' | null },
-      // East Asian emphasis mark (w:em val); saving is kept faithful by rawRPr
+      // the run's own emphasis mark (w:em val); 'none' removes the file's own
       em: { default: null as string | null },
+      // the run's own w14 OpenType features as JSON (Run.otf)
+      otf: { default: null as string | null },
       // run-level explicit off (w:b/w:i w:val="0"): counters style-inherited bold/italic CSS
       boldOff: { default: null as boolean | null },
       italicOff: { default: null as boolean | null },
@@ -757,24 +806,33 @@ export const TextStyleMark = Mark.create({
     }
     if (effect) styles.push(...textEffectDecls(effect))
     if (mark.attrs.dstrike) styles.push(doubleStrikeDecl())
-    if (mark.attrs.glow) {
-      const glow = parseGlowAttr(String(mark.attrs.glow))
-      if (glow) styles.push(glowDecl(glow))
+    const glowAndShadow = glowAndShadowDecl(
+      mark.attrs.glow ? parseGlowAttr(String(mark.attrs.glow)) : undefined,
+      mark.attrs.textShadow ? parseTextShadowAttr(String(mark.attrs.textShadow)) : undefined,
+    )
+    if (glowAndShadow) styles.push(glowAndShadow)
+    if (mark.attrs.textReflection) {
+      const reflection = parseReflectionAttr(String(mark.attrs.textReflection))
+      if (reflection) styles.push(reflectionDecl(reflection))
     }
     if (mark.attrs.positionHalfPoints)
       styles.push(positionDecl(Number(mark.attrs.positionHalfPoints)))
     if (mark.attrs.charScaleX) styles.push(...charScaleXDecls(String(mark.attrs.charScaleX)))
     if (mark.attrs.bdr) styles.push(...runBorderDecls(String(mark.attrs.bdr)))
+    if (Number(mark.attrs.fitText) > 0) styles.push(...fitTextDecls(Number(mark.attrs.fitText)))
+    const eaLayout = parseEaLayoutAttr(mark.attrs.eaLayout)
+    if (eaLayout)
+      styles.push(
+        ...eaLayoutDecls(
+          eaLayout,
+          Number(mark.attrs.sizeHalfPoints || tbl?.sizeHalfPoints) || null,
+        ),
+      )
     if (mark.attrs.vertAlign === 'superscript') styles.push('vertical-align:super;font-size:0.75em')
     if (mark.attrs.vertAlign === 'subscript') styles.push('vertical-align:sub;font-size:0.75em')
-    if (mark.attrs.em) {
-      const em = String(mark.attrs.em)
-      const shape =
-        em === 'circle' ? 'open circle' : em === 'comma' ? 'filled sesame' : 'filled dot'
-      // Word renders Chinese emphasis marks (dot/underDot) below the text; comma/circle kenten go above
-      const pos = em === 'comma' || em === 'circle' ? 'over' : 'under'
-      styles.push(`text-emphasis:${shape}`, `text-emphasis-position:${pos} right`)
-    }
+    const features = otfFeatureSettings(parseOtfAttr(mark.attrs.otf))
+    if (features) styles.push(`font-feature-settings:${features}`)
+    styles.push(...emphasisDecls(mark.attrs.em as string | null))
     if (mark.attrs.boldOff) styles.push('font-weight:normal')
     if (mark.attrs.italicOff) styles.push('font-style:normal')
     if (mark.attrs.vanish) styles.push('display:none')
@@ -794,6 +852,7 @@ export const TextStyleMark = Mark.create({
       style: styles.join(';'),
     }
     if (mark.attrs.styleId) attrs['data-style'] = String(mark.attrs.styleId)
+    if (mark.attrs.noProof) attrs['spellcheck'] = 'false'
     // rtl run: the .doc-cs gate in doc-style-css paints the Cs size of its style
     // chain; weight and style come resolved from the engine (includes the table
     // style layer the paragraph-style CSS cannot see)

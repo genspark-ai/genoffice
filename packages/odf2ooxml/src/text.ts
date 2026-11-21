@@ -64,6 +64,8 @@ export interface WalkContext {
   families: readonly string[]
   drops: Drops
   images: InlineImageRef[]
+  /** grid slots row repeats may still paint in this document; shared by every table */
+  repeatBudget?: { slots: number }
 }
 
 const LINKABLE_HREF = /^(https?|mailto|ftp):/i
@@ -108,8 +110,13 @@ function runsFromChildren(
           break
         }
         case 'text:hidden-text':
-          if (!['true', '1'].includes(attr(node, 'text:is-hidden') ?? ''))
-            walk(nodeChildren(node), props, href)
+          if (!['true', '1'].includes(attr(node, 'text:is-hidden') ?? '')) {
+            const children = nodeChildren(node)
+            // a writer may leave the element empty and keep the text on the attribute
+            const shown = children.length > 0 ? '' : (attr(node, 'text:string-value') ?? '')
+            if (shown) push({ text: shown, ...base(props), ...(href ? { href } : {}) })
+            else walk(children, props, href)
+          }
           break
         case 'text:a': {
           const target = attr(node, 'xlink:href') ?? ''

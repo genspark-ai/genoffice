@@ -5,6 +5,7 @@ export const id = {
   aiEmptyBuildTitle: 'Biarkan AI membangun buku kerja ini untuk Anda',
   aiEmptyBuildBody: 'Jelaskan tabel, data, atau bagan yang Anda perlukan — AI langsung membuatnya.',
   aiGskLoginBtn: 'Masuk ke Genspark',
+  aiGskLoginOk: 'Berhasil masuk ke Genspark',
   aiUndelivered: 'Tidak terkirim',
   aiRetry: 'Coba lagi',
   aiOpenAssistant: 'Buka asisten AI',

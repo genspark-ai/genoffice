@@ -1,0 +1,1390 @@
+{
+  "Home": [
+    {
+      "group": "Genspark AI",
+      "controls": [
+        {
+          "name": "Genspark AI",
+          "tag": "button"
+        },
+        {
+          "name": "AI Summarize",
+          "tag": "button"
+        },
+        {
+          "name": "AI Polish",
+          "tag": "button"
+        },
+        {
+          "name": "AI Format",
+          "tag": "button"
+        },
+        {
+          "name": "AI Mind Map",
+          "tag": "button"
+        }
+      ]
+    },
+    {
+      "group": "Convert",
+      "controls": [
+        {
+          "name": "Convert",
+          "tag": "button",
+          "popup": true
+        }
+      ]
+    },
+    {
+      "group": "Clipboard",
+      "controls": [
+        {
+          "name": "Paste",
+          "tag": "button"
+        },
+        {
+          "name": "Paste",
+          "tag": "button",
+          "popup": true
+        },
+        {
+          "name": "Cut",
+          "tag": "button",
+          "disabled": true
+        },
+        {
+          "name": "Copy",
+          "tag": "button",
+          "disabled": true
+        },
+        {
+          "name": "Format Painter: click to apply the copied formatting once, double-click to keep it on until Esc",
+          "tag": "button"
+        }
+      ]
+    },
+    {
+      "group": "",
+      "controls": [
+        {
+          "name": "Font",
+          "tag": "input"
+        },
+        {
+          "name": "Font",
+          "tag": "button"
+        },
+        {
+          "name": "Font Size",
+          "tag": "input"
+        },
+        {
+          "name": "Font Size",
+          "tag": "button"
+        },
+        {
+          "name": "Grow Font",
+          "tag": "button"
+        },
+        {
+          "name": "Shrink Font",
+          "tag": "button"
+        },
+        {
+          "name": "Change Case",
+          "tag": "button"
+        },
+        {
+          "name": "Clear Formatting",
+          "tag": "button"
+        },
+        {
+          "name": "Phonetic Guide",
+          "tag": "button"
+        },
+        {
+          "name": "Character Border",
+          "tag": "button"
+        },
+        {
+          "name": "Bold",
+          "tag": "button"
+        },
+        {
+          "name": "Italic",
+          "tag": "button"
+        },
+        {
+          "name": "Underline",
+          "tag": "button"
+        },
+        {
+          "name": "Strikethrough",
+          "tag": "button"
+        },
+        {
+          "name": "Subscript",
+          "tag": "button"
+        },
+        {
+          "name": "Superscript",
+          "tag": "button"
+        },
+        {
+          "name": "Text Effects",
+          "tag": "button"
+        },
+        {
+          "name": "Text Highlight Color",
+          "tag": "button"
+        },
+        {
+          "name": "Text Highlight Color menu",
+          "tag": "button"
+        },
+        {
+          "name": "Font Color",
+          "tag": "button"
+        },
+        {
+          "name": "Font Color menu",
+          "tag": "button"
+        },
+        {
+          "name": "Character Shading",
+          "tag": "button"
+        },
+        {
+          "name": "Enclose Characters",
+          "tag": "button"
+        }
+      ]
+    },
+    {
+      "group": "Paragraph",
+      "controls": [
+        {
+          "name": "Bullets",
+          "tag": "button"
+        },
+        {
+          "name": "Bullets",
+          "tag": "button"
+        },
+        {
+          "name": "Numbering",
+          "tag": "button"
+        },
+        {
+          "name": "Numbering",
+          "tag": "button"
+        },
+        {
+          "name": "Multilevel list: choose or define a multilevel numbering format",
+          "tag": "button"
+        },
+        {
+          "name": "Decrease Indent",
+          "tag": "button"
+        },
+        {
+          "name": "Increase Indent",
+          "tag": "button"
+        },
+        {
+          "name": "Asian Layout",
+          "tag": "button"
+        },
+        {
+          "name": "Sort",
+          "tag": "button"
+        },
+        {
+          "name": "Show formatting marks",
+          "tag": "button"
+        },
+        {
+          "name": "Align Left",
+          "tag": "button"
+        },
+        {
+          "name": "Center",
+          "tag": "button"
+        },
+        {
+          "name": "Align Right",
+          "tag": "button"
+        },
+        {
+          "name": "Justify",
+          "tag": "button"
+        },
+        {
+          "name": "Distributed",
+          "tag": "button"
+        },
+        {
+          "name": "Line and Paragraph Spacing",
+          "tag": "button"
+        },
+        {
+          "name": "Shading",
+          "tag": "button"
+        },
+        {
+          "name": "Borders",
+          "tag": "button"
+        }
+      ]
+    },
+    {
+      "group": "Styles",
+      "controls": [
+        {
+          "name": "Styles",
+          "tag": "button",
+          "popup": true
+        },
+        {
+          "name": "Styles Pane",
+          "tag": "button"
+        }
+      ]
+    }
+  ],
+  "Insert": [
+    {
+      "group": "Pages",
+      "controls": [
+        {
+          "name": "Cover Page",
+          "tag": "button"
+        },
+        {
+          "name": "Blank Page",
+          "tag": "button"
+        },
+        {
+          "name": "Page Break",
+          "tag": "button"
+        }
+      ]
+    },
+    {
+      "group": "Tables",
+      "controls": [
+        {
+          "name": "Table",
+          "tag": "button"
+        }
+      ]
+    },
+    {
+      "group": "Illustrations",
+      "controls": [
+        {
+          "name": "Pictures",
+          "tag": "button"
+        },
+        {
+          "name": "Shapes",
+          "tag": "button"
+        },
+        {
+          "name": "Icons",
+          "tag": "button"
+        },
+        {
+          "name": "Chart",
+          "tag": "button"
+        }
+      ]
+    },
+    {
+      "group": "Links",
+      "controls": [
+        {
+          "name": "Link",
+          "tag": "button"
+        },
+        {
+          "name": "Bookmark",
+          "tag": "button"
+        },
+        {
+          "name": "Cross-reference",
+          "tag": "button"
+        }
+      ]
+    },
+    {
+      "group": "Comments",
+      "controls": [
+        {
+          "name": "Comment",
+          "tag": "button"
+        }
+      ]
+    },
+    {
+      "group": "Header & Footer",
+      "controls": [
+        {
+          "name": "Header",
+          "tag": "button"
+        },
+        {
+          "name": "Footer",
+          "tag": "button"
+        },
+        {
+          "name": "Page Number",
+          "tag": "button"
+        }
+      ]
+    },
+    {
+      "group": "Text",
+      "controls": [
+        {
+          "name": "Text Box",
+          "tag": "button"
+        },
+        {
+          "name": "WordArt",
+          "tag": "button"
+        },
+        {
+          "name": "Drop Cap",
+          "tag": "button"
+        },
+        {
+          "name": "Field",
+          "tag": "button"
+        },
+        {
+          "name": "Date & Time",
+          "tag": "button"
+        },
+        {
+          "name": "Object",
+          "tag": "button"
+        }
+      ]
+    },
+    {
+      "group": "Symbols",
+      "controls": [
+        {
+          "name": "Equation",
+          "tag": "button"
+        },
+        {
+          "name": "Advanced Symbol",
+          "tag": "button"
+        },
+        {
+          "name": "Number",
+          "tag": "button"
+        }
+      ]
+    }
+  ],
+  "Draw": [
+    {
+      "group": "Drawing Tools",
+      "controls": [
+        {
+          "name": "Draw",
+          "tag": "button"
+        },
+        {
+          "name": "Eraser",
+          "tag": "button"
+        }
+      ]
+    },
+    {
+      "group": "Pens",
+      "controls": [
+        {
+          "name": "Pen",
+          "tag": "button"
+        },
+        {
+          "name": "Pen",
+          "tag": "button"
+        },
+        {
+          "name": "Pen",
+          "tag": "button"
+        },
+        {
+          "name": "Pencil",
+          "tag": "button"
+        },
+        {
+          "name": "Highlighter",
+          "tag": "button"
+        },
+        {
+          "name": "Add",
+          "tag": "button"
+        }
+      ]
+    },
+    {
+      "group": "Clear",
+      "controls": [
+        {
+          "name": "Clear All",
+          "tag": "button",
+          "disabled": true
+        }
+      ]
+    }
+  ],
+  "Design": [
+    {
+      "group": "Document Formatting",
+      "controls": [
+        {
+          "name": "Themes",
+          "tag": "button"
+        },
+        {
+          "name": "Colors",
+          "tag": "button"
+        },
+        {
+          "name": "Fonts",
+          "tag": "button"
+        },
+        {
+          "name": "Paragraph Spacing",
+          "tag": "button"
+        },
+        {
+          "name": "Set as Default",
+          "tag": "button"
+        }
+      ]
+    },
+    {
+      "group": "Page Background",
+      "controls": [
+        {
+          "name": "Watermark",
+          "tag": "button"
+        },
+        {
+          "name": "Page Color",
+          "tag": "button"
+        },
+        {
+          "name": "Page Borders",
+          "tag": "button"
+        }
+      ]
+    }
+  ],
+  "Layout": [
+    {
+      "group": "Page Setup",
+      "controls": [
+        {
+          "name": "Text Direction",
+          "tag": "button"
+        },
+        {
+          "name": "Margins",
+          "tag": "button"
+        },
+        {
+          "name": "Orientation",
+          "tag": "button"
+        },
+        {
+          "name": "Size",
+          "tag": "button"
+        },
+        {
+          "name": "Columns",
+          "tag": "button"
+        },
+        {
+          "name": "Breaks",
+          "tag": "button"
+        },
+        {
+          "name": "Line Numbers",
+          "tag": "button"
+        },
+        {
+          "name": "Hyphenation",
+          "tag": "button"
+        }
+      ]
+    },
+    {
+      "group": "Paragraph",
+      "controls": [
+        {
+          "name": "Indent Left",
+          "tag": "input"
+        },
+        {
+          "name": "Indent Right",
+          "tag": "input"
+        },
+        {
+          "name": "Space Before",
+          "tag": "input"
+        },
+        {
+          "name": "Space After",
+          "tag": "input"
+        }
+      ]
+    },
+    {
+      "group": "Arrange",
+      "controls": [
+        {
+          "name": "Position",
+          "tag": "button",
+          "disabled": true
+        },
+        {
+          "name": "Wrap Text",
+          "tag": "button",
+          "disabled": true
+        },
+        {
+          "name": "Bring Forward",
+          "tag": "button",
+          "disabled": true
+        },
+        {
+          "name": "Send Backward",
+          "tag": "button",
+          "disabled": true
+        },
+        {
+          "name": "Selection Pane",
+          "tag": "button"
+        },
+        {
+          "name": "Align",
+          "tag": "button"
+        },
+        {
+          "name": "Group",
+          "tag": "button",
+          "disabled": true
+        },
+        {
+          "name": "Rotate",
+          "tag": "button",
+          "disabled": true
+        }
+      ]
+    }
+  ],
+  "References": [
+    {
+      "group": "Table of Contents",
+      "controls": [
+        {
+          "name": "Table of Contents",
+          "tag": "button"
+        },
+        {
+          "name": "Add Text",
+          "tag": "button"
+        },
+        {
+          "name": "Update Table",
+          "tag": "button"
+        }
+      ]
+    },
+    {
+      "group": "Footnotes",
+      "controls": [
+        {
+          "name": "Insert Footnote",
+          "tag": "button"
+        },
+        {
+          "name": "Insert Endnote",
+          "tag": "button"
+        },
+        {
+          "name": "Next Footnote",
+          "tag": "button"
+        },
+        {
+          "name": "Show Notes",
+          "tag": "button",
+          "disabled": true
+        }
+      ]
+    },
+    {
+      "group": "Citations & Bibliography",
+      "controls": [
+        {
+          "name": "Insert Citation",
+          "tag": "button"
+        },
+        {
+          "name": "Citations",
+          "tag": "button"
+        },
+        {
+          "name": "Style",
+          "tag": "button",
+          "popup": true
+        },
+        {
+          "name": "Bibliography",
+          "tag": "button"
+        }
+      ]
+    },
+    {
+      "group": "Captions",
+      "controls": [
+        {
+          "name": "Insert Caption",
+          "tag": "button"
+        },
+        {
+          "name": "Insert Table of Figures",
+          "tag": "button"
+        },
+        {
+          "name": "Update Table",
+          "tag": "button",
+          "disabled": true
+        },
+        {
+          "name": "Cross-reference",
+          "tag": "button"
+        }
+      ]
+    },
+    {
+      "group": "Index",
+      "controls": [
+        {
+          "name": "Mark Entry",
+          "tag": "button"
+        },
+        {
+          "name": "Insert Index",
+          "tag": "button"
+        },
+        {
+          "name": "Update Index",
+          "tag": "button",
+          "disabled": true
+        }
+      ]
+    },
+    {
+      "group": "Table of Authorities",
+      "controls": [
+        {
+          "name": "Mark Citation",
+          "tag": "button"
+        },
+        {
+          "name": "Insert Table of Authorities",
+          "tag": "button"
+        },
+        {
+          "name": "Update Table",
+          "tag": "button",
+          "disabled": true
+        }
+      ]
+    }
+  ],
+  "Mailings": [
+    {
+      "group": "Create",
+      "controls": [
+        {
+          "name": "Envelopes",
+          "tag": "button"
+        },
+        {
+          "name": "Labels",
+          "tag": "button"
+        }
+      ]
+    },
+    {
+      "group": "Start Mail Merge",
+      "controls": [
+        {
+          "name": "Start Mail Merge",
+          "tag": "button"
+        },
+        {
+          "name": "Select Recipients",
+          "tag": "button"
+        },
+        {
+          "name": "Edit Recipient List",
+          "tag": "button",
+          "disabled": true
+        },
+        {
+          "name": "Filter Recipients",
+          "tag": "button",
+          "disabled": true
+        }
+      ]
+    },
+    {
+      "group": "Write & Insert Fields",
+      "controls": [
+        {
+          "name": "Insert Merge Field",
+          "tag": "button",
+          "disabled": true
+        },
+        {
+          "name": "Rules",
+          "tag": "button",
+          "disabled": true
+        },
+        {
+          "name": "Update Labels",
+          "tag": "button",
+          "disabled": true
+        }
+      ]
+    },
+    {
+      "group": "Preview Results",
+      "controls": [
+        {
+          "name": "Preview Results",
+          "tag": "button",
+          "disabled": true
+        },
+        {
+          "name": "First",
+          "tag": "button",
+          "disabled": true
+        },
+        {
+          "name": "Previous",
+          "tag": "button",
+          "disabled": true
+        },
+        {
+          "name": "Record",
+          "tag": "input",
+          "disabled": true
+        },
+        {
+          "name": "Next",
+          "tag": "button",
+          "disabled": true
+        },
+        {
+          "name": "Last",
+          "tag": "button",
+          "disabled": true
+        },
+        {
+          "name": "Find Recipient",
+          "tag": "button",
+          "disabled": true
+        }
+      ]
+    },
+    {
+      "group": "Merge Range",
+      "controls": [
+        {
+          "name": "Merge Range",
+          "tag": "button",
+          "disabled": true
+        },
+        {
+          "name": "From",
+          "tag": "input",
+          "disabled": true
+        },
+        {
+          "name": "To",
+          "tag": "input",
+          "disabled": true
+        }
+      ]
+    },
+    {
+      "group": "Finish",
+      "controls": [
+        {
+          "name": "Finish & Merge",
+          "tag": "button",
+          "disabled": true
+        }
+      ]
+    }
+  ],
+  "Review": [
+    {
+      "group": "Proofing",
+      "controls": [
+        {
+          "name": "Editor",
+          "tag": "button"
+        },
+        {
+          "name": "Spelling",
+          "tag": "button"
+        },
+        {
+          "name": "Thesaurus",
+          "tag": "button"
+        },
+        {
+          "name": "Word Count",
+          "tag": "button"
+        }
+      ]
+    },
+    {
+      "group": "Language",
+      "controls": [
+        {
+          "name": "Translate",
+          "tag": "button"
+        },
+        {
+          "name": "Language",
+          "tag": "button"
+        }
+      ]
+    },
+    {
+      "group": "Comments",
+      "controls": [
+        {
+          "name": "New Comment",
+          "tag": "button"
+        },
+        {
+          "name": "Delete",
+          "tag": "button",
+          "disabled": true
+        },
+        {
+          "name": "Resolve",
+          "tag": "button",
+          "disabled": true
+        },
+        {
+          "name": "Previous",
+          "tag": "button",
+          "disabled": true
+        },
+        {
+          "name": "Next",
+          "tag": "button",
+          "disabled": true
+        },
+        {
+          "name": "Show Comments",
+          "tag": "button",
+          "disabled": true
+        },
+        {
+          "name": "AI Resolve Comments",
+          "tag": "button",
+          "disabled": true
+        }
+      ]
+    },
+    {
+      "group": "Tracking",
+      "controls": [
+        {
+          "name": "Track Changes",
+          "tag": "button"
+        },
+        {
+          "name": "Display for Review",
+          "tag": "button"
+        },
+        {
+          "name": "Markup Options",
+          "tag": "button"
+        }
+      ]
+    },
+    {
+      "group": "Reviewing",
+      "controls": [
+        {
+          "name": "Reviewing",
+          "tag": "button"
+        }
+      ]
+    },
+    {
+      "group": "Changes",
+      "controls": [
+        {
+          "name": "Accept",
+          "tag": "button"
+        },
+        {
+          "name": "Reject",
+          "tag": "button"
+        },
+        {
+          "name": "Previous Change",
+          "tag": "button"
+        },
+        {
+          "name": "Next Change",
+          "tag": "button"
+        },
+        {
+          "name": "AI Revision Summary",
+          "tag": "button",
+          "disabled": true
+        }
+      ]
+    },
+    {
+      "group": "Compare",
+      "controls": [
+        {
+          "name": "Compare",
+          "tag": "button"
+        }
+      ]
+    },
+    {
+      "group": "Protect",
+      "controls": [
+        {
+          "name": "Protect Document",
+          "tag": "button"
+        },
+        {
+          "name": "Always Open Read-Only",
+          "tag": "button"
+        }
+      ]
+    }
+  ],
+  "View": [
+    {
+      "group": "Views",
+      "controls": [
+        {
+          "name": "Print Layout",
+          "tag": "button"
+        },
+        {
+          "name": "Web Layout",
+          "tag": "button"
+        },
+        {
+          "name": "Outline",
+          "tag": "button"
+        },
+        {
+          "name": "Draft",
+          "tag": "button"
+        }
+      ]
+    },
+    {
+      "group": "Immersive",
+      "controls": [
+        {
+          "name": "Focus",
+          "tag": "button"
+        },
+        {
+          "name": "Story",
+          "tag": "button"
+        },
+        {
+          "name": "Read Mode",
+          "tag": "button"
+        },
+        {
+          "name": "Page Preview",
+          "tag": "button"
+        }
+      ]
+    },
+    {
+      "group": "Show",
+      "controls": [
+        {
+          "name": "Ruler",
+          "tag": "button"
+        },
+        {
+          "name": "Gridlines",
+          "tag": "button"
+        },
+        {
+          "name": "Navigation Pane",
+          "tag": "button"
+        }
+      ]
+    },
+    {
+      "group": "Zoom",
+      "controls": [
+        {
+          "name": "Zoom",
+          "tag": "button"
+        },
+        {
+          "name": "Zoom Out",
+          "tag": "button"
+        },
+        {
+          "name": "Zoom In",
+          "tag": "button"
+        },
+        {
+          "name": "Zoom to 100%",
+          "tag": "button"
+        },
+        {
+          "name": "One Page",
+          "tag": "button"
+        },
+        {
+          "name": "Multiple Pages",
+          "tag": "button"
+        },
+        {
+          "name": "Page Width",
+          "tag": "button"
+        }
+      ]
+    },
+    {
+      "group": "Window",
+      "controls": [
+        {
+          "name": "New Tab",
+          "tag": "button"
+        },
+        {
+          "name": "Arrange All",
+          "tag": "button"
+        },
+        {
+          "name": "Merge All Windows",
+          "tag": "button",
+          "disabled": true
+        },
+        {
+          "name": "Split",
+          "tag": "button"
+        },
+        {
+          "name": "Switch Tabs",
+          "tag": "button"
+        }
+      ]
+    },
+    {
+      "group": "Appearance",
+      "controls": [
+        {
+          "name": "Dark Mode",
+          "tag": "button"
+        }
+      ]
+    }
+  ],
+  "Zotero": [
+    {
+      "group": "Zotero",
+      "controls": [
+        {
+          "name": "Add/Edit Citation",
+          "tag": "button"
+        },
+        {
+          "name": "Add/Edit Bibliography",
+          "tag": "button"
+        },
+        {
+          "name": "Document Preferences",
+          "tag": "button"
+        },
+        {
+          "name": "Refresh",
+          "tag": "button"
+        },
+        {
+          "name": "Unlink Citations",
+          "tag": "button"
+        }
+      ]
+    }
+  ],
+  "Table Design": [
+    {
+      "group": "Table Style Options",
+      "controls": [
+        {
+          "name": "Header Row",
+          "tag": "button",
+          "pressed": true
+        },
+        {
+          "name": "Total Row",
+          "tag": "button"
+        },
+        {
+          "name": "Banded Rows",
+          "tag": "button",
+          "pressed": true
+        },
+        {
+          "name": "First Column",
+          "tag": "button",
+          "pressed": true
+        },
+        {
+          "name": "Last Column",
+          "tag": "button"
+        },
+        {
+          "name": "Banded Columns",
+          "tag": "button"
+        }
+      ]
+    },
+    {
+      "group": "Table Styles",
+      "controls": []
+    },
+    {
+      "group": "Shading",
+      "controls": [
+        {
+          "name": "Shading",
+          "tag": "button",
+          "popup": true
+        }
+      ]
+    },
+    {
+      "group": "Borders",
+      "controls": [
+        {
+          "name": "Border Styles",
+          "tag": "button",
+          "popup": true
+        },
+        {
+          "name": "Line Weight",
+          "tag": "button",
+          "popup": true
+        },
+        {
+          "name": "Pen Color",
+          "tag": "button",
+          "popup": true
+        },
+        {
+          "name": "Borders",
+          "tag": "button"
+        },
+        {
+          "name": "Borders",
+          "tag": "button",
+          "popup": true
+        }
+      ]
+    }
+  ],
+  "Table Layout": [
+    {
+      "group": "Table",
+      "controls": [
+        {
+          "name": "Select",
+          "tag": "button",
+          "popup": true
+        },
+        {
+          "name": "View Gridlines",
+          "tag": "button"
+        },
+        {
+          "name": "Table Properties",
+          "tag": "button"
+        }
+      ]
+    },
+    {
+      "group": "Rows & Columns",
+      "controls": [
+        {
+          "name": "Delete",
+          "tag": "button",
+          "popup": true
+        },
+        {
+          "name": "Insert Above",
+          "tag": "button"
+        },
+        {
+          "name": "Insert Below",
+          "tag": "button"
+        },
+        {
+          "name": "Insert Left",
+          "tag": "button"
+        },
+        {
+          "name": "Insert Right",
+          "tag": "button"
+        },
+        {
+          "name": "Insert Cells…",
+          "tag": "button"
+        }
+      ]
+    },
+    {
+      "group": "Merge",
+      "controls": [
+        {
+          "name": "Merge Cells",
+          "tag": "button",
+          "disabled": true
+        },
+        {
+          "name": "Split Cells",
+          "tag": "button"
+        },
+        {
+          "name": "Split Table",
+          "tag": "button"
+        }
+      ]
+    },
+    {
+      "group": "Cell Size",
+      "controls": [
+        {
+          "name": "AutoFit",
+          "tag": "button",
+          "popup": true
+        },
+        {
+          "name": "Row Height",
+          "tag": "input"
+        },
+        {
+          "name": "Column Width",
+          "tag": "input"
+        },
+        {
+          "name": "Distribute Rows",
+          "tag": "button"
+        },
+        {
+          "name": "Distribute Columns",
+          "tag": "button"
+        }
+      ]
+    },
+    {
+      "group": "Alignment",
+      "controls": [
+        {
+          "name": "Align Top Left",
+          "tag": "button"
+        },
+        {
+          "name": "Align Top Center",
+          "tag": "button"
+        },
+        {
+          "name": "Align Top Right",
+          "tag": "button"
+        },
+        {
+          "name": "Align Center Left",
+          "tag": "button"
+        },
+        {
+          "name": "Align Center",
+          "tag": "button"
+        },
+        {
+          "name": "Align Center Right",
+          "tag": "button"
+        },
+        {
+          "name": "Align Bottom Left",
+          "tag": "button"
+        },
+        {
+          "name": "Align Bottom Center",
+          "tag": "button"
+        },
+        {
+          "name": "Align Bottom Right",
+          "tag": "button"
+        },
+        {
+          "name": "Text Direction",
+          "tag": "button",
+          "popup": true
+        },
+        {
+          "name": "Cell Margins",
+          "tag": "button"
+        }
+      ]
+    },
+    {
+      "group": "Data",
+      "controls": [
+        {
+          "name": "Sort",
+          "tag": "button"
+        },
+        {
+          "name": "Repeat Header Rows",
+          "tag": "button"
+        },
+        {
+          "name": "Convert Table to Text",
+          "tag": "button"
+        },
+        {
+          "name": "Formula",
+          "tag": "button"
+        }
+      ]
+    }
+  ]
+}

@@ -688,8 +688,12 @@ function runSetFont(op: Op, env: RunEnv): OpResult {
 function runSetParagraphFormat(op: Op, env: RunEnv): OpResult {
   const patch: Record<string, unknown> = {}
   for (const k of present(op, PARA_KEYS)) {
-    if (k === 'shadingFill') patch.shadingFill = normalizeHex(op.shadingFill, op.op, 'shadingFill')
-    else if (k === 'pageBreakBefore') patch.pageBreakBefore = op.pageBreakBefore === true
+    if (k === 'shadingFill') {
+      // a plain fill: the pattern a file put behind the old one goes with it
+      patch.shadingFill = normalizeHex(op.shadingFill, op.op, 'shadingFill')
+      patch.shadingPattern = null
+      patch.shadingDisplay = null
+    } else if (k === 'pageBreakBefore') patch.pageBreakBefore = op.pageBreakBefore === true
     else if (k === 'tabs') patch.tabStops = tabSpecsToStops(op.tabs as TabSpec[] | null)
     else patch[k] = op[k] ?? null
   }
@@ -1342,7 +1346,7 @@ function runInsertToc(op: Op, env: RunEnv): OpResult {
     throw new Error(`insertToc: afterBlockIndex out of range ${afterBlockIndex}`)
   }
   // one protected block per TOC line (same shape as the ribbon's TOC button);
-  // the begin fldChar is dirty so Word recalculates page numbers on open
+  // built without pages, so the begin fldChar is dirty; the save drops the mark once the layout has filled them in
   const nodes = generateTocFieldXml(entries).map((xml, i) =>
     schema.nodes.docProtected.create({
       docxIndex: null,
@@ -1547,7 +1551,7 @@ register({
 register({
   name: 'insertToc',
   signature:
-    '{ op: "insertToc", afterBlockIndex }  // insert a TOC field after that block (-1 = start of document); entries come from the current headings, Word computes page numbers on open; fails if the document has no headings',
+    '{ op: "insertToc", afterBlockIndex }  // insert a TOC field after that block (-1 = start of document); entries come from the current headings, page numbers are filled in once the pages are laid out (by Word on open when they are not); fails if the document has no headings',
   keys: ['afterBlockIndex'],
   target: 'none',
   validate(op, where) {

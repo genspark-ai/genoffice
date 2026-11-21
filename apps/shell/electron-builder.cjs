@@ -937,9 +937,9 @@ const config = {
 // scripts/win-sign.cjs, whose env-var contract applies here too), every
 // binary electron-builder signs for win (GenOffice.exe, the NSIS
 // uninstaller, and the installer) goes through that script. The static
-// extraResources binaries (xlsx-sidecar.exe, win-ocr.exe) are signed by the
-// workflow before packaging since electron-builder does not sign
-// extraResources. Unset (local / fork builds) keeps the old behavior:
+// extraResources binaries (xlsx-sidecar.exe, win-clipboard-helper.exe,
+// win-ocr.exe) are signed by the workflow before packaging since
+// electron-builder does not sign extraResources. Unset (local / fork builds) keeps the old behavior:
 // electron-builder has no signing config and packages everything unsigned.
 const winSignMode = process.env.GENOFFICE_WIN_SIGN_MODE
 if (winSignMode) {

@@ -1479,6 +1479,22 @@ export function App({
   // Display history survives restarts via localStorage; the AgentLoop's model
   // context does not, so restored turns are read-only transcript.
   const [chat, setChat] = useState<readonly AiChatMessage[]>([])
+  // A browser-approved Genspark login landed (from the chat's sign-in button
+  // or any other surface): confirm it where the user is and retire the inline
+  // sign-in buttons — nothing else in an editor view changes visibly on login.
+  useEffect(
+    () =>
+      window.desktopApi?.onGskLoginLanded?.(() => {
+        gskLoggedInRef.current = true
+        setChat((prev) =>
+          prev.some((m) => m.loginRequired)
+            ? prev.map((m) => (m.loginRequired ? { ...m, loginRequired: false } : m))
+            : prev,
+        )
+        showToast(t('aiGskLoginOk'), 'success')
+      }),
+    [],
+  )
   /** History loaded from project-store (read-only transcript, not fed to the model) */
   const [historicChat, setHistoricChat] = useState<readonly AiChatMessage[]>([])
   // ── Chat attachments (same structure as docs/slides: text types go through the
@@ -5384,7 +5400,8 @@ export function App({
     loadWorkbookSkeleton(univerRef.current, selected)
     applyWorkbookNotes(univerRef.current, selected)
     threadStore.load(selected)
-    threadPane.close()
+    // a save reopens the same workbook: the user goes on with the comment they were on
+    if (!opts?.continueChat) threadPane.close()
     applyDefinedNames(univerRef.current, selected, state)
     const runtime = univerRef.current
     if (runtime) {

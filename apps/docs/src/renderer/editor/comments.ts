@@ -34,10 +34,41 @@ export function wordRangeAtCaret(editor: Editor): { from: number; to: number } |
   return { from: start + seg.start, to: start + seg.end }
 }
 
-/** attach `id` to every text node in the current selection; false when selection is empty */
+const idList = (value: unknown): string[] => (Array.isArray(value) ? (value as string[]) : [])
+
+/**
+ * The empty body paragraph the caret is in, as its position: a comment there
+ * has no text to mark, so the paragraph holds its range, opening and closing
+ * around nothing (what Word writes for a comment on an empty paragraph).
+ * Null anywhere else; a table cell's paragraphs carry no ranges of their own.
+ */
+export function emptyParagraphAtCaret(state: EditorState): number | null {
+  const { $from, empty } = state.selection
+  if (!empty || $from.depth !== 1 || !$from.parent.isTextblock) return null
+  if ($from.parent.content.size > 0 || !$from.parent.type.spec.attrs?.commentStarts) return null
+  return $from.before()
+}
+
+/** whether New Comment has something to hold on to: a selection, the word at the caret, or an empty paragraph */
+export const canCommentAt = (editor: Editor): boolean =>
+  !editor.state.selection.empty ||
+  wordRangeAtCaret(editor) !== null ||
+  emptyParagraphAtCaret(editor.state) !== null
+
+/** attach `id` to the selection's text, or to the empty paragraph a bare caret is in; false with neither */
 export function addCommentToSelection(editor: Editor, id: string): boolean {
   const { from, to } = editor.state.selection
-  return addCommentToRange(editor, from, to, id)
+  if (addCommentToRange(editor, from, to, id)) return true
+  const pos = emptyParagraphAtCaret(editor.state)
+  const node = pos === null ? null : editor.state.doc.nodeAt(pos)
+  if (pos === null || !node) return false
+  const tr = editor.state.tr.setNodeMarkup(pos, undefined, {
+    ...node.attrs,
+    commentStarts: [...idList(node.attrs.commentStarts), id],
+    commentEnds: [...idList(node.attrs.commentEnds), id],
+  })
+  editor.view.dispatch(tr.setMeta(TRACK_IGNORE, true))
+  return true
 }
 
 /** attach `id` to every text node between the positions; false for an empty range */
@@ -121,7 +152,19 @@ export function addReplyToCommentRange(editor: Editor, parentId: string, newId: 
   tr.setMeta(TRACK_IGNORE, true)
   let found = false
   state.doc.descendants((node, pos) => {
-    if (!node.isText) return
+    if (!node.isText) {
+      // a range the paragraph holds: the reply opens and closes where its parent does
+      const starts = idList(node.attrs?.commentStarts)
+      const ends = idList(node.attrs?.commentEnds)
+      if (!starts.includes(parentId) && !ends.includes(parentId)) return
+      found = true
+      tr.setNodeMarkup(pos, undefined, {
+        ...node.attrs,
+        commentStarts: starts.includes(parentId) ? [...starts, newId] : node.attrs.commentStarts,
+        commentEnds: ends.includes(parentId) ? [...ends, newId] : node.attrs.commentEnds,
+      })
+      return
+    }
     const existing = node.marks.find((m) => m.type === markType)
     if (!existing) return
     const ids = String(existing.attrs.ids ?? '')
@@ -179,5 +222,8 @@ export function commentIdsAt(state: EditorState, pos: number): string[] {
     if (!mark) continue
     for (const id of String(mark.attrs.ids ?? '').split(' ')) if (id) ids.add(id)
   }
+  // a range that opens and closes on the caret's own paragraph covers the caret
+  const ends = idList($pos.parent.attrs?.commentEnds)
+  for (const id of idList($pos.parent.attrs?.commentStarts)) if (ends.includes(id)) ids.add(id)
   return [...ids]
 }

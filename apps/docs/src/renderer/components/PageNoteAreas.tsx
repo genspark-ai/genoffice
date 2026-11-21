@@ -1,6 +1,14 @@
 import type { NoteInfo } from '@genoffice/docx-engine'
 import { noteMarkText } from '../note-format'
+import { useEffect, useRef, useSyncExternalStore } from 'react'
 import { useI18n } from '../i18n/locale'
+import { docHyphenationSig, onDocHyphenationChange } from '../editor/hyphenation'
+import {
+  STATIC_HYPH_CLASS,
+  enforceStaticLineRules,
+  hyphenPieces,
+} from '../editor/hyphenation-static'
+import { HyphenatedText } from './HyphenatedText'
 
 function NoteRow({
   marker,
@@ -17,10 +25,18 @@ function NoteRow({
   onEdit: (id: string) => void
   onDelete: (id: string) => void
 }) {
+  const hyphenation = useSyncExternalStore(onDocHyphenationChange, docHyphenationSig)
+  const pieces = hyphenPieces([note.text])
+  const rowRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (hyphenation && rowRef.current) enforceStaticLineRules(rowRef.current)
+  }, [hyphenation, note.text])
   return (
-    <div className="page-note">
+    <div ref={rowRef} className={hyphenation ? `page-note ${STATIC_HYPH_CLASS}` : 'page-note'}>
       {!note.noRefMark && <sup>{marker}</sup>}
-      <span className="page-note-text">{note.text}</span>
+      <span className="page-note-text">
+        {pieces ? <HyphenatedText pieces={pieces[0]} /> : note.text}
+      </span>
       <button
         className="page-note-btn"
         data-tip={editTip}
@@ -46,6 +62,7 @@ export function PageFootnotes({
   notes,
   skipIds,
   numberOf,
+  fmtOf,
   onEdit,
   onDelete,
 }: {
@@ -53,6 +70,8 @@ export function PageFootnotes({
   skipIds: ReadonlySet<string>
   /** display number of a note (document reference order); default = list position */
   numberOf?: (note: NoteInfo, index: number) => number
+  /** w:numFmt of a note's section */
+  fmtOf?: (note: NoteInfo) => string | undefined
   onEdit: (id: string) => void
   onDelete: (id: string) => void
 }) {
@@ -64,7 +83,11 @@ export function PageFootnotes({
       {shown.map((n) => (
         <NoteRow
           key={`f${n.id}`}
-          marker={noteMarkText('footnote', numberOf?.(n, notes.indexOf(n)) ?? notes.indexOf(n) + 1)}
+          marker={noteMarkText(
+            'footnote',
+            numberOf?.(n, notes.indexOf(n)) ?? notes.indexOf(n) + 1,
+            fmtOf?.(n),
+          )}
           note={n}
           editTip={t('appEditFootnote')}
           deleteTip={t('appDeleteFootnote')}
@@ -86,6 +109,7 @@ export function PageEndnotes({
   notes,
   top,
   numberOf,
+  fmtOf,
   onEdit,
   onDelete,
 }: {
@@ -93,6 +117,7 @@ export function PageEndnotes({
   /** flow-end anchor (layout px from the page-wrap top); null = not measured yet */
   top: number | null
   numberOf?: (note: NoteInfo, index: number) => number
+  fmtOf?: (note: NoteInfo) => string | undefined
   onEdit: (id: string) => void
   onDelete: (id: string) => void
 }) {
@@ -106,7 +131,7 @@ export function PageEndnotes({
       {notes.map((n, i) => (
         <NoteRow
           key={`e${n.id}`}
-          marker={noteMarkText('endnote', numberOf?.(n, i) ?? i + 1)}
+          marker={noteMarkText('endnote', numberOf?.(n, i) ?? i + 1, fmtOf?.(n))}
           note={n}
           editTip={t('appEditEndnote')}
           deleteTip={t('appDeleteEndnote')}

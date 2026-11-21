@@ -16,7 +16,8 @@ import {
   previewLevelText,
 } from '../list-presets'
 
-export type ListDialogKind = 'bullet' | 'number' | 'multi' | 'value' | 'indents'
+/** `style` is the multilevel dialog naming a new list style */
+export type ListDialogKind = 'bullet' | 'number' | 'multi' | 'value' | 'indents' | 'style'
 
 type Suff = NonNullable<CustomNumberingLevel['suff']>
 type Jc = NonNullable<CustomNumberingLevel['lvlJc']>
@@ -404,23 +405,27 @@ function markerExtras(level: CustomNumberingLevel): Partial<CustomNumberingLevel
 
 export function DefineBulletDialog({
   ilvl = 0,
+  initial,
   onApply,
   onClose,
 }: {
   /** the caret's list level: Word's Define New Bullet changes that level */
   ilvl?: number
+  initial?: CustomNumberingLevel
   /** the picture stays in dialog state until OK, so Cancel leaves nothing behind */
   onApply: (levels: CustomNumberingLevel[], picture: BulletPicture | null) => void
   onClose: () => void
 }) {
   const { t } = useI18n()
-  const [level, setLevel] = useState<CustomNumberingLevel>({
-    numFmt: 'bullet',
-    lvlText: '\u2022',
-    indentLeft: 720,
-    hanging: 360,
-    lvlJc: 'left',
-  })
+  const [level, setLevel] = useState<CustomNumberingLevel>(
+    initial ?? {
+      numFmt: 'bullet',
+      lvlText: '\u2022',
+      indentLeft: 720,
+      hanging: 360,
+      lvlJc: 'left',
+    },
+  )
   const [picture, setPicture] = useState<BulletPicture | null>(null)
   const [tab, setTab] = useState<'symbol' | 'picture'>('symbol')
   const patch = (p: Partial<CustomNumberingLevel>) => setLevel((l) => ({ ...l, ...p }))
@@ -601,16 +606,22 @@ export function DefineNumberFormatDialog({
 export function DefineMultilevelDialog({
   initial,
   styles,
+  takenStyleNames,
   onApply,
   onClose,
 }: {
   initial?: CustomNumberingLevel[]
   /** paragraph styles a level can be linked to */
   styles: StyleInfo[]
-  onApply: (levels: CustomNumberingLevel[]) => void
+  /** given, the dialog defines a named list style: it asks for a name these lower-cased ones rule out */
+  takenStyleNames?: string[]
+  onApply: (levels: CustomNumberingLevel[], styleName: string) => void
   onClose: () => void
 }) {
   const { t } = useI18n()
+  const naming = takenStyleNames !== undefined
+  const [styleName, setStyleName] = useState('')
+  const wantedName = styleName.trim()
   const [levels, setLevels] = useState<CustomNumberingLevel[]>(
     initial && initial.length > 0 ? padLevels(initial) : MULTILEVEL_LIBRARY[1],
   )
@@ -634,14 +645,29 @@ export function DefineMultilevelDialog({
     ...Array.from({ length: active }, (_, i) => ({ value: String(i + 1), label: String(i + 1) })),
   ]
   const apply = () =>
-    onApply(levels.map((l) => (legal ? { ...l, isLgl: true } : { ...l, isLgl: undefined })))
+    onApply(
+      levels.map((l) => (legal ? { ...l, isLgl: true } : { ...l, isLgl: undefined })),
+      wantedName,
+    )
   return (
     <Modal
-      title={t('ribbonDefineNewList')}
+      title={t(naming ? 'ribbonStyleDialogNew' : 'ribbonDefineNewList')}
       className="list-define-modal"
       onClose={onClose}
       onOk={apply}
+      okDisabled={naming && (!wantedName || takenStyleNames.includes(wantedName.toLowerCase()))}
     >
+      {naming && (
+        <label className="fld">
+          <span>{t('ribbonStyleDialogName')}</span>
+          <input
+            name="list-style-name"
+            value={styleName}
+            aria-label={t('ribbonStyleDialogName')}
+            onChange={(e) => setStyleName(e.target.value)}
+          />
+        </label>
+      )}
       <div className="list-define-layout">
         <div className="list-define-levels" role="listbox" aria-label={t('ribbonListLevel')}>
           {levels.map((l, i) => (
@@ -752,15 +778,18 @@ export function DefineMultilevelDialog({
                 onPick={(lvlJc) => update(active, { lvlJc })}
               />
             </label>
-            <label className="fld">
-              <span>{t('ribbonLinkLevelToStyle')}</span>
-              <Dropdown
-                value={level.pStyle ?? ''}
-                ariaLabel={t('ribbonLinkLevelToStyle')}
-                options={styleOptions}
-                onPick={(pStyle) => update(active, { pStyle: pStyle || undefined })}
-              />
-            </label>
+            {/* a level's link puts the list on the paragraph style too, which a list that is only defined cannot do */}
+            {!naming && (
+              <label className="fld">
+                <span>{t('ribbonLinkLevelToStyle')}</span>
+                <Dropdown
+                  value={level.pStyle ?? ''}
+                  ariaLabel={t('ribbonLinkLevelToStyle')}
+                  options={styleOptions}
+                  onPick={(pStyle) => update(active, { pStyle: pStyle || undefined })}
+                />
+              </label>
+            )}
             <label className="fld">
               <span>{t('ribbonRestartAfterLevel')}</span>
               <Dropdown

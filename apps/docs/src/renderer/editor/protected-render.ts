@@ -65,6 +65,7 @@ import {
   glowDecl,
   paperColorEffect,
   positionDecl,
+  reflectionDecl,
   textEffectDecls,
 } from './text-effects'
 import { t } from '../i18n/locale'
@@ -139,13 +140,52 @@ function fixedLineRule(field: FieldDisplay): boolean {
   return (field.lineRule === 'exact' && !!field.lineRawTwips) || field.lineRule === 'atLeast'
 }
 
+/** what follows a TOC entry's title: nothing, the page after a separator, or leader + page behind the right tab */
+function tocTailSpec(field: FieldDisplay): DomSpec[] {
+  if (field.noPage) return []
+  const page: DomSpec = [
+    'span',
+    { class: 'doc-toc-page', contenteditable: 'false' },
+    ...(field.rightRuns?.length
+      ? field.rightRuns.map((r): DomSpec => [
+          'span',
+          {
+            style: `${r.bold ? 'font-weight:bold;' : ''}${r.italic ? 'font-style:italic;' : ''}`,
+          },
+          r.text,
+        ])
+      : [field.right ?? '']),
+  ]
+  if (field.pageSep !== undefined)
+    return field.right
+      ? [['span', { class: 'doc-toc-sep', contenteditable: 'false' }, field.pageSep], page]
+      : [page]
+  return [
+    [
+      'span',
+      { class: 'doc-toc-tail', contenteditable: 'false' },
+      // real leader glyphs (clipped to the free width), not a border decoration:
+      // Word/LO leader dots are text, and exported-PDF text comparison sees them
+      [
+        'span',
+        {
+          class: `doc-toc-dots${field.leader === 'heavy' ? ' doc-toc-leader-heavy' : ''}`,
+          contenteditable: 'false',
+        },
+        TOC_LEADER_GLYPH[field.leader ?? 'dot'].repeat(220),
+      ],
+      page,
+    ],
+  ]
+}
+
 /** Rendering of a field result; safe visible text becomes editable on double-click. */
 export function renderFieldSpec(field: FieldDisplay): DomSpec | null {
   if (field.kind === 'tocLine') {
     const attrs: Record<string, string> = {
       class: `doc-toc-line doc-toc-l${Math.min(field.level ?? 1, 4)}${field.deleted ? ' doc-del' : ''}`,
       'data-toc-title': field.left ?? '',
-      title: jumpHint(),
+      ...(field.noLink ? { 'data-toc-nolink': '' } : { title: jumpHint() }),
     }
     if (field.anchor) attrs['data-toc-anchor'] = field.anchor
     const titleAttrs: Record<string, string> = { class: 'doc-toc-title', contenteditable: 'false' }
@@ -209,22 +249,20 @@ export function renderFieldSpec(field: FieldDisplay): DomSpec | null {
         'span',
         bodyAttrs,
         ...num,
-        ['span', titleAttrs, field.left || '\u00a0'],
         [
           'span',
-          { class: 'doc-toc-tail', contenteditable: 'false' },
-          // real leader glyphs (clipped to the free width), not a border decoration:
-          // Word/LO leader dots are text, and exported-PDF text comparison sees them
-          [
-            'span',
-            {
-              class: `doc-toc-dots${field.leader === 'heavy' ? ' doc-toc-leader-heavy' : ''}`,
-              contenteditable: 'false',
-            },
-            TOC_LEADER_GLYPH[field.leader ?? 'dot'].repeat(220),
-          ],
-          ['span', { class: 'doc-toc-page', contenteditable: 'false' }, field.right ?? ''],
+          titleAttrs,
+          ...(field.leftRuns?.length
+            ? field.leftRuns.map((r): DomSpec => [
+                'span',
+                {
+                  style: `${r.bold ? 'font-weight:bold;' : ''}${r.italic ? 'font-style:italic;' : ''}${r.underline ? 'text-decoration:underline;' : ''}`,
+                },
+                r.text,
+              ])
+            : [field.left || '\u00a0']),
         ],
+        ...tocTailSpec(field),
       ],
     ]
   }
@@ -603,13 +641,27 @@ export function drawChartSvg(dom: HTMLElement, chart: ChartDisplay | null): void
   // categories (one colored slice each), not the series.
   const isPie = chart.kind === 'pie'
   const isRadar = chart.kind === 'radar'
-  const legendNames = isPie
-    ? chart.categories
-    : chart.series.map((s, i) => s.name ?? t('editorChartSeries', { num: i + 1 }))
-  const legendColor = (i: number) => (isPie ? pointColor(chart, 0, i) : seriesColor(chart, i))
+  // a surface is keyed by its value bands, not its series: the series are the rows of the grid
+  const bands = chart.kind === 'surface' ? surfaceBands(chart) : null
+  const legendNames = bands
+    ? bands.labels
+    : isPie
+      ? chart.categories
+      : chart.series.map((s, i) => s.name ?? t('editorChartSeries', { num: i + 1 }))
+  // a stock chart draws every series in the one line colour, so its keys are that colour too
+  const legendColor = (i: number) =>
+    chart.kind === 'stock'
+      ? STOCK_LINE.stroke
+      : bands
+        ? chartColor(chart, i)
+        : isPie
+          ? pointColor(chart, 0, i)
+          : seriesColor(chart, i)
   const showLegend =
     !chart.noLegend &&
-    (isPie ? legendNames.length > 0 : chart.series.length > 1 || chart.series.some((s) => s.name))
+    (bands || isPie
+      ? legendNames.length > 0
+      : chart.series.length > 1 || chart.series.some((s) => s.name))
   // the title row renders above the SVG but Word draws the title inside the
   // drawing extent; shrink the plot so title + plot together fill heightPx,
   // or pagination gains ~22px per titled chart and drifts
@@ -683,11 +735,18 @@ export function drawChartSvg(dom: HTMLElement, chart: ChartDisplay | null): void
     labelPx,
   }
   // column charts wrap overflowing category labels inside their slot like Word
-  if (cartesian && !(chart.kind === 'bar' && chart.horizontal) && !geom.noCatLabels) {
-    const cols = Math.max(chart.categories.length, 1)
-    const slotW = (geom.width - geom.left - geom.right) / cols
+  // (a chart of the extension is sized by the labels it draws there, which are not always its
+  // categories: a histogram's bins, a box and whisker's series)
+  const slotLabels = chart.layout ? chartexSlotLabels(chart, chart.layout) : chart.categories
+  if (
+    cartesian &&
+    !(chart.kind === 'bar' && chart.horizontal) &&
+    !geom.noCatLabels &&
+    slotLabels.length > 0
+  ) {
+    const slotW = (geom.width - geom.left - geom.right) / slotLabels.length
     const lines = maxNum(
-      chart.categories.map((c) => wrapChartText(c, slotW - 4, labelPx).length),
+      slotLabels.map((c) => wrapChartText(c, slotW - 4, labelPx).length),
       1,
     )
     geom.bottom += (lines - 1) * Math.round(labelPx * 1.2)
@@ -698,9 +757,11 @@ export function drawChartSvg(dom: HTMLElement, chart: ChartDisplay | null): void
   svg.style.width = `${geom.width}px`
   svg.style.height = `${geom.height}px`
 
-  if (isPie) drawPie(svg, chart, geom)
+  if (chart.layout) drawChartex(svg, chart, geom, chart.layout)
+  else if (isPie) drawPie(svg, chart, geom)
   else if (isRadar) drawRadar(svg, chart, geom)
   else if (chart.kind === 'scatter' || chart.kind === 'bubble') drawScatter(svg, chart, geom)
+  else if (chart.kind === 'surface') drawSurface(svg, chart, geom, bands!)
   else if (chart.kind === 'bar' && chart.horizontal) drawAxesHorizontal(svg, chart, geom)
   else drawAxes(svg, chart, geom)
   if (dataTable) drawDataTable(svg, chart, geom, dataTable, tableRowH)
@@ -1128,6 +1189,36 @@ function drawAxes(svg: SVGElement, chart: ChartDisplay, geom: ChartGeom): void {
         }
       })
     })
+  } else if (chart.kind === 'stock') {
+    // per category: a line from the highest to the lowest value, a tick to the right at
+    // the close (the last series) and, with four series, one to the left at the open
+    const tick = Math.max(3, Math.min(slotW * 0.18, 8))
+    const closeSer = chart.series[chart.series.length - 1]
+    const openSer = chart.series.length >= 4 ? chart.series[0] : undefined
+    for (let c = 0; c < cols; c++) {
+      const vals = chart.series.map((s) => s.values[c]).filter((v): v is number => v != null)
+      if (vals.length === 0) continue
+      const x = geom.left + slotW * c + slotW / 2
+      const mark = (x1: number, x2: number, v: number) =>
+        svgEl(svg, 'line', {
+          x1: String(x1),
+          y1: String(yOf(v)),
+          x2: String(x2),
+          y2: String(yOf(v)),
+          ...STOCK_LINE,
+        })
+      svgEl(svg, 'line', {
+        x1: String(x),
+        y1: String(yOf(maxNum(vals, -Infinity))),
+        x2: String(x),
+        y2: String(yOf(minNum(vals, Infinity))),
+        ...STOCK_LINE,
+      })
+      const close = closeSer?.values[c]
+      if (close != null) mark(x, x + tick, close)
+      const open = openSer?.values[c]
+      if (open != null) mark(x - tick, x, open)
+    }
   } else if (chart.kind === 'area' && stacked) {
     // stacked / 100% stacked area: each band fills between the running total
     // below it and its own cumulated top (empty cells count as 0, like Excel)
@@ -1319,6 +1410,592 @@ function drawRadar(svg: SVGElement, chart: ChartDisplay, geom: ChartGeom): void 
 }
 
 /** scatter / bubble: numeric x-y plot; bubble radius scales by point size (area-true) */
+// ---- charts of the 2014 extension (cx:): one drawer per layout ----
+
+/** text drawn on a filled shape: chart content, the same on every page colour */
+const ON_FILL = { style: 'fill:#ffffff' }
+
+interface PlotBox {
+  x: number
+  y: number
+  w: number
+  h: number
+}
+
+const plotBoxOf = (geom: ChartGeom): PlotBox => ({
+  x: geom.left,
+  y: geom.top,
+  w: geom.width - geom.left - geom.right,
+  h: geom.height - geom.top - geom.bottom,
+})
+
+const numbersOf = (values: (number | null)[] | undefined): number[] =>
+  (values ?? []).filter((v): v is number => v !== null)
+
+/**
+ * Horizontal gridlines with value labels over `values`; hands back the
+ * value-to-y mapping. Bars grow from zero, so their axis always holds it;
+ * `fromData` is for marks that do not (a box and whisker): zero stays only
+ * while the data sits near it, as Excel's automatic minimum decides.
+ */
+function drawValueAxis(
+  svg: SVGElement,
+  chart: ChartDisplay,
+  geom: ChartGeom,
+  values: number[],
+  fromData = false,
+): (v: number) => number {
+  const box = plotBoxOf(geom)
+  let rawMax = maxNum(values, fromData ? -Infinity : 0)
+  let rawMin = minNum(values, fromData ? Infinity : 0)
+  if (!Number.isFinite(rawMax) || !Number.isFinite(rawMin)) rawMax = rawMin = 0
+  if (fromData) {
+    if (rawMin > 0 && rawMin <= rawMax - rawMin) rawMin = 0
+    if (rawMax < 0 && -rawMax <= rawMax - rawMin) rawMax = 0
+  }
+  const step = niceStep((rawMax - rawMin) / 5 || 1)
+  const min = Math.floor(rawMin / step) * step
+  let max = Math.ceil(rawMax / step) * step || step
+  if (rawMax > 0 && max <= rawMax + 1e-9) max += step
+  const span = max - min || 1
+  const yOf = (v: number) => box.y + box.h - ((v - min) / span) * box.h
+  const labelPx = geom.labelPx ?? 10
+  const yStyle = chartTextStyle(chart.yAxis?.fontPt, chart.yAxis?.color)
+  const steps = Math.max(1, Math.round(span / step))
+  for (let i = 0; i <= steps; i++) {
+    const v = min + step * i
+    const y = yOf(v)
+    svgEl(svg, 'line', {
+      x1: String(box.x),
+      y1: String(y),
+      x2: String(box.x + box.w),
+      y2: String(y),
+      class: 'doc-chart-grid',
+    })
+    svgEl(
+      svg,
+      'text',
+      {
+        x: String(box.x - 6),
+        y: String(y + labelPx * 0.3),
+        class: 'doc-chart-axis-label',
+        'text-anchor': 'end',
+        ...yStyle,
+      },
+      formatAxisValue(v),
+    )
+  }
+  // the category axis sits on zero, or on the end of the axis nearest it
+  drawAxisLines(svg, chart, geom, yOf(Math.min(Math.max(0, min), max)), box.x)
+  return yOf
+}
+
+/** one label under each slot of the plot */
+function drawSlotLabels(
+  svg: SVGElement,
+  chart: ChartDisplay,
+  geom: ChartGeom,
+  labels: string[],
+): void {
+  if (geom.noCatLabels || labels.length === 0) return
+  const box = plotBoxOf(geom)
+  const slotW = box.w / labels.length
+  const labelPx = geom.labelPx ?? 10
+  const xStyle = chartTextStyle(chart.xAxis?.fontPt, chart.xAxis?.color)
+  labels.forEach((label, c) => {
+    wrapChartText(label, slotW - 4, labelPx).forEach((line, k) => {
+      svgEl(
+        svg,
+        'text',
+        {
+          x: String(box.x + slotW * c + slotW / 2),
+          y: String(box.y + box.h + Math.round(labelPx * 1.4) + k * Math.round(labelPx * 1.2)),
+          class: 'doc-chart-axis-label',
+          'text-anchor': 'middle',
+          ...xStyle,
+        },
+        line,
+      )
+    })
+  })
+}
+
+/** each value as a step from the running total: up in the first colour, down in the second */
+function drawWaterfall(svg: SVGElement, chart: ChartDisplay, geom: ChartGeom): void {
+  const values = chart.series[0]?.values ?? []
+  const ends: number[] = []
+  let total = 0
+  for (const v of values) ends.push((total += v ?? 0))
+  const yOf = drawValueAxis(svg, chart, geom, [0, ...ends])
+  const box = plotBoxOf(geom)
+  const slotW = box.w / Math.max(values.length, 1)
+  const barW = slotW * 0.6
+  values.forEach((v, c) => {
+    if (v === null) return
+    const from = ends[c] - v
+    const x = box.x + slotW * c + (slotW - barW) / 2
+    svgEl(svg, 'rect', {
+      x: String(x),
+      y: String(Math.min(yOf(from), yOf(ends[c]))),
+      width: String(barW),
+      height: String(Math.abs(yOf(from) - yOf(ends[c]))),
+      fill: chartColor(chart, v >= 0 ? 0 : 1),
+      class: 'doc-chartex-step',
+    })
+    // the line that carries the running total to the next step
+    if (c + 1 < values.length)
+      svgEl(svg, 'line', {
+        x1: String(x + barW),
+        y1: String(yOf(ends[c])),
+        x2: String(x + slotW),
+        y2: String(yOf(ends[c])),
+        class: 'doc-chart-grid',
+      })
+  })
+  drawSlotLabels(svg, chart, geom, chartexSlotLabels(chart, 'waterfall'))
+}
+
+/** one centred bar per category, as wide as its value is to the largest */
+function drawFunnel(svg: SVGElement, chart: ChartDisplay, geom: ChartGeom): void {
+  const values = chart.series[0]?.values ?? []
+  const largest = maxNum(numbersOf(values), 0)
+  if (values.length === 0 || largest <= 0) return
+  const labelPx = geom.labelPx ?? 10
+  // the margin is sized for value labels; the category names beside the bars may need more
+  const full = plotBoxOf(geom)
+  const widest = maxNum(
+    chart.categories.slice(0, values.length).map((c) => c.length * labelPx * 0.6),
+    0,
+  )
+  const pad = Math.min(Math.max(widest + 10 - full.x, 0), full.w / 3)
+  const box = { ...full, x: full.x + pad, w: full.w - pad }
+  const rowH = box.h / values.length
+  const barH = rowH * 0.8
+  const style = chartTextStyle(chart.yAxis?.fontPt, chart.yAxis?.color)
+  values.forEach((v, c) => {
+    const y = box.y + rowH * c + (rowH - barH) / 2
+    svgEl(
+      svg,
+      'text',
+      {
+        x: String(box.x - 6),
+        y: String(y + barH / 2 + labelPx * 0.3),
+        class: 'doc-chart-axis-label',
+        'text-anchor': 'end',
+        ...style,
+      },
+      chart.categories[c] ?? '',
+    )
+    if (v === null || v <= 0) return
+    const w = (v / largest) * box.w
+    svgEl(svg, 'rect', {
+      x: String(box.x + (box.w - w) / 2),
+      y: String(y),
+      width: String(w),
+      height: String(barH),
+      fill: seriesColor(chart, 0),
+      class: 'doc-chartex-stage',
+    })
+    svgEl(
+      svg,
+      'text',
+      {
+        x: String(box.x + box.w / 2),
+        y: String(y + barH / 2 + labelPx * 0.3),
+        class: 'doc-chart-axis-label',
+        'text-anchor': 'middle',
+        ...ON_FILL,
+      },
+      formatAxisValue(v),
+    )
+  })
+}
+
+export interface TreemapCell extends PlotBox {
+  /** the point's position in the series */
+  i: number
+}
+
+/**
+ * Rectangles whose areas are in proportion to `values`, filling `box`: the
+ * largest first, the list halved by weight along the longer side each time.
+ */
+export function treemapCells(values: (number | null)[], box: PlotBox): TreemapCell[] {
+  const items = values
+    .map((v, i) => ({ v: v ?? 0, i }))
+    .filter((item) => item.v > 0)
+    .sort((a, b) => b.v - a.v)
+  const out: TreemapCell[] = []
+  const place = (list: typeof items, r: PlotBox) => {
+    if (list.length === 0) return
+    if (list.length === 1) {
+      out.push({ ...r, i: list[0].i })
+      return
+    }
+    const sum = list.reduce((acc, item) => acc + item.v, 0)
+    let head = 0
+    let split = 0
+    // the first part takes items until it holds half the weight (at least one, never all)
+    while (split < list.length - 1 && (split === 0 || head + list[split].v <= sum / 2)) {
+      head += list[split].v
+      split++
+    }
+    const share = head / sum
+    const [a, b] =
+      r.w >= r.h
+        ? [
+            { ...r, w: r.w * share },
+            { ...r, x: r.x + r.w * share, w: r.w * (1 - share) },
+          ]
+        : [
+            { ...r, h: r.h * share },
+            { ...r, y: r.y + r.h * share, h: r.h * (1 - share) },
+          ]
+    place(list.slice(0, split), a)
+    place(list.slice(split), b)
+  }
+  place(items, box)
+  return out
+}
+
+function drawTreemap(svg: SVGElement, chart: ChartDisplay, geom: ChartGeom): void {
+  const labelPx = geom.labelPx ?? 10
+  for (const cell of treemapCells(chart.series[0]?.values ?? [], plotBoxOf(geom))) {
+    svgEl(svg, 'rect', {
+      x: String(cell.x),
+      y: String(cell.y),
+      width: String(cell.w),
+      height: String(cell.h),
+      fill: pointColor(chart, 0, cell.i),
+      // the gap between cells: chart content, the same on every page colour
+      stroke: '#ffffff',
+      'stroke-width': '1',
+      class: 'doc-chartex-cell',
+    })
+    const label = chart.categories[cell.i] ?? ''
+    if (!label || cell.h < labelPx * 1.6 || cell.w < labelPx * 2) continue
+    svgEl(
+      svg,
+      'text',
+      {
+        x: String(cell.x + 4),
+        y: String(cell.y + labelPx * 1.3),
+        class: 'doc-chart-axis-label',
+        ...ON_FILL,
+      },
+      wrapChartText(label, cell.w - 8, labelPx)[0] ?? '',
+    )
+  }
+}
+
+/**
+ * The value at fraction `q` of the sorted values, by Excel's exclusive quartile
+ * (QUARTILE.EXC): the rank is (n + 1) * q, counted from one and read between its
+ * neighbours. It is the method Word gives a new box and whisker, and the one a
+ * new chart is saved with, so the page and the file agree.
+ */
+export function quantile(sorted: number[], q: number): number {
+  if (sorted.length === 0) return 0
+  const rank = Math.min(Math.max((sorted.length + 1) * q, 1), sorted.length)
+  const low = Math.floor(rank)
+  const high = Math.min(low + 1, sorted.length)
+  return sorted[low - 1] + (sorted[high - 1] - sorted[low - 1]) * (rank - low)
+}
+
+/** one box per series: the middle half of its values, the median across it, whiskers to the ends */
+function drawBoxWhisker(svg: SVGElement, chart: ChartDisplay, geom: ChartGeom): void {
+  const sets = chart.series.map((s) => numbersOf(s.values).sort((a, b) => a - b))
+  const yOf = drawValueAxis(svg, chart, geom, sets.flat(), true)
+  const box = plotBoxOf(geom)
+  const slotW = box.w / Math.max(sets.length, 1)
+  const boxW = slotW * 0.4
+  sets.forEach((set, s) => {
+    if (set.length === 0) return
+    const cx = box.x + slotW * s + slotW / 2
+    const [q1, median, q3] = [0.25, 0.5, 0.75].map((q) => quantile(set, q))
+    const line = (x1: number, y1: number, x2: number, y2: number) =>
+      svgEl(svg, 'line', {
+        x1: String(x1),
+        y1: String(y1),
+        x2: String(x2),
+        y2: String(y2),
+        ...STOCK_LINE,
+      })
+    line(cx, yOf(set[set.length - 1]), cx, yOf(q3))
+    line(cx, yOf(q1), cx, yOf(set[0]))
+    line(cx - boxW / 4, yOf(set[set.length - 1]), cx + boxW / 4, yOf(set[set.length - 1]))
+    line(cx - boxW / 4, yOf(set[0]), cx + boxW / 4, yOf(set[0]))
+    svgEl(svg, 'rect', {
+      x: String(cx - boxW / 2),
+      y: String(yOf(q3)),
+      width: String(boxW),
+      height: String(Math.max(yOf(q1) - yOf(q3), 1)),
+      fill: seriesColor(chart, s),
+      class: 'doc-chartex-box',
+    })
+    line(cx - boxW / 2, yOf(median), cx + boxW / 2, yOf(median))
+  })
+  drawSlotLabels(svg, chart, geom, chartexSlotLabels(chart, 'boxWhisker'))
+}
+
+export interface HistogramBin {
+  from: number
+  to: number
+  count: number
+}
+
+/** the values counted into bins of equal width: Scott's rule for the width, as Excel's automatic bins */
+export function histogramBins(values: number[]): HistogramBin[] {
+  if (values.length === 0) return []
+  const min = minNum(values, Infinity)
+  const max = maxNum(values, -Infinity)
+  const mean = values.reduce((acc, v) => acc + v, 0) / values.length
+  const sd = Math.sqrt(
+    values.reduce((acc, v) => acc + (v - mean) ** 2, 0) / Math.max(values.length - 1, 1),
+  )
+  const width = (3.49 * sd) / Math.cbrt(values.length)
+  const count = width > 0 ? Math.min(Math.max(Math.ceil((max - min) / width), 1), 50) : 1
+  const step = (max - min) / count || 1
+  const bins = Array.from({ length: count }, (_, i) => ({
+    from: min + step * i,
+    to: min + step * (i + 1),
+    count: 0,
+  }))
+  for (const v of values) bins[Math.min(Math.floor((v - min) / step), count - 1)].count++
+  return bins
+}
+
+function drawHistogram(svg: SVGElement, chart: ChartDisplay, geom: ChartGeom): void {
+  const bins = histogramBins(numbersOf(chart.series[0]?.values))
+  if (bins.length === 0) return
+  const yOf = drawValueAxis(
+    svg,
+    chart,
+    geom,
+    bins.map((b) => b.count),
+  )
+  const box = plotBoxOf(geom)
+  const slotW = box.w / bins.length
+  bins.forEach((bin, c) => {
+    svgEl(svg, 'rect', {
+      x: String(box.x + slotW * c + 1),
+      y: String(yOf(bin.count)),
+      width: String(Math.max(slotW - 2, 1)),
+      height: String(yOf(0) - yOf(bin.count)),
+      fill: seriesColor(chart, 0),
+      class: 'doc-chartex-bin',
+    })
+  })
+  drawSlotLabels(svg, chart, geom, chartexSlotLabels(chart, 'histogram'))
+}
+
+/** the categories from the largest value down, each with the share of the total reached by then */
+export function paretoOrder(
+  values: (number | null)[],
+): Array<{ i: number; value: number; cumulativePct: number }> {
+  const items = values
+    .map((v, i) => ({ i, value: v ?? 0 }))
+    .filter((item) => item.value > 0)
+    .sort((a, b) => b.value - a.value)
+  const total = items.reduce((acc, item) => acc + item.value, 0)
+  let running = 0
+  return items.map((item) => ({ ...item, cumulativePct: ((running += item.value) / total) * 100 }))
+}
+
+function drawPareto(svg: SVGElement, chart: ChartDisplay, geom: ChartGeom): void {
+  const order = paretoOrder(chart.series[0]?.values ?? [])
+  if (order.length === 0) return
+  const yOf = drawValueAxis(
+    svg,
+    chart,
+    geom,
+    order.map((o) => o.value),
+  )
+  const box = plotBoxOf(geom)
+  const slotW = box.w / order.length
+  const barW = slotW * 0.7
+  order.forEach((o, c) => {
+    svgEl(svg, 'rect', {
+      x: String(box.x + slotW * c + (slotW - barW) / 2),
+      y: String(yOf(o.value)),
+      width: String(barW),
+      height: String(yOf(0) - yOf(o.value)),
+      fill: seriesColor(chart, 0),
+      class: 'doc-chartex-bin',
+    })
+  })
+  // the cumulative line runs on its own scale: the full height of the plot is 100%
+  svgEl(svg, 'polyline', {
+    points: order
+      .map(
+        (o, c) =>
+          `${box.x + slotW * c + slotW / 2},${box.y + box.h - (o.cumulativePct / 100) * box.h}`,
+      )
+      .join(' '),
+    fill: 'none',
+    stroke: chartColor(chart, 1),
+    'stroke-width': '2',
+    class: 'doc-chartex-cumulative',
+  })
+  drawSlotLabels(svg, chart, geom, chartexSlotLabels(chart, 'pareto'))
+}
+
+/**
+ * The labels a chart of the extension draws under its plot, one per slot: the
+ * plot's bottom margin is sized by these, and the drawers write them.
+ */
+export function chartexSlotLabels(
+  chart: ChartDisplay,
+  layout: NonNullable<ChartDisplay['layout']>,
+): string[] {
+  const values = chart.series[0]?.values ?? []
+  switch (layout) {
+    case 'boxWhisker':
+      return chart.series.map((s, i) => s.name ?? t('editorChartSeries', { num: i + 1 }))
+    case 'histogram':
+      return histogramBins(numbersOf(values)).map(
+        (b) => `[${formatAxisValue(b.from)}, ${formatAxisValue(b.to)}]`,
+      )
+    case 'pareto':
+      return paretoOrder(values).map((o) => chart.categories[o.i] ?? '')
+    case 'waterfall':
+      return chart.categories.slice(0, values.length)
+    // a funnel names its stages beside them; a treemap and a sunburst inside them or in the legend
+    default:
+      return []
+  }
+}
+
+function drawChartex(
+  svg: SVGElement,
+  chart: ChartDisplay,
+  geom: ChartGeom,
+  layout: NonNullable<ChartDisplay['layout']>,
+): void {
+  switch (layout) {
+    case 'waterfall':
+      return drawWaterfall(svg, chart, geom)
+    case 'funnel':
+      return drawFunnel(svg, chart, geom)
+    case 'treemap':
+      return drawTreemap(svg, chart, geom)
+    // one ring of the categories; the inner rings of a hierarchy are not read
+    case 'sunburst':
+      return drawPie(svg, { ...chart, holePct: chart.holePct ?? 40 }, geom)
+    case 'boxWhisker':
+      return drawBoxWhisker(svg, chart, geom)
+    case 'histogram':
+      return drawHistogram(svg, chart, geom)
+    case 'pareto':
+      return drawPareto(svg, chart, geom)
+  }
+}
+
+/** the high-low line and its ticks: chart content, the same on every page colour */
+const STOCK_LINE = { stroke: '#404040', 'stroke-width': '1.5' }
+
+interface SurfaceBands {
+  min: number
+  step: number
+  /** one label per band, lowest first */
+  labels: string[]
+}
+
+/** the value bands a surface is coloured by: "nice" steps over the data, as the value axis has */
+export function surfaceBands(chart: ChartDisplay): SurfaceBands {
+  const values = chart.series.flatMap((s) => s.values).filter((v): v is number => v !== null)
+  if (values.length === 0) return { min: 0, step: 1, labels: [] }
+  const rawMax = maxNum(values, 0)
+  const rawMin = minNum(values, 0)
+  const step = niceStep((rawMax - rawMin) / 5 || 1)
+  const min = Math.floor(rawMin / step) * step
+  const count = Math.max(1, Math.ceil((rawMax - min) / step - 1e-9))
+  const labels = Array.from(
+    { length: count },
+    (_, i) => `${formatAxisValue(min + step * i)}-${formatAxisValue(min + step * (i + 1))}`,
+  )
+  return { min, step, labels }
+}
+
+/** the band a value falls in; the top edge belongs to the last band */
+export const surfaceBandOf = (bands: SurfaceBands, value: number): number =>
+  Math.min(
+    Math.max(Math.floor((value - bands.min) / bands.step + 1e-9), 0),
+    Math.max(bands.labels.length - 1, 0),
+  )
+
+/**
+ * A surface seen from above (Word's Contour): one cell per category and series,
+ * filled with the colour of the band its value falls in. Word draws the bands'
+ * boundaries interpolated between the points; here each point fills its cell.
+ */
+function drawSurface(
+  svg: SVGElement,
+  chart: ChartDisplay,
+  geom: ChartGeom,
+  bands: SurfaceBands,
+): void {
+  const cols = maxNum(
+    chart.series.map((s) => s.values.length),
+    Math.max(chart.categories.length, 1),
+  )
+  const rows = Math.max(chart.series.length, 1)
+  const plotW = geom.width - geom.left - geom.right
+  const plotH = geom.height - geom.top - geom.bottom
+  const cellW = plotW / cols
+  const cellH = plotH / rows
+  const labelPx = geom.labelPx ?? 10
+  const xStyle = chartTextStyle(chart.xAxis?.fontPt, chart.xAxis?.color)
+  const yStyle = chartTextStyle(chart.yAxis?.fontPt, chart.yAxis?.color)
+  chart.series.forEach((ser, s) => {
+    // the first series is the front row: at the bottom, as the value axis grows upward
+    const y = geom.top + plotH - cellH * (s + 1)
+    ser.values.forEach((value, c) => {
+      if (value === null || c >= cols) return
+      svgEl(svg, 'rect', {
+        x: String(geom.left + cellW * c),
+        y: String(y),
+        width: String(cellW),
+        height: String(cellH),
+        fill: chartColor(chart, surfaceBandOf(bands, value)),
+        class: 'doc-chart-surface',
+      })
+    })
+    svgEl(
+      svg,
+      'text',
+      {
+        x: String(geom.left - 6),
+        y: String(y + cellH / 2 + labelPx * 0.3),
+        class: 'doc-chart-axis-label',
+        'text-anchor': 'end',
+        ...yStyle,
+      },
+      ser.name ?? t('editorChartSeries', { num: s + 1 }),
+    )
+  })
+  drawAxisLines(svg, chart, geom, geom.top + plotH, geom.left)
+  chart.categories.forEach((cat, c) => {
+    if (c >= cols || geom.noCatLabels || chart.xAxis?.deleted) return
+    wrapChartText(cat, cellW - 4, labelPx).forEach((line, k) => {
+      svgEl(
+        svg,
+        'text',
+        {
+          x: String(geom.left + cellW * c + cellW / 2),
+          y: String(
+            geom.height - geom.bottom + Math.round(labelPx * 1.4) + k * Math.round(labelPx * 1.2),
+          ),
+          class: 'doc-chart-axis-label',
+          'text-anchor': 'middle',
+          ...xStyle,
+        },
+        line,
+      )
+    })
+  })
+}
+
 function drawScatter(svg: SVGElement, chart: ChartDisplay, geom: ChartGeom): void {
   interface Pt {
     x: number
@@ -2017,6 +2694,7 @@ function textSpanSpec(
     run.textEffect ? textEffectDecls(run.textEffect).join(';') : '',
     run.dstrike ? doubleStrikeDecl() : '',
     run.glow ? glowDecl(run.glow) : '',
+    run.textReflection ? reflectionDecl(run.textReflection) : '',
     run.positionHalfPoints ? positionDecl(run.positionHalfPoints) : '',
     run.caps === 'all' ? 'text-transform:uppercase' : '',
     run.caps === 'small' ? 'font-variant-caps:small-caps' : '',
@@ -2129,6 +2807,7 @@ export function renderTextboxSpec(
   if (box.picture) {
     boxAttrs.class += ' doc-textbox-picture'
   }
+  if (box.vert) boxAttrs.class += ` doc-textbox-vert doc-textbox-${box.vert.toLowerCase()}`
   if (style) boxAttrs.style = style
   // page-absolute V rendered from the anchor: syncFloatShifts re-pins it
   if (box.floating && box.pageRelV) {

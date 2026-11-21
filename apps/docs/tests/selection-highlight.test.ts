@@ -73,6 +73,25 @@ describe('collectSeamRects', () => {
     expect(out).toEqual([{ left: 100, top: 10, width: 2, height: 20 }])
   })
 
+  it('keeps a seam inside the scroller when its block only partly shows', () => {
+    const bounds = { left: 0, top: 100, right: 1000, bottom: 800 }
+    const collect = (top: number) => {
+      const { root, lead, pad } = fixture()
+      stubRects({ 'lead:3': rect(80, top, 20, 20), 'A:0': rect(102, top, 8, 20) })
+      return collectSeamRects(
+        root,
+        [rangeOver(lead, pad)],
+        bounds,
+        1,
+        () => 2,
+        (el) => (el === pad ? rect(100, top, 8, 20) : rect(0, 40, 600, 400)),
+      )
+    }
+    expect(collect(60)).toEqual([])
+    expect(collect(90)).toEqual([{ left: 100, top: 100, width: 2, height: 10 }])
+    expect(collect(790)).toEqual([{ left: 100, top: 790, width: 2, height: 10 }])
+  })
+
   it('skips a pad that starts the selection', () => {
     const { root, lead, pad } = fixture()
     stubRects({ 'lead:3': rect(80, 10, 20, 20), 'A:0': rect(102, 10, 8, 20) })

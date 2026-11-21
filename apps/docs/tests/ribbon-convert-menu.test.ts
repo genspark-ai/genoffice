@@ -14,7 +14,7 @@ describe('Home → Convert', () => {
   let editor: Editor
   let root: Root
   let container: HTMLElement
-  const onConvert = vi.fn()
+  const onCommand = vi.fn()
 
   beforeEach(() => {
     editor = new Editor({
@@ -34,7 +34,7 @@ describe('Home → Convert', () => {
     act(() => root.unmount())
     container.remove()
     editor.destroy()
-    onConvert.mockClear()
+    onCommand.mockClear()
   })
 
   function render(hasDoc: boolean) {
@@ -43,7 +43,7 @@ describe('Home → Convert', () => {
         createElement(Ribbon, {
           ...ribbonProps(editor, computeFormatState(editor)),
           hasDoc,
-          onConvert,
+          onCommand,
         }),
       ),
     )
@@ -64,7 +64,7 @@ describe('Home → Convert', () => {
       t('ribbonConvertImages'),
     ])
     act(() => items[2].click())
-    expect(onConvert).toHaveBeenCalledWith('md')
+    expect(onCommand).toHaveBeenCalledWith('export-markdown', undefined)
     expect(container.querySelector('.spacing-menu')).toBeNull()
   })
 
