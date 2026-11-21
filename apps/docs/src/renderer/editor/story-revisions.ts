@@ -12,11 +12,11 @@ import type {
   HfParagraph,
   NoteInfo,
   NoteRun,
+  ParaFormat,
   RevisionInfo,
   RevisionResolution,
   Run,
   TextboxDisplay,
-  TextboxParaDisplay,
 } from '@genoffice/docx-engine'
 import type { Node as PmNode } from '@tiptap/pm/model'
 import type { HfView } from '../doc-state'
@@ -26,7 +26,7 @@ import type { RevisionRange } from './revisions'
 
 export type StoryKind = 'footnote' | 'endnote' | 'header' | 'footer' | 'textbox'
 
-export type StoryRevisionType = 'ins' | 'del' | 'rPrChange'
+export type StoryRevisionType = 'ins' | 'del' | 'rPrChange' | 'pPrChange'
 
 export interface StoryLocation {
   kind: StoryKind
@@ -134,11 +134,46 @@ function runRevisions(runs: readonly AnyRun[], site: RunSite): StoryRevision[] {
   return out
 }
 
-function paraRevisions(
-  para: Pick<HfParagraph, 'runs' | 'cells'> | Pick<TextboxParaDisplay, 'runs' | 'cells'>,
-  site: Omit<RunSite, 'cell'>,
-): StoryRevision[] {
+/** a display paragraph the story path can enumerate and resolve: the run/cell
+ *  shape both HfParagraph and TextboxParaDisplay share, plus the textbox's
+ *  paragraph-property revision fields (absent on header/footer paras) */
+type ParaLike = Pick<HfParagraph, 'runs' | 'cells'> & {
+  pPrChange?: { id?: string; author?: string; date?: string }
+  pPrChangeOld?: ParaFormat
+  pPrResolved?: 'accept' | 'reject'
+}
+
+function paraRevisions(para: ParaLike, site: Omit<RunSite, 'cell'>): StoryRevision[] {
   const out = runRevisions(para.runs, site)
+  if (para.pPrChange) {
+    const rec = para.pPrChange
+    const text = para.runs
+      .map((r) => r.text)
+      .join('')
+      .replace(/\s+/g, ' ')
+      .trim()
+    out.push({
+      from: site.from,
+      to: site.to,
+      kind: 'pPrChange',
+      author: rec.author ?? '',
+      ...(rec.date ? { date: rec.date } : {}),
+      story: {
+        kind: site.kind,
+        id: `${site.kind}:${site.partKey}:${site.para}:pPrChange`,
+        text,
+        record: {
+          author: rec.author ?? '',
+          ...(rec.date ? { date: rec.date } : {}),
+          ...(rec.id ? { id: rec.id } : {}),
+        },
+        type: 'pPrChange',
+        ...(site.textbox ? { textbox: site.textbox } : {}),
+        para: site.para,
+        runs: [0, para.runs.length],
+      },
+    })
+  }
   para.cells?.forEach((cell, ci) => {
     cell.paras.forEach((runs, pi) => out.push(...runRevisions(runs, { ...site, cell: [ci, pi] })))
   })
@@ -344,13 +379,39 @@ export function resolveRuns<T extends AnyRun>(
   return out
 }
 
-function resolvePara<P extends Pick<HfParagraph, 'runs' | 'cells'>>(
+/** structure keys of a textbox display paragraph: everything else came out of
+ *  the pPr's modeled formatting, so a reject's restore may reset them */
+const TXBX_STRUCTURE_KEYS = new Set([
+  'runs',
+  'styleId',
+  'listMarker',
+  'cells',
+  'row',
+  'emptyRunSizeHalfPoints',
+])
+
+function resolvePara<P extends ParaLike>(
   para: P,
   targets: readonly StoryLocation[],
   mode: Mode,
 ): P {
   const direct = targets.filter((t) => !t.cell)
-  const next: P = direct.length ? { ...para, runs: resolveRuns(para.runs, direct, mode) } : para
+  let next: P = direct.length ? { ...para, runs: resolveRuns(para.runs, direct, mode) } : para
+  // the paragraph-property revision: accept keeps the current formatting and
+  // drops the record; reject restores the record's old formatting in the
+  // model — modeled keys the old state doesn't carry fall back to unset
+  // (the save-side patch swaps the whole pPr from the original bytes)
+  if (para.pPrChange && direct.some((t) => t.type === 'pPrChange')) {
+    const { pPrChange: _rec, pPrChangeOld: _old, ...rest } = next as Record<string, unknown>
+    if (mode === 'reject' && para.pPrChangeOld) {
+      const merged: Record<string, unknown> = { ...rest }
+      for (const key of Object.keys(merged)) if (!TXBX_STRUCTURE_KEYS.has(key)) delete merged[key]
+      Object.assign(merged, para.pPrChangeOld)
+      next = { ...merged, pPrResolved: 'reject' } as P
+    } else {
+      next = { ...rest, pPrResolved: 'accept' } as P
+    }
+  }
   if (!para.cells || targets.every((t) => !t.cell)) return next
   return {
     ...next,

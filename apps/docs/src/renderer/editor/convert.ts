@@ -3237,6 +3237,7 @@ export function textboxParaSignature(para: TextboxDisplay['paras'][number]): str
     para.indentLeft ?? null,
     normalizedRuns(para.runs),
     list,
+    para.pPrResolved ?? null,
   ])
 }
 
@@ -3284,6 +3285,9 @@ function textboxParasPatch(node: PmNode, original: Block): TextboxParasPatchSet 
           align: p.align ?? null,
           numPr: m?.numId != null ? { numId: m.numId, ilvl: m.ilvl ?? 0 } : null,
           ...(indent !== origIndent ? { indentLeft: indent } : {}),
+          // a resolved paragraph-property revision rides the patch: accept
+          // strips the record, reject swaps the pPr for the record's old one
+          ...(p.pPrResolved && origParas[j]?.pPrChange ? { pPrResolution: p.pPrResolved } : {}),
         }
       })
     } else if (origBox.shapeId) {
