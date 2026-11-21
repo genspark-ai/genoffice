@@ -695,6 +695,9 @@ export const it = {
     'Formule ricalcolate in base alle tue modifiche — {count} hanno mantenuto i valori memorizzati nella cache (funzioni assenti nel motore di fallback).',
   appRecalcDone:
     'Formule ricalcolate in base alle tue modifiche ({count} celle, motore di fallback).',
+  appReadOnlyIndexing: 'Anteprima in sola lettura durante la verifica della protezione del foglio.',
+  appReadOnlyMetadataFailed:
+    'Impossibile verificare in anticipo la protezione del foglio. Sarà possibile modificarlo al termine dell’indicizzazione.',
   appIndexing: 'Indicizzazione di {name}: {rows} righe pronte.',
   appStreamingRows: 'Caricamento in streaming di {name}: {rows} righe disponibili.',
   appLoadRangeFailed: "Impossibile caricare l'intervallo visibile.",

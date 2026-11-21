@@ -1,7 +1,13 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { createInterface, type Interface } from 'node:readline'
 
-import type { ExternalLinksResult, ExternalLinksUpdateResult } from '../shared/desktop-api'
+import type {
+  ExternalLinksResult,
+  ExternalLinksUpdateResult,
+  WorkbookRangeRequest,
+  WorkbookFormulaCellsRequest,
+  WorkbookFilterRequest,
+} from '../shared/desktop-api'
 
 const PROTOCOL_VERSION = 1
 const REQUEST_TIMEOUT_MS = 30_000
@@ -26,6 +32,7 @@ const CANCELLABLE_READS = new Set([
   'read_row_outline',
   'read_media',
   'find_cells',
+  'filter_rows',
 ])
 
 interface SidecarResponse {
@@ -66,33 +73,31 @@ export class XlsxSidecarClient {
     for (const listener of this.exitListeners) listener()
   }
 
-  async open(path: string, locale = 'zh', shortDateFormat?: string): Promise<unknown> {
+  async open(
+    path: string,
+    locale = 'zh',
+    shortDateFormat?: string,
+    progressive = false,
+  ): Promise<unknown> {
     return this.request({
       command: 'open',
       path,
       locale,
+      ...(progressive ? { progressive } : {}),
       ...(shortDateFormat === undefined ? {} : { shortDateFormat }),
     })
   }
 
-  async readRange(input: {
-    readonly sessionId: string
-    readonly sheetId: string
-    readonly range: {
-      readonly startRow: number
-      readonly endRow: number
-      readonly startColumn: number
-      readonly endColumn: number
-    }
-  }): Promise<unknown> {
+  async readRange(input: WorkbookRangeRequest): Promise<unknown> {
     return this.request({ command: 'read_range', ...input })
   }
 
-  async readFormulaCells(input: {
-    readonly sessionId: string
-    readonly sheetId: string
-  }): Promise<unknown> {
+  async readFormulaCells(input: WorkbookFormulaCellsRequest): Promise<unknown> {
     return this.request({ command: 'read_formula_cells', ...input })
+  }
+
+  async filterRows(input: WorkbookFilterRequest): Promise<unknown> {
+    return this.request({ command: 'filter_rows', ...input })
   }
 
   async findCells(
@@ -101,10 +106,7 @@ export class XlsxSidecarClient {
     return this.request({ command: 'find_cells', ...input })
   }
 
-  async readRowOutline(input: {
-    readonly sessionId: string
-    readonly sheetId: string
-  }): Promise<unknown> {
+  async readRowOutline(input: WorkbookFormulaCellsRequest): Promise<unknown> {
     return this.request({ command: 'read_row_outline', ...input })
   }
 

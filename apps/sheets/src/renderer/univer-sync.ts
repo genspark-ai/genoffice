@@ -81,6 +81,7 @@ import type {
   WorkbookFilterState,
   WorkbookFormulaCellsResult,
   WorkbookNoteState,
+  WorkbookRangeRequest,
   WorkbookRangeResult,
   WorkbookRichRun,
   WorkbookVisualObject,
@@ -171,7 +172,8 @@ import {
   type SparklineGroupState,
 } from './WorkbookVisuals'
 import { VISUAL_UNDO_COMMAND_ID } from './undo-carry'
-import { largeFilterHiddenRows, largeFilterOwnsSpan } from './large-filter-state'
+import { applyLargeFilter, isLargeFilterSheet } from './large-filter'
+import { largeFilterHiddenRows, largeFilterOwnsSpan, largeFilterSheet } from './large-filter-state'
 import {
   BORDER_COMMAND_TYPES,
   CLOSURE_MAX_CELLS,
@@ -1309,6 +1311,7 @@ export async function loadVisibleRange(
   worksheet: UniverWorksheet,
   setMessage: (message: string) => void,
   viewportStart?: { row: number; column: number },
+  waitForFirstRange = false,
 ): Promise<void> {
   const state = lazyWorkbookRef.current
   if (!state) return
@@ -1340,10 +1343,13 @@ export async function loadVisibleRange(
       : viewportStart.column
     visible = {
       startRow: viewportStart.row,
-      endRow: viewportStart.row + (visible ? visible.endRow - visible.startRow : 79),
+      endRow: viewportStart.row + (visible ? Math.min(visible.endRow - visible.startRow, 240) : 79),
       startColumn,
       endColumn: startColumn + columnSpan,
     }
+  }
+  if (visible && largeFilterHiddenRows(state, sheetId)?.size) {
+    visible = { ...visible, endRow: Math.min(visible.endRow, visible.startRow + 240) }
   }
   const range = createBufferedRange(
     normalizeVisibleRange(visible, screenRowCount, screenColumnCount),
@@ -1351,7 +1357,33 @@ export async function loadVisibleRange(
     screenColumnCount,
   )
   const generation = bumpViewportGeneration(state, sheetId)
-  await loadRange(runtime, lazyWorkbookRef, worksheet, range, setMessage)
+  const filtered = largeFilterHiddenRows(state, sheetId)
+  if (filtered?.size) {
+    try {
+      await loadFilteredViewport(
+        runtime,
+        lazyWorkbookRef,
+        worksheet,
+        state,
+        sheet,
+        range,
+        viewportStart?.row ?? visible?.startRow ?? range.startRow,
+        screenRowCount,
+        filtered,
+        generation,
+      )
+      if (viewportGenerationIs(state, sheetId, generation)) {
+        await loadFrozenRowStrip(lazyWorkbookRef, worksheet, sheet, range)
+      }
+    } catch (error: unknown) {
+      if (lazyWorkbookRef.current === state && viewportGenerationIs(state, sheetId, generation)) {
+        setMessage(String(error))
+      }
+    }
+    return
+  }
+  evictFilteredViewport(worksheet, state, sheet)
+  await loadRange(runtime, lazyWorkbookRef, worksheet, range, setMessage, false, waitForFirstRange)
   await loadFrozenColumnStrip(lazyWorkbookRef, worksheet, sheet, range)
   await loadFrozenRowStrip(lazyWorkbookRef, worksheet, sheet, range)
   await extendWindowPastHiddenRows(
@@ -1363,6 +1395,229 @@ export async function loadVisibleRange(
     screenRowCount,
     generation,
   )
+}
+
+const filteredViewports = new WeakMap<LazyWorkbookState, Map<string, IRange[]>>()
+
+export function filteredViewportRows(
+  anchor: number,
+  rowCount: number,
+  limit: number,
+  hidden: ReadonlySet<number>,
+  rawVisible: (row: number) => boolean,
+): number[] {
+  const rows: number[] = []
+  for (let row = Math.max(0, anchor); row < rowCount && rows.length < limit; row += 1) {
+    if (!hidden.has(row) && rawVisible(row)) rows.push(row)
+  }
+  return rows
+}
+
+function evictFilteredViewport(
+  worksheet: UniverWorksheet,
+  state: LazyWorkbookState,
+  sheet: WorkbookFile['sheets'][number],
+  keep: readonly IRange[] = [],
+): void {
+  const sheetId = worksheet.getSheetId()
+  const viewports = filteredViewports.get(state)
+  const previous = viewports?.get(sheetId)
+  if (!previous?.length) return
+  viewports?.delete(sheetId)
+  const normal = state.loadedRanges.get(sheetId)
+  const pinned = state.closure.pinned.get(sheetId)
+  const pinnedKeys = pinned?.size ? new Set(pinned.keys()) : undefined
+  const suppressed = journalSuppression.active
+  journalSuppression.active = true
+  try {
+    keepActiveSheet(worksheet, () => {
+      for (const band of previous) {
+        // The ordinary viewport keeps its own residency record. Never clear
+        // a cell it still considers loaded.
+        const residents = normal ? [normal, ...keep] : keep
+        let parts = [band]
+        for (const resident of residents) {
+          parts = parts.flatMap((part) => {
+            const startRow = Math.max(part.startRow, resident.startRow)
+            const endRow = Math.min(part.endRow, resident.endRow)
+            const startColumn = Math.max(part.startColumn, resident.startColumn)
+            const endColumn = Math.min(part.endColumn, resident.endColumn)
+            if (startRow > endRow || startColumn > endColumn) return [part]
+            return [
+              ...rowsOutside(part, { ...part, startRow, endRow }),
+              { ...part, startRow, endRow, endColumn: startColumn - 1 },
+              { ...part, startRow, endRow, startColumn: endColumn + 1 },
+            ].filter((range) => range.startColumn <= range.endColumn)
+          })
+        }
+        for (const part of parts) evictWorksheetCells(worksheet, part, sheet.freeze, pinnedKeys)
+      }
+    })
+  } finally {
+    journalSuppression.active = suppressed
+  }
+}
+
+/// A viewport can comprise rows hundreds of thousands of physical lines
+/// apart. Read only the chunks containing those rows, and install their
+/// values at their original coordinates so selection, edits and save agree.
+async function loadFilteredViewport(
+  runtime: UniverRuntime,
+  lazyWorkbookRef: { current: LazyWorkbookState | null },
+  worksheet: UniverWorksheet,
+  state: LazyWorkbookState,
+  sheet: WorkbookFile['sheets'][number],
+  viewport: IRange,
+  anchor: number,
+  screenRowCount: number,
+  hidden: ReadonlySet<number>,
+  generation: number,
+): Promise<void> {
+  const sheetId = worksheet.getSheetId()
+  const current = () =>
+    lazyWorkbookRef.current === state &&
+    viewportGenerationIs(state, sheetId, generation) &&
+    largeFilterHiddenRows(state, sheetId) === hidden
+  const ops = state.editJournal.structuralOps.get(sheetId) ?? []
+  const bands = [viewport]
+  const frozenColumns = sheet.freeze?.frozenColumns ?? 0
+  if (viewport.startColumn >= frozenColumns && frozenColumns > 0) {
+    bands.push({ ...viewport, startColumn: 0, endColumn: frozenColumns - 1 })
+  }
+  const width = bands.reduce((sum, band) => sum + band.endColumn - band.startColumn + 1, 0)
+  const rows = filteredViewportRows(
+    anchor - 24,
+    screenRowCount,
+    Math.min(240, Math.max(1, Math.floor(60_000 / width))),
+    hidden,
+    (row) => worksheet.getSheet().getRowRawVisible(row),
+  )
+  const runs = groupRowRuns(rows, 0)
+  const next = bands.flatMap((band) =>
+    runs.map(([startRow, endRow]) => ({ ...band, startRow, endRow })),
+  )
+  const previous = filteredViewports.get(state)?.get(sheetId)
+  if (
+    previous?.length === next.length &&
+    next.every((range, index) => {
+      const old = previous[index]!
+      return containsRange(old, range) && containsRange(range, old)
+    })
+  )
+    return
+  const fileRows = [
+    ...new Set(
+      rows.flatMap((row) => {
+        const file = screenToFile(ops, 'row', row)
+        return file !== null && file < sheet.rowCount ? [file] : []
+      }),
+    ),
+  ].sort((a, b) => a - b)
+  const reads = await Promise.all(
+    bands.map(async (band) => {
+      const mapped = screenRangeToFileRange(ops, {
+        ...band,
+        startRow: rows[0] ?? 0,
+        endRow: rows.at(-1) ?? 0,
+      })
+      if (!mapped || !fileRows.length || mapped.startColumn >= sheet.columnCount) return undefined
+      const endColumn = Math.min(mapped.endColumn, sheet.columnCount - 1)
+      const batchSize = Math.max(
+        1,
+        Math.floor(SIDECAR_READ_BATCH_CELLS / (endColumn - mapped.startColumn + 1)),
+      )
+      const screen = { cells: [], rows: [], merges: [], hyperlinks: [] } as Pick<
+        WorkbookRangeResult,
+        'cells' | 'rows' | 'merges' | 'hyperlinks'
+      >
+      for (let i = 0; i < fileRows.length && current(); i += batchSize) {
+        const requested = fileRows.slice(i, i + batchSize)
+        const result = await windowDesktopRange(
+          state,
+          sheetId,
+          mapped.startColumn,
+          endColumn,
+          requested,
+        )
+        if (!current()) return undefined
+        storeFormulaText(state, sheetId, result.cells)
+        recordCachedFormulaValues(state, sheetId, result.cells)
+        const data = ops.length ? mapRangeResultToScreen(ops, result) : result
+        screen.cells.push(...data.cells)
+        screen.rows.push(...data.rows)
+        screen.merges.push(...data.merges)
+        screen.hyperlinks.push(...data.hyperlinks)
+      }
+      return screen
+    }),
+  )
+  if (!current()) return
+  const richFamilies = richRunFamilies(reads.flatMap((read) => read?.cells ?? []))
+  if (richFamilies.size) await untilCellFontsLoaded(registerCellFontAliases(richFamilies))
+  if (!current()) return
+  evictFilteredViewport(worksheet, state, sheet, next)
+  for (const [index, band] of bands.entries()) {
+    const data = reads[index]
+    if (data) {
+      recordRowStyleKeys(state, sheetId, data.rows)
+      recordHyperlinks(state, sheetId, data.hyperlinks)
+      keepActiveSheet(worksheet, () => {
+        applyMerges(worksheet, state, sheetId, data.merges)
+        applyRowProperties(runtime, worksheet, state, sheetId, data.rows)
+      })
+    }
+    const cellsByRow = new Map<number, WorkbookRangeResult['cells']>()
+    for (const cell of data?.cells ?? []) {
+      if (cell.column < band.startColumn || cell.column > band.endColumn) continue
+      let cells = cellsByRow.get(cell.row)
+      if (!cells) cellsByRow.set(cell.row, (cells = []))
+      cells.push(cell)
+    }
+    const inherited = inheritedWrapLookup(state.file.styles, data?.rows ?? [], sheet.columnWidths)
+    for (const [startRow, endRow] of runs) {
+      const cells: WorkbookRangeResult['cells'] = []
+      for (let row = startRow; row <= endRow; row += 1) cells.push(...(cellsByRow.get(row) ?? []))
+      patchWorksheetRange(
+        worksheet,
+        undefined,
+        { ...band, startRow, endRow },
+        state.formulaMode ? degradeCostlyFormulas(state, sheet.name, cells) : cells,
+        state.file.styles,
+        data?.hyperlinks ?? [],
+        sheet.tables,
+        sheet.pivotTables,
+        sheet.freeze,
+        state.formulaMode,
+        state.editJournal,
+        state.closure.pinned.get(sheetId),
+        state.recalc.overlay.get(sheetId),
+        undefined,
+        sheetRowColStyleKeys(state, sheetId),
+        inherited,
+        hiddenRowsInfo(state, sheetId),
+        false,
+      )
+    }
+  }
+  let viewports = filteredViewports.get(state)
+  if (!viewports) filteredViewports.set(state, (viewports = new Map()))
+  viewports.set(sheetId, next)
+}
+
+function windowDesktopRange(
+  state: LazyWorkbookState,
+  sheetId: string,
+  startColumn: number,
+  endColumn: number,
+  rows: number[],
+): Promise<WorkbookRangeResult> {
+  return window.desktopApi.readWorkbookRange({
+    sessionId: state.file.sessionId,
+    sheetId: lazyFileSheetId(state, sheetId),
+    mode: 'viewport',
+    rows,
+    range: { startRow: rows[0]!, endRow: rows.at(-1)!, startColumn, endColumn },
+  })
 }
 
 /// Every viewport load supersedes the previous one for its sheet: a scroll
@@ -1520,7 +1775,15 @@ export async function activateFormulaClosure(
 
   const inputs: ClosureSheetInput[] = []
   let indexedCount = 0
-  for (const sheet of state.file.sheets) {
+  const progressive = state.file.sheets.some((sheet) => sheet.progressive)
+  const activeSheetId = progressive
+    ? runtime.univerAPI.getActiveWorkbook()?.getActiveSheet()?.getSheetId()
+    : undefined
+  const active = state.file.sheets.find((sheet) => sheet.id === activeSheetId)
+  const sheets = active
+    ? [active, ...state.file.sheets.filter((sheet) => sheet !== active)]
+    : state.file.sheets
+  for (const sheet of sheets) {
     const deadline = Date.now() + 180_000
     for (;;) {
       if (lazyWorkbookRef.current !== state) return
@@ -1529,6 +1792,7 @@ export async function activateFormulaClosure(
         result = await window.desktopApi.readWorkbookFormulas({
           sessionId: state.file.sessionId,
           sheetId: sheet.id,
+          ...(progressive ? { background: true } : {}),
         })
       } catch {
         return giveUp()
@@ -1981,9 +2245,11 @@ export async function readSheetRangeMapped(
   sheetId: string,
   screenRange: IRange,
   sheet: WorkbookFile['sheets'][number],
+  mode?: WorkbookRangeRequest['mode'],
+  foreground = false,
 ): Promise<MappedRangeRead | null> {
   try {
-    return await readSheetRangeMappedOnce(state, sheetId, screenRange, sheet)
+    return await readSheetRangeMappedOnce(state, sheetId, screenRange, sheet, mode, foreground)
   } catch (error: unknown) {
     // Every range read in the app funnels through here, so this is the one
     // place a crashed sidecar can be noticed. The gate is the main process's
@@ -1992,7 +2258,7 @@ export async function readSheetRangeMapped(
     // session." and is NOT a crash, so it must surface as an ordinary error
     // instead of re-opening the file and orphaning a session.
     if (!sidecarCrashNotified || !(await recoverSidecarSession(state))) throw error
-    return await readSheetRangeMappedOnce(state, sheetId, screenRange, sheet)
+    return await readSheetRangeMappedOnce(state, sheetId, screenRange, sheet, mode, foreground)
   }
 }
 
@@ -2001,6 +2267,8 @@ async function readSheetRangeMappedOnce(
   sheetId: string,
   screenRange: IRange,
   sheet: WorkbookFile['sheets'][number],
+  mode: WorkbookRangeRequest['mode'],
+  foreground: boolean,
 ): Promise<MappedRangeRead | null> {
   const ops = state.editJournal.structuralOps.get(sheetId) ?? []
   const fileSheetId = lazyFileSheetId(state, sheetId)
@@ -2021,6 +2289,8 @@ async function readSheetRangeMappedOnce(
       const batch = await window.desktopApi.readWorkbookRange({
         sessionId: state.file.sessionId,
         sheetId: fileSheetId,
+        ...(mode ? { mode } : {}),
+        ...(foreground && startRow === screenRange.startRow ? { foreground: true } : {}),
         range: { ...screenRange, startRow, endRow },
       })
       cells.push(...batch.cells)
@@ -2038,6 +2308,8 @@ async function readSheetRangeMappedOnce(
       raw = await window.desktopApi.readWorkbookRange({
         sessionId: state.file.sessionId,
         sheetId: fileSheetId,
+        ...(mode ? { mode } : {}),
+        ...(foreground ? { foreground: true } : {}),
         range: screenRange,
       })
     }
@@ -2074,6 +2346,8 @@ async function readSheetRangeMappedOnce(
     const batch = await window.desktopApi.readWorkbookRange({
       sessionId: state.file.sessionId,
       sheetId: fileSheetId,
+      ...(mode ? { mode } : {}),
+      ...(foreground && startRow === fileRange.startRow ? { foreground: true } : {}),
       range: { ...fileRange, startRow, endRow },
     })
     cells.push(...batch.cells)
@@ -3266,10 +3540,60 @@ async function loadRange(
   try {
     const sheetMeta = lazySheetMeta(state, sheetId)
     if (!sheetMeta) return
-    const mapped = await readSheetRangeMapped(state, sheetId, range, sheetMeta)
-    if (lazyWorkbookRef.current !== state || state.loadingKeys.get(sheetId) !== requestKey) {
-      return
+    const foreground =
+      isActiveSheet(runtime, sheetId) && state.file.sheets.some((sheet) => sheet.progressive)
+    const isCurrent = () =>
+      lazyWorkbookRef.current === state && state.loadingKeys.get(sheetId) === requestKey
+    const scheduleViewportRetry = (delay: number): void => {
+      const timer = setTimeout(() => {
+        state.retryTimers.delete(sheetId)
+        // Rust keeps indexing. Revisit the window when the user returns to
+        // this sheet, so background progress does not trigger grid work.
+        if (lazyWorkbookRef.current !== state || !isActiveSheet(runtime, sheetId)) return
+        void loadRange(runtime, lazyWorkbookRef, worksheet, range, setMessage, true).then(() =>
+          loadFrozenColumnStrip(lazyWorkbookRef, worksheet, sheetMeta, range),
+        )
+      }, delay)
+      state.retryTimers.set(sheetId, timer)
     }
+    if (!waitForRequestedRange && loaded && containsRange(loaded, range)) {
+      // Poll metadata and cell indexing independently without decoding
+      // the same cells while neither just became ready.
+      const anchor = {
+        startRow: range.startRow,
+        endRow: range.startRow,
+        startColumn: range.startColumn,
+        endColumn: range.startColumn,
+      }
+      const status = await readSheetRangeMapped(
+        state,
+        sheetId,
+        anchor,
+        sheetMeta,
+        'status',
+        foreground,
+      )
+      if (!isCurrent()) return
+      if (status) recordMetadataScanFailure(state, sheetId, status.raw)
+      if (
+        status &&
+        !status.raw.indexingComplete &&
+        !(state.decorationsPendingSheets.has(sheetId) && status.raw.metadataReady)
+      ) {
+        scheduleViewportRetry(250)
+        return
+      }
+    }
+    const mapped = await readSheetRangeMapped(
+      state,
+      sheetId,
+      range,
+      sheetMeta,
+      waitForRequestedRange ? undefined : 'viewport',
+      foreground && isActiveSheet(runtime, sheetId),
+    )
+    if (!isCurrent()) return
+    if (mapped) recordMetadataScanFailure(state, sheetId, mapped.raw)
     const richFamilies = mapped ? richRunFamilies(mapped.screen.cells) : null
     if (richFamilies?.size) {
       await untilCellFontsLoaded(registerCellFontAliases(richFamilies))
@@ -3314,15 +3638,24 @@ async function loadRange(
       mapped.indexedThroughScreen === null
         ? null
         : Math.min(mapped.indexedThroughScreen, range.endRow)
+    const result = mapped.raw
+    const metadataReady = result.metadataReady ?? result.indexingComplete
     // Merges before cells: shrinkToFit measures its budget from Univer's
     // merge data, so a merged label patched first would shrink to its
     // anchor column.
     keepActiveSheet(worksheet, () => applyMerges(worksheet, state, sheetId, mapped.screen.merges))
+    const hasStructuralOps = (state.editJournal.structuralOps.get(sheetId)?.length ?? 0) > 0
     let patchedRange: IRange | undefined
     if (availableEndRow !== null && availableEndRow >= range.startRow) {
       const availableRange = { ...range, endRow: availableEndRow }
       const alreadyLoaded = state.loadedRanges.get(sheetId)
-      if (!alreadyLoaded || !containsRange(alreadyLoaded, availableRange)) {
+      if (
+        !alreadyLoaded ||
+        !containsRange(alreadyLoaded, availableRange) ||
+        (metadataReady &&
+          state.decorationsPendingSheets.has(sheetId) &&
+          mapped.screen.merges.length > 0)
+      ) {
         if (state.formulaMode) recordCachedFormulaValues(state, sheetId, mapped.screen.cells)
         recordRowStyleKeys(state, sheetId, mapped.screen.rows)
         recordHiddenFileRows(state, sheetId, mapped.screen.rows, availableRange)
@@ -3347,6 +3680,8 @@ async function loadRange(
           sheetRowColStyleKeys(state, sheetId),
           inheritedWrapLookup(state.file.styles, mapped.screen.rows, sheetMeta.columnWidths),
           hiddenRowsInfo(state, sheetId),
+          true,
+          !waitForRequestedRange && !hasStructuralOps && mapped.screen.merges.length === 0,
         )
         if (!state.flags.preloadRunning) state.loadedRanges.set(sheetId, availableRange)
         patchedRange = availableRange
@@ -3371,8 +3706,6 @@ async function loadRange(
         }
       }
     }
-    const result = mapped.raw
-    const hasStructuralOps = (state.editJournal.structuralOps.get(sheetId)?.length ?? 0) > 0
     // Every mode needs formulaText for the formula bar: formulaMode for
     // cache-only (defined-name) cells, value mode because streamed cells
     // carry no `f` in the grid at all — without the harvest a formula cell
@@ -3394,7 +3727,7 @@ async function loadRange(
     // The stale-height reset must not hide behind the patch gate: the
     // post-indexing retry that finally carries the sheet's merges usually
     // finds its range already loaded and skips the patch entirely.
-    const wrapWindow = patchedRange ?? (result.indexingComplete ? range : undefined)
+    const wrapWindow = patchedRange ?? (metadataReady ? range : undefined)
     if (wrapWindow && !bulk) {
       const qualifyingCells = wrapAutoFitCells(
         mapped.screen.cells,
@@ -3436,7 +3769,7 @@ async function loadRange(
         coverWrapRows(coverage, freshRows, wrapWindow.startColumn, wrapWindow.endColumn)
       }
       const sheetKey = `file-${state.file.sha256}:${sheetId}`
-      if (result.indexingComplete) {
+      if (metadataReady) {
         const qualifyingWithoutMerges = wrapAutoFitRows(
           mapped.screen.cells,
           state.file.styles,
@@ -3494,7 +3827,7 @@ async function loadRange(
     // skip it (rare: the sheet was being edited before it first rendered).
     if (!hasStructuralOps) {
       await applyConditionalRules(worksheet, state, sheetId, result.conditionalRules)
-      if (result.indexingComplete) {
+      if (metadataReady) {
         applySheetFilter(
           runtime,
           worksheet,
@@ -3504,6 +3837,25 @@ async function loadRange(
           result.autoFilterColumns,
         )
         applyDataValidations(runtime, state, sheetId, result.dataValidations)
+        if (
+          result.indexingComplete &&
+          result.autoFilterColumns.length &&
+          state.restoredFilterSpans.has(sheetId) &&
+          isLargeFilterSheet(state, sheetId) &&
+          !largeFilterOwnsSpan(state, sheetId) &&
+          !largeFilterSheet(state, sheetId).pending
+        ) {
+          const current = () => lazyWorkbookRef.current === state
+          void applyLargeFilter(runtime, state, worksheet, { record: false, current })
+            .then(() => {
+              if (current() && isActiveSheet(runtime, sheetId)) {
+                return loadVisibleRange(runtime, lazyWorkbookRef, worksheet, setMessage)
+              }
+            })
+            .catch((error: unknown) => {
+              if (current()) setMessage(String(error))
+            })
+        }
         state.decorationsPendingSheets.delete(sheetId)
       } else {
         state.decorationsPendingSheets.add(sheetId)
@@ -3513,11 +3865,10 @@ async function loadRange(
       // a pending entry would only force pointless sidecar re-reads.
       state.decorationsPendingSheets.delete(sheetId)
     }
-    if (result.indexingComplete) captureSheetFileState(state, sheetId, result)
+    if (metadataReady) captureSheetFileState(state, sheetId, result)
     const sheet = sheetMeta
     if (!result.indexingComplete) {
-      // Poll until the stream finishes: merged-cell ranges and trailing row
-      // properties only become available at the end of the worksheet part.
+      // Keep polling until the workbook's metadata and cell cache settle.
       const indexedRows = (result.indexedThroughRow ?? -1) + 1
       if (
         isActiveSheet(runtime, sheetId) &&
@@ -3549,14 +3900,9 @@ async function loadRange(
           )
         }
       } else {
-        const timer = setTimeout(() => {
-          if (lazyWorkbookRef.current !== state) return
-          state.loadingKeys.delete(sheetId)
-          void loadRange(runtime, lazyWorkbookRef, worksheet, range, setMessage, true).then(() =>
-            loadFrozenColumnStrip(lazyWorkbookRef, worksheet, sheet, range),
-          )
-        }, 250)
-        state.retryTimers.set(sheetId, timer)
+        // The first chunk usually arrives in a few milliseconds. Retry it
+        // promptly while keeping far jumps and EOF polling off that cadence.
+        scheduleViewportRetry(result.indexedThroughRow === null && range.startRow === 0 ? 40 : 250)
       }
     } else if (isActiveSheet(runtime, sheetId)) {
       // every row is available: the streaming notice clears instead of
@@ -4226,6 +4572,7 @@ function patchWorksheetRange(
   inheritedWrap?: (row: number, column: number) => boolean,
   hiddenRows?: HiddenRowsInfo,
   isViewportWindow = true,
+  reuseRows = false,
 ): void {
   noteFormulaStreamChunk()
   // Windowed CF formula registrations follow the loaded row window; report
@@ -4245,22 +4592,46 @@ function patchWorksheetRange(
   loadAutoHeightSuppression.active = true
   try {
     keepActiveSheet(worksheet, () => {
-      patchWorksheetRangeInner(
-        worksheet,
-        previousRange,
-        range,
-        cells,
-        styles,
-        tables,
-        pivotTables,
-        freeze,
-        useFormulas,
-        arrayFollowers,
-        rowColStyleKeys,
-        inheritedWrap,
-        pinned?.size ? new Set(pinned.keys()) : undefined,
-        hiddenRows,
-      )
+      // With the same column span, unchanged rows keep their complete style
+      // and text context. Preserve them while replacing the entering and
+      // leaving rows of a simple streamed sheet.
+      const reuse =
+        reuseRows &&
+        previousRange &&
+        !useFormulas &&
+        !arrayFollowers?.size &&
+        !pinned?.size &&
+        !recalcOverlay?.size &&
+        tables.length === 0 &&
+        pivotTables.length === 0 &&
+        previousRange.startColumn === range.startColumn &&
+        previousRange.endColumn === range.endColumn &&
+        previousRange.startRow <= range.endRow &&
+        range.startRow <= previousRange.endRow
+      const rowsToInstall = reuse ? rowsOutside(range, previousRange) : [range]
+      if (reuse) {
+        for (const evicted of rowsOutside(previousRange, range)) {
+          evictWorksheetCells(worksheet, evicted, freeze)
+        }
+      }
+      for (const installRange of rowsToInstall) {
+        patchWorksheetRangeInner(
+          worksheet,
+          reuse ? undefined : previousRange,
+          installRange,
+          cells,
+          styles,
+          tables,
+          pivotTables,
+          freeze,
+          useFormulas,
+          arrayFollowers,
+          rowColStyleKeys,
+          inheritedWrap,
+          pinned?.size ? new Set(pinned.keys()) : undefined,
+          hiddenRows,
+        )
+      }
       // Closure cells are engine-owned: streaming skips them entirely (see
       // pinnedKeys in the inner patcher) instead of evict-and-re-pin — every
       // rewrite re-dirtied the whole dependency web, so each scroll chunk
@@ -4275,6 +4646,17 @@ function patchWorksheetRange(
     journalSuppression.active = false
     loadAutoHeightSuppression.active = false
   }
+}
+
+function rowsOutside(range: IRange, retained: IRange): IRange[] {
+  const bands: IRange[] = []
+  if (range.startRow < retained.startRow) {
+    bands.push({ ...range, endRow: retained.startRow - 1 })
+  }
+  if (retained.endRow < range.endRow) {
+    bands.push({ ...range, startRow: retained.endRow + 1 })
+  }
+  return bands
 }
 
 function applyPinnedOverlay(
@@ -5036,6 +5418,40 @@ function restoreTallerAutoHeights(worksheet: UniverWorksheet, before: Map<number
   }
 }
 
+function evictWorksheetCells(
+  worksheet: UniverWorksheet,
+  previousRange: IRange,
+  freeze: WorkbookFile['sheets'][number]['freeze'],
+  pinnedKeys?: ReadonlySet<string>,
+): void {
+  // Frozen rows/columns stay visible while scrolling, so never evict them —
+  // later viewport patches don't include them and they'd go blank.
+  const clearStartRow = Math.max(previousRange.startRow, freeze?.frozenRows ?? 0)
+  const clearStartColumn = Math.max(previousRange.startColumn, freeze?.frozenColumns ?? 0)
+  if (clearStartRow <= previousRange.endRow && clearStartColumn <= previousRange.endColumn) {
+    // Evict with a raw null-cell write, never clearContent()/clearFormat():
+    // those facade calls run ClearSelectionContent/Format COMMANDS, whose
+    // plugin interceptors apply user-level semantics to the CURRENT
+    // SELECTION — conditional formatting strips the selected cells from
+    // every rule, a rule-range rectangle decomposition that costs seconds
+    // per eviction on wide rules and permanently fragments the rule
+    // (genoffice#158). Eviction is internal bookkeeping; only cells move.
+    // Engine-owned closure cells must survive the eviction ({} is a merge
+    // no-op, so pinned cells stay untouched — clearing and re-installing a
+    // formula re-dirties its whole dependency web).
+    const clearRows = previousRange.endRow - clearStartRow + 1
+    const clearColumns = previousRange.endColumn - clearStartColumn + 1
+    const wipe: ICellData[][] = Array.from({ length: clearRows }, (_unused, rowOffset) =>
+      Array.from({ length: clearColumns }, (_unusedColumn, columnOffset) =>
+        pinnedKeys?.has(`${clearStartRow + rowOffset}:${clearStartColumn + columnOffset}`)
+          ? {}
+          : { v: null, f: null, si: null, p: null, s: null, t: null, custom: null },
+      ),
+    )
+    worksheet.getRange(clearStartRow, clearStartColumn, clearRows, clearColumns).setValues(wipe)
+  }
+}
+
 export function patchWorksheetRangeInner(
   worksheet: UniverWorksheet,
   previousRange: IRange | undefined,
@@ -5052,34 +5468,7 @@ export function patchWorksheetRangeInner(
   pinnedKeys?: ReadonlySet<string>,
   hiddenRows?: HiddenRowsInfo,
 ): void {
-  if (previousRange) {
-    // Frozen rows/columns stay visible while scrolling, so never evict them —
-    // later viewport patches don't include them and they'd go blank.
-    const clearStartRow = Math.max(previousRange.startRow, freeze?.frozenRows ?? 0)
-    const clearStartColumn = Math.max(previousRange.startColumn, freeze?.frozenColumns ?? 0)
-    if (clearStartRow <= previousRange.endRow && clearStartColumn <= previousRange.endColumn) {
-      // Evict with a raw null-cell write, never clearContent()/clearFormat():
-      // those facade calls run ClearSelectionContent/Format COMMANDS, whose
-      // plugin interceptors apply user-level semantics to the CURRENT
-      // SELECTION — conditional formatting strips the selected cells from
-      // every rule, a rule-range rectangle decomposition that costs seconds
-      // per eviction on wide rules and permanently fragments the rule
-      // (genoffice#158). Eviction is internal bookkeeping; only cells move.
-      // Engine-owned closure cells must survive the eviction ({} is a merge
-      // no-op, so pinned cells stay untouched — clearing and re-installing a
-      // formula re-dirties its whole dependency web).
-      const clearRows = previousRange.endRow - clearStartRow + 1
-      const clearColumns = previousRange.endColumn - clearStartColumn + 1
-      const wipe: ICellData[][] = Array.from({ length: clearRows }, (_unused, rowOffset) =>
-        Array.from({ length: clearColumns }, (_unusedColumn, columnOffset) =>
-          pinnedKeys?.has(`${clearStartRow + rowOffset}:${clearStartColumn + columnOffset}`)
-            ? {}
-            : { v: null, f: null, si: null, p: null, s: null, t: null, custom: null },
-        ),
-      )
-      worksheet.getRange(clearStartRow, clearStartColumn, clearRows, clearColumns).setValues(wipe)
-    }
-  }
+  if (previousRange) evictWorksheetCells(worksheet, previousRange, freeze, pinnedKeys)
   const rows = range.endRow - range.startRow + 1
   const columns = range.endColumn - range.startColumn + 1
   const matrix: ICellData[][] = Array.from({ length: rows }, () =>
@@ -6134,7 +6523,9 @@ async function preloadEntireWorkbookInner(
       } else {
         state.decorationsPendingSheets.delete(sheetId)
       }
-      if (result.indexingComplete) captureSheetFileState(state, sheetId, result)
+      if (result.metadataReady ?? result.indexingComplete) {
+        captureSheetFileState(state, sheetId, result)
+      }
     }
     const finalOps = state.editJournal.structuralOps.get(sheet.id) ?? []
     state.loadedRanges.set(sheetId, {
@@ -6167,15 +6558,14 @@ function recordHyperlinks(
   }
 }
 
-/// A sheet the viewport never visited has no file state yet, and the
-/// protection guard fails closed on it (silently cancelling scripted
-/// writes). Index it on demand; false when it did not finish in time.
+/// Wait for the file state available at EOF, including print settings and
+/// protection when connected to an older sidecar.
 export async function ensureSheetFileState(
   state: LazyWorkbookState,
   sheetId: string,
   lazyWorkbookRef: { current: LazyWorkbookState | null },
 ): Promise<boolean> {
-  if (state.sheetProtections.has(sheetId) || state.editJournal.sheets.added.has(sheetId)) {
+  if (state.sheetPageBreaks.has(sheetId) || state.editJournal.sheets.added.has(sheetId)) {
     return true
   }
   if (!lazySheetMeta(state, sheetId)) return true
@@ -6192,7 +6582,7 @@ export async function ensureSheetFileState(
     } catch {
       return false
     }
-    if (result.indexingComplete) {
+    if (result.metadataReady ?? result.indexingComplete) {
       captureSheetFileState(state, sheetId, result)
       return true
     }
@@ -6201,16 +6591,34 @@ export async function ensureSheetFileState(
   return false
 }
 
-/// Records the sheet-wide, complete-only file state (protection, manual page
-/// breaks, allow-edit ranges) the first time a sheet finishes indexing.
+function recordMetadataScanFailure(
+  state: LazyWorkbookState,
+  sheetId: string,
+  result: WorkbookRangeResult,
+): void {
+  const failures = state.metadataScanFailedSheets
+  if (
+    result.metadataScanFailed &&
+    failures &&
+    !failures.has(sheetId) &&
+    !state.sheetProtections.has(sheetId)
+  ) {
+    failures.add(sheetId)
+    state.onMetadataScanFailed?.(sheetId)
+  }
+}
+
+/// Records protection and other sheet metadata as soon as the tail arrives.
 function captureSheetFileState(
   state: LazyWorkbookState,
   sheetId: string,
   result: WorkbookRangeResult,
 ): void {
+  const first = !state.sheetPageBreaks.has(sheetId)
   if (!state.sheetProtections.has(sheetId)) {
     state.sheetProtections.set(sheetId, fileSheetProtection(result.sheetProtection))
   }
+  state.metadataScanFailedSheets?.delete(sheetId)
   if (!state.sheetPageBreaks.has(sheetId)) {
     state.sheetPageBreaks.set(sheetId, {
       rowBreaks: [...result.rowBreaks],
@@ -6230,6 +6638,23 @@ function captureSheetFileState(
         state.editJournal.structuralOps.get(sheetId) ?? [],
       ),
     )
+  }
+  const meta = lazySheetMeta(state, sheetId)
+  if (meta?.progressive) {
+    const counts = result.cellCounts
+    if (counts && meta.storedCellCount === undefined) {
+      const fileSheetId = lazyFileSheetId(state, sheetId)
+      state.file = {
+        ...state.file,
+        sheets: state.file.sheets.map((sheet) =>
+          sheet.id === fileSheetId ? { ...sheet, ...counts } : sheet,
+        ),
+      }
+    }
+    if (first) {
+      if (result.sparklines) state.deferredSparklines?.set(sheetId, result.sparklines)
+      state.onProgressiveSheetReady?.(sheetId)
+    }
   }
 }
 
@@ -8120,7 +8545,7 @@ export function queueSparklineInstall(
     disposeVisuals(sparklineDisposablesRef.current)
     const sheetMeta = state.file.sheets.find((sheet) => sheet.id === sheetId)
     const sparklines: SparklineGroupState[] = [
-      ...(sheetMeta?.sparklines ?? []),
+      ...(state.deferredSparklines?.get(sheetId) ?? sheetMeta?.sparklines ?? []),
       ...state.editJournal.sparklineAdds
         .filter((entry) => entry.sheetId === sheetId)
         .map((entry) => ({

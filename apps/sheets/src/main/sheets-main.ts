@@ -194,6 +194,8 @@ import {
   workbookExportPdfRequestSchema,
   printerInfoSchema,
   workbookRangeRequestSchema,
+  workbookFilterRequestSchema,
+  workbookFilterResultSchema,
   workbookRangeResultSchema,
   workbookSaveEditsAbortSchema,
   workbookSaveEditsBeginSchema,
@@ -3237,6 +3239,7 @@ export function registerSheetsIpc(): void {
         emptySource: prepared.emptySource,
         unsavedNew: prepared.unsavedNew,
         password,
+        progressive: true,
       })
     } catch (error) {
       await discardPreparedOpen(prepared)
@@ -3441,6 +3444,13 @@ export function registerSheetsIpc(): void {
     if (!entry.sessions.has(request.sessionId)) throw new Error('Unknown workbook session.')
     const result = await entry.client.readFormulaCells(request)
     return workbookFormulaCellsResultSchema.parse(result)
+  })
+
+  ipcMain.handle(IPC_CHANNELS.filterWorkbookRows, async (event, input: unknown) => {
+    const entry = sessionFor(event)
+    const request = workbookFilterRequestSchema.parse(input)
+    if (!entry.sessions.has(request.sessionId)) throw new Error('Unknown workbook session.')
+    return workbookFilterResultSchema.parse(await entry.client.filterRows(request))
   })
 
   ipcMain.handle(IPC_CHANNELS.findWorkbookCells, async (event, input: unknown) => {
@@ -5303,6 +5313,7 @@ async function openWorkbookSession(
     emptySource?: boolean | undefined
     unsavedNew?: boolean | undefined
     password?: string | undefined
+    progressive?: boolean | undefined
   },
 ): Promise<WorkbookFile> {
   const {
@@ -5315,6 +5326,7 @@ async function openWorkbookSession(
     emptySource,
     unsavedNew,
     password,
+    progressive,
   } = options ?? {}
   // Only a CFB container (the encrypted wrapper) is read into memory; a plain
   // zip package keeps the streamed copy + file digest so large workbooks do
@@ -5333,7 +5345,7 @@ async function openWorkbookSession(
   const snapshotPath = await snapshotWorkbook(path, snapshotBytes)
   try {
     const [rawOpened, digest, fileBytes, restoreTargetSha, csvSourceSha] = await Promise.all([
-      client.open(snapshotPath, getUiLang(), systemShortDate()),
+      client.open(snapshotPath, getUiLang(), systemShortDate(), progressive),
       sourceBytes
         ? createHash('sha256').update(sourceBytes).digest('hex')
         : sha256File(snapshotPath),

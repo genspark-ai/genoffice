@@ -6001,6 +6001,16 @@ textarea:focus {
   transform: translate(-50%, 0);
 }
 
+.app-toast.top-right {
+  left: auto;
+  right: 16px;
+  transform: translateY(-8px);
+}
+
+.app-toast.top-right.show {
+  transform: translateY(0);
+}
+
 .app-toast.error {
   background: var(--sheets-toast-error-bg);
 }
@@ -7638,4 +7648,99 @@ body:has(.note-pictures-pane) .threaded-comments-pane {
   align-items: baseline;
   justify-content: space-between;
   gap: 8px;
+}
+
+.streamed-filter-panel {
+  box-sizing: border-box;
+  width: min(400px, 90vw);
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: var(--shadow-menu);
+  font-size: 13px;
+}
+
+.streamed-filter-tabs,
+.streamed-filter-footer,
+.streamed-filter-pages {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.streamed-filter-panel button,
+.streamed-filter-search {
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: transparent;
+  color: inherit;
+  padding: 4px 8px;
+}
+
+.streamed-filter-panel button:disabled {
+  opacity: 0.45;
+}
+
+.streamed-filter-tabs button {
+  flex: 1;
+  margin-block: 8px;
+}
+
+.streamed-filter-tabs button[aria-pressed='true'] {
+  background: color-mix(in srgb, currentColor 8%, transparent);
+}
+
+.streamed-filter-search,
+.streamed-filter-checklist {
+  box-sizing: border-box;
+  width: 100%;
+}
+
+.streamed-filter-checklist {
+  margin: 8px 0;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 8px;
+}
+
+.streamed-filter-checklist label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 25px;
+  padding-inline: 4px;
+}
+
+.streamed-filter-checklist label span {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.streamed-filter-checklist input {
+  accent-color: var(--accent);
+}
+
+.streamed-filter-checklist small {
+  opacity: 0.7;
+}
+
+.streamed-filter-items {
+  height: 175px;
+  overflow: auto;
+}
+
+.streamed-filter-footer > div {
+  display: flex;
+  gap: 6px;
+}
+
+.streamed-filter-panel .streamed-filter-confirm {
+  background: var(--color-btn-primary);
+  color: var(--color-btn-primary-text);
+  border-color: transparent;
 }

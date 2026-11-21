@@ -13,6 +13,7 @@ import {
   lazyWorkbookCellReader,
   loadSnapshotIntoUniver,
   loadVisibleRange,
+  getScrollAnchor,
   loadWorkbookSkeleton,
   matrixBounds,
   modelCellValue,
@@ -92,6 +93,7 @@ import {
   IUniverInstanceService,
   LocaleType,
   mergeLocales,
+  RANGE_TYPE,
   ThemeService,
   UniverInstanceType,
   type ICellData,
@@ -108,6 +110,7 @@ import '@univerjs/preset-sheets-conditional-formatting/lib/index.css'
 import {
   INTERCEPTOR_POINT,
   SheetInterceptorService,
+  SheetPermissionCheckController,
   UniverSheetsCorePreset,
 } from '@univerjs/preset-sheets-core'
 import UniverPresetSheetsCoreEnUS from '@univerjs/preset-sheets-core/locales/en-US'
@@ -384,7 +387,12 @@ import { installCfDisplayKeyCompare } from './cf-duplicate-key'
 import { installCfFormulaFold } from './cf-formula-fold'
 import { installSheetRenameFix } from './sheet-rename-fix'
 import { installArrowCollapse } from './arrow-collapse-fix'
-import { effectiveSheetProtection, installSheetProtectionGuard } from './sheet-protection'
+import {
+  effectiveSheetProtection,
+  fileSheetProtection,
+  installSheetProtectionGuard,
+  setProgressivePreviewEditable,
+} from './sheet-protection'
 import type { SheetProtectionAllow } from '@genoffice/xlsx-gateway/gateway/xlsx-protection'
 import { installCtrlDragFill } from './ctrl-drag-fill'
 import { installContextSubmenuReopenFix } from './context-submenu-reopen-fix'
@@ -403,15 +411,22 @@ import { installCenterContinuousRender } from './center-continuous'
 import { installExcelFilterButton } from './filter-button-excel-style'
 import {
   extendLargeFilterRange,
-  installLargeFilterValues,
+  filterModelFor,
+  setLargeFilterCriteria,
   isLargeFilterSheet,
   largeFilterAction,
 } from './large-filter'
 import { resetLargeFilter } from './large-filter-state'
+import { prepareLargeFilterPanel, streamedFilterTarget } from './LargeFilterPanel'
 import { installForceStringMarkGate, installLongTextRender } from './long-text-render'
 import { installAutofitWrapBudget } from './autofit-wrap-budget'
 import { installAutofitLinePitch } from './autofit-line-pitch'
-import { installHeaderUnhideDebounce } from './load-perf-patches'
+import {
+  installHeaderUnhideDebounce,
+  installRangeThemeVisibilityGate,
+  installSparseRowGeometry,
+} from './load-perf-patches'
+import { installSparseSheetRender } from './sparse-sheet-render'
 import { installCopyAnimationIdle } from './copy-animation-idle'
 import { installNumberAsTextAlertSeverity } from './number-as-text-alert'
 import { installFormulaStreamHold } from './formula-stream-hold'
@@ -435,6 +450,7 @@ import {
   type PasteSpecialSource,
 } from './paste-special'
 import { installStatusBarFileStats } from './statusbar-file-stats'
+import { installStreamedColumnWidth } from './streamed-column-width'
 import {
   installStatusBarStatsFilter,
   readStatusBarFuncs,
@@ -875,6 +891,12 @@ export function App({
       new URLSearchParams(window.location.search).get('openingWorkbook') === '1',
   )
   const [emptyCsvNotice, setEmptyCsvNotice] = useState(false)
+  const [progressivePreview, setProgressivePreview] = useState<
+    'appReadOnlyIndexing' | 'appReadOnlyMetadataFailed' | null
+  >(null)
+  const previewLock = useRef<string | null>(null)
+  const lastPreviewToast = useRef(0)
+  const installingFileSkeleton = useRef(false)
   /// Zoom of the active sheet in percent, echoed by the status-bar slider.
   const [zoomPercent, setZoomPercent] = useState(100)
   const [statusBarFuncs, setStatusBarFuncs] = useState<readonly StatusBarFunc[]>(() =>
@@ -2387,6 +2409,7 @@ export function App({
     installRtlTextDirectionFix()
     // sheetView rightToLeft="1": mirror the grid geometry (column A on the
     // right, headers on the right) while keeping logical indices.
+    installSparseSheetRender()
     installRtlGridMirror()
     // Univer defines the right-to-left command/mutation pair but never
     // registers it; without this the View tab's toggle would silently no-op.
@@ -2407,6 +2430,8 @@ export function App({
     // canvas line box (Calibri 10: 12.75 pt per line, not ~10 pt).
     installAutofitLinePitch()
     installHeaderUnhideDebounce()
+    installSparseRowGeometry()
+    installRangeThemeVisibilityGate(runtime)
     // The dashed border on a copied range is a per-frame animation. It must
     // not keep repainting the scene while nobody is looking at it.
     installCopyAnimationIdle()
@@ -2505,11 +2530,19 @@ export function App({
     const arrowCollapseDisposable = installArrowCollapse(runtime)
     const sheetProtectionDisposable = installSheetProtectionGuard(runtime, {
       getState: () => lazyWorkbookRef.current,
+      notifyPreview: notifyPreviewWait,
       notify: (message) => {
         setMessage(message)
         showToast(message, 'error')
       },
     })
+    const previewPermissionSub = runtime.univer
+      .__getInjector()
+      .get(SheetPermissionCheckController)
+      .triggerPermissionUIEvent$.subscribe(() => {
+        if (previewLock.current !== null) notifyPreviewWait()
+      })
+    const streamedColumnWidthDisposable = installStreamedColumnWidth(runtime, lazyWorkbookRef)
     const ctrlDragFillDisposable = installCtrlDragFill(runtime)
     // The grid's right-click item that withholds the selected cells from the
     // AI. Contributed to Univer's own menu rather than replacing it, so every
@@ -2719,6 +2752,8 @@ export function App({
       runtime.univerAPI.Event.ActiveSheetChanged,
       ({ activeSheet }) => {
         setActiveSheetId(activeSheet.getSheetId())
+        if (installingFileSkeleton.current) return
+        syncProgressivePreview(activeSheet.getSheetId())
         setAiSelectionAskAnchor(null)
         void loadVisibleRange(runtime, lazyWorkbookRef, activeSheet, setMessage)
         // formula view is per-sheet (sheetView/@showFormulas)
@@ -2750,6 +2785,11 @@ export function App({
         const sheetId = event.worksheet.getSheetId()
         const sheet = state.file.sheets.find((candidate) => candidate.id === sheetId)
         if (!sheet) return
+        if (sheet.progressive && !state.sheetProtections.has(sheetId)) {
+          event.cancel = true
+          notifyPreviewWait()
+          return
+        }
         // Pivot output is baked into the worksheet; editing it would corrupt
         // the file's pivot semantics. Protected in every load mode.
         if (
@@ -3076,6 +3116,10 @@ export function App({
           }
           if (event.id === 'sheet.mutation.remove-filter') {
             resetLargeFilter(state, params.subUnitId)
+            const worksheet = runtime.univerAPI.getActiveWorkbook()?.getActiveSheet()
+            if (worksheet?.getSheetId() === params.subUnitId) {
+              void loadVisibleRange(runtime, lazyWorkbookRef, worksheet, setMessage)
+            }
           }
           setPendingEdits(journalSize(state.editJournal))
           return
@@ -3558,24 +3602,66 @@ export function App({
               cellCounts: workbookCellCounts(state.file.sheets),
             })
             if (verdict === 'workbookTooLarge' && subUnitId !== undefined) {
-              // Past the budget the filter runs on column projections read
-              // from the file (large-filter.ts); the panel opens as usual.
-              installLargeFilterValues(runtime, lazyWorkbookRef, isLargeFilterSheet, (loading) =>
-                setMessage(t(loading ? 'appLargeFilterLoading' : 'appReadyInitial')),
-              )
-              const worksheet = runtime.univerAPI.getActiveWorkbook()?.getSheetBySheetId(subUnitId)
+              const workbook = runtime.univerAPI.getActiveWorkbook()
+              const worksheet = workbook?.getSheetBySheetId(subUnitId)
+              const current = () => lazyWorkbookRef.current === state
+              const finish = async () => {
+                if (!current()) return
+                setPendingEdits(journalSize(state.editJournal))
+                if (
+                  workbook &&
+                  worksheet &&
+                  workbook.getActiveSheet()?.getSheetId() === subUnitId
+                ) {
+                  const range = filterModelFor(runtime, worksheet)?.getRange()
+                  const anchor = getScrollAnchor(workbook, worksheet)
+                  const column = anchor?.column ?? 0
+                  if (range && anchor?.row !== range.startRow) {
+                    worksheet.scrollToCell(range.startRow, column)
+                  }
+                  await loadVisibleRange(
+                    runtime,
+                    lazyWorkbookRef,
+                    worksheet,
+                    setMessage,
+                    range ? { row: range.startRow, column } : undefined,
+                  )
+                }
+                if (current()) setMessage(t('appReadyInitial'))
+              }
+              if (event.id === OPEN_FILTER_PANEL_OPERATION && worksheet) {
+                const column = (event.params as { col?: number } | undefined)?.col
+                if (typeof column === 'number') {
+                  const target = streamedFilterTarget(
+                    runtime,
+                    state,
+                    worksheet,
+                    column,
+                    async (criteria) => {
+                      await setLargeFilterCriteria(
+                        runtime,
+                        state,
+                        worksheet,
+                        column,
+                        criteria,
+                        current,
+                      )
+                      if (!current()) return
+                      await runtime.univerAPI.executeCommand('sheet.operation.close-filter-panel')
+                      await finish()
+                    },
+                  )
+                  if (target) prepareLargeFilterPanel(runtime, lazyWorkbookRef, target)
+                }
+              }
               const action = worksheet ? largeFilterAction(event.id, event.params, worksheet) : null
               if (!action) {
                 event.cancel = false
                 return
               }
-              event.cancel = true
               setMessage(t('appLargeFilterApplying'))
-              void action(runtime, state)
-                .then(() => {
-                  setPendingEdits(journalSize(state.editJournal))
-                  setMessage(t('appReadyInitial'))
-                })
+              void action(runtime, state, current)
+                .then(finish)
                 .catch((error: unknown) => setMessage(String(error)))
               return
             }
@@ -3615,8 +3701,16 @@ export function App({
                 setMessage(t('appFullLoadRunning'))
                 showToast(t('appFullLoadRunning'), 'info')
               } else if (verdict === 'offerFullLoad') setFullLoadPrompt('ask')
-              else if (verdict === 'workbookTooLarge') setFullLoadPrompt('tooLarge')
-              else if (verdict === 'valueModeFormulas') setMessage(t('appSortValueModeFormulas'))
+              else if (verdict === 'workbookTooLarge') {
+                if (event.id === MOVE_RANGE_COMMAND && ranges[0]?.rangeType === RANGE_TYPE.COLUMN) {
+                  // A full-column selection border can start a drag-move
+                  // next to the header's resize handle. Keep a move blocked
+                  // without putting a full-load dialog over the grid.
+                  const message = t('appMoveRowsColsUnsaved')
+                  setMessage(message)
+                  showToast(message, 'info')
+                } else setFullLoadPrompt('tooLarge')
+              } else if (verdict === 'valueModeFormulas') setMessage(t('appSortValueModeFormulas'))
               else setMessage(t('appSortRangeTooLarge'))
               return
             }
@@ -3950,6 +4044,13 @@ export function App({
       selectionWrapGuardDisposable.dispose()
       arrowCollapseDisposable.dispose()
       sheetProtectionDisposable.dispose()
+      previewPermissionSub.unsubscribe()
+      const currentWorkbook = runtime.univerAPI.getActiveWorkbook()
+      if (currentWorkbook && previewLock.current === currentWorkbook.getId()) {
+        setProgressivePreviewEditable(runtime, currentWorkbook, true)
+        previewLock.current = null
+      }
+      streamedColumnWidthDisposable.dispose()
       ctrlDragFillDisposable.dispose()
       redactMenuDisposable.dispose()
       contextSubmenuReopenDisposable.dispose()
@@ -5033,6 +5134,45 @@ export function App({
     return state.hyperlinkTargets.get(sheetId)?.get(`${row}:${column}`) ?? null
   }
 
+  function notifyPreviewWait(): void {
+    const now = Date.now()
+    if (now - lastPreviewToast.current < 800) return
+    lastPreviewToast.current = now
+    const activeSheetId = univerRef.current?.univerAPI
+      .getActiveWorkbook()
+      ?.getActiveSheet()
+      ?.getSheetId()
+    const failed =
+      activeSheetId && lazyWorkbookRef.current?.metadataScanFailedSheets?.has(activeSheetId)
+    showToast(t(failed ? 'appReadOnlyMetadataFailed' : 'appReadOnlyIndexing'), 'info', 'top-right')
+  }
+
+  function syncProgressivePreview(sheetId: string): void {
+    const state = lazyWorkbookRef.current
+    const runtime = univerRef.current
+    const workbook = runtime?.univerAPI.getActiveWorkbook()
+    if (!runtime || !workbook || !state || workbook.getId() !== `file-${state.file.sha256}`) {
+      setProgressivePreview(null)
+      return
+    }
+    const preview =
+      lazySheetMeta(state, sheetId)?.progressive === true && !state.sheetProtections.has(sheetId)
+    if (preview && previewLock.current !== workbook.getId()) {
+      setProgressivePreviewEditable(runtime, workbook, false)
+      previewLock.current = workbook.getId()
+    } else if (!preview && previewLock.current === workbook.getId()) {
+      setProgressivePreviewEditable(runtime, workbook, true)
+      previewLock.current = null
+    }
+    setProgressivePreview(
+      !preview
+        ? null
+        : state.metadataScanFailedSheets?.has(sheetId)
+          ? 'appReadOnlyMetadataFailed'
+          : 'appReadOnlyIndexing',
+    )
+  }
+
   async function openLazyWorkbook(
     opened: WorkbookFile,
     opts?: { continueChat?: boolean; onInitialRangeLoaded?: () => void },
@@ -5049,6 +5189,7 @@ export function App({
       ),
     }
     const cellCounts = workbookCellCounts(selected.sheets)
+    const progressive = selected.sheets.some((sheet) => sheet.progressive)
     setWorkbookFile(selected)
     // Calculation mode is workbook state: the next file starts automatic,
     // in the engine and in the menu alike.
@@ -5081,15 +5222,52 @@ export function App({
       appliedRowKeys: new Map(),
       measuredWrapRows: new Map(),
       rowColStyleKeys: new Map(),
-      sheetProtections: new Map(),
+      sheetProtections: new Map(
+        selected.sheets.flatMap(({ id, protection }) =>
+          protection ? [[id, fileSheetProtection(protection.sheetProtection)] as const] : [],
+        ),
+      ),
       sheetPageBreaks: new Map(),
       sheetFilePageSetups: new Map(),
-      sheetProtectedRanges: new Map(),
+      sheetProtectedRanges: new Map(
+        selected.sheets.flatMap(({ id, protection }) =>
+          protection ? [[id, mapProtectedRanges(protection.protectedRanges, [])] as const] : [],
+        ),
+      ),
       uninstalledDefinedNames: new Set(),
       appliedCfSheets: new Set(),
       appliedFilterSheets: new Set(),
       appliedDvSheets: new Set(),
       decorationsPendingSheets: new Set(),
+      ...(progressive
+        ? {
+            deferredSparklines: new Map(),
+            metadataScanFailedSheets: new Set(),
+            onMetadataScanFailed: (sheetId: string) => {
+              if (lazyWorkbookRef.current !== state) return
+              const active = univerRef.current?.univerAPI
+                .getActiveWorkbook()
+                ?.getActiveSheet()
+                ?.getSheetId()
+              if (active === sheetId) syncProgressivePreview(sheetId)
+            },
+            onProgressiveSheetReady: (sheetId: string) => {
+              const runtime = univerRef.current
+              if (!runtime || lazyWorkbookRef.current !== state) return
+              const active = runtime.univerAPI.getActiveWorkbook()?.getActiveSheet()?.getSheetId()
+              if (active !== sheetId) return
+              syncProgressivePreview(sheetId)
+              if (state.deferredSparklines?.get(sheetId)?.length) {
+                queueSparklineInstall(
+                  runtime,
+                  lazyWorkbookRef,
+                  sparklineDisposablesRef,
+                  sparklineTimerRef,
+                )
+              }
+            },
+          }
+        : {}),
       hyperlinkTargets: new Map(),
       frozenStripKeys: new Map(),
       frozenRowStripKeys: new Map(),
@@ -5098,7 +5276,7 @@ export function App({
       showFormulaSheets: new Set(
         selected.sheets.filter((sheet) => sheet.showFormulas).map((sheet) => sheet.id),
       ),
-      formulaMode: opensInFormulaMode(cellCounts),
+      formulaMode: !progressive && opensInFormulaMode(cellCounts),
       editJournal: createEditJournal(),
       flags: { preloadComplete: false, preloadRunning: false },
       closure: { status: 'idle', pinned: new Map() },
@@ -5139,7 +5317,7 @@ export function App({
       }
     }
     lazyWorkbookRef.current = state
-    void loadRowOutlines(state, lazyWorkbookRef)
+    if (!progressive) void loadRowOutlines(state, lazyWorkbookRef)
     // The cells the reader withheld, read once per open: every read tool asks
     // about cells, so a lazy read would either cost an archive read per call or
     // leave a window in which the model sees the real values. The next workbook
@@ -5261,7 +5439,19 @@ export function App({
     slicersDirtyRef.current = false
     removedSlicerPartsRef.current = []
     disposeVisuals(visualDisposablesRef.current)
-    loadWorkbookSkeleton(univerRef.current, selected)
+    const previousRuntime = univerRef.current
+    const previousWorkbook = previousRuntime?.univerAPI.getActiveWorkbook()
+    if (previousRuntime && previousWorkbook && previewLock.current === previousWorkbook.getId()) {
+      setProgressivePreviewEditable(previousRuntime, previousWorkbook, true)
+    }
+    previewLock.current = null
+    setProgressivePreview(null)
+    installingFileSkeleton.current = progressive
+    try {
+      loadWorkbookSkeleton(univerRef.current, selected)
+    } finally {
+      installingFileSkeleton.current = false
+    }
     applyWorkbookNotes(univerRef.current, selected)
     threadStore.load(selected)
     // a save reopens the same workbook: the user goes on with the comment they were on
@@ -5341,6 +5531,8 @@ export function App({
         // apply the opening sheet's formula view (sheetView/@showFormulas)
         applyShowFormulasView(runtime, state, worksheet.getSheetId())
         setActiveSheetId(worksheet.getSheetId())
+        if (progressive) setZoomPercent(Math.round(worksheet.getZoom() * 100))
+        syncProgressivePreview(worksheet.getSheetId())
         queueVisualInstall(
           runtime,
           lazyWorkbookRef,
@@ -5351,7 +5543,7 @@ export function App({
           shapeEditRef,
         )
         // A post-save reinstall lands back where the user was; anything else
-        // (fresh opens) starts at the first sheet's origin. Falls back to the
+        // (fresh opens) starts at the active sheet's origin. Falls back to the
         // origin when the stashed sheet no longer exists.
         const restore = viewRestoreRef.current
         viewRestoreRef.current = null
@@ -5376,7 +5568,7 @@ export function App({
         }
         // getVisibleRange lags the jump by a frame (same as name-box goto) —
         // anchor the first stream at the restored cell, not the stale origin.
-        void loadVisibleRange(
+        const initialRange = loadVisibleRange(
           runtime,
           lazyWorkbookRef,
           restoredSheet ?? worksheet,
@@ -5384,8 +5576,15 @@ export function App({
           restore && restoredSheet
             ? { row: restore.viewRow, column: restore.viewColumn }
             : undefined,
-        ).then(
-          () => opts?.onInitialRangeLoaded?.(),
+          progressive,
+        )
+        void initialRange.then(
+          () => {
+            opts?.onInitialRangeLoaded?.()
+            if (progressive && lazyWorkbookRef.current === state) {
+              void loadRowOutlines(state, lazyWorkbookRef)
+            }
+          },
           (error: unknown) => {
             setMessage(error instanceof Error ? error.message : t('appLoadRangeFailed'))
             opts?.onInitialRangeLoaded?.()
@@ -5394,16 +5593,21 @@ export function App({
         if (state.formulaMode) {
           void startFullLoad(runtime, lazyWorkbookRef, setMessage)
         } else {
-          // Deferred so first paint and initial streaming win the sidecar.
-          setTimeout(() => {
-            void activateFormulaClosure(runtime, lazyWorkbookRef, setMessage)
-          }, 1500)
+          const scheduleClosure = () => {
+            setTimeout(() => {
+              if (lazyWorkbookRef.current === state) {
+                void activateFormulaClosure(runtime, lazyWorkbookRef, setMessage)
+              }
+            }, 1500)
+          }
+          if (progressive) void initialRange.then(scheduleClosure, scheduleClosure)
+          else scheduleClosure()
           // A streamed book within the Full Load budget scrolls badly: every
           // viewport past the ±80-row/±8-column buffer waits on a sidecar
           // round-trip before it paints. Print already makes such books
           // resident silently; take the same path unprompted once open and
           // closure activation have settled, and scrolling stops streaming.
-          if (autoFullLoadsAtOpen(cellCounts)) {
+          if (!progressive && autoFullLoadsAtOpen(cellCounts)) {
             setTimeout(() => {
               // Guarded: by now another workbook may own the view, and
               // startFullLoad reads the ref — it would load that one instead.
@@ -6078,7 +6282,13 @@ export function App({
         }
         selectionFormat={selectionFormat}
         formatPainterActive={formatPainterActive}
-        statusMessage={openingWorkbook ? t('appOpeningWorkbook') : message}
+        statusMessage={
+          openingWorkbook
+            ? t('appOpeningWorkbook')
+            : progressivePreview
+              ? t(progressivePreview)
+              : message
+        }
         emptyCsvNotice={emptyCsvNotice}
         onOpenWorkbook={() => void handleInspectWorkbook()}
         onDismissEmptyCsvNotice={() => setEmptyCsvNotice(false)}

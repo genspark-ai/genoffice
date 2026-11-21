@@ -89,6 +89,82 @@ export const sheetThreadSchema = z
 export type SheetThread = z.infer<typeof sheetThreadSchema>
 export type SheetThreadReply = z.infer<typeof sheetThreadReplySchema>
 
+const sheetProtectionAllowSchema = z
+  .object({
+    selectLockedCells: z.boolean(),
+    selectUnlockedCells: z.boolean(),
+    formatCells: z.boolean(),
+    formatColumns: z.boolean(),
+    formatRows: z.boolean(),
+    insertColumns: z.boolean(),
+    insertRows: z.boolean(),
+    insertHyperlinks: z.boolean(),
+    deleteColumns: z.boolean(),
+    deleteRows: z.boolean(),
+    sort: z.boolean(),
+    autoFilter: z.boolean(),
+    pivotTables: z.boolean(),
+    objects: z.boolean(),
+    scenarios: z.boolean(),
+  })
+  .strict()
+const sheetPasswordHashSchema = z.union([
+  z.object({ legacy: z.string().min(1).max(8) }).strict(),
+  z
+    .object({
+      algorithmName: z.string().min(1).max(32),
+      hashValue: z.string().max(1024),
+      saltValue: z.string().max(1024),
+      spinCount: z.number().int().nonnegative(),
+    })
+    .strict(),
+])
+const sheetProtectionSchema = z
+  .object({
+    protected: z.boolean(),
+    hasPassword: z.boolean(),
+    /// Absent from stale sidecar binaries.
+    allow: sheetProtectionAllowSchema.optional(),
+    password: sheetPasswordHashSchema.optional(),
+  })
+  .strict()
+  .nullable()
+const protectedRangesSchema = z
+  .array(
+    z
+      .object({
+        name: z.string().min(1),
+        sqref: z.string().min(1),
+        hasPassword: z.boolean(),
+      })
+      .strict(),
+  )
+  .max(1_024)
+
+const sparklineGroupsSchema = z
+  .array(
+    z
+      .object({
+        type: z.enum(['line', 'column', 'stacked']),
+        color: z.string().optional(),
+        negativeColor: z.string().optional(),
+        cells: z
+          .array(
+            z
+              .object({
+                /// A1 address of the host cell.
+                cell: z.string().min(2),
+                /// `Sheet1!A2:C2` source range (sheet-qualified, `$` allowed).
+                sourceRef: z.string().min(1),
+              })
+              .strict(),
+          )
+          .max(500),
+      })
+      .strict(),
+  )
+  .max(100)
+
 const worksheetMetadataSchema = z
   .object({
     id: z.string().min(1),
@@ -98,6 +174,12 @@ const worksheetMetadataSchema = z
     /// Uncompressed worksheet XML size reported by the sidecar. Optional for
     /// compatibility with an older sidecar binary.
     sourceXmlBytes: z.number().int().nonnegative().optional(),
+    progressive: z.boolean().optional(),
+    /// Worksheet protection from the metadata pass. Absent for old sidecars.
+    protection: z
+      .object({ sheetProtection: sheetProtectionSchema, protectedRanges: protectedRangesSchema })
+      .strict()
+      .optional(),
     /// Cells with a value, formula or style (rowCount x columnCount is only
     /// the bounding box). Optional for compatibility with an older sidecar.
     storedCellCount: z.number().int().nonnegative().optional(),
@@ -290,30 +372,7 @@ const worksheetMetadataSchema = z
       .default([]),
     /// x14 sparkline groups (in-cell line/column/win-loss minicharts).
     /// Defaulted for stale sidecar binaries, like pivotTables.
-    sparklines: z
-      .array(
-        z
-          .object({
-            type: z.enum(['line', 'column', 'stacked']),
-            color: z.string().optional(),
-            negativeColor: z.string().optional(),
-            cells: z
-              .array(
-                z
-                  .object({
-                    /// A1 address of the host cell.
-                    cell: z.string().min(2),
-                    /// `Sheet1!A2:C2` source range (sheet-qualified, `$` allowed).
-                    sourceRef: z.string().min(1),
-                  })
-                  .strict(),
-              )
-              .max(500),
-          })
-          .strict(),
-      )
-      .max(100)
-      .default([]),
+    sparklines: sparklineGroupsSchema.default([]),
     /// Saved `_xlnm.Print_Area` / `_xlnm.Print_Titles` formulas for this
     /// sheet, verbatim from workbook.xml.
     printArea: z.string().min(1).max(2_000).optional(),
@@ -434,36 +493,6 @@ const cellStyleSchema = z
     hidden: z.boolean().optional(),
   })
   .strict()
-const sheetProtectionAllowSchema = z
-  .object({
-    selectLockedCells: z.boolean(),
-    selectUnlockedCells: z.boolean(),
-    formatCells: z.boolean(),
-    formatColumns: z.boolean(),
-    formatRows: z.boolean(),
-    insertColumns: z.boolean(),
-    insertRows: z.boolean(),
-    insertHyperlinks: z.boolean(),
-    deleteColumns: z.boolean(),
-    deleteRows: z.boolean(),
-    sort: z.boolean(),
-    autoFilter: z.boolean(),
-    pivotTables: z.boolean(),
-    objects: z.boolean(),
-    scenarios: z.boolean(),
-  })
-  .strict()
-const sheetPasswordHashSchema = z.union([
-  z.object({ legacy: z.string().min(1).max(8) }).strict(),
-  z
-    .object({
-      algorithmName: z.string().min(1).max(32),
-      hashValue: z.string().max(1024),
-      saltValue: z.string().max(1024),
-      spinCount: z.number().int().nonnegative(),
-    })
-    .strict(),
-])
 /// c:txPr//a:defRPr shorthand shared by the chart title and data labels.
 const chartTextStyleSchema = z
   .object({
@@ -882,6 +911,11 @@ export const workbookRangeRequestSchema = z
   .object({
     sessionId: z.string().uuid(),
     sheetId: z.string().min(1),
+    // Interactive reads never wait in the sidecar command queue. Status
+    // requests return only progress when the visible cells are already loaded.
+    mode: z.enum(['viewport', 'status']).optional(),
+    foreground: z.boolean().optional(),
+    rows: z.array(z.number().int().nonnegative()).min(1).max(512).optional(),
     range: z
       .object({
         startRow: z.number().int().nonnegative(),
@@ -898,12 +932,123 @@ export const workbookRangeRequestSchema = z
       context.addIssue({ code: 'custom', message: 'Range boundaries are reversed.' })
       return
     }
-    const rows = range.endRow - range.startRow + 1
+    if (
+      request.rows?.some(
+        (row, i, rows) =>
+          row < range.startRow || row > range.endRow || (i > 0 && row <= rows[i - 1]!),
+      )
+    ) {
+      context.addIssue({ code: 'custom', message: 'Invalid sparse row selection.' })
+    }
+    const rows = request.rows?.length ?? range.endRow - range.startRow + 1
     const columns = range.endColumn - range.startColumn + 1
     if (rows * columns > MAX_RANGE_CELLS) {
       context.addIssue({ code: 'custom', message: `Range exceeds ${MAX_RANGE_CELLS} cells.` })
     }
   })
+
+const filterRow = z.number().int().min(0).max(1_048_575)
+const filterColumn = z
+  .object({
+    fileColumn: z.number().int().min(0).max(16_383).nullable(),
+    overrides: z
+      .array(
+        z
+          .object({
+            startRow: filterRow,
+            endRow: filterRow,
+            value: cellScalarSchema,
+          })
+          .strict(),
+      )
+      .max(1_048_576),
+    predicate: z
+      .discriminatedUnion('kind', [
+        z
+          .object({
+            kind: z.literal('values'),
+            values: z.array(z.string()).max(1_048_576),
+            blank: z.boolean(),
+          })
+          .strict(),
+        z
+          .object({
+            kind: z.literal('conditions'),
+            and: z.boolean(),
+            conditions: z
+              .array(
+                z
+                  .object({
+                    value: z.union([z.string(), z.number()]),
+                    operator: z
+                      .enum([
+                        'equal',
+                        'notEqual',
+                        'greaterThan',
+                        'greaterThanOrEqual',
+                        'lessThan',
+                        'lessThanOrEqual',
+                      ])
+                      .optional(),
+                  })
+                  .strict(),
+              )
+              .max(2),
+          })
+          .strict(),
+      ])
+      .optional(),
+  })
+  .strict()
+
+export const workbookFilterRequestSchema = z
+  .object({
+    sessionId: z.string().uuid(),
+    sheetId: z.string().min(1),
+    startRow: filterRow,
+    endRow: filterRow,
+    spans: z
+      .array(z.object({ startRow: filterRow, endRow: filterRow, fileStartRow: filterRow }).strict())
+      .max(1_048_576),
+    criteria: z.array(filterColumn).max(16_384),
+    page: z
+      .object({
+        column: filterColumn,
+        query: z.string().max(32_767),
+        offset: z.number().int().min(0).max(1_048_576),
+        limit: z.number().int().min(1).max(200),
+      })
+      .strict()
+      .optional(),
+  })
+  .strict()
+
+export const workbookFilterResultSchema = z
+  .object({
+    ready: z.boolean(),
+    hidden: z.string().max(174_764).optional(),
+    page: z
+      .object({
+        total: z.number().int().min(0).max(1_048_576),
+        values: z
+          .array(
+            z
+              .object({
+                text: z.string(),
+                count: z.number().int().min(1).max(1_048_576),
+                styleIndex: z.number().int().nonnegative().optional(),
+              })
+              .strict(),
+          )
+          .max(200),
+      })
+      .strict()
+      .optional(),
+  })
+  .strict()
+
+export type WorkbookFilterRequest = z.infer<typeof workbookFilterRequestSchema>
+export type WorkbookFilterResult = z.infer<typeof workbookFilterResultSchema>
 
 const workbookCellRecordSchema = z
   .object({
@@ -997,7 +1142,7 @@ export const workbookRangeResultSchema = z
       .max(MAX_RANGE_CELLS),
     conditionalRules: z.array(conditionalRuleSchema).max(MAX_RANGE_CELLS),
     autoFilter: cellAreaSchema.nullable(),
-    /// The autoFilter's live per-column criteria; sheet-wide, complete-only,
+    /// The autoFilter's live per-column criteria, available with metadata,
     /// empty when the filter has none (or the sheet has no filter).
     autoFilterColumns: z.array(filterColumnStateSchema).max(1_000),
     dataValidations: z
@@ -1022,24 +1167,24 @@ export const workbookRangeResultSchema = z
           .strict(),
       )
       .max(MAX_RANGE_CELLS),
-    /// Sheet-wide, delivered complete-only (like autoFilter). null = no
-    /// <sheetProtection> element in the worksheet.
-    sheetProtection: z
+    /// Authoritative when metadataReady or indexingComplete is true.
+    /// null then means that the worksheet has no <sheetProtection>.
+    sheetProtection: sheetProtectionSchema,
+    sparklines: sparklineGroupsSchema.optional(),
+    cellCounts: z
       .object({
-        protected: z.boolean(),
-        hasPassword: z.boolean(),
-        /// Absent from stale sidecar binaries.
-        allow: sheetProtectionAllowSchema.optional(),
-        password: sheetPasswordHashSchema.optional(),
+        storedCellCount: z.number().int().nonnegative(),
+        valueCellCount: z.number().int().nonnegative(),
+        valueRowCount: z.number().int().nonnegative(),
+        valueColumnCount: z.number().int().nonnegative(),
       })
       .strict()
-      .nullable(),
-    /// Manual page breaks (0-based index of the row/column after the break);
-    /// sheet-wide, complete-only.
+      .optional(),
+    /// Manual page breaks (0-based index of the row/column after the break).
     rowBreaks: z.array(z.number().int().nonnegative()).max(1_024),
     colBreaks: z.array(z.number().int().nonnegative()).max(1_024),
     /// Saved print settings (pageSetup / pageMargins / printOptions /
-    /// headerFooter); sheet-wide, complete-only. Absent/null when the sheet
+    /// headerFooter). Absent/null when the sheet
     /// declares none (also for stale sidecar binaries).
     pageSetup: z
       .object({
@@ -1098,19 +1243,12 @@ export const workbookRangeResultSchema = z
       .nullish()
       .default(null),
     /// Allow-edit ranges (<protectedRanges>); sheet-wide, complete-only.
-    protectedRanges: z
-      .array(
-        z
-          .object({
-            name: z.string().min(1),
-            sqref: z.string().min(1),
-            hasPassword: z.boolean(),
-          })
-          .strict(),
-      )
-      .max(1_024),
+    protectedRanges: protectedRangesSchema,
     indexedThroughRow: z.number().int().nonnegative().nullable(),
     indexingComplete: z.boolean(),
+    /// Older sidecars publish the sheet-wide metadata at indexingComplete.
+    metadataReady: z.boolean().optional(),
+    metadataScanFailed: z.boolean().optional(),
   })
   .strict()
 
@@ -1118,6 +1256,9 @@ export const workbookFormulaCellsRequestSchema = z
   .object({
     sessionId: z.string().uuid(),
     sheetId: z.string().min(1),
+    // A workbook-wide background scan observes the index without starting
+    // or accelerating a sheet the user has not visited.
+    background: z.boolean().optional(),
   })
   .strict()
 
@@ -3477,6 +3618,7 @@ export interface DesktopApi {
   onSidecarCrashed(callback: () => void): () => void
   readWorkbookRange(request: WorkbookRangeRequest): Promise<WorkbookRangeResult>
   readWorkbookFormulas(request: WorkbookFormulaCellsRequest): Promise<WorkbookFormulaCellsResult>
+  filterWorkbookRows(request: WorkbookFilterRequest): Promise<WorkbookFilterResult>
   findWorkbookCells(request: WorkbookFindCellsRequest): Promise<WorkbookFindCellsResult>
   /** The workbook's refreshable data connections (web queries for now). */
   listWorkbookConnections(request: WorkbookConnectionsRequest): Promise<WorkbookConnectionsResult>

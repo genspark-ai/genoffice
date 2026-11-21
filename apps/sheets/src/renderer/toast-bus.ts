@@ -5,6 +5,7 @@
 export interface ToastData {
   text: string
   kind: 'success' | 'error' | 'info'
+  placement?: 'top-right'
 }
 
 let emit: ((toast: ToastData) => void) | null = null
@@ -14,6 +15,10 @@ export function setToastEmitter(fn: ((toast: ToastData) => void) | null): void {
   emit = fn
 }
 
-export function showToast(text: string, kind: ToastData['kind'] = 'success'): void {
-  emit?.({ text, kind })
+export function showToast(
+  text: string,
+  kind: ToastData['kind'] = 'success',
+  placement?: ToastData['placement'],
+): void {
+  emit?.({ text, kind, ...(placement ? { placement } : {}) })
 }
