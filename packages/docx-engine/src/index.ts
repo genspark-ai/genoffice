@@ -278,6 +278,7 @@ export {
   applyTrackedChangesXml,
   cleanMoveRangeMarkers,
   countTrackedChangesXml,
+  dropStoryOwnedRecords,
   readPropChangeXml,
   readTrackedChangeRecords,
   resolvePropChangeXml,

@@ -2137,8 +2137,12 @@ export function pmDocToSavePlan(inputDoc: PmNode, originalBlocks: Block[]): Save
         }
         // accepted / rejected records inside a passthrough block (a deleted
         // field): the decisions replay on the original bytes — the model keeps
-        // no editable copy of this content (issue #2808)
+        // no editable copy of this content (issue #2808). The replayed bytes
+        // become the base the other patches of this block apply onto, so a
+        // resolution and a textbox edit on one block both land; when nothing
+        // else patches the block, the replay itself is the block's output.
         const resolutionsAttr = node.attrs?.revisionResolutions as string | null | undefined
+        let resolvedBase: string | null = null
         if (resolutionsAttr && original.originalXml) {
           let steps: RevisionResolution[]
           try {
@@ -2149,18 +2153,18 @@ export function pmDocToSavePlan(inputDoc: PmNode, originalBlocks: Block[]): Save
           const resolved = applyRevisionResolutions(original.originalXml, steps)
           if (resolved !== original.originalXml) {
             changedCount++
-            pushBlock({ kind: 'xml', xml: resolved })
-            continue
+            resolvedBase = resolved
           }
         }
+        const stepBase = resolvedBase ?? original.originalXml
         const sectMode = original.sectPrChange
           ? sectPrChangeMode(node.attrs?.sectPrChange as string | null | undefined)
           : null
-        if (sectMode && original.originalXml) {
+        if (sectMode && stepBase) {
           changedCount++
           pushBlock({
             kind: 'xml',
-            xml: resolvePropChangeXml(original.originalXml, 'w:sectPrChange', sectMode),
+            xml: resolvePropChangeXml(stepBase, 'w:sectPrChange', sectMode),
           })
           continue
         }
@@ -2201,11 +2205,9 @@ export function pmDocToSavePlan(inputDoc: PmNode, originalBlocks: Block[]): Save
           original.type === 'image'
             ? (node.attrs?.imageReplace as { base64: string; mime: string } | null)
             : null
-        if ((imagePatch || imageReplace) && original.originalXml) {
+        if ((imagePatch || imageReplace) && stepBase) {
           changedCount++
-          let xml = imagePatch
-            ? patchImageParagraphXml(original.originalXml, imagePatch)
-            : original.originalXml
+          let xml = imagePatch ? patchImageParagraphXml(stepBase, imagePatch) : stepBase
           if (imagePatch?.wrap !== undefined) {
             const posOffset =
               imagePatch.posOffsetX !== undefined && imagePatch.posOffsetY !== undefined
@@ -2261,19 +2263,19 @@ export function pmDocToSavePlan(inputDoc: PmNode, originalBlocks: Block[]): Save
                 }
               : {}),
           })
-        } else if (tableTexts && original.originalXml) {
+        } else if (tableTexts && stepBase) {
           changedCount++
-          pushBlock({ kind: 'xml', xml: patchTableCellTexts(original.originalXml, tableTexts) })
+          pushBlock({ kind: 'xml', xml: patchTableCellTexts(stepBase, tableTexts) })
         } else if (
           (textboxTexts ||
             textboxSizes ||
             textboxStyles ||
             textboxPositionChanged ||
             shapeWrapChanges.length > 0) &&
-          original.originalXml
+          stepBase
         ) {
           changedCount++
-          let xml = original.originalXml
+          let xml = stepBase
           if (textboxTexts) xml = patchTextboxParas(xml, textboxTexts)
           if (textboxSizes) xml = patchTextboxSizes(xml, textboxSizes)
           if (textboxStyles) xml = patchShapeStyles(xml, textboxStyles)
@@ -2315,24 +2317,24 @@ export function pmDocToSavePlan(inputDoc: PmNode, originalBlocks: Block[]): Save
             )
           }
           pushBlock({ kind: 'xml', xml })
-        } else if (fieldText && original.originalXml) {
+        } else if (fieldText && stepBase) {
           changedCount++
-          pushBlock({ kind: 'xml', xml: patchFieldParagraphXml(original.originalXml, fieldText) })
-        } else if (formulaTokens && original.originalXml) {
+          pushBlock({ kind: 'xml', xml: patchFieldParagraphXml(stepBase, fieldText) })
+        } else if (formulaTokens && stepBase) {
           changedCount++
-          pushBlock({ kind: 'xml', xml: patchMathTokens(original.originalXml, formulaTokens) })
-        } else if (chartSize && original.originalXml) {
+          pushBlock({ kind: 'xml', xml: patchMathTokens(stepBase, formulaTokens) })
+        } else if (chartSize && stepBase) {
           changedCount++
           pushBlock({
             kind: 'xml',
-            xml: patchDrawingExtent(original.originalXml, chartSize.w, chartSize.h),
+            xml: patchDrawingExtent(stepBase, chartSize.w, chartSize.h),
           })
         } else if (
           harmonizeZOrders &&
           original.type === 'image' &&
           original.imageZOrderNormalized &&
           original.imageWrap &&
-          original.originalXml
+          stepBase
         ) {
           // untouched anchor still carrying a wild producer relativeHeight:
           // re-encode ONLY that attribute to base+rank so it stays ordered
@@ -2342,10 +2344,17 @@ export function pmDocToSavePlan(inputDoc: PmNode, originalBlocks: Block[]): Save
           changedCount++
           pushBlock({
             kind: 'xml',
-            xml: applyImageZOrder(original.originalXml, original.imageZOrder),
+            xml: applyImageZOrder(stepBase, original.imageZOrder),
           })
         } else {
-          pushBlock({ kind: 'original', docxIndex: idx })
+          // a resolution that changed the bytes and no other patch: the
+          // replay itself is this block's output
+          if (resolvedBase !== null) {
+            changedCount++
+            pushBlock({ kind: 'xml', xml: resolvedBase })
+          } else {
+            pushBlock({ kind: 'original', docxIndex: idx })
+          }
         }
       } else if (idx !== null && idx !== undefined && originalByIndex.has(idx)) {
         // pasted copy: the anchor is consumed by the first occurrence, so clone from the block's own data

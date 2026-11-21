@@ -526,6 +526,68 @@ export interface TrackedChangeRecord {
  * through this summary instead: the editor lists them and accept / reject replays
  * the decision on the block's original bytes with applyRevisionResolutions.
  */
+/** the id / author / date tuple that identifies one record across models */
+const recordSummaryKey = (
+  kind: string,
+  rec: { id?: string; author?: string; date?: string },
+): string => `${kind}|${rec.id ?? ''}|${rec.author ?? ''}|${rec.date ?? ''}`
+
+/** Structural view of the anchored textbox display models (TextboxDisplay
+ *  without importing the types module — it imports from here). */
+export interface StoryOwnedBoxLike {
+  paras: readonly {
+    runs: readonly {
+      ins?: { id?: string; author?: string; date?: string }
+      del?: { id?: string; author?: string; date?: string }
+    }[]
+    /** a box table cell: its paragraphs, each already a runs array (HfTableCell.paras) */
+    cells?: readonly {
+      paras: readonly (readonly {
+        ins?: { id?: string; author?: string; date?: string }
+        del?: { id?: string; author?: string; date?: string }
+      }[])[]
+    }[]
+  }[]
+}
+
+/**
+ * Drop the records a block's own textbox display models list and resolve
+ * through the story path (the box's runs carry the same ins/del the block
+ * XML does). If they stayed in the summary, a decision that leaves the
+ * display model — a reject empties the runs' marks — would re-list them as
+ * pending protected records, and Accept All could then resolve them on the
+ * original bytes: saving the opposite of what the editor shows.
+ */
+export function dropStoryOwnedRecords(
+  records: readonly TrackedChangeRecord[],
+  boxes: readonly unknown[] | undefined,
+): TrackedChangeRecord[] {
+  const typed = boxes as readonly StoryOwnedBoxLike[] | undefined
+  if (!typed || typed.length === 0) return [...records]
+  const owned = new Set<string>()
+  const addRuns = (
+    runs: readonly {
+      ins?: { id?: string; author?: string; date?: string }
+      del?: { id?: string; author?: string; date?: string }
+    }[],
+  ): void => {
+    for (const run of runs) {
+      if (run.ins) owned.add(recordSummaryKey('ins', run.ins))
+      if (run.del) owned.add(recordSummaryKey('del', run.del))
+    }
+  }
+  for (const box of typed) {
+    for (const para of box.paras) {
+      addRuns(para.runs)
+      for (const cell of para.cells ?? []) for (const runs of cell.paras) addRuns(runs)
+    }
+  }
+  return records.filter(
+    (rec) =>
+      (rec.kind !== 'ins' && rec.kind !== 'del') || !owned.has(recordSummaryKey(rec.kind, rec)),
+  )
+}
+
 export function readTrackedChangeRecords(xml: string): TrackedChangeRecord[] {
   if (
     !/<w:(?:ins|del|moveFrom|moveTo|cellIns|cellDel|cellMerge|numberingChange|\w+Change)[\s/>]/.test(

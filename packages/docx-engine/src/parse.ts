@@ -9,7 +9,7 @@ import { isMetafileMime, metafileToDataUrl } from './metafile'
 import { isTiffMime, tiffToDataUrlAsync } from './tiff'
 import { ommlEndsWithBreak, ommlFragmentsOf, ommlToLatex, ommlToMathML } from './math'
 import { splitXmlChildren } from './generate'
-import { readPropChangeXml, readTrackedChangeRecords } from './revision-xml'
+import { dropStoryOwnedRecords, readPropChangeXml, readTrackedChangeRecords } from './revision-xml'
 import {
   NOTE_PART_PATH,
   parseNoteSeparator,
@@ -619,7 +619,13 @@ export async function parseDocx(
     // editor list and resolve them (see readTrackedChangeRecords)
     if (block.type === 'passthrough') {
       const records = readTrackedChangeRecords(xml)
-      if (records.length > 0) block.revisionRecords = records
+      // records the block's own textbox display models list and resolve
+      // through the story path never ride the summary: once a decision
+      // leaves the display model (a reject), a summary copy would re-list as
+      // pending and Accept All could resolve it on the original bytes —
+      // saving the opposite of what the editor shows
+      const summary = dropStoryOwnedRecords(records, block.textboxes)
+      if (summary.length > 0) block.revisionRecords = summary
     }
     blocks.push(block)
     buildCtx.floatTableAhead = floatTableColumnSpan(block, sectionAt(el.start))
