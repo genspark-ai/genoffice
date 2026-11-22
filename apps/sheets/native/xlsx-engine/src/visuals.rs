@@ -43,6 +43,9 @@ pub struct CellStyle {
     pub bold: bool,
     pub italic: bool,
     pub underline: bool,
+    /// Double underline is distinct from the default single line.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub underline_style: Option<String>,
     pub strikethrough: bool,
     /// font <vertAlign val>: "superscript" | "subscript"; absent for baseline.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -129,6 +132,7 @@ impl CellStyle {
             || self.bold != default.bold
             || self.italic != default.italic
             || self.underline != default.underline
+            || self.underline_style != default.underline_style
             || self.strikethrough != default.strikethrough
             || self.vert_align != default.vert_align
             || self.font_color != default.font_color
@@ -627,6 +631,7 @@ pub(crate) struct FontStyle {
     bold: bool,
     italic: bool,
     underline: bool,
+    underline_style: Option<String>,
     strikethrough: bool,
     vert_align: Option<String>,
     color: Option<String>,

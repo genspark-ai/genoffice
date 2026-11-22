@@ -2,6 +2,7 @@ import { Worker } from 'node:worker_threads'
 import type { Extracted } from './extract'
 import type { WorkerRequest, WorkerResponse } from './extract-worker'
 import { isSupportedTreeFile } from '../folder-tree'
+import { isUnderExcludedFolder } from '@genoffice/electron-utils'
 import { statOrNull, type ScannedFile } from './scan'
 import type { FileIndexStore } from './store'
 
@@ -18,6 +19,9 @@ export interface IndexerSources {
   roots: () => readonly string[]
   /** files outside the roots that should still be searchable (recents, starred) */
   extraPaths: () => readonly string[]
+  /** folders the user excluded from search: roots inside them are skipped and
+   *  the walk prunes them from the trees it does enter (#2844) */
+  excludedFolders?: () => readonly string[]
 }
 
 const RESCAN_DEBOUNCE_MS = 1500
@@ -109,8 +113,11 @@ export class FileIndexer {
       const seen = new Map<string, ScannedFile>()
       let walked = true
       let complete = true
+      const excluded = this.sources.excludedFolders?.() ?? []
       for (const root of this.sources.roots()) {
-        const res = await this.ask({ id: 0, type: 'scan', root })
+        // a root that sits inside an excluded folder is not a tree to walk
+        if (excluded.length > 0 && isUnderExcludedFolder(root, excluded)) continue
+        const res = await this.ask({ id: 0, type: 'scan', root, excludedFolders: excluded })
         // a crashed worker answers with an extract error; dropping the index on that would empty search
         if (res.type === 'scan') {
           for (const f of res.files) seen.set(f.path, f)
@@ -133,7 +140,10 @@ export class FileIndexer {
   // a budget-capped walk cannot tell a vanished file from one it never reached,
   // so entries are only removed when every root was walked to the end
   private diff(seen: Map<string, ScannedFile>, complete: boolean): void {
-    for (const p of this.sources.extraPaths()) {
+    const excluded = this.sources.excludedFolders?.() ?? []
+    for (const p of this.sources
+      .extraPaths()
+      .filter((p) => excluded.length === 0 || !isUnderExcludedFolder(p, excluded))) {
       if (seen.has(p) || !isSupportedTreeFile(p)) continue
       const st = statOrNull(p)
       if (st) seen.set(p, st)

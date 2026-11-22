@@ -36,9 +36,25 @@ export function wordUnitAt(text: string, index: number): [number, number] | null
   return [head.index, end]
 }
 
-export const DoubleClickWordExtension = Extension.create({
+export interface DoubleClickWordStorage {
+  /** a double-click the host takes over (a page margin opens its header or
+   *  footer): no word is selected under it */
+  claimed: ((event: MouseEvent) => boolean) | null
+}
+
+declare module '@tiptap/core' {
+  interface Storage {
+    doubleClickWord: DoubleClickWordStorage
+  }
+}
+
+export const DoubleClickWordExtension = Extension.create<object, DoubleClickWordStorage>({
   name: 'doubleClickWord',
+  addStorage() {
+    return { claimed: null }
+  },
   addProseMirrorPlugins() {
+    const storage = this.storage
     return [
       new Plugin({
         props: {
@@ -46,6 +62,7 @@ export const DoubleClickWordExtension = Extension.create({
             // ProseMirror also reports two quick nearby clicks as a double click;
             // only the browser's own count is a real one
             if (event.detail < 2 || event.button !== 0) return false
+            if (storage.claimed?.(event)) return true
             if (event.shiftKey || event.altKey || event.metaKey) return false
             const $pos = view.state.doc.resolve(pos)
             if (!$pos.parent.isTextblock) return false

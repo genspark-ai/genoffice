@@ -3908,6 +3908,9 @@ function parseCellStyle(input: unknown): WorkbookCellStyle {
     typeof input.bold !== 'boolean' ||
     typeof input.italic !== 'boolean' ||
     typeof input.underline !== 'boolean' ||
+    (input.underlineStyle !== undefined &&
+      input.underlineStyle !== 'single' &&
+      input.underlineStyle !== 'double') ||
     typeof input.strikethrough !== 'boolean' ||
     typeof input.wrapText !== 'boolean' ||
     (input.shrinkToFit !== undefined && typeof input.shrinkToFit !== 'boolean') ||
@@ -3951,6 +3954,7 @@ function parseCellStyle(input: unknown): WorkbookCellStyle {
     bold: input.bold,
     italic: input.italic,
     underline: input.underline,
+    ...(input.underlineStyle === undefined ? {} : { underlineStyle: input.underlineStyle }),
     strikethrough: input.strikethrough,
     wrapText: input.wrapText,
     diagonalUp: input.diagonalUp,

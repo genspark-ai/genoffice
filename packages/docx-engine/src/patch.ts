@@ -145,6 +145,11 @@ import {
 } from './zotero-doc-props'
 import { applyPropertyChanges, type PropertyChanges } from './doc-properties'
 import { patchHfPicturesXml } from './run-picture'
+import {
+  injectIntoParagraph,
+  paragraphPermMarkers,
+  restoreParagraphPermMarkers,
+} from './perm-ranges'
 import { saveMathPr, type MathPrEdit } from './math-pr'
 
 /**
@@ -387,6 +392,55 @@ function saveBlockDocxIndex(fb: SaveBlock): number | undefined {
   if (fb.kind === 'original') return fb.docxIndex
   if (fb.kind === 'generated' || fb.kind === 'xml') return fb.docxIndex
   return undefined
+}
+
+/**
+ * Editing-permission markers of top-level paragraphs that are gone (joined
+ * into the paragraph above, or deleted) go to the nearest paragraph still
+ * there. An end moves back to the paragraph before the one that was removed,
+ * so a range whose last paragraph was merged into the one above still closes
+ * after the merged paragraph. Without it the start stayed, the end vanished,
+ * and on reopen the range ran to the end of the document, unlocking it all. A
+ * start moves forward to the next paragraph. Markers still in the body stay
+ * where they are; each one is written once.
+ */
+function rehomeLostPermMarkers(
+  parts: string[],
+  placed: ReadonlyArray<{ part: number; docxIndex: number | undefined }>,
+  elements: ReadonlyArray<{ name: string; start: number; end: number }>,
+  documentXml: string,
+): void {
+  const kept = new Set(placed.map((p) => p.docxIndex).filter((i) => i !== undefined))
+  const isParagraph = (part: number) =>
+    /^<w:p[\s>]/.test(parts[part]!) && parts[part]!.endsWith('</w:p>')
+  let body = parts.join('')
+  elements.forEach((el, index) => {
+    if (el.name !== 'w:p' || kept.has(index)) return
+    const { starts, ends } = paragraphPermMarkers(documentXml.slice(el.start, el.end))
+    const lostStarts = starts.filter((m) => !body.includes(m))
+    const lostEnds = ends.filter((m) => !body.includes(m))
+    if (lostStarts.length === 0 && lostEnds.length === 0) return
+    // the first block that came after the removed paragraph in the original
+    const next = placed.findIndex((p) => p.docxIndex !== undefined && p.docxIndex > index)
+    const before = (next === -1 ? placed : placed.slice(0, next)).filter((p) => isParagraph(p.part))
+    const after = (next === -1 ? [] : placed.slice(next)).filter((p) => isParagraph(p.part))
+    const endHome = before[before.length - 1] ?? after[0]
+    const startHome = after[0] ?? before[before.length - 1]
+    if (lostEnds.length > 0 && endHome) {
+      // a paragraph after the removed one takes the end at its start: nothing of it is covered
+      parts[endHome.part] =
+        endHome === before[before.length - 1]
+          ? injectIntoParagraph(parts[endHome.part]!, '', lostEnds.join(''))
+          : injectIntoParagraph(parts[endHome.part]!, lostEnds.join(''), '')
+    }
+    if (lostStarts.length > 0 && startHome) {
+      parts[startHome.part] =
+        startHome === after[0]
+          ? injectIntoParagraph(parts[startHome.part]!, lostStarts.join(''), '')
+          : injectIntoParagraph(parts[startHome.part]!, '', lostStarts.join(''))
+    }
+    body = parts.join('')
+  })
 }
 
 /** Body content in final editor order (hidden trailing elements are appended automatically). */
@@ -2131,7 +2185,22 @@ export async function saveDocx(
     return { indexes, shell, first, last }
   })
 
+  // A rebuilt paragraph keeps its editing-permission markers. When one original
+  // paragraph became several blocks (a split), starts go to the first of them
+  // and ends to the last, so every marker id stays unique.
+  const permSpan = new Map<number, { first: number; last: number }>()
+  if (documentXml.includes('<w:perm')) {
+    finalBlocks.forEach((fb, i) => {
+      if (fb.kind !== 'generated' || fb.docxIndex === undefined) return
+      const span = permSpan.get(fb.docxIndex)
+      if (span) span.last = i
+      else permSpan.set(fb.docxIndex, { first: i, last: i })
+    })
+  }
+
   const parts: string[] = [...detachedOpaque]
+  /** where each final block landed in `parts` (lost permission markers are re-homed by it) */
+  const placed: Array<{ part: number; docxIndex: number | undefined }> = []
   for (let i = 0; i < finalBlocks.length; i++) {
     const fb = finalBlocks[i]
     let xml: string
@@ -2145,6 +2214,14 @@ export async function saveDocx(
     } else if (fb.kind === 'generated') {
       if (fb.docxIndex !== undefined) fbDocxIndex = fb.docxIndex
       xml = generateParagraphXml(fb.block, genCtx)
+      const span = fb.docxIndex !== undefined ? permSpan.get(fb.docxIndex) : undefined
+      const sourceEl = span ? elements[fb.docxIndex!] : undefined
+      if (span && sourceEl?.name === 'w:p') {
+        xml = restoreParagraphPermMarkers(documentXml.slice(sourceEl.start, sourceEl.end), xml, {
+          starts: span.first === i,
+          ends: span.last === i,
+        })
+      }
       // If the original paragraph was inside a w:sdt shell, re-wrap it. The
       // chain is flattened here to the outermost shell (nested regenerated
       // paragraphs inside several controls are not re-wrapped; an untouched
@@ -2223,8 +2300,11 @@ export async function saveDocx(
       if (wrap.first === i) xml = wrap.shell.openXml + xml
       if (wrap.last === i) xml = xml + wrap.shell.closeXml
     }
+    placed.push({ part: parts.length, docxIndex: fbDocxIndex })
     parts.push(xml)
   }
+  // before regrouping: `placed` indexes `parts` as built above
+  if (documentXml.includes('<w:perm')) rehomeLostPermMarkers(parts, placed, elements, documentXml)
   if (options.groups?.length || options.carried?.length) {
     const lead = detachedOpaque.length
     const at = <T extends { block: number }>(item: T): T => ({ ...item, block: item.block + lead })

@@ -40,7 +40,7 @@ genoffice convert report.docx --to html               # the Word editor's standa
 genoffice convert page.html --to docx                 # html2docx, same as the HTML app's Export as Word
 genoffice convert report.docx --to md                 # GFM via the markdown editor's serializer
 genoffice convert letter.doc --to docx                # Word 97-2003 .doc/.dot through the in-process doc2docx importer
-genoffice convert book.xlsx --to csv [--sheet Data]   # one sheet, cell text as displayed, UTF-8 BOM, CRLF
+genoffice convert book.xlsx --to csv [--sheet Data] [--neutralize-formulas]   # one sheet, cell text as displayed, UTF-8 BOM, CRLF; --neutralize-formulas prefixes formula-like cells (=, @/+/- function calls, DDE) with an apostrophe — off by default so ordinary data keeps its bytes
 genoffice capabilities --json                        # which cloud features GenOffice has configured (no network call)
 genoffice search "electron headless export" [--images] [--max 6] --json
 genoffice image "isometric office, soft light" --aspect 16:9 --out hero.png
