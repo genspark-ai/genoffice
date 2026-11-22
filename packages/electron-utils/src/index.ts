@@ -63,6 +63,12 @@ export {
   resolveDefaultSaveDir,
   type PathProvider,
 } from './default-save-dir'
+export {
+  EXCLUDED_FOLDERS_KEY,
+  isUnderExcludedFolder,
+  normalizeExcludedFolders,
+  readExcludedFolders,
+} from './excluded-folders'
 export { installNavigationGuard } from './navigation-guard'
 export {
   decodeChunks,
@@ -190,3 +196,10 @@ export {
   writePdfDefaultZoom,
   type PdfDefaultZoom,
 } from './pdf-zoom-prefs'
+export {
+  tileRects,
+  tileWindows,
+  TILE_MIN_ROW_HEIGHT,
+  type TileRect,
+  type TileWindow,
+} from './window-tiles'

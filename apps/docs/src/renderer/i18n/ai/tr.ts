@@ -9,6 +9,7 @@ export const tr = {
   aiStarterContinue: 'Belgenin kaldığı yerden yazmaya devam et',
   aiStarterFillTemplate: 'Bu belgedeki yer tutucuları bul ve doldur',
   aiGskLoginBtn: "Genspark'a giriş yap",
+  aiGskLoginOk: 'Genspark’a giriş yapıldı',
   aiPanelTitle: 'Genspark',
   aiOpenAssistant: 'Yapay zekâ asistanını aç',
   aiSummarizeBtn: 'AI Özetle',

@@ -18,6 +18,7 @@ export const vi = {
   aiQcStopped: 'Đã dừng kiểm tra bố cục',
   aiQcCapped: 'Còn {count} trang chưa được kiểm tra (đạt giới hạn mỗi lần chạy)',
   aiGskLoginBtn: 'Đăng nhập Genspark',
+  aiGskLoginOk: 'Đã đăng nhập Genspark',
   aiPanelTitle: 'Genspark',
   aiOpenAssistant: 'Mở trợ lý AI',
   aiFactCheckBtn: 'Kiểm chứng thông tin AI',

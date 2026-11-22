@@ -117,6 +117,7 @@ function writeGridWidths(
   tr: Transaction,
   target: GridTarget,
   widths: number[],
+  keepPctTable = false,
 ): Transaction {
   const { map, table, tableStart } = target
   const seen = new Set<number>()
@@ -136,6 +137,10 @@ function writeGridWidths(
     }
   }
   const total = widths.reduce((sum, width) => sum + width, 0)
+  const colWidthsPct = widths.map((width) => (width / total) * 100)
+  // the shares moved inside a table that stays a share of the page
+  if (keepPctTable && table.attrs.widthPct)
+    return tr.setNodeMarkup(tableStart - 1, undefined, { ...table.attrs, colWidthsPct })
   // Word turns an AutoFit table into a fixed grid the moment a border is
   // dragged; leaving 'window' would keep rendering it at the full content width
   const autoFit =
@@ -145,7 +150,7 @@ function writeGridWidths(
     ...autoFit,
     widthPx: total,
     widthPct: null,
-    colWidthsPct: widths.map((width) => (width / total) * 100),
+    colWidthsPct,
   })
   return tr
 }
@@ -175,6 +180,76 @@ function resizeColumns(
 export function setSelectedColumnWidth(desiredPx: number, maxWidthPx: number): Command {
   return (state, dispatch) =>
     resizeColumns(state, dispatch, desiredPx, maxWidthPx, targetFromSelection(state))
+}
+
+/** each column in [left, right) takes `pct` of the grid, the others share the rest; the total stays */
+export function shareColumnWidths(
+  current: number[],
+  left: number,
+  right: number,
+  pct: number,
+  minimum = MIN_TABLE_COLUMN_PX,
+): number[] {
+  const total = current.reduce((sum, width) => sum + width, 0)
+  const picked = right - left
+  const others = current.length - picked
+  if (!(total > 0) || picked <= 0) return current
+  if (others <= 0) return current.map(() => Math.round((total / picked) * 100) / 100)
+  const floor = Math.min(minimum, total / current.length)
+  const each = Math.min(
+    Math.max(floor, (Math.max(0, pct) / 100) * total),
+    (total - floor * others) / picked,
+  )
+  const rest = total - each * picked
+  const restNow = total - current.slice(left, right).reduce((sum, width) => sum + width, 0)
+  return current.map((width, col) => {
+    const next =
+      col >= left && col < right ? each : restNow > 0 ? (width / restNow) * rest : rest / others
+    return Math.round(next * 100) / 100
+  })
+}
+
+/**
+ * Table Properties > Preferred width: a length resizes like the ribbon field, a
+ * percent keeps the table's width; either way the columns' cells remember the unit.
+ */
+export function setSelectedColumnPreferredWidth(
+  width: { px: number } | { pct: number },
+  maxWidthPx: number,
+): Command {
+  return (state, dispatch) => {
+    const target = targetFromSelection(state)
+    if (!target) return false
+    const current = tableGridWidths(state, target, maxWidthPx)
+    if (!current) return false
+    const inPct = 'pct' in width
+    let widths: number[]
+    if (inPct) {
+      widths = shareColumnWidths(current, target.left, target.right, width.pct)
+    } else {
+      const requested = new Map<number, number>()
+      for (let col = target.left; col < target.right; col++) requested.set(col, width.px)
+      widths = fitColumnWidths(current, requested, maxWidthPx)
+    }
+    const resized = widths.some((w, index) => Math.abs(w - current[index]) > 0.01)
+    let tr = resized ? writeGridWidths(state, state.tr, target, widths, inPct) : state.tr
+    const { map, tableStart } = target
+    const seen = new Set<number>()
+    let flagged = false
+    for (let index = 0; index < map.map.length; index++) {
+      const cellPos = map.map[index]
+      if (seen.has(cellPos)) continue
+      seen.add(cellPos)
+      const rect = map.findCell(cellPos)
+      if (rect.left < target.left || rect.right > target.right) continue
+      const cell = tr.doc.nodeAt(tableStart + cellPos)
+      if (!cell || !!cell.attrs.widthPct === inPct) continue
+      tr = tr.setNodeMarkup(tableStart + cellPos, undefined, { ...cell.attrs, widthPct: inPct })
+      flagged = true
+    }
+    if (resized || flagged) dispatch?.(tr)
+    return true
+  }
 }
 
 /** Drag-resize cleanup: proportionally clamp an overflowing grid to the content box. */

@@ -10,8 +10,9 @@ import {
   unlinkSync,
   writeFileSync,
 } from 'node:fs'
-import { copyFile, open, rename, unlink, writeFile } from 'node:fs/promises'
+import { open, rename, unlink, writeFile } from 'node:fs/promises'
 import { basename, dirname, join } from 'node:path'
+import { copyFileExclusive, copyFileFresh, copyFileInPlace } from './copy-file'
 
 /** Transient Windows codes: antivirus/indexer briefly locks the rename target. */
 const RETRYABLE_RENAME_CODES = new Set(['EPERM', 'EACCES', 'EBUSY'])
@@ -49,10 +50,10 @@ const rescuePathFor = (filePath: string) =>
 
 /**
  * Park the new bytes beside the target, replacing the copy an earlier failed
- * attempt left. copyFile (not rename) because the destination may already
+ * attempt left. A copy (not rename) because the destination may already
  * exist — the previous attempt's copy — and a rename onto an existing file is
- * refused on Windows. It stays in the kernel, so a multi-hundred-MB file is
- * never read into RAM.
+ * refused on Windows. It stays in the kernel or goes through one small
+ * buffer, so a multi-hundred-MB file is never read into RAM.
  *
  * If the copy does not land, the staging temp still holds the bytes: they
  * are on disk either way.
@@ -60,7 +61,7 @@ const rescuePathFor = (filePath: string) =>
 async function keepRescueCopy(filePath: string, tmp: string): Promise<void> {
   const rescue = rescuePathFor(filePath)
   try {
-    await copyFile(tmp, rescue)
+    await copyFileFresh(tmp, rescue)
     // The staging temp is already on disk; the copy must be too before it
     // becomes the only holder of the new bytes.
     await syncFileBestEffort(rescue)
@@ -159,11 +160,11 @@ async function renameWithRetry(tmp: string, filePath: string): Promise<void> {
   }
 }
 
-/** copyFile stays in the kernel, so a multi-hundred-MB file is never read into RAM */
+/** a kernel copy or one small buffer carries it, so a multi-hundred-MB file is never read into RAM */
 export async function atomicCopyFile(source: string, filePath: string): Promise<void> {
   const tmp = tempPathBeside(filePath)
   try {
-    await copyFile(source, tmp)
+    await copyFileExclusive(source, tmp)
     await syncFileBestEffort(tmp)
   } catch (error) {
     await unlink(tmp).catch(() => {})
@@ -177,8 +178,10 @@ export async function atomicCopyFile(source: string, filePath: string): Promise<
     // fall through to the in-place write
   }
   // Keep the completed temp until the fallback lands, as atomicWriteFile does.
+  // The temp is what gets copied in place: unlike `source`, it cannot be the
+  // target under another name.
   try {
-    await copyFile(source, filePath)
+    await copyFileInPlace(tmp, filePath)
   } catch (error) {
     await keepRescueCopy(filePath, tmp)
     throw error
@@ -217,7 +220,7 @@ export async function atomicWriteVia(
   }
   // Keep the completed temp until the fallback lands, as atomicWriteFile does.
   try {
-    await copyFile(tmp, filePath)
+    await copyFileInPlace(tmp, filePath)
   } catch (error) {
     await keepRescueCopy(filePath, tmp)
     throw error

@@ -37,6 +37,7 @@ import {
   applyChartStateEdit,
   buildChartVisual,
   CHART_EDIT_TYPES,
+  chartCellLimitError,
   type ChartGridValue,
   type ChartStateEdit,
   type SheetVisual,
@@ -692,9 +693,8 @@ function applyLayoutOp(snapshot: WorkbookSnapshot, op: LayoutOperation): void {
   }
   if (op.op === 'add_chart') {
     const sheet = findSheet(snapshot, op.sheetId)
-    if (rangeCellCount(parseRange(op.dataRange)) > 2000) {
-      throw new WorkbookConflictError('add_chart dataRange covers more than 2000 cells.')
-    }
+    const chartLimit = chartCellLimitError(parseRange(op.dataRange), op.columns)
+    if (chartLimit) throw new WorkbookConflictError(chartLimit)
     try {
       const visual = buildChartVisual({
         id: `demo-chart-${op.sheetId}-${(sheet.visuals?.length ?? 0) + 1}`,

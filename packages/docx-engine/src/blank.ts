@@ -10,6 +10,7 @@ import {
   newDocumentCorePropertiesXml,
 } from './doc-properties'
 import { PPR_CHILD_ORDER } from './generate'
+import { escapeXmlAttr } from './xml-utils'
 import type { NumberingLevel } from './types'
 
 /**
@@ -146,6 +147,94 @@ const stylesXml = (eastAsiaFont?: string): string =>
   '<w:rPr><w:color w:val="0563C1"/><w:u w:val="single"/></w:rPr></w:style>' +
   Array.from({ length: 9 }, (_, i) => tocStyle(i + 1)).join('') +
   '</w:styles>'
+
+/** name -> style id and kind for every style the blank template defines: a
+    legacy document's built-in style of the same name maps onto it instead of
+    being emitted beside it (two styles under one name is a Word repair). */
+export const BLANK_STYLES_BY_NAME: ReadonlyMap<
+  string,
+  { id: string; kind: 'paragraph' | 'character' }
+> = new Map(
+  [
+    ...stylesXml().matchAll(
+      /<w:style w:type="(\w+)"[^>]*w:styleId="([^"]+)"><w:name w:val="([^"]+)"/g,
+    ),
+  ].map((m) => {
+    const kind = m[1] === 'character' ? ('character' as const) : ('paragraph' as const)
+    return [m[3]!, { id: m[2]!, kind }] as const
+  }),
+)
+
+/** the boolean toggles the template's own rPr / pPr can carry, per layer */
+const BLANK_RUN_TOGGLES = [
+  'w:b',
+  'w:bCs',
+  'w:i',
+  'w:iCs',
+  'w:strike',
+  'w:caps',
+  'w:smallCaps',
+  'w:vanish',
+] as const
+const BLANK_PARAGRAPH_TOGGLES = [
+  'w:keepNext',
+  'w:keepLines',
+  'w:widowControl',
+  'w:contextualSpacing',
+] as const
+
+/** is the tag present in this XML fragment switched on (no explicit off)? */
+const blankToggleOn = (xml: string, tag: string): boolean => {
+  const m = new RegExp(`<${tag.replace(':', '\\:')}((?:\\s[^>]*)?)/>`).exec(xml)
+  if (!m) return false
+  return !/w:val="(?:0|false|off)"/.test(m[1] ?? '')
+}
+
+export interface BlankStyleToggles {
+  /** rPr toggles the template chain turns ON (w:b, w:i, …) */
+  run: readonly string[]
+  /** pPr toggles the template chain turns ON (w:keepNext, w:contextualSpacing, …) */
+  paragraph: readonly string[]
+}
+
+/** styleId -> the toggles the template style chain turns ON. A legacy document
+    whose style maps onto a template style inherits these silently once it
+    carries the template's w:styleId — so a property its own chain leaves
+    silent must be stated explicitly off instead (a plain-heading document
+    mapped onto the bold template headings would otherwise come out bold). */
+export const BLANK_STYLE_ON_TOGGLES_BY_ID: ReadonlyMap<string, BlankStyleToggles> = (() => {
+  const own = new Map<string, { basedOn?: string; run: string[]; paragraph: string[] }>()
+  for (const m of stylesXml().matchAll(
+    /<w:style [^>]*w:styleId="([^"]+)"[^>]*>([\s\S]*?)<\/w:style>/g,
+  )) {
+    const id = m[1]!
+    const body = m[2] ?? ''
+    const rPr = /<w:rPr>([\s\S]*?)<\/w:rPr>/.exec(body)?.[1] ?? ''
+    const pPr = /<w:pPr>([\s\S]*?)<\/w:pPr>/.exec(body)?.[1] ?? ''
+    own.set(id, {
+      basedOn: /<w:basedOn w:val="([^"]+)"/.exec(body)?.[1],
+      run: BLANK_RUN_TOGGLES.filter((tag) => blankToggleOn(rPr, tag)),
+      paragraph: BLANK_PARAGRAPH_TOGGLES.filter((tag) => blankToggleOn(pPr, tag)),
+    })
+  }
+  const folded = new Map<string, BlankStyleToggles>()
+  const fold = (id: string, seen = new Set<string>()): BlankStyleToggles => {
+    const cached = folded.get(id)
+    if (cached) return cached
+    const def = own.get(id)
+    if (!def || seen.has(id)) return { run: [], paragraph: [] }
+    seen.add(id)
+    const base = def.basedOn ? fold(def.basedOn, seen) : { run: [], paragraph: [] }
+    const toggles: BlankStyleToggles = {
+      run: [...new Set([...base.run, ...def.run])],
+      paragraph: [...new Set([...base.paragraph, ...def.paragraph])],
+    }
+    folded.set(id, toggles)
+    return toggles
+  }
+  for (const id of own.keys()) fold(id)
+  return folded
+})()
 
 function bulletLevels(): string {
   let xml = ''
@@ -477,6 +566,34 @@ export function abstractNumXml(
   return `<w:abstractNum w:abstractNumId="${abstractNumId}">${body}</w:abstractNum>`
 }
 
+/** An abstractNum of a named list style: the defining one (w:styleLink + levels) or a reference to it (w:numStyleLink) */
+export function listStyleAbstractNumXml(
+  abstractNumId: string,
+  link: { styleLink: string } | { numStyleLink: string },
+  levels: CustomNumberingLevel[] = [],
+): string {
+  const linkXml =
+    'styleLink' in link
+      ? `<w:styleLink w:val="${escapeXmlAttr(link.styleLink)}"/>`
+      : `<w:numStyleLink w:val="${escapeXmlAttr(link.numStyleLink)}"/>`
+  return (
+    `<w:abstractNum w:abstractNumId="${abstractNumId}"><w:multiLevelType w:val="multilevel"/>` +
+    `${linkXml}${customLevels(levels)}</w:abstractNum>`
+  )
+}
+
+/** A w:style of type "numbering" whose w:numPr names the w:num over its defining abstractNum */
+export function listStyleXml(
+  styleId: string,
+  def: { name: string; numId: string; custom?: boolean },
+): string {
+  return (
+    `<w:style w:type="numbering"${def.custom ? ' w:customStyle="1"' : ''} w:styleId="${escapeXmlAttr(styleId)}">` +
+    `<w:name w:val="${escapeXmlAttr(def.name)}"/><w:uiPriority w:val="99"/><w:semiHidden/><w:unhideWhenUsed/>` +
+    `<w:pPr><w:numPr><w:numId w:val="${def.numId}"/></w:numPr></w:pPr></w:style>`
+  )
+}
+
 /** The blank template's numbering.xml (bullet numId 1 / decimal numId 2);
  *  base content used when the document has no such part */
 export const BLANK_NUMBERING_XML =
@@ -545,7 +662,7 @@ export interface BlankDocxOptions {
   createdAt?: Date
   /** docProps/app.xml Application; defaults to "GenOffice". */
   application?: string
-  /** docProps/app.xml AppVersion; defaults to the docx-engine package version. */
+  /** docProps/app.xml AppVersion; defaults to the OOXML-formatted engine major/minor. */
   appVersion?: string
   /** docProps/app.xml Template; defaults to Word's "Normal.dotm". */
   template?: string

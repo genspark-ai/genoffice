@@ -10,6 +10,7 @@ import {
   xmlParser,
   type XNode,
 } from './xml-utils'
+import type { MathLimLoc, MathLimits } from './math-pr'
 
 /**
  * OMML (Office Math Markup) <-> display / authoring support.
@@ -53,11 +54,22 @@ export function mathTokensOf(xml: string): string[] {
 
 // ---- OMML -> MathML ----
 
+const INTEGRALS = new Set('\u222B\u222C\u222D\u222E\u222F\u2230\u2231\u2232\u2233')
+
+/** an n-ary operator with no m:limLoc follows the document's m:intLim / m:naryLim */
+function defaultLimLoc(chr: string, limits: MathLimits): MathLimLoc {
+  return INTEGRALS.has(chr) ? (limits.intLim ?? 'subSup') : (limits.naryLim ?? 'undOvr')
+}
+
+/** the limits of the conversion in progress (mmlOf recurses without a context argument) */
+let docLimits: MathLimits = {}
+
 /**
  * MathML Core markup for one or more <m:oMath> fragments (they may be passed
  * concatenated). Returns '' when nothing convertible is found.
  */
-export function ommlToMathML(ommlXml: string): string {
+export function ommlToMathML(ommlXml: string, limits: MathLimits = {}): string {
+  docLimits = limits
   const fragments = ommlFragmentsOf(ommlXml)
   const sources = fragments.length > 0 ? fragments : [ommlXml]
   const parts: string[] = []
@@ -162,8 +174,7 @@ function mmlOf(node: XNode): string {
     }
     case 'm:nary': {
       const chr = propVal(node, 'm:naryPr', 'm:chr') ?? '\u222B'
-      const limLoc =
-        propVal(node, 'm:naryPr', 'm:limLoc') ?? (chr === '\u222B' ? 'subSup' : 'undOvr')
+      const limLoc = propVal(node, 'm:naryPr', 'm:limLoc') ?? defaultLimLoc(chr, docLimits)
       const subHide = propOn(node, 'm:naryPr', 'm:subHide')
       const supHide = propOn(node, 'm:naryPr', 'm:supHide')
       const op = mo(chr, ' stretchy="false"')
@@ -745,6 +756,7 @@ function charsToLatex(text: string): string {
 interface LatexParser {
   src: string
   pos: number
+  limits?: MathLimits
 }
 
 /**
@@ -754,8 +766,8 @@ interface LatexParser {
  * symbols, \text{}, function names. Throws Error (with a Chinese message)
  * on syntax the subset does not cover.
  */
-export function latexToOmml(latex: string): string {
-  const parser: LatexParser = { src: latex, pos: 0 }
+export function latexToOmml(latex: string, limits: MathLimits = {}): string {
+  const parser: LatexParser = { src: latex, pos: 0, limits }
   const out = parseSequence(parser, () => parser.pos >= parser.src.length)
   if (parser.pos < parser.src.length) {
     throw new LatexError(`Cannot parse: "${parser.src.slice(parser.pos, parser.pos + 12)}"`)
@@ -766,8 +778,10 @@ export function latexToOmml(latex: string): string {
 /** OMML for a display formula paragraph created by the editor */
 export function mathParagraphXml(
   omml: string,
-  align: 'left' | 'center' | 'right' = 'center',
+  /** 'default' writes no m:jc: the equation follows the document's m:defJc like one typed in Word */
+  align: 'left' | 'center' | 'right' | 'default' = 'center',
 ): string {
+  if (align === 'default') return `<w:p><m:oMathPara><m:oMath>${omml}</m:oMath></m:oMathPara></w:p>`
   const jc = align === 'center' ? '' : `<w:pPr><w:jc w:val="${align}"/></w:pPr>`
   return (
     `<w:p>${jc}<m:oMathPara><m:oMathParaPr><m:jc m:val="${align === 'center' ? 'center' : align}"/></m:oMathParaPr>` +
@@ -1009,7 +1023,11 @@ function readDelimiter(p: LatexParser): string {
 function parseControl(p: LatexParser): string {
   const name = readControlName(p)
   if (name in LATEX_SYMBOLS) return mathRun(LATEX_SYMBOLS[name])
-  if (name in NARY_OPS) return naryOmml(p, NARY_OPS[name].chr, NARY_OPS[name].limLoc)
+  if (name in NARY_OPS) {
+    const { chr, limLoc } = NARY_OPS[name]
+    const set = limLoc === 'subSup' ? p.limits?.intLim : p.limits?.naryLim
+    return naryOmml(p, chr, set ?? limLoc)
+  }
   if (name in ACCENT_CHARS) {
     const base = parseGroup(p)
     return `<m:acc><m:accPr><m:chr m:val="${escapeXmlAttr(ACCENT_CHARS[name])}"/></m:accPr><m:e>${base}</m:e></m:acc>`
@@ -1040,7 +1058,7 @@ function parseControl(p: LatexParser): string {
         p.pos++
         const close = p.src.indexOf(']', p.pos)
         if (close === -1) throw new LatexError('Missing matching ]')
-        const sub: LatexParser = { src: p.src.slice(p.pos, close), pos: 0 }
+        const sub: LatexParser = { src: p.src.slice(p.pos, close), pos: 0, limits: p.limits }
         deg = parseSequence(sub, () => sub.pos >= sub.src.length)
         p.pos = close + 1
       }

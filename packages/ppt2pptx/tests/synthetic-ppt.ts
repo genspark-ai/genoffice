@@ -67,6 +67,12 @@ export interface SlideSpec {
   groups?: GroupSpec[]
   /** a background shape with this solid fill colour (0xBBGGRR) */
   backgroundRgb?: number
+  /**
+   * a hand-built PPDrawing (DgContainer bytes) replacing the generated one —
+   * the hostile-input tests craft Escher the builder cannot express (nested
+   * groups, degenerate bounds, extreme anchors)
+   */
+  rawDrawing?: Uint8Array
 }
 
 export interface BuildOptions {
@@ -324,9 +330,9 @@ function drawing(spec: SlideSpec, outlineTexts: boolean): Uint8Array {
 }
 
 function slideContainer(spec: SlideSpec, outlineTexts: boolean, noShapes = false): Uint8Array {
-  const body = noShapes
-    ? drawing({ ...spec, textSequences: [] }, outlineTexts)
-    : drawing(spec, outlineTexts)
+  const body =
+    spec.rawDrawing ??
+    (noShapes ? drawing({ ...spec, textSequences: [] }, outlineTexts) : drawing(spec, outlineTexts))
   return record(0x03ee, concat([slideAtom(), body]), 0, 0xf)
 }
 

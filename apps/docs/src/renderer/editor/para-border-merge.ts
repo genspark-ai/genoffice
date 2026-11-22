@@ -50,7 +50,7 @@ function parseJson<T>(raw: string | null | undefined): T | undefined {
 function lineKey(line: ParaBorderLine | null | undefined): string {
   if (!line) return ''
   if (line.none) return line.spacePt ? `pad/${line.spacePt}` : ''
-  return `${line.color ?? ''}/${line.szPt ?? ''}/${line.spacePt ?? ''}`
+  return `${line.color ?? ''}/${line.szPt ?? ''}/${line.spacePt ?? ''}/${line.val ?? ''}/${line.shadow ? 's' : ''}${line.frame ? 'f' : ''}`
 }
 
 /**

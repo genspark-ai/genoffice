@@ -163,14 +163,16 @@ export class ZoteroDocumentController {
     state.doc.forEach((block, blockOffset, blockIndex) => {
       block.descendants((node, relativePos) => {
         if (!node.isText) return
+        // a CITATION field numbers its runs from the same series
+        const any = Number(node.marks.find((candidate) => candidate.type === type)?.attrs.fieldId)
+        if (Number.isSafeInteger(any) && any > 0) maxId = Math.max(maxId, any)
         const mark = node.marks.find(
           (candidate) =>
             candidate.type === type && ZOTERO_INSTR_RE.test(String(candidate.attrs.instr ?? '')),
         )
         if (!mark) return
         const id = Number(mark.attrs.fieldId)
-        if (Number.isSafeInteger(id) && id > 0) maxId = Math.max(maxId, id)
-        else {
+        if (!(Number.isSafeInteger(id) && id > 0)) {
           const from = blockOffset + 1 + relativePos
           lost.push({
             from,

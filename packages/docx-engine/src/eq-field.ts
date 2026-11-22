@@ -319,3 +319,56 @@ function runStartBefore(xml: string, index: number): number {
   const b = xml.lastIndexOf('<w:r ', index)
   return Math.max(a, b)
 }
+
+/** the enclosures Word's Enclose Characters offers */
+export const ENCLOSURES = ['○', '□', '△', '◇'] as const
+
+const ENCLOSE_RE = /^\s*EQ\s*\\o\s*\\ac\s*\(\s*(\S)\s*,\s*([^,()\\]{1,2})\s*\)\s*$/iu
+const COMBINE_RE =
+  /^\s*EQ\s*\\o\s*\(\s*\\s\s*\\up\s*\d+\s*\(([^()\\]*)\)\s*,\s*\\s\s*\\do\s*\d+\s*\(([^()\\]*)\)\s*\)\s*$/iu
+
+/**
+ * The instruction Word writes for Enclose Characters (`EQ \o\ac(○,A)`) or
+ * Combine Characters (`EQ \o(\s\up 5(ab),\s\do 2(cd))`), as its two parts;
+ * null for any other EQ field.
+ */
+export function eqLayoutOf(
+  instr: string,
+): { kind: 'enclose' | 'combine'; a: string; b: string } | null {
+  const enclose = ENCLOSE_RE.exec(instr)
+  if (enclose && (ENCLOSURES as readonly string[]).includes(enclose[1]))
+    return { kind: 'enclose', a: enclose[1], b: enclose[2] }
+  const combine = COMBINE_RE.exec(instr)
+  if (combine && (combine[1] || combine[2]))
+    return { kind: 'combine', a: combine[1], b: combine[2] }
+  return null
+}
+
+/**
+ * How an enclosed character read from a file is fitted: the enclosure is
+ * larger than the field's own text size (enlarged), or the text inside is
+ * smaller (shrunk). The field's opening code run gives the text size; without
+ * one, whichever of the two parts carries a size is the fitted one.
+ */
+export function encloseStyleOf(
+  fieldXml: string,
+  enclosure: string,
+  text: string,
+): 'shrink' | 'enlarge' | undefined {
+  let base: number | null = null
+  let mark: number | null = null
+  let inside: number | null = null
+  for (const run of fieldXml.match(/<w:r\b[\s\S]*?<\/w:r>/g) ?? []) {
+    const code = (/<w:instrText[^>]*>([\s\S]*?)<\/w:instrText>/.exec(run)?.[1] ?? '').trim()
+    if (code === '') continue
+    const sz = /<w:rPr>[\s\S]*?<w:sz\b[^>]*w:val="(\d+)"[\s\S]*?<\/w:rPr>/.exec(run)?.[1]
+    const size = sz === undefined ? null : parseInt(sz, 10)
+    if (/^eq\b/i.test(code)) base = size
+    else if (code === enclosure) mark = size
+    // Word keeps the text with its separators when the enclosure is the sized part
+    else if (code === text || code === `,${text})`) inside = size
+  }
+  if (mark !== null && (base === null ? inside === null : mark > base)) return 'enlarge'
+  if (inside !== null && (base === null ? mark === null : inside < base)) return 'shrink'
+  return undefined
+}

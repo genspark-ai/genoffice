@@ -1,7 +1,7 @@
 import type { Node as PmDocNode } from '@tiptap/pm/model'
 import type { StyleParaProps, StyleRunProps, StyleUpsert } from '@genoffice/docx-engine'
 import type { AgentToolDef } from '../../shared/ipc'
-import { parsePoints } from './lengths'
+import { parseExactLineTwips, parsePoints } from './lengths'
 import type { Op, OpContext, OpDef, OpResult, RunEnv, SelRange, Target, TopBlock } from './ops'
 import { tabSpecsToStops, validateTabs, type TabSpec } from './tab-stops'
 
@@ -89,8 +89,9 @@ export const DEFINE_STYLE_TOOL: AgentToolDef = {
             description: `space after, ${LENGTH_DESC}`,
           },
           lineSpacing: {
-            type: ['number', 'null'],
-            description: 'line spacing as a multiple of single (1, 1.15, 1.5, 2)',
+            type: ['number', 'string', 'null'],
+            description:
+              'a number is a multiple of single spacing (1, 1.15, 1.5, 2); a length string is an exact line height ("30pt")',
           },
           indentLeft: { type: ['number', 'string', 'null'], description: LENGTH_DESC },
           indentRight: { type: ['number', 'string', 'null'], description: LENGTH_DESC },
@@ -229,12 +230,16 @@ function paraProps(input: Record<string, unknown>): Result<StyleParaProps> {
     if (r.value !== undefined) out[target] = r.value
   }
   if (input.lineSpacing !== undefined) {
-    if (
+    const exact = parseExactLineTwips(input.lineSpacing)
+    if (exact !== undefined) out.lineFixed = { rule: 'exact', twips: exact }
+    else if (
       input.lineSpacing !== null &&
       !(typeof input.lineSpacing === 'number' && input.lineSpacing > 0)
     )
-      return err('paragraph.lineSpacing must be a positive multiple (e.g. 1.5) or null')
-    out.lineSpacing = input.lineSpacing as number | null
+      return err(
+        'paragraph.lineSpacing must be a positive multiple (e.g. 1.5), an exact length (e.g. "30pt") or null',
+      )
+    else out.lineSpacing = input.lineSpacing as number | null
   }
   for (const k of ['keepNext', 'keepLines', 'pageBreakBefore'] as const) {
     const r = boolOf(input[k], `paragraph.${k}`)

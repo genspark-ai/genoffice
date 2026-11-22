@@ -1,25 +1,28 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { CSSProperties } from 'react'
-import { getMarkRange } from '@tiptap/core'
 import type { Editor } from '@tiptap/core'
 import { ShapePreview, WORDART_PRESETS, wordArtStrokePx } from '@genoffice/ui'
-import type { ChartDisplay, NewChart } from '@genoffice/docx-engine'
-import { hfHasPageField, hfPageNumberOnly, hfWithoutPageMarks } from '../editor/hf-dom'
-import { EquationGallery, EquationModal } from './EquationModal'
+import { scatterXValues, type ChartDisplay, type NewChart } from '@genoffice/docx-engine'
 import {
-  COVER_PRESETS,
-  coverPageRange,
-  insertCoverPage,
-  removeCoverPage,
-  type CoverPreset,
-} from '../editor/cover-pages'
-import { startShapeDrawMode } from '../editor/shape-draw'
+  CHART_TYPES,
+  CHART_TYPE_LABELS,
+  SINGLE_SERIES_TYPES,
+  STOCK_MAX_SERIES,
+  STOCK_MIN_SERIES,
+  chartKindOf,
+  type ChartType,
+} from './chart-types'
+import { EquationGallery } from './EquationModal'
+import { COVER_PRESETS, coverPageRange, type CoverPreset } from '../editor/cover-pages'
 import { useI18n, type StringKey } from '../i18n/locale'
+import { isPlanned, type ActionCommandId } from '../../shared/commands'
+import { NONE } from '../commands/menu-commands'
+import { RbCommand, useCommandGreyed, useRibbonCommand, useRunCommand } from './ribbon-command'
 import { useModalKeys } from './modal-keys'
+export { LinkInsertModal } from './LinkDialog'
 import {
   IconBook,
   IconCaret,
-  IconClose,
   IconComment,
   IconDoc,
   IconEquation,
@@ -36,6 +39,9 @@ import {
   IconTable,
   IconTextBox,
   IconWordArt,
+  IconIconSet,
+  IconDateTime,
+  IconNumberSign,
 } from './icons'
 
 /** icon size for the big icon-over-label ribbon buttons (slides ribbon parity) */
@@ -43,20 +49,10 @@ import {
   BIG,
   InsertTabProps,
   DOC_SHAPE_GROUPS,
-  insertBlankPageAt,
-  insertImageViaDialog,
-  insertPageBreakAt,
-  insertShapeAt,
   insertTableAt,
-  insertTextboxAt,
-  focusTextboxEditorAt,
-  TEXTBOX_WIDTH_EMU,
-  TEXTBOX_HEIGHT_EMU,
   insertTopLevelBlockAtSelection,
-  insertWordArtAt,
   MAX_TABLE_COLS,
   MAX_TABLE_ROWS,
-  setParaAttrs,
   toggleDropdown,
 } from './ribbon-tabs'
 
@@ -113,183 +109,23 @@ const SYMBOLS = [
   '⑩',
 ]
 
-/** all bookmarks in document order: name + owning node position + preview text */
-function collectBookmarks(editor: Editor): Array<{ name: string; pos: number; preview: string }> {
-  const out: Array<{ name: string; pos: number; preview: string }> = []
-  editor.state.doc.descendants((node, pos) => {
-    const names = node.attrs?.bookmarks as string[] | null
-    if (Array.isArray(names)) {
-      for (const name of names) {
-        out.push({ name, pos, preview: node.textContent.slice(0, 40) })
-      }
-    }
-    return !node.isLeaf
-  })
-  return out
-}
-
-/** the paragraph-like node at the cursor that can carry bookmarks */
-function bookmarkTargetAtCursor(editor: Editor): { pos: number; typeName: string } | null {
-  const { $from } = editor.state.selection
-  for (let depth = $from.depth; depth >= 1; depth--) {
-    const node = $from.node(depth)
-    if (['docParagraph', 'docHeading', 'docListItem'].includes(node.type.name)) {
-      return { pos: $from.before(depth), typeName: node.type.name }
-    }
-  }
-  return null
-}
-
-/** Word's Bookmark dialog: list + add (cursor's paragraph) / go to / delete */
-export function BookmarkModal({ editor, onClose }: { editor: Editor; onClose: () => void }) {
-  const { t } = useI18n()
-  const [name, setName] = useState('')
-  const [error, setError] = useState('')
-  const [, forceRender] = useState(0)
-  const bookmarks = collectBookmarks(editor)
-
-  const addBookmark = () => {
-    const trimmed = name.trim()
-    if (!/^[A-Za-z一-鿿_][\w一-鿿]*$/.test(trimmed)) {
-      setError(t('ribbonBookmarkNameInvalid'))
-      return
-    }
-    if (bookmarks.some((b) => b.name === trimmed)) {
-      setError(t('ribbonBookmarkExists'))
-      return
-    }
-    const target = bookmarkTargetAtCursor(editor)
-    if (!target) {
-      setError(t('ribbonBookmarkNoCursor'))
-      return
-    }
-    const node = editor.state.doc.nodeAt(target.pos)
-    const existing = (node?.attrs?.bookmarks as string[] | null) ?? []
-    editor.view.dispatch(
-      editor.state.tr.setNodeMarkup(target.pos, undefined, {
-        ...node?.attrs,
-        bookmarks: [...existing, trimmed],
-      }),
-    )
-    setName('')
-    setError('')
-    forceRender((n) => n + 1)
-  }
-
-  const removeBookmark = (entry: { name: string; pos: number }) => {
-    const node = editor.state.doc.nodeAt(entry.pos)
-    if (!node) return
-    const rest = ((node.attrs?.bookmarks as string[] | null) ?? []).filter((n) => n !== entry.name)
-    editor.view.dispatch(
-      editor.state.tr.setNodeMarkup(entry.pos, undefined, {
-        ...node.attrs,
-        bookmarks: rest.length > 0 ? rest : null,
-      }),
-    )
-    forceRender((n) => n + 1)
-  }
-
-  const jumpTo = (pos: number) => {
-    const dom = editor.view.nodeDOM(pos) as HTMLElement | null
-    dom?.scrollIntoView({ behavior: 'smooth', block: 'center' })
-    onClose()
-  }
-
-  return (
-    <div className="modal-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="modal">
-        <h2>{t('ribbonBookmark')}</h2>
-        <div className="modal-row">
-          <input
-            autoFocus
-            value={name}
-            placeholder={t('ribbonBookmarkNamePh')}
-            onChange={(e) => {
-              setName(e.target.value)
-              setError('')
-            }}
-            onKeyDown={(e) => e.key === 'Enter' && addBookmark()}
-          />
-          <button className="btn-primary" onClick={addBookmark}>
-            {t('ribbonAdd')}
-          </button>
-        </div>
-        {error && <div className="modal-error">{error}</div>}
-        <div className="bookmark-list">
-          {bookmarks.length === 0 && (
-            <div className="bookmark-empty">{t('ribbonBookmarkEmpty')}</div>
-          )}
-          {bookmarks.map((b) => (
-            <div key={`${b.name}-${b.pos}`} className="bookmark-row">
-              <button className="bookmark-name" data-tip={b.preview} onClick={() => jumpTo(b.pos)}>
-                {b.name}
-              </button>
-              <span className="bookmark-preview">{b.preview}</span>
-              <button
-                className="bookmark-del"
-                data-tip={t('ribbonBookmarkDeleteTip')}
-                aria-label={t('ribbonBookmarkDeleteTip')}
-                onClick={() => removeBookmark(b)}
-              >
-                <IconClose size={12} />
-              </button>
-            </div>
-          ))}
-        </div>
-        <div className="modal-actions">
-          <button onClick={onClose}>{t('ribbonClose')}</button>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-/** Word's Cross-reference dialog: pick a bookmark, insert a REF field at the cursor (displays the bookmark paragraph's text) */
-export function CrossRefModal({ editor, onClose }: { editor: Editor; onClose: () => void }) {
-  const { t } = useI18n()
-  const bookmarks = collectBookmarks(editor)
-  const insertRef = (b: { name: string; preview: string }) => {
-    editor
-      .chain()
-      .focus()
-      .insertContent({
-        type: 'text',
-        text: b.preview || b.name,
-        marks: [{ type: 'refField', attrs: { name: b.name } }],
-      })
-      .run()
-    onClose()
-  }
-  return (
-    <div className="modal-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="modal">
-        <h2>{t('ribbonCrossRef')}</h2>
-        {bookmarks.length === 0 ? (
-          <p className="bookmark-empty">{t('ribbonCrossRefEmpty')}</p>
-        ) : (
-          <div className="bookmark-list">
-            {bookmarks.map((b) => (
-              <div key={`${b.name}-${b.pos}`} className="bookmark-row">
-                <button className="bookmark-name" onClick={() => insertRef(b)}>
-                  {b.name}
-                </button>
-                <span className="bookmark-preview">{b.preview}</span>
-              </div>
-            ))}
-          </div>
-        )}
-        <div className="modal-actions">
-          <button onClick={onClose}>{t('ribbonCancel')}</button>
-        </div>
-      </div>
-    </div>
-  )
-}
-
 /** Word's Insert Chart: pick a type + data grid; after inserting, the data table below the chart is still editable in place */
-export function ChartInsertModal({ editor, onClose }: { editor: Editor; onClose: () => void }) {
+export function ChartInsertModal({
+  editor,
+  initialType = 'bar',
+  pick = 0,
+  onClose,
+}: {
+  editor: Editor
+  /** the type picked in Insert > Chart */
+  initialType?: ChartType
+  /** counts the menu picks: a pick made while the dialog is open moves it to that type */
+  pick?: number
+  onClose: () => void
+}) {
   const { t } = useI18n()
-  const [kind, setKind] = useState<NewChart['kind']>('bar')
+  const [type, setType] = useState<ChartType>(initialType)
+  useEffect(() => setType(initialType), [initialType, pick])
   const [title, setTitle] = useState(() => t('ribbonChartTitlePh'))
   const [categories, setCategories] = useState(() =>
     [1, 2, 3].map((n) => t('ribbonCategoryN', { n })),
@@ -298,33 +134,76 @@ export function ChartInsertModal({ editor, onClose }: { editor: Editor; onClose:
     { name: t('ribbonSeriesN', { n: 1 }), values: ['4', '6', '5'] },
     { name: t('ribbonSeriesN', { n: 2 }), values: ['2', '5', '7'] },
   ])
+  // the grid starts on the series the type reads (a stock chart's three, the one series of a
+  // funnel), unless it was already edited
+  const [edited, setEdited] = useState(false)
+  const stock = type === 'stock'
+  const seed = stock
+    ? 'stock'
+    : type === 'waterfall'
+      ? 'steps'
+      : SINGLE_SERIES_TYPES.has(type)
+        ? 'one'
+        : 'two'
+  useEffect(() => {
+    if (edited) return
+    const first = { name: t('ribbonSeriesN', { n: 1 }), values: ['4', '6', '5'] }
+    setSeries(
+      seed === 'stock'
+        ? [
+            { name: t('ribbonChartHigh'), values: ['55', '57', '57'] },
+            { name: t('ribbonChartLow'), values: ['11', '12', '13'] },
+            { name: t('ribbonChartClose'), values: ['32', '35', '34'] },
+          ]
+        : seed === 'steps'
+          ? [{ ...first, values: ['100', '-40', '60'] }]
+          : seed === 'one'
+            ? [first]
+            : [first, { name: t('ribbonSeriesN', { n: 2 }), values: ['2', '5', '7'] }],
+    )
+    // the seed follows the type only; `t` is not referentially stable
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [seed, edited])
 
   const setCat = (i: number, v: string) =>
     setCategories((prev) => prev.map((c, j) => (j === i ? v : c)))
-  const setSerName = (i: number, v: string) =>
+  const setSerName = (i: number, v: string) => {
+    setEdited(true)
     setSeries((prev) => prev.map((s, j) => (j === i ? { ...s, name: v } : s)))
-  const setSerVal = (i: number, c: number, v: string) =>
+  }
+  const setSerVal = (i: number, c: number, v: string) => {
+    setEdited(true)
     setSeries((prev) =>
       prev.map((s, j) =>
         j === i ? { ...s, values: s.values.map((x, k) => (k === c ? v : x)) } : s,
       ),
     )
+  }
   const addCategory = () => {
+    setEdited(true)
     setCategories((prev) => [...prev, t('ribbonCategoryN', { n: prev.length + 1 })])
     setSeries((prev) => prev.map((s) => ({ ...s, values: [...s.values, ''] })))
   }
-  const addSeries = () =>
-    setSeries((prev) => [
-      ...prev,
-      { name: t('ribbonSeriesN', { n: prev.length + 1 }), values: categories.map(() => '') },
-    ])
+  const addSeries = () => {
+    setEdited(true)
+    setSeries((prev) =>
+      // a stock chart's fourth series is the open, and it is read first
+      stock
+        ? [{ name: t('ribbonChartOpen'), values: categories.map(() => '') }, ...prev]
+        : [
+            ...prev,
+            { name: t('ribbonSeriesN', { n: prev.length + 1 }), values: categories.map(() => '') },
+          ],
+    )
+  }
 
   const insert = () => {
     const spec: NewChart = {
-      kind,
+      ...chartKindOf(type),
       title: title.trim() || t('ribbonChartTitlePh'),
       categories,
-      series: series.map((s) => ({
+      // a type that draws one series keeps only that one, whatever the grid held before it was picked
+      series: (SINGLE_SERIES_TYPES.has(type) ? series.slice(0, 1) : series).map((s) => ({
         name: s.name,
         values: s.values.map((v) => {
           const n = Number(v.trim().replace(/,/g, ''))
@@ -335,9 +214,15 @@ export function ChartInsertModal({ editor, onClose }: { editor: Editor; onClose:
     const display: ChartDisplay = {
       partPath: '',
       kind: spec.kind,
+      ...(spec.layout ? { layout: spec.layout } : {}),
+      ...(spec.horizontal ? { horizontal: true } : {}),
       title: spec.title,
       categories: spec.categories,
-      series: spec.series,
+      // a scatter point sits at the x its category names, as the saved chart will read back
+      series:
+        spec.kind === 'scatter'
+          ? spec.series.map((s) => ({ ...s, xValues: scatterXValues(spec.categories) }))
+          : spec.series,
     }
     const inserted = insertTopLevelBlockAtSelection(editor, {
       type: 'docProtected',
@@ -356,20 +241,16 @@ export function ChartInsertModal({ editor, onClose }: { editor: Editor; onClose:
     <div className="modal-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
       <div className="modal modal-chart">
         <h2>{t('ribbonChartInsertTitle')}</h2>
-        <div className="modal-row">
-          {(
-            [
-              ['bar', t('ribbonChartBar')],
-              ['line', t('ribbonChartLine')],
-              ['pie', t('ribbonChartPie')],
-            ] as const
-          ).map(([value, label]) => (
+        <div className="modal-row modal-chart-types">
+          {CHART_TYPES.map((value) => (
             <button
               key={value}
-              className={kind === value ? 'btn-primary' : ''}
-              onClick={() => setKind(value)}
+              data-chart-type={value}
+              className={type === value ? 'btn-primary' : ''}
+              // command-exempt: picks the type inside the chart dialog
+              onClick={() => setType(value)}
             >
-              {label}
+              {t(CHART_TYPE_LABELS[value])}
             </button>
           ))}
         </div>
@@ -412,12 +293,28 @@ export function ChartInsertModal({ editor, onClose }: { editor: Editor; onClose:
         </table>
         <div className="modal-row">
           <button onClick={addCategory}>{t('ribbonChartAddCategory')}</button>
-          <button onClick={addSeries} disabled={kind === 'pie'}>
+          {/* command-exempt: adds a series to the dialog's own data grid */}
+          <button
+            onClick={addSeries}
+            // a type that draws one series takes no second one: it would be saved and never shown
+            disabled={
+              type === 'pie' ||
+              SINGLE_SERIES_TYPES.has(type) ||
+              (stock && series.length >= STOCK_MAX_SERIES)
+            }
+          >
             {t('ribbonChartAddSeries')}
           </button>
         </div>
         <div className="modal-actions">
-          <button className="btn-primary" onClick={insert}>
+          <button
+            className="btn-primary"
+            // command-exempt: confirms the chart dialog; the command opened it
+            onClick={insert}
+            disabled={
+              stock && (series.length < STOCK_MIN_SERIES || series.length > STOCK_MAX_SERIES)
+            }
+          >
             {t('ribbonInsert')}
           </button>
           <button onClick={onClose}>{t('ribbonCancel')}</button>
@@ -492,155 +389,6 @@ export function TableInsertModal({
   )
 }
 
-/** Insert Hyperlink dialog, shared by the ribbon and the native application menu */
-export function LinkInsertModal({ editor, onClose }: { editor: Editor; onClose: () => void }) {
-  const { t } = useI18n()
-  const modalKeys = useModalKeys(onClose)
-  // Word parity: with the caret on an existing hyperlink the dialog EDITS it
-  // — text and address pre-filled, plus Remove Link. Imported links carry the
-  // same mark as in-app ones, but there was no way to view, change, or
-  // remove any link after creation.
-  const [linkAtOpen] = useState(() => {
-    const { $from, empty } = editor.state.selection
-    const markType = editor.state.schema.marks.link
-    if (!markType) return null
-    const range = getMarkRange($from, markType)
-    if (!range) return null
-    // A non-empty selection reaching outside the link is a fresh insert over
-    // that selection, not an edit of the link under its endpoint.
-    const { from, to } = editor.state.selection
-    if (!empty && (from < range.from || to > range.to)) return null
-    // Read attrs from the run itself, not the selection: at the link's
-    // trailing edge $head.marks() drops inclusive:false marks, so
-    // getAttributes('link') comes back empty for a real link.
-    const attrs = editor.state.doc
-      .nodeAt(range.from)
-      ?.marks.find((mark) => mark.type === markType)?.attrs
-    if (!attrs) return null
-    return {
-      from: range.from,
-      to: range.to,
-      text: editor.state.doc.textBetween(range.from, range.to, ' '),
-      href: typeof attrs.href === 'string' ? attrs.href : '',
-      tooltip: typeof attrs.tooltip === 'string' ? attrs.tooltip : null,
-    }
-  })
-  // Word parity: selected text pre-populates the display-text field, so a
-  // select-then-link flow only needs the address.
-  const [selectionAtOpen] = useState(() => {
-    const { from, to } = editor.state.selection
-    return { from, to, text: from === to ? '' : editor.state.doc.textBetween(from, to, ' ') }
-  })
-  const [linkText, setLinkText] = useState(linkAtOpen ? linkAtOpen.text : selectionAtOpen.text)
-  const [linkUrl, setLinkUrl] = useState(linkAtOpen ? linkAtOpen.href : '')
-
-  const insertLink = () => {
-    const href = linkUrl.trim()
-    const text = linkText.trim() || href
-    if (!href || !editor.isEditable) return
-    if (linkAtOpen) {
-      if (text === linkAtOpen.text.trim()) {
-        // address-only change: re-mark the existing run so character
-        // formatting, comments and inline objects survive; the stored
-        // ScreenTip stays (Word keeps it on an address edit)
-        editor
-          .chain()
-          .focus()
-          .setTextSelection({ from: linkAtOpen.from, to: linkAtOpen.to })
-          .setMark('link', { href, rId: null, tooltip: linkAtOpen.tooltip })
-          .run()
-      } else {
-        editor
-          .chain()
-          .focus()
-          .deleteRange({ from: linkAtOpen.from, to: linkAtOpen.to })
-          .insertContentAt(linkAtOpen.from, {
-            type: 'text',
-            text,
-            marks: [{ type: 'link', attrs: { href, rId: null, tooltip: linkAtOpen.tooltip } }],
-          })
-          .run()
-      }
-    } else if (selectionAtOpen.text && text === selectionAtOpen.text.trim()) {
-      // untouched display text: mark the ORIGINAL selection instead of
-      // re-inserting plain text — character formatting, comments and inline
-      // objects in the selection survive
-      editor
-        .chain()
-        .focus()
-        .setTextSelection({ from: selectionAtOpen.from, to: selectionAtOpen.to })
-        .setMark('link', { href, rId: null })
-        .run()
-    } else {
-      editor
-        .chain()
-        .focus()
-        .insertContent({
-          type: 'text',
-          text,
-          marks: [{ type: 'link', attrs: { href, rId: null } }],
-        })
-        .run()
-    }
-    onClose()
-  }
-
-  const removeLink = () => {
-    if (!linkAtOpen || !editor.isEditable) return
-    // Word's Remove Hyperlink: the text stays, only the link goes.
-    editor
-      .chain()
-      .focus()
-      .setTextSelection({ from: linkAtOpen.from, to: linkAtOpen.to })
-      .unsetMark('link')
-      .run()
-    onClose()
-  }
-
-  return (
-    <div
-      className="modal-backdrop"
-      ref={modalKeys.ref}
-      onKeyDown={modalKeys.onKeyDown}
-      onMouseDown={(e) => e.target === e.currentTarget && onClose()}
-    >
-      <div className="modal">
-        <h2>{t(linkAtOpen ? 'ribbonLinkEditTitle' : 'ribbonLinkInsertTitle')}</h2>
-        <label>
-          {t('ribbonLinkText')}
-          <input
-            value={linkText}
-            onChange={(e) => setLinkText(e.target.value)}
-            placeholder={t('ribbonLinkTextPh')}
-          />
-        </label>
-        <label>
-          {t('ribbonLinkAddress')}
-          <input
-            value={linkUrl}
-            onChange={(e) => setLinkUrl(e.target.value)}
-            placeholder="https://…"
-            onKeyDown={(e) => e.key === 'Enter' && insertLink()}
-          />
-        </label>
-        <div className="modal-actions">
-          {linkAtOpen && (
-            <button className="btn-ghost" onClick={removeLink}>
-              {t('ribbonLinkRemove')}
-            </button>
-          )}
-          <button className="btn-ghost" onClick={onClose}>
-            {t('ribbonCancel')}
-          </button>
-          <button className="btn-primary" disabled={!linkUrl.trim()} onClick={insertLink}>
-            {t(linkAtOpen ? 'ribbonApply' : 'ribbonInsert')}
-          </button>
-        </div>
-      </div>
-    </div>
-  )
-}
-
 /** Mini cover-page preview: scaled render of the preset data (twips ≈ /130 px, font size ≈ /14 px) */
 function CoverThumb({ preset }: { preset: CoverPreset }) {
   return (
@@ -681,31 +429,22 @@ export function InsertTab({
   dropdown,
   setDropdown,
   header,
-  onHeader,
   footer,
-  onFooter,
-  onPageNumFormat,
-  onInsertField,
-  onHfEdit,
-  canComment,
-  onNewComment,
   isProtected,
   commentsAllowed,
-  onTableInserted,
 }: InsertTabProps) {
   const { t } = useI18n()
   const [grid, setGrid] = useState<{ r: number; c: number }>({ r: 0, c: 0 })
-  const [tableDialogOpen, setTableDialogOpen] = useState(false)
-  const [linkOpen, setLinkOpen] = useState(false)
-  const [equationOpen, setEquationOpen] = useState(false)
-  const [bookmarkOpen, setBookmarkOpen] = useState(false)
-  const [crossRefOpen, setCrossRefOpen] = useState(false)
-  const [chartOpen, setChartOpen] = useState(false)
-
-  const insertTable = (rows: number, cols: number) => {
-    insertTableAt(editor, rows, cols)
+  const runCommand = useRunCommand()
+  // commenting outlives the comments-only restriction, which the protection terms below answer
+  const commentOff = useCommandGreyed('insert-comment', { editable: true })
+  const dropCapOff = useCommandGreyed('drop-cap') || !hasDoc
+  const convertText = useRibbonCommand('convert-text-to-table')
+  const textFromFile = useRibbonCommand('insert-file')
+  /** a pick from a gallery: run the command, close the gallery */
+  const pick = (id: ActionCommandId, payload?: string) => {
+    runCommand(id, payload)
     setDropdown(() => null)
-    onTableInserted()
   }
 
   return (
@@ -713,70 +452,48 @@ export function InsertTab({
       {/* Word: Pages (cover page / blank page / page break) sits leftmost */}
       <div className="ribbon-group">
         <div className="ribbon-group-items">
-          <div className="rb-split-wrap">
-            <button
-              className="rb-big"
-              disabled={!hasDoc}
-              data-tip={t('ribbonCoverPageTip')}
-              onClick={() => toggleDropdown(setDropdown, 'cover')}
-            >
-              <span className="rb-big-icon">
-                <IconDoc size={BIG} />
+          <div className="rb-col" data-wide="2">
+            <div className="rb-split-wrap">
+              <button
+                className="rb-small"
+                disabled={!hasDoc}
+                data-tip={t('ribbonCoverPageTip')}
+                onClick={() => toggleDropdown(setDropdown, 'cover')}
+              >
+                <IconDoc size={14} />
+                <span className="rb-small-label">{t('ribbonCoverPage')}</span>
                 <IconCaret />
-              </span>
-              <span>{t('ribbonCoverPage')}</span>
-            </button>
-            {dropdown === 'cover' && (
-              <div data-rb-panel="" className="cover-gallery">
-                {COVER_PRESETS.map((preset) => (
+              </button>
+              {dropdown === 'cover' && (
+                <div data-rb-panel="" className="cover-gallery">
+                  {COVER_PRESETS.map((preset) => (
+                    <button
+                      key={preset.id}
+                      className="cover-card"
+                      data-tip={t('ribbonInsertCoverTip', { name: preset.name })}
+                      onClick={() => pick('insert-cover-page', preset.id)}
+                    >
+                      <CoverThumb preset={preset} />
+                      <span className="cover-card-name">{preset.name}</span>
+                    </button>
+                  ))}
                   <button
-                    key={preset.id}
-                    className="cover-card"
-                    data-tip={t('ribbonInsertCoverTip', { name: preset.name })}
-                    onClick={() => {
-                      insertCoverPage(editor, preset)
-                      setDropdown(() => null)
-                    }}
+                    className="cover-gallery-remove"
+                    disabled={!coverPageRange(editor.state.doc)}
+                    onClick={() => pick('remove-cover-page')}
                   >
-                    <CoverThumb preset={preset} />
-                    <span className="cover-card-name">{preset.name}</span>
+                    {t('ribbonRemoveCoverPage')}
                   </button>
-                ))}
-                <button
-                  className="cover-gallery-remove"
-                  disabled={!coverPageRange(editor.state.doc)}
-                  onClick={() => {
-                    removeCoverPage(editor)
-                    setDropdown(() => null)
-                  }}
-                >
-                  {t('ribbonRemoveCoverPage')}
-                </button>
-              </div>
-            )}
+                </div>
+              )}
+            </div>
+            <RbCommand cmd="insert-blank-page" look="small">
+              <IconDoc size={14} />
+            </RbCommand>
+            <RbCommand cmd="insert-page-break" look="small">
+              <IconPageBreak size={14} />
+            </RbCommand>
           </div>
-          <button
-            className="rb-big"
-            disabled={!hasDoc}
-            data-tip={t('ribbonBlankPageTip')}
-            onClick={() => insertBlankPageAt(editor)}
-          >
-            <span className="rb-big-icon">
-              <IconDoc size={BIG} />
-            </span>
-            <span>{t('ribbonBlankPage')}</span>
-          </button>
-          <button
-            className="rb-big"
-            disabled={!hasDoc}
-            data-tip={t('ribbonPageBreakTip')}
-            onClick={() => insertPageBreakAt(editor)}
-          >
-            <span className="rb-big-icon">
-              <IconPageBreak size={BIG} />
-            </span>
-            <span>{t('ribbonPageBreak')}</span>
-          </button>
         </div>
         <div className="ribbon-group-label">{t('ribbonGroupPages')}</div>
       </div>
@@ -816,7 +533,7 @@ export function InsertTab({
                         key={`${ri}-${ci}`}
                         className={`table-cell ${ri < grid.r && ci < grid.c ? 'hot' : ''}`}
                         onMouseEnter={() => setGrid({ r: ri + 1, c: ci + 1 })}
-                        onClick={() => insertTable(ri + 1, ci + 1)}
+                        onClick={() => pick('insert-table-grid', `${ri + 1},${ci + 1}`)}
                       />
                     )),
                   )}
@@ -825,10 +542,20 @@ export function InsertTab({
                   className="table-picker-custom"
                   onClick={() => {
                     setDropdown(() => null)
-                    setTableDialogOpen(true)
+                    runCommand('insert-table')
                   }}
                 >
                   {t('ribbonTableInsertDialog')}
+                </button>
+                <button
+                  className="table-picker-custom"
+                  disabled={convertText.disabled}
+                  onClick={() => {
+                    setDropdown(() => null)
+                    convertText.run()
+                  }}
+                >
+                  {t('ribbonConvertTextToTableTitle')}…
                 </button>
               </div>
             )}
@@ -841,28 +568,9 @@ export function InsertTab({
 
       <div className="ribbon-group">
         <div className="ribbon-group-items">
-          <button
-            className="rb-big"
-            disabled={!hasDoc}
-            data-tip={t('ribbonPictureTip')}
-            onClick={() => void insertImageViaDialog(editor)}
-          >
-            <span className="rb-big-icon">
-              <IconPicture size={BIG} />
-            </span>
-            <span>{t('ribbonPicture')}</span>
-          </button>
-          <button
-            className="rb-big"
-            disabled={!hasDoc}
-            data-tip={t('ribbonChartTip')}
-            onClick={() => setChartOpen(true)}
-          >
-            <span className="rb-big-icon">
-              <IconChart size={BIG} />
-            </span>
-            <span>{t('ribbonChart')}</span>
-          </button>
+          <RbCommand cmd="insert-image" look="big">
+            <IconPicture size={BIG} />
+          </RbCommand>
           <div className="rb-split-wrap">
             <button
               className="rb-big"
@@ -888,14 +596,7 @@ export function InsertTab({
                           className="rb-shape-cell"
                           data-tip={t(s.labelKey as StringKey)}
                           aria-label={t(s.labelKey as StringKey)}
-                          onClick={() => {
-                            // Word parity: arm crosshair draw mode (click = default 1in
-                            // square, drag = custom size, Shift = square, Esc = cancel)
-                            startShapeDrawMode(editor, s.prst, (opts) =>
-                              insertShapeAt(editor, s.prst, opts),
-                            )
-                            setDropdown(() => null)
-                          }}
+                          onClick={() => pick('insert-shape', s.prst)}
                         >
                           <ShapePreview prst={s.prst} size={18} />
                         </button>
@@ -906,8 +607,147 @@ export function InsertTab({
               </div>
             )}
           </div>
+          <RbCommand cmd="insert-icons" look="big">
+            <IconIconSet size={BIG} />
+          </RbCommand>
+          <RbCommand cmd="insert-chart" look="big">
+            <IconChart size={BIG} />
+          </RbCommand>
         </div>
         <div className="ribbon-group-label">{t('ribbonGroupIllustrations')}</div>
+      </div>
+
+      <div className="ribbon-sep" />
+
+      {/* Word: Link/Bookmark/Cross-reference are small vertical buttons */}
+      <div className="ribbon-group">
+        <div className="ribbon-group-items">
+          <div className="rb-col" data-wide="1">
+            <RbCommand cmd="insert-link" look="small">
+              <IconLink size={14} />
+            </RbCommand>
+            <RbCommand cmd="insert-bookmark" look="small">
+              <IconBook size={14} />
+            </RbCommand>
+            <RbCommand cmd="insert-cross-reference" look="small">
+              <IconRefresh size={14} />
+            </RbCommand>
+          </div>
+        </div>
+        <div className="ribbon-group-label">{t('ribbonGroupLinks')}</div>
+      </div>
+
+      <div className="ribbon-sep" />
+
+      <div className="ribbon-group">
+        <div className="ribbon-group-items">
+          {/* Word: Insert → Comment starts a new comment; the pane toggle stays on Review.
+              Deliberately not gated on this tab's hasDoc (= canEdit): under the comments-only
+              restriction the body is read-only yet commenting stays allowed, matching the
+              Review tab's New Comment. */}
+          <button
+            className="rb-big"
+            disabled={commentOff || (isProtected && !commentsAllowed)}
+            data-tip={commentOff ? t('ribbonNewCommentSelectTip') : t('ribbonNewCommentTip')}
+            onClick={() => runCommand('insert-comment')}
+          >
+            <span className="rb-big-icon">
+              <IconComment size={BIG} />
+            </span>
+            <span>{t('ribbonComment')}</span>
+          </button>
+        </div>
+        <div className="ribbon-group-label">{t('ribbonGroupComments')}</div>
+      </div>
+
+      <div className="ribbon-sep" />
+
+      <div className="ribbon-group">
+        <div className="ribbon-group-items">
+          <div className="rb-split-wrap">
+            <button
+              className={`rb-big ${header?.text ? 'active' : ''}`}
+              disabled={!hasDoc}
+              data-tip={t('ribbonHeaderTip')}
+              onClick={() => toggleDropdown(setDropdown, 'header')}
+            >
+              <span className="rb-big-icon">
+                <IconHeader size={BIG} />
+                <IconCaret />
+              </span>
+              <span>{t('ribbonHeader')}</span>
+            </button>
+            {dropdown === 'header' && (
+              <div data-rb-panel="" className="layout-menu">
+                <button onClick={() => pick('edit-header-footer', 'header')}>
+                  {t('ribbonHfEditHeader')}
+                </button>
+                <button onClick={() => pick('remove-header-footer', 'header')}>
+                  {t('ribbonHfRemoveHeader')}
+                </button>
+              </div>
+            )}
+          </div>
+          <div className="rb-split-wrap">
+            <button
+              className={`rb-big ${footer?.text ? 'active' : ''}`}
+              disabled={!hasDoc}
+              data-tip={t('ribbonFooterTip')}
+              onClick={() => toggleDropdown(setDropdown, 'footer')}
+            >
+              <span className="rb-big-icon">
+                <IconFooter size={BIG} />
+                <IconCaret />
+              </span>
+              <span>{t('ribbonFooter')}</span>
+            </button>
+            {dropdown === 'footer' && (
+              <div data-rb-panel="" className="layout-menu">
+                <button onClick={() => pick('edit-header-footer', 'footer')}>
+                  {t('ribbonHfEditFooter')}
+                </button>
+                <button onClick={() => pick('remove-header-footer', 'footer')}>
+                  {t('ribbonHfRemoveFooter')}
+                </button>
+              </div>
+            )}
+          </div>
+          <div className="rb-split-wrap">
+            <button
+              className={`rb-big ${footer?.pageNumber ? 'active' : ''}`}
+              disabled={!hasDoc}
+              data-tip={t('ribbonPageNumber')}
+              onClick={() => toggleDropdown(setDropdown, 'pagenum')}
+            >
+              <span className="rb-big-icon">
+                <IconPageNumber size={BIG} />
+                <IconCaret />
+              </span>
+              <span>{t('ribbonPageNumber')}</span>
+            </button>
+            {dropdown === 'pagenum' && (
+              <div data-rb-panel="" className="layout-menu">
+                {(
+                  [
+                    [t('ribbonPnTopLeft'), 'header', 'left'],
+                    [t('ribbonPnTopCenter'), 'header', 'center'],
+                    [t('ribbonPnTopRight'), 'header', 'right'],
+                    [t('ribbonPnBottomLeft'), 'footer', 'left'],
+                    [t('ribbonPnBottomCenter'), 'footer', 'center'],
+                    [t('ribbonPnBottomRight'), 'footer', 'right'],
+                  ] as Array<[string, 'header' | 'footer', 'left' | 'center' | 'right']>
+                ).map(([label, kind, align]) => (
+                  <button key={label} onClick={() => pick('page-number', `${kind},${align}`)}>
+                    {label}
+                  </button>
+                ))}
+                <button onClick={() => pick('page-number-format')}>{t('ribbonPnFormat')}</button>
+                <button onClick={() => pick('page-number-remove')}>{t('ribbonPnRemove')}</button>
+              </div>
+            )}
+          </div>
+        </div>
+        <div className="ribbon-group-label">{t('ribbonGroupHeaderFooter')}</div>
       </div>
 
       <div className="ribbon-sep" />
@@ -930,27 +770,13 @@ export function InsertTab({
             </button>
             {dropdown === 'textBox' && (
               <div data-rb-panel="" className="layout-menu rb-textbox-menu">
-                <button
-                  onClick={() => {
-                    setDropdown(() => null)
-                    startShapeDrawMode(editor, 'rect', (opts) => insertTextboxAt(editor, opts), {
-                      clickSize: { widthEmu: TEXTBOX_WIDTH_EMU, heightEmu: TEXTBOX_HEIGHT_EMU },
-                      ghost: { fill: 'rgba(255,255,255,0.6)', border: '#000000' },
-                      onInserted: (pos) => focusTextboxEditorAt(editor, pos),
-                    })
-                  }}
-                >
+                <button onClick={() => pick('insert-text-box', 'draw')}>
                   {t('ribbonTextBoxDraw')}
                 </button>
-                <button
-                  onClick={() => {
-                    setDropdown(() => null)
-                    const pos = insertTextboxAt(editor)
-                    if (pos != null) {
-                      requestAnimationFrame(() => focusTextboxEditorAt(editor, pos))
-                    }
-                  }}
-                >
+                <button onClick={() => pick('insert-vertical-text-box')}>
+                  {t('ribbonTextBoxDrawVertical')}
+                </button>
+                <button onClick={() => pick('insert-text-box', 'simple')}>
                   {t('ribbonTextBoxSimple')}
                 </button>
               </div>
@@ -984,10 +810,7 @@ export function InsertTab({
                       fontWeight: p.bold ? 800 : 400,
                       fontStyle: p.italic ? 'italic' : undefined,
                     }}
-                    onClick={() => {
-                      insertWordArtAt(editor, p)
-                      setDropdown(() => null)
-                    }}
+                    onClick={() => pick('insert-wordart', p.id)}
                   >
                     {t('ribbonWordArtPreviewChar')}
                   </button>
@@ -998,7 +821,7 @@ export function InsertTab({
           <div className="rb-split-wrap">
             <button
               className="rb-big"
-              disabled={!hasDoc}
+              disabled={dropCapOff}
               data-tip={t('ribbonDropCap')}
               onClick={() => toggleDropdown(setDropdown, 'dropCap')}
             >
@@ -1032,13 +855,7 @@ export function InsertTab({
                     key={opt.label}
                     className="dropcap-option"
                     data-tip={opt.desc}
-                    onClick={() => {
-                      setDropdown(() => null)
-                      const newDropCap = opt.val
-                        ? JSON.stringify({ type: opt.val, lines: 3 })
-                        : null
-                      setParaAttrs(editor, { dropCap: newDropCap })
-                    }}
+                    onClick={() => pick('drop-cap', opt.val ?? NONE)}
                   >
                     <span className="dropcap-preview">{opt.val ? 'A' : '—'}</span>
                     <span>{opt.label}</span>
@@ -1047,42 +864,63 @@ export function InsertTab({
               </div>
             )}
           </div>
-          <div className="rb-split-wrap">
-            <button
-              className="rb-big"
-              disabled={!hasDoc}
-              data-tip={t('ribbonFieldTip')}
-              onClick={() => toggleDropdown(setDropdown, 'field')}
-            >
-              <span className="rb-big-icon" style={{ fontSize: 15, lineHeight: 1.2 }}>
-                {'{ }'}
+          <div className="rb-col" data-collapse="2">
+            <div className="rb-split-wrap">
+              <button
+                className="rb-small"
+                disabled={!hasDoc}
+                data-tip={t('ribbonFieldTip')}
+                onClick={() => toggleDropdown(setDropdown, 'field')}
+              >
+                <span className="rb-small-glyph">{'{ }'}</span>
+                <span className="rb-small-label">{t('ribbonField')}</span>
                 <IconCaret />
-              </span>
-              <span>{t('ribbonField')}</span>
-            </button>
-            {dropdown === 'field' && (
-              <div data-rb-panel="" className="layout-menu">
-                {(
-                  [
-                    ['DATE', t('ribbonFieldDate')],
-                    ['TIME', t('ribbonFieldTime')],
-                    ['PAGE', t('ribbonFieldPage')],
-                    ['NUMPAGES', t('ribbonFieldNumPages')],
-                    ['FILENAME', t('ribbonFieldFileName')],
-                  ] as const
-                ).map(([instr, label]) => (
-                  <button
-                    key={instr}
-                    onClick={() => {
-                      onInsertField(instr)
-                      setDropdown(() => null)
-                    }}
-                  >
-                    {label}
+              </button>
+              {dropdown === 'field' && (
+                <div data-rb-panel="" className="layout-menu">
+                  {(
+                    [
+                      ['DATE', t('ribbonFieldDate')],
+                      ['TIME', t('ribbonFieldTime')],
+                      ['PAGE', t('ribbonFieldPage')],
+                      ['NUMPAGES', t('ribbonFieldNumPages')],
+                      ['FILENAME', t('ribbonFieldFileName')],
+                    ] as const
+                  ).map(([instr, label]) => (
+                    <button key={instr} onClick={() => pick('insert-field', instr)}>
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+            <RbCommand cmd="insert-date-time" look="small">
+              <IconDateTime size={14} />
+            </RbCommand>
+            <div className="rb-split-wrap">
+              <button
+                className="rb-small"
+                disabled={!hasDoc}
+                data-tip={t('ribbonObject')}
+                onClick={() => toggleDropdown(setDropdown, 'object')}
+              >
+                <IconDoc size={14} />
+                <span className="rb-small-label">{t('ribbonObject')}</span>
+                <IconCaret />
+              </button>
+              {dropdown === 'object' && (
+                <div data-rb-panel="" className="layout-menu">
+                  {!isPlanned('insert-object') && (
+                    <button onClick={() => pick('insert-object' as ActionCommandId)}>
+                      {t('ribbonObject')}…
+                    </button>
+                  )}
+                  <button disabled={textFromFile.disabled} onClick={() => pick('insert-file')}>
+                    {t('ribbonTextFromFile')}…
                   </button>
-                ))}
-              </div>
-            )}
+                </div>
+              )}
+            </div>
           </div>
         </div>
         <div className="ribbon-group-label">{t('ribbonGroupText')}</div>
@@ -1090,227 +928,8 @@ export function InsertTab({
 
       <div className="ribbon-sep" />
 
-      {/* Word: Link/Bookmark/Cross-reference are small vertical buttons */}
       <div className="ribbon-group">
         <div className="ribbon-group-items">
-          <div className="rb-col">
-            <button
-              className="rb-small"
-              disabled={!hasDoc}
-              data-tip={t('ribbonLinkTip')}
-              onClick={() => setLinkOpen(true)}
-            >
-              <IconLink size={14} /> {t('ribbonLink')}
-            </button>
-            <button
-              className="rb-small"
-              disabled={!hasDoc}
-              data-tip={t('ribbonBookmarkTip')}
-              onClick={() => setBookmarkOpen(true)}
-            >
-              <IconBook size={14} /> {t('ribbonBookmark')}
-            </button>
-            <button
-              className="rb-small"
-              disabled={!hasDoc}
-              data-tip={t('ribbonCrossRefTip')}
-              onClick={() => setCrossRefOpen(true)}
-            >
-              <IconRefresh size={14} /> {t('ribbonCrossRef')}
-            </button>
-          </div>
-        </div>
-        <div className="ribbon-group-label">{t('ribbonGroupLinks')}</div>
-      </div>
-
-      <div className="ribbon-sep" />
-
-      <div className="ribbon-group">
-        <div className="ribbon-group-items">
-          {/* Word: Insert → Comment starts a new comment; the pane toggle stays on Review.
-              Deliberately not gated on this tab's hasDoc (= canEdit): under the comments-only
-              restriction the body is read-only yet commenting stays allowed, matching the
-              Review tab's New Comment. Without a document canComment is false anyway. */}
-          <button
-            className="rb-big"
-            disabled={!canComment || (isProtected && !commentsAllowed)}
-            data-tip={canComment ? t('ribbonNewCommentTip') : t('ribbonNewCommentSelectTip')}
-            onClick={onNewComment}
-          >
-            <span className="rb-big-icon">
-              <IconComment size={BIG} />
-            </span>
-            <span>{t('ribbonComment')}</span>
-          </button>
-        </div>
-        <div className="ribbon-group-label">{t('ribbonGroupComments')}</div>
-      </div>
-
-      <div className="ribbon-sep" />
-
-      <div className="ribbon-group">
-        <div className="ribbon-group-items">
-          <div className="rb-split-wrap">
-            <button
-              className={`rb-big ${header?.text ? 'active' : ''}`}
-              disabled={!hasDoc}
-              data-tip={t('ribbonHeaderTip')}
-              onClick={() => toggleDropdown(setDropdown, 'header')}
-            >
-              <span className="rb-big-icon">
-                <IconHeader size={BIG} />
-                <IconCaret />
-              </span>
-              <span>{t('ribbonHeader')}</span>
-            </button>
-            {dropdown === 'header' && (
-              <div data-rb-panel="" className="layout-menu">
-                <button
-                  onClick={() => {
-                    onHfEdit('header')
-                    setDropdown(() => null)
-                  }}
-                >
-                  {t('ribbonHfEditHeader')}
-                </button>
-                <button
-                  onClick={() => {
-                    onHeader({ text: '' })
-                    setDropdown(() => null)
-                  }}
-                >
-                  {t('ribbonHfRemoveHeader')}
-                </button>
-              </div>
-            )}
-          </div>
-          <div className="rb-split-wrap">
-            <button
-              className={`rb-big ${footer?.text ? 'active' : ''}`}
-              disabled={!hasDoc}
-              data-tip={t('ribbonFooterTip')}
-              onClick={() => toggleDropdown(setDropdown, 'footer')}
-            >
-              <span className="rb-big-icon">
-                <IconFooter size={BIG} />
-                <IconCaret />
-              </span>
-              <span>{t('ribbonFooter')}</span>
-            </button>
-            {dropdown === 'footer' && (
-              <div data-rb-panel="" className="layout-menu">
-                <button
-                  onClick={() => {
-                    onHfEdit('footer')
-                    setDropdown(() => null)
-                  }}
-                >
-                  {t('ribbonHfEditFooter')}
-                </button>
-                <button
-                  onClick={() => {
-                    onFooter({ text: '' })
-                    setDropdown(() => null)
-                  }}
-                >
-                  {t('ribbonHfRemoveFooter')}
-                </button>
-              </div>
-            )}
-          </div>
-          <div className="rb-split-wrap">
-            <button
-              className={`rb-big ${footer?.pageNumber ? 'active' : ''}`}
-              disabled={!hasDoc}
-              data-tip={t('ribbonPageNumber')}
-              onClick={() => toggleDropdown(setDropdown, 'pagenum')}
-            >
-              <span className="rb-big-icon">
-                <IconPageNumber size={BIG} />
-                <IconCaret />
-              </span>
-              <span>{t('ribbonPageNumber')}</span>
-            </button>
-            {dropdown === 'pagenum' && (
-              <div data-rb-panel="" className="layout-menu">
-                {(
-                  [
-                    [t('ribbonPnTopLeft'), 'header', 'left'],
-                    [t('ribbonPnTopCenter'), 'header', 'center'],
-                    [t('ribbonPnTopRight'), 'header', 'right'],
-                    [t('ribbonPnBottomLeft'), 'footer', 'left'],
-                    [t('ribbonPnBottomCenter'), 'footer', 'center'],
-                    [t('ribbonPnBottomRight'), 'footer', 'right'],
-                  ] as Array<[string, 'header' | 'footer', 'left' | 'center' | 'right']>
-                ).map(([label, kind, align]) => (
-                  <button
-                    key={label}
-                    onClick={() => {
-                      ;(kind === 'header' ? onHeader : onFooter)(hfPageNumberOnly(align))
-                      setDropdown(() => null)
-                    }}
-                  >
-                    {label}
-                  </button>
-                ))}
-                <button
-                  onClick={() => {
-                    onPageNumFormat()
-                    setDropdown(() => null)
-                  }}
-                >
-                  {t('ribbonPnFormat')}
-                </button>
-                <button
-                  onClick={() => {
-                    if (hfHasPageField(footer)) onFooter(hfWithoutPageMarks(footer!))
-                    if (hfHasPageField(header)) onHeader(hfWithoutPageMarks(header!))
-                    setDropdown(() => null)
-                  }}
-                >
-                  {t('ribbonPnRemove')}
-                </button>
-              </div>
-            )}
-          </div>
-        </div>
-        <div className="ribbon-group-label">{t('ribbonGroupHeaderFooter')}</div>
-      </div>
-
-      <div className="ribbon-sep" />
-
-      <div className="ribbon-group">
-        <div className="ribbon-group-items">
-          <div className="rb-split-wrap">
-            <button
-              className="rb-big"
-              disabled={!hasDoc}
-              data-tip={t('ribbonSymbolTip')}
-              onClick={() => toggleDropdown(setDropdown, 'symbol')}
-            >
-              <span className="rb-big-icon">
-                <IconSymbol size={BIG} />
-                <IconCaret />
-              </span>
-              <span>{t('ribbonSymbol')}</span>
-            </button>
-            {dropdown === 'symbol' && (
-              <div data-rb-panel="" className="symbol-palette">
-                {SYMBOLS.map((s) => (
-                  <button
-                    key={s}
-                    className="symbol-cell"
-                    onClick={() => {
-                      editor.chain().focus().insertContent(s).run()
-                      setDropdown(() => null)
-                    }}
-                  >
-                    {s}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
           <div className="rb-split-wrap">
             <button
               className="rb-big"
@@ -1330,27 +949,40 @@ export function InsertTab({
                 onPick={() => setDropdown(() => null)}
                 onCustom={() => {
                   setDropdown(() => null)
-                  setEquationOpen(true)
+                  runCommand('insert-equation')
                 }}
               />
             )}
           </div>
+          <div className="rb-split-wrap">
+            <button
+              className="rb-big"
+              disabled={!hasDoc}
+              data-tip={t('ribbonSymbolTip')}
+              onClick={() => toggleDropdown(setDropdown, 'symbol')}
+            >
+              <span className="rb-big-icon">
+                <IconSymbol size={BIG} />
+                <IconCaret />
+              </span>
+              <span>{t('ribbonSymbol')}</span>
+            </button>
+            {dropdown === 'symbol' && (
+              <div data-rb-panel="" className="symbol-palette">
+                {SYMBOLS.map((s) => (
+                  <button key={s} className="symbol-cell" onClick={() => pick('insert-symbol', s)}>
+                    {s}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+          <RbCommand cmd="insert-number" look="big">
+            <IconNumberSign size={BIG} />
+          </RbCommand>
         </div>
         <div className="ribbon-group-label">{t('ribbonGroupSymbols')}</div>
       </div>
-
-      {tableDialogOpen && (
-        <TableInsertModal
-          editor={editor}
-          onClose={() => setTableDialogOpen(false)}
-          onInserted={onTableInserted}
-        />
-      )}
-      {linkOpen && <LinkInsertModal editor={editor} onClose={() => setLinkOpen(false)} />}
-      {equationOpen && <EquationModal editor={editor} onClose={() => setEquationOpen(false)} />}
-      {bookmarkOpen && <BookmarkModal editor={editor} onClose={() => setBookmarkOpen(false)} />}
-      {crossRefOpen && <CrossRefModal editor={editor} onClose={() => setCrossRefOpen(false)} />}
-      {chartOpen && <ChartInsertModal editor={editor} onClose={() => setChartOpen(false)} />}
     </>
   )
 }

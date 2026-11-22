@@ -1,4 +1,6 @@
 import JSZip from 'jszip'
+import { bindUnboundPrefixes, rootNamespaces } from './xml-namespaces'
+import { maxDrawingId, regroupDrawings, type DrawingGroup } from './group-drawings'
 import {
   applyRevisionResolutions,
   cleanMoveRangeMarkers,
@@ -12,6 +14,7 @@ import {
   mergePPrFormat,
   splitXmlChildren,
   inlinePictureDrawingXml,
+  NEW_PICTURE_SVG_SUFFIX,
   NEW_PICTURE_TOKEN_PREFIX,
   patchTableCellTexts,
   type CellParaPatch,
@@ -43,6 +46,8 @@ import { loadDocxZip } from './zip-load'
 import {
   BLANK_NUMBERING_XML,
   abstractNumXml,
+  listStyleAbstractNumXml,
+  listStyleXml,
   customLevelXml,
   mergeLevelXml,
   numPicBulletXml,
@@ -50,7 +55,9 @@ import {
 } from './blank'
 import {
   applyPageNumType,
+  applySectionNoteProps,
   applySectionSettings,
+  applySettingsNoteProps,
   applySectionStartType,
   applyTitlePg,
   hfReferenceRId,
@@ -63,6 +70,7 @@ import {
   buildSourcesItemPropsXml,
   buildSourcesXml,
   findSourcesPart,
+  type CitationStyleId,
 } from './sources'
 import {
   THEME_CONTENT_TYPE,
@@ -72,7 +80,12 @@ import {
   applyThemeFonts,
   buildThemeXml,
 } from './theme'
-import { buildChartPartXml, buildChartWorkbookXlsxBase64, CHART_WORKBOOK_REL_TYPE } from './chart'
+import {
+  buildChartPartXml,
+  buildChartWorkbookXlsxBase64,
+  CHART_WORKBOOK_REL_TYPE,
+  scatterXValues,
+} from './chart'
 import type {
   CommentInfo,
   DocProtection,
@@ -85,9 +98,11 @@ import type {
   NewImage,
   NewInkImage,
   NoteInfo,
+  NoteProps,
   ParsedDoc,
   RevisionInfo,
   SdtShell,
+  PageNumberChapter,
   SectionSettings,
   SourceInfo,
   StyleInfo,
@@ -100,6 +115,9 @@ import { balanceFieldChars } from './field-balance'
 import {
   builtInHeadingStyleUpsert,
   mergeDefaultFontsXml,
+  dropStyleRefsXml,
+  hasStyleXml,
+  styleRemovalIds,
   upsertStyleXml,
   type DefaultFonts,
   type StyleUpsert,
@@ -127,6 +145,12 @@ import {
 } from './zotero-doc-props'
 import { applyPropertyChanges, type PropertyChanges } from './doc-properties'
 import { patchHfPicturesXml } from './run-picture'
+import {
+  injectIntoParagraph,
+  paragraphPermMarkers,
+  restoreParagraphPermMarkers,
+} from './perm-ranges'
+import { saveMathPr, type MathPrEdit } from './math-pr'
 
 /**
  * Relationship attributes are read quote-agnostically and with any spacing
@@ -370,6 +394,55 @@ function saveBlockDocxIndex(fb: SaveBlock): number | undefined {
   return undefined
 }
 
+/**
+ * Editing-permission markers of top-level paragraphs that are gone (joined
+ * into the paragraph above, or deleted) go to the nearest paragraph still
+ * there. An end moves back to the paragraph before the one that was removed,
+ * so a range whose last paragraph was merged into the one above still closes
+ * after the merged paragraph. Without it the start stayed, the end vanished,
+ * and on reopen the range ran to the end of the document, unlocking it all. A
+ * start moves forward to the next paragraph. Markers still in the body stay
+ * where they are; each one is written once.
+ */
+function rehomeLostPermMarkers(
+  parts: string[],
+  placed: ReadonlyArray<{ part: number; docxIndex: number | undefined }>,
+  elements: ReadonlyArray<{ name: string; start: number; end: number }>,
+  documentXml: string,
+): void {
+  const kept = new Set(placed.map((p) => p.docxIndex).filter((i) => i !== undefined))
+  const isParagraph = (part: number) =>
+    /^<w:p[\s>]/.test(parts[part]!) && parts[part]!.endsWith('</w:p>')
+  let body = parts.join('')
+  elements.forEach((el, index) => {
+    if (el.name !== 'w:p' || kept.has(index)) return
+    const { starts, ends } = paragraphPermMarkers(documentXml.slice(el.start, el.end))
+    const lostStarts = starts.filter((m) => !body.includes(m))
+    const lostEnds = ends.filter((m) => !body.includes(m))
+    if (lostStarts.length === 0 && lostEnds.length === 0) return
+    // the first block that came after the removed paragraph in the original
+    const next = placed.findIndex((p) => p.docxIndex !== undefined && p.docxIndex > index)
+    const before = (next === -1 ? placed : placed.slice(0, next)).filter((p) => isParagraph(p.part))
+    const after = (next === -1 ? [] : placed.slice(next)).filter((p) => isParagraph(p.part))
+    const endHome = before[before.length - 1] ?? after[0]
+    const startHome = after[0] ?? before[before.length - 1]
+    if (lostEnds.length > 0 && endHome) {
+      // a paragraph after the removed one takes the end at its start: nothing of it is covered
+      parts[endHome.part] =
+        endHome === before[before.length - 1]
+          ? injectIntoParagraph(parts[endHome.part]!, '', lostEnds.join(''))
+          : injectIntoParagraph(parts[endHome.part]!, lostEnds.join(''), '')
+    }
+    if (lostStarts.length > 0 && startHome) {
+      parts[startHome.part] =
+        startHome === after[0]
+          ? injectIntoParagraph(parts[startHome.part]!, lostStarts.join(''), '')
+          : injectIntoParagraph(parts[startHome.part]!, '', lostStarts.join(''))
+    }
+    body = parts.join('')
+  })
+}
+
 /** Body content in final editor order (hidden trailing elements are appended automatically). */
 export type SaveBlock = (
   | { kind: 'original'; docxIndex: number }
@@ -383,7 +456,8 @@ export type SaveBlock = (
       kind: 'xml'
       xml: string
       docxIndex?: number
-      replaceImage?: { base64: string; mime: NewImage['mime'] }
+      /** svgBase64: the new bytes as an SVG, written where the drawing already names an SVG part */
+      replaceImage?: { base64: string; mime: NewImage['mime']; svgBase64?: string }
     }
   /** a new inline image; bytes become word/media/... + relationship */
   | { kind: 'image'; image: NewImage }
@@ -420,7 +494,7 @@ export interface SaveOptions {
   pageCount?: number
   /** bytes of pictures the editor placed inside existing paragraphs (table cells),
    *  keyed by the placeholder token their drawing XML carries (NEW_PICTURE_TOKEN_PREFIX) */
-  newPictures?: Record<string, { base64: string; mime: NewImage['mime'] }>
+  newPictures?: Record<string, { base64: string; mime: NewImage['mime']; svgBase64?: string }>
   /** Zotero document preferences; written as Word-compatible 255-character custom-property chunks */
   zoteroDocumentData?: string
   /** replace the trailing w:sectPr with this XML before the field-level options below apply (headless editors that keep the sectPr itself) */
@@ -432,7 +506,7 @@ export interface SaveOptions {
   /** last-section start type (w:type); rewrites the trailing sectPr when inserting a continuous section break; undefined = keep */
   sectionStartType?: 'nextPage' | 'continuous' | 'evenPage' | 'oddPage' | 'nextColumn'
   /** last-section page numbering (w:pgNumType): both fmt/start unset = remove the tag; undefined = keep */
-  pgNumType?: { fmt?: string; start?: number }
+  pgNumType?: { fmt?: string; start?: number; chapter?: PageNumberChapter | null }
   /** page color: hex without '#' to set, null to remove, undefined to keep as-is */
   pageColor?: string | null
   /** replace/create the default page header (single centered line); undefined = keep */
@@ -479,6 +553,29 @@ export interface SaveOptions {
   mirrorMargins?: boolean
   /** Track Changes left on at save time: set/remove settings.xml w:trackRevisions */
   trackRevisions?: boolean
+  /** Track moves: remove/set settings.xml w:doNotTrackMoves */
+  trackMoves?: boolean
+  /** automatic hyphenation of the whole document: set/remove settings.xml w:autoHyphenation */
+  autoHyphenation?: boolean
+  /** the finer hyphenation rules of settings.xml; only the fields given are written */
+  hyphenation?: {
+    /** false writes w:doNotHyphenateCaps */
+    caps?: boolean
+    /** w:consecutiveHyphenLimit; 0 = no limit (the element is removed) */
+    consecutiveLimit?: number
+    /** w:hyphenationZone, twips */
+    zoneTwips?: number
+  }
+  /** the gap between default tab stops, twips: settings.xml w:defaultTabStop */
+  defaultTabStopTwips?: number
+  /** section gutters sit at the top of the page instead of the binding side: set/remove settings.xml w:gutterAtTop */
+  gutterAtTop?: boolean
+  /** justified East Asian lines compress punctuation: settings.xml w:characterSpacingControl */
+  compressPunctuation?: boolean
+  /** Word's Strict kinsoku level: set/remove settings.xml w:strictFirstAndLastChars */
+  strictFirstAndLastChars?: boolean
+  /** the document's equation defaults: settings.xml m:mathPr (only the fields that changed are written) */
+  mathPr?: MathPrEdit
   /**
    * Inject the newly created header/footer references into EVERY body sectPr
    * that has none (not just the trailing one). Generated multi-section
@@ -506,6 +603,28 @@ export interface SaveOptions {
     levelEdits?: Array<{ abstractNumId: string; ilvl: number; level: CustomNumberingLevel }>
     /** new w:numPicBullet images referenced by levels' picBulletId */
     picBullets?: Array<{ id: number; base64: string; mime: NewImage['mime'] }>
+    /**
+     * Lists that follow a named list style: a w:num over a new abstractNum carrying only
+     * w:numStyleLink. `define` also writes the style (type "numbering"), its abstractNum
+     * (w:styleLink + levels) and the style's own w:num, when styles.xml has no such style.
+     */
+    styleNums?: Array<{
+      numId: string
+      styleId: string
+      define?: { name: string; numId: string; levels: CustomNumberingLevel[]; custom?: boolean }
+    }>
+    /** user-made list styles written even when no list follows them: style, abstractNum and the style's w:num */
+    styleDefs?: Array<{
+      styleId: string
+      name: string
+      numId: string
+      levels: CustomNumberingLevel[]
+    }>
+    /**
+     * List styles deleted from the document: the w:style goes; the abstractNum that defined it
+     * and the ones that followed it stay as ordinary definitions with the levels written out.
+     */
+    removedStyles?: string[]
   }
   /** create/modify styles: surgical upsert of word/styles.xml by styleId (replace when present, else append) */
   styleUpserts?: StyleUpsert[]
@@ -545,6 +664,16 @@ export interface SaveOptions {
   footnotes?: NoteInfo[]
   endnotes?: NoteInfo[]
   /**
+   * Note placement and numbering for the whole document (w:footnotePr / w:endnotePr):
+   * the fields given are set in settings.xml and in every section of the body.
+   */
+  noteProps?: { footnote?: NoteProps; endnote?: NoteProps }
+  /**
+   * The same, for settings.xml alone: the caller writes each section's own
+   * properties through its section settings.
+   */
+  settingsNoteProps?: { footnote?: NoteProps; endnote?: NoteProps }
+  /**
    * Watermark in every active section header: a string / text spec / picture spec
    * sets it, null removes it, undefined keeps each header's existing watermark.
    */
@@ -555,8 +684,18 @@ export interface SaveOptions {
    * passing [] removes all our ink. undefined = keep whatever is in the file.
    */
   inks?: NewInkImage[]
+  /**
+   * Drawings to save as one group each. A member's `block` indexes the body
+   * blocks passed in; a group whose members cannot be merged is left as
+   * separate drawings.
+   */
+  groups?: DrawingGroup[]
+  /** blocks that stand for drawings of the paragraph before them: saved inside that paragraph */
+  carried?: number[]
   /** full bibliography source list; regenerates the b:Sources customXml part */
   sources?: SourceInfo[]
+  /** the citation style picked for the sources part (its SelectedStyle); needs `sources` */
+  sourcesStyle?: CitationStyleId
   /** theme font pair; patches (or creates) word/theme/theme1.xml */
   themeFonts?: ThemeFonts
   /** theme color scheme; patches (or creates) word/theme/theme1.xml */
@@ -588,12 +727,27 @@ export type { StyleUpsert } from './style-upsert'
 
 const NUMBERING_REL_TYPE =
   'http://schemas.openxmlformats.org/officeDocument/2006/relationships/numbering'
+const STYLES_REL_TYPE = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles'
 const COMMENTS_EXT_REL_TYPE =
   'http://schemas.microsoft.com/office/2011/relationships/commentsExtended'
 const COMMENTS_REL_TYPE =
   'http://schemas.openxmlformats.org/officeDocument/2006/relationships/comments'
 const SETTINGS_REL_TYPE =
   'http://schemas.openxmlformats.org/officeDocument/2006/relationships/settings'
+import {
+  CHARTEX_CONTENT_TYPE,
+  CHARTEX_GRAPHIC_URI,
+  CHARTEX_MC_NS,
+  CHARTEX_REL_TYPE,
+  CHART_COLOR_STYLE_CONTENT_TYPE,
+  CHART_COLOR_STYLE_REL_TYPE,
+  CHART_STYLE_CONTENT_TYPE,
+  CHART_STYLE_REL_TYPE,
+  buildChartColorStylePartXml,
+  buildChartStylePartXml,
+  buildChartexPartXml,
+} from './chartex-build'
+
 const CHART_REL_TYPE = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/chart'
 const CHART_CONTENT_TYPE = 'application/vnd.openxmlformats-officedocument.drawingml.chart+xml'
 const XLSX_CONTENT_TYPE = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
@@ -629,6 +783,37 @@ function replaceAbstractNumLevel(
     body = body.slice(0, insertAt) + lvlXml + body.slice(insertAt)
   }
   return xml.replace(abs[0], body)
+}
+
+/**
+ * numbering.xml once a list style is deleted: its defining abstractNum drops
+ * w:styleLink, and each abstractNum that only pointed at the style
+ * (w:numStyleLink) takes a copy of the levels, so every w:num still resolves.
+ */
+export function unlinkListStyleXml(xml: string, styleId: string): string {
+  const id = escapeXmlAttr(styleId).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const styleLink = new RegExp(`<w:styleLink\\s+w:val=(["'])${id}\\1\\s*/>`)
+  const numStyleLink = new RegExp(`<w:numStyleLink\\s+w:val=(["'])${id}\\1\\s*/>`)
+  const abstracts = /<w:abstractNum\b[^>]*>[\s\S]*?<\/w:abstractNum>/g
+  const defining = [...xml.matchAll(abstracts)].find((m) => styleLink.test(m[0]))?.[0]
+  const levels = defining?.match(/<w:lvl\b[^>]*(?:\/>|>[\s\S]*?<\/w:lvl>)/g)?.join('') ?? ''
+  return xml.replace(abstracts, (abs) => {
+    if (styleLink.test(abs)) return abs.replace(styleLink, '')
+    if (!numStyleLink.test(abs)) return abs
+    const own = /<w:lvl\b/.test(abs)
+    return (
+      abs
+        .replace(numStyleLink, '')
+        // a function: level text and style names may hold `$&`, which a replacement string expands
+        .replace('</w:abstractNum>', () => `${own ? '' : levels}</w:abstractNum>`)
+    )
+  })
+}
+
+const MEDIA_CONTENT_TYPE: Record<string, string> = {
+  png: 'image/png',
+  gif: 'image/gif',
+  svg: 'image/svg+xml',
 }
 
 const IMAGE_EXT: Record<NewImage['mime'], string> = {
@@ -783,17 +968,29 @@ export async function saveDocx(
     (options.sectionHf === undefined || options.sectionHf.length === 0) &&
     (options.sectionHfUnlink === undefined || options.sectionHfUnlink.length === 0) &&
     options.numbering === undefined &&
+    (options.groups === undefined || options.groups.length === 0) &&
+    (options.carried === undefined || options.carried.length === 0) &&
     options.defaultFonts === undefined &&
     (options.styleUpserts === undefined || options.styleUpserts.length === 0) &&
     options.evenAndOddHeaders === undefined &&
     options.mirrorMargins === undefined &&
     options.trackRevisions === undefined &&
+    options.trackMoves === undefined &&
+    options.autoHyphenation === undefined &&
+    options.hyphenation === undefined &&
+    options.defaultTabStopTwips === undefined &&
+    options.gutterAtTop === undefined &&
+    options.compressPunctuation === undefined &&
+    options.strictFirstAndLastChars === undefined &&
+    options.mathPr === undefined &&
     options.comments === undefined &&
     options.protection === undefined &&
     options.writeProtection === undefined &&
     options.removePersonalInfo === undefined &&
     options.footnotes === undefined &&
     options.endnotes === undefined &&
+    options.noteProps === undefined &&
+    options.settingsNoteProps === undefined &&
     options.watermark === undefined &&
     options.inks === undefined &&
     options.sources === undefined &&
@@ -886,11 +1083,18 @@ export async function saveDocx(
   }
   const styleUpserts = [...(options.styleUpserts ?? []), ...headingUpserts]
 
+  // Pre-rendered xml blocks (a rebuilt table's model xml) carry bookmark ids an
+  // editor-side allocator minted above the original document's: seed past those
+  // too, or a generated paragraph's bookmark would collide with one of them.
+  const preRenderedXml = finalBlocks
+    .filter((b) => b.kind === 'xml')
+    .map((b) => b.xml)
+    .join('')
   const genCtx = {
     headingStyleIds,
     listParagraphStyleId: parsed.listParagraphStyleId,
     allocateHyperlinkRel,
-    allocateBookmarkId: nextBookmarkIdAllocator(documentXml),
+    allocateBookmarkId: nextBookmarkIdAllocator(documentXml + preRenderedXml),
     allocateRevisionId: nextRevisionIdAllocator(
       [documentXml, ...(await storyPartsXml(zip))],
       options.revisionIdFloor,
@@ -948,8 +1152,36 @@ export async function saveDocx(
     }
     return rId
   }
+  const svgPathByContent = new Map<string, string>()
+  const landSvg = (svgBase64: string): string => {
+    let mediaPath = svgPathByContent.get(svgBase64)
+    if (mediaPath === undefined) {
+      mediaPath = `word/media/aidocs${imageSeq++}.svg`
+      newMedia.push({ path: mediaPath, base64: svgBase64 })
+      usedExtensions.add('svg')
+      svgPathByContent.set(svgBase64, mediaPath)
+    }
+    return mediaPath
+  }
+  const svgRelByContent = new Map<string, string>()
+  const embedSvg = (svgBase64: string): string => {
+    let rId = svgRelByContent.get(svgBase64)
+    if (rId === undefined) {
+      const mediaPath = landSvg(svgBase64)
+      rId = `rId${nextRelNum++}`
+      newRels.push({
+        rId,
+        type: IMAGE_REL_TYPE,
+        target: mediaPath.replace(/^word\//, ''),
+        external: false,
+      })
+      svgRelByContent.set(svgBase64, rId)
+    }
+    return rId
+  }
   const embedImage = (image: NewImage): string => {
     const rId = embedImageMedia(image)
+    const svgRId = image.svgBase64 ? embedSvg(image.svgBase64) : undefined
     // dedup means imageSeq does not advance for repeated bytes — docPr ids need their own counter
     const docPrId = DOCPR_ID_BASE + ++docPrSeq
     const ps = image.paraSpacing
@@ -964,7 +1196,7 @@ export async function saveDocx(
     const spacing = spacingAttrs.length > 0 ? `<w:spacing ${spacingAttrs.join(' ')}/>` : ''
     const jc = image.align && image.align !== 'left' ? `<w:jc w:val="${image.align}"/>` : ''
     const pPr = spacing || jc ? `<w:pPr>${spacing}${jc}</w:pPr>` : ''
-    const drawing = inlinePictureDrawingXml({ ...image, rId, docPrId })
+    const drawing = inlinePictureDrawingXml({ ...image, rId, svgRId, docPrId })
     const xml = `<w:p>${pPr}<w:r>${drawing}</w:r></w:p>`
     // posH/posV are the margin-relative align pair (Word position presets);
     // applyImageWrap itself prefers posOffset when both are set, mirroring the
@@ -992,15 +1224,23 @@ export async function saveDocx(
       }
       return id
     }
-    return xml.replace(
-      new RegExp(`(r:embed|id|name)="(Picture )?(${NEW_PICTURE_TOKEN_PREFIX}[0-9]+)"`, 'g'),
-      (whole, attr: string, prefix: string | undefined, token: string) => {
-        const picture = pictures[token]
-        if (!picture) return whole
-        if (attr === 'r:embed') return `r:embed="${embedImageMedia(picture)}"`
-        return `${attr}="${prefix ?? ''}${docPrIdOf(token)}"`
-      },
-    )
+    return xml
+      .replace(
+        new RegExp(`r:embed="(${NEW_PICTURE_TOKEN_PREFIX}[0-9]+)${NEW_PICTURE_SVG_SUFFIX}"`, 'g'),
+        (whole, token: string) => {
+          const svg = pictures[token]?.svgBase64
+          return svg ? `r:embed="${embedSvg(svg)}"` : whole
+        },
+      )
+      .replace(
+        new RegExp(`(r:embed|id|name)="(Picture )?(${NEW_PICTURE_TOKEN_PREFIX}[0-9]+)"`, 'g'),
+        (whole, attr: string, prefix: string | undefined, token: string) => {
+          const picture = pictures[token]
+          if (!picture) return whole
+          if (attr === 'r:embed') return `r:embed="${embedImageMedia(picture)}"`
+          return `${attr}="${prefix ?? ''}${docPrIdOf(token)}"`
+        },
+      )
   }
   const newPictureDocPrIds = new Map<string, number>()
   /** the pictures' runs collected into the first picture's holder paragraph */
@@ -1015,7 +1255,7 @@ export async function saveDocx(
   }
 
   // ---- new embedded charts: chart part + workbook + relationship + drawing paragraph ----
-  const newChartParts: Array<{ path: string; xml: string }> = []
+  const newChartParts: Array<{ path: string; xml: string; contentType: string }> = []
   const newChartWorkbooks: Array<{
     xlsxPath: string
     relsPath: string
@@ -1026,30 +1266,66 @@ export async function saveDocx(
     chart: NewChart,
     extentPx?: { w: number; h: number },
   ): Promise<string> => {
+    // a chart of the 2014 extension is a part of its own kind, with its own names
+    const ex = chart.layout
+    const stem = ex ? 'chartEx' : 'chart'
     let n = 1
     while (
-      zip.file(`word/charts/chart${n}.xml`) ||
-      newChartParts.some((p) => p.path === `word/charts/chart${n}.xml`)
+      zip.file(`word/charts/${stem}${n}.xml`) ||
+      newChartParts.some((p) => p.path === `word/charts/${stem}${n}.xml`)
     ) {
       n++
     }
-    const path = `word/charts/chart${n}.xml`
+    const path = `word/charts/${stem}${n}.xml`
     const rId = `rId${nextRelNum++}`
-    newRels.push({ rId, type: CHART_REL_TYPE, target: `charts/chart${n}.xml`, external: false })
+    newRels.push({
+      rId,
+      type: ex ? CHARTEX_REL_TYPE : CHART_REL_TYPE,
+      target: `charts/${stem}${n}.xml`,
+      external: false,
+    })
 
     // Build embedded workbook and create chart rels part
-    const wbBase64 = await buildChartWorkbookXlsxBase64(chart.categories, chart.series)
-    const xlsxPath = `word/charts/embeddings/workbook${n}.xlsx`
+    // a scatter chart's x column is numbers: the chart part's c:xVal cache points at it
+    const wbBase64 = await buildChartWorkbookXlsxBase64(
+      chart.categories,
+      chart.series,
+      chart.kind === 'scatter' ? scatterXValues(chart.categories) : undefined,
+    )
+    const xlsxPath = `word/charts/embeddings/${ex ? 'workbookEx' : 'workbook'}${n}.xlsx`
     const wbRId = 'rId1'
+    // Word refuses a chartEx part that has no chart style and colour style beside it
+    const styleRels = ex
+      ? `<Relationship Id="rId2" Type="${CHART_STYLE_REL_TYPE}" Target="styleEx${n}.xml"/>` +
+        `<Relationship Id="rId3" Type="${CHART_COLOR_STYLE_REL_TYPE}" Target="colorsEx${n}.xml"/>`
+      : ''
     const chartRelsXml =
       '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n' +
       '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
-      `<Relationship Id="${wbRId}" Type="${CHART_WORKBOOK_REL_TYPE}" Target="embeddings/workbook${n}.xlsx"/>` +
+      `<Relationship Id="${wbRId}" Type="${CHART_WORKBOOK_REL_TYPE}" Target="embeddings/${ex ? 'workbookEx' : 'workbook'}${n}.xlsx"/>` +
+      styleRels +
       '</Relationships>'
-    newChartParts.push({ path, xml: buildChartPartXml(chart, wbRId) })
+    if (ex)
+      newChartParts.push(
+        {
+          path: `word/charts/styleEx${n}.xml`,
+          xml: buildChartStylePartXml(),
+          contentType: CHART_STYLE_CONTENT_TYPE,
+        },
+        {
+          path: `word/charts/colorsEx${n}.xml`,
+          xml: buildChartColorStylePartXml(),
+          contentType: CHART_COLOR_STYLE_CONTENT_TYPE,
+        },
+      )
+    newChartParts.push(
+      ex
+        ? { path, xml: buildChartexPartXml(chart, ex, wbRId), contentType: CHARTEX_CONTENT_TYPE }
+        : { path, xml: buildChartPartXml(chart, wbRId), contentType: CHART_CONTENT_TYPE },
+    )
     newChartWorkbooks.push({
       xlsxPath,
-      relsPath: `word/charts/_rels/chart${n}.xml.rels`,
+      relsPath: `word/charts/_rels/${stem}${n}.xml.rels`,
       relsXml: chartRelsXml,
       base64: wbBase64,
     })
@@ -1057,6 +1333,23 @@ export async function saveDocx(
     const docPrId = DOCPR_ID_BASE + ++docPrSeq
     const cx = extentPx ? Math.max(1, Math.round(extentPx.w * 9525)) : 5486400
     const cy = extentPx ? Math.max(1, Math.round(extentPx.h * 9525)) : 3200400
+    if (ex) {
+      // only a reader that knows the extension takes the drawing; the namespaces are declared
+      // here because the document's root may not carry them
+      return (
+        '<w:p><w:r><mc:AlternateContent ' +
+        'xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006">' +
+        `<mc:Choice xmlns:cx1="${CHARTEX_MC_NS}" Requires="cx1">` +
+        '<w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0">' +
+        `<wp:extent cx="${cx}" cy="${cy}"/>` +
+        `<wp:docPr id="${docPrId}" name="Chart ${docPrId}"/>` +
+        '<a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">' +
+        `<a:graphicData uri="${CHARTEX_GRAPHIC_URI}">` +
+        `<cx:chart xmlns:cx="${CHARTEX_GRAPHIC_URI}" r:id="${rId}"/>` +
+        '</a:graphicData></a:graphic></wp:inline></w:drawing>' +
+        '</mc:Choice><mc:Fallback/></mc:AlternateContent></w:r></w:p>'
+      )
+    }
     return (
       '<w:p><w:r><w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0">' +
       `<wp:extent cx="${cx}" cy="${cy}"/>` +
@@ -1193,23 +1486,31 @@ export async function saveDocx(
         '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"></Relationships>'
     const rIds = new Map<string, string>()
     const docPrIds = new Map<string, number>()
-    const out = xml.replace(
+    const relate = (key: string, mediaPath: string): string => {
+      let rId = rIds.get(key)
+      if (rId === undefined) {
+        rId = nextFreeRelId(relsXml)
+        relsXml = relsXml.replace(
+          '</Relationships>',
+          `<Relationship Id="${rId}" Type="${IMAGE_REL_TYPE}" Target="${mediaPath.replace(/^word\//, '')}"/></Relationships>`,
+        )
+        rIds.set(key, rId)
+      }
+      return rId
+    }
+    const withSvg = xml.replace(
+      new RegExp(`r:embed="(${NEW_PICTURE_TOKEN_PREFIX}[0-9]+)${NEW_PICTURE_SVG_SUFFIX}"`, 'g'),
+      (whole, token: string) => {
+        const svg = pictures[token]?.svgBase64
+        return svg ? `r:embed="${relate(token + NEW_PICTURE_SVG_SUFFIX, landSvg(svg))}"` : whole
+      },
+    )
+    const out = withSvg.replace(
       new RegExp(`(r:embed|id|name)="(Picture )?(${NEW_PICTURE_TOKEN_PREFIX}[0-9]+)"`, 'g'),
       (whole, attr: string, prefix: string | undefined, token: string) => {
         const picture = pictures[token]
         if (!picture) return whole
-        if (attr === 'r:embed') {
-          let rId = rIds.get(token)
-          if (rId === undefined) {
-            rId = nextFreeRelId(relsXml)
-            relsXml = relsXml.replace(
-              '</Relationships>',
-              `<Relationship Id="${rId}" Type="${IMAGE_REL_TYPE}" Target="${landMedia(picture).replace(/^word\//, '')}"/></Relationships>`,
-            )
-            rIds.set(token, rId)
-          }
-          return `r:embed="${rId}"`
-        }
+        if (attr === 'r:embed') return `r:embed="${relate(token, landMedia(picture))}"`
         let id = docPrIds.get(token)
         if (id === undefined) {
           id = DOCPR_ID_BASE + ++docPrSeq
@@ -1356,6 +1657,10 @@ export async function saveDocx(
   // ---- numbering: append numbering definitions (create the part from the blank
   // template when missing) ----
   const numberingPath = 'word/numbering.xml'
+  const styleNums = options.numbering?.styleNums ?? []
+  const styleDefs = options.numbering?.styleDefs ?? []
+  const removedListStyles = options.numbering?.removedStyles ?? []
+  const listStyleXmls: string[] = []
   let numberingXmlOut: string | null = null
   let numberingIsNew = false
   let numberingRelsOut: { path: string; xml: string; isNew: boolean } | null = null
@@ -1363,7 +1668,9 @@ export async function saveDocx(
     (options.numbering?.newDefs?.length ?? 0) > 0 ||
     (options.numbering?.restartNums?.length ?? 0) > 0 ||
     (options.numbering?.levelEdits?.length ?? 0) > 0 ||
-    (options.numbering?.picBullets?.length ?? 0) > 0
+    (options.numbering?.picBullets?.length ?? 0) > 0 ||
+    styleNums.length > 0 ||
+    styleDefs.length > 0
   ) {
     const file = zip.file(numberingPath)
     let xml = file ? await file.async('string') : null
@@ -1392,6 +1699,30 @@ export async function saveDocx(
       pendingAbs.set(`pending-${def.numId}`, absId)
       absXmls.push(abstractNumXml(absId, def.kind, def.levels))
       numXmls.push(`<w:num w:numId="${def.numId}"><w:abstractNumId w:val="${absId}"/></w:num>`)
+    }
+    if (styleNums.length > 0 || styleDefs.length > 0) {
+      const stylesXml = (await zip.file('word/styles.xml')?.async('string')) ?? ''
+      const defined = new Set<string>()
+      const defineStyle = (
+        styleId: string,
+        define: { name: string; numId: string; levels: CustomNumberingLevel[]; custom?: boolean },
+      ) => {
+        if (defined.has(styleId) || hasStyleXml(stylesXml, styleId)) return
+        defined.add(styleId)
+        const absId = String(++maxAbs)
+        absXmls.push(listStyleAbstractNumXml(absId, { styleLink: styleId }, define.levels))
+        numXmls.push(`<w:num w:numId="${define.numId}"><w:abstractNumId w:val="${absId}"/></w:num>`)
+        listStyleXmls.push(listStyleXml(styleId, define))
+      }
+      for (const def of styleDefs) defineStyle(def.styleId, { ...def, custom: true })
+      for (const link of styleNums) {
+        const { styleId, define } = link
+        if (define) defineStyle(styleId, define)
+        const absId = String(++maxAbs)
+        pendingAbs.set(`pending-${link.numId}`, absId)
+        absXmls.push(listStyleAbstractNumXml(absId, { numStyleLink: styleId }))
+        numXmls.push(`<w:num w:numId="${link.numId}"><w:abstractNumId w:val="${absId}"/></w:num>`)
+      }
     }
     for (const r of options.numbering?.restartNums ?? []) {
       const absId = pendingAbs.get(r.abstractNumId) ?? r.abstractNumId
@@ -1439,22 +1770,51 @@ export async function saveDocx(
     if (absXmls.length > 0) {
       xml = /<w:num[\s>]/.test(xml)
         ? xml.replace(/<w:num[\s>]/, (m) => absXmls.join('') + m)
-        : xml.replace('</w:numbering>', `${absXmls.join('')}</w:numbering>`)
+        : xml.replace('</w:numbering>', () => `${absXmls.join('')}</w:numbering>`)
     }
     xml = xml.replace('</w:numbering>', `${numXmls.join('')}</w:numbering>`)
     numberingXmlOut = xml
+  }
+  if (removedListStyles.length > 0) {
+    let xml = numberingXmlOut ?? (await zip.file(numberingPath)?.async('string')) ?? null
+    if (xml !== null) {
+      for (const styleId of removedListStyles) xml = unlinkListStyleXml(xml, styleId)
+      numberingXmlOut = xml
+    }
   }
 
   // ---- styles: surgical upsert of word/styles.xml (create/modify styles) ----
   const stylesPath = 'word/styles.xml'
   let stylesXmlOut: string | null = null
-  if (styleUpserts.length > 0 || options.defaultFonts !== undefined) {
+  let stylesIsNew = false
+  const removedStyleIds: string[] = []
+  if (
+    styleUpserts.length > 0 ||
+    options.defaultFonts !== undefined ||
+    listStyleXmls.length > 0 ||
+    (removedListStyles.length > 0 && zip.file(stylesPath))
+  ) {
     const file = zip.file(stylesPath)
+    if (!file) {
+      stylesIsNew = true
+      newRels.push({
+        rId: `rId${nextRelNum++}`,
+        type: STYLES_REL_TYPE,
+        target: 'styles.xml',
+        external: false,
+      })
+    }
     let xml = file
       ? await file.async('string')
       : '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\r\n' +
         '<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"></w:styles>'
-    for (const up of styleUpserts) xml = upsertStyleXml(xml, up)
+    for (const up of styleUpserts) {
+      if (up.remove) removedStyleIds.push(...styleRemovalIds(xml, up.styleId))
+      xml = upsertStyleXml(xml, up)
+    }
+    for (const styleId of removedListStyles) xml = upsertStyleXml(xml, { styleId, remove: true })
+    if (listStyleXmls.length > 0)
+      xml = xml.replace('</w:styles>', () => `${listStyleXmls.join('')}</w:styles>`)
     stylesXmlOut = options.defaultFonts ? mergeDefaultFontsXml(xml, options.defaultFonts) : xml
   }
 
@@ -1584,7 +1944,19 @@ export async function saveDocx(
     const path = NOTE_PART_PATH[kind]
     const file = zip.file(path)
     const originalXml = file ? await file.async('string') : null
-    notesParts.push({ path, xml: buildNotesXml(kind, notes, originalXml), isNew: !file, kind })
+    const otherXml = notes.some((n) => n.origin && n.origin.kind !== kind)
+      ? ((await zip
+          .file(NOTE_PART_PATH[kind === 'footnote' ? 'endnote' : 'footnote'])
+          ?.async('string')) ?? null)
+      : null
+    const stylesXml = otherXml ? ((await zip.file('word/styles.xml')?.async('string')) ?? '') : ''
+    const styleIds = new Set([...stylesXml.matchAll(/w:styleId="([^"]+)"/g)].map((m) => m[1]))
+    notesParts.push({
+      path,
+      xml: buildNotesXml(kind, notes, originalXml, { xml: otherXml, styleIds }),
+      isNew: !file,
+      kind,
+    })
     if (!file) {
       newRels.push({
         rId: `rId${nextRelNum++}`,
@@ -1604,6 +1976,7 @@ export async function saveDocx(
     const xml = buildSourcesXml(
       options.sources,
       existing ? await zip.file(existing)!.async('string') : null,
+      options.sourcesStyle,
     )
     if (existing) {
       const n = /item(\d+)\.xml$/.exec(existing)?.[1] ?? '1'
@@ -1812,7 +2185,22 @@ export async function saveDocx(
     return { indexes, shell, first, last }
   })
 
+  // A rebuilt paragraph keeps its editing-permission markers. When one original
+  // paragraph became several blocks (a split), starts go to the first of them
+  // and ends to the last, so every marker id stays unique.
+  const permSpan = new Map<number, { first: number; last: number }>()
+  if (documentXml.includes('<w:perm')) {
+    finalBlocks.forEach((fb, i) => {
+      if (fb.kind !== 'generated' || fb.docxIndex === undefined) return
+      const span = permSpan.get(fb.docxIndex)
+      if (span) span.last = i
+      else permSpan.set(fb.docxIndex, { first: i, last: i })
+    })
+  }
+
   const parts: string[] = [...detachedOpaque]
+  /** where each final block landed in `parts` (lost permission markers are re-homed by it) */
+  const placed: Array<{ part: number; docxIndex: number | undefined }> = []
   for (let i = 0; i < finalBlocks.length; i++) {
     const fb = finalBlocks[i]
     let xml: string
@@ -1826,6 +2214,14 @@ export async function saveDocx(
     } else if (fb.kind === 'generated') {
       if (fb.docxIndex !== undefined) fbDocxIndex = fb.docxIndex
       xml = generateParagraphXml(fb.block, genCtx)
+      const span = fb.docxIndex !== undefined ? permSpan.get(fb.docxIndex) : undefined
+      const sourceEl = span ? elements[fb.docxIndex!] : undefined
+      if (span && sourceEl?.name === 'w:p') {
+        xml = restoreParagraphPermMarkers(documentXml.slice(sourceEl.start, sourceEl.end), xml, {
+          starts: span.first === i,
+          ends: span.last === i,
+        })
+      }
       // If the original paragraph was inside a w:sdt shell, re-wrap it. The
       // chain is flattened here to the outermost shell (nested regenerated
       // paragraphs inside several controls are not re-wrapped; an untouched
@@ -1837,7 +2233,14 @@ export async function saveDocx(
     } else if (fb.kind === 'xml') {
       xml = unwrapSlicesByIndex.size > 0 ? stripUnwrappedShell(fb.xml, fb.docxIndex) : fb.xml
       fbDocxIndex = fb.docxIndex
-      if (fb.replaceImage) xml = retargetImageBlip(xml, embedImageMedia(fb.replaceImage))
+      if (fb.replaceImage) {
+        const { svgBase64, ...bitmap } = fb.replaceImage
+        xml = retargetImageBlip(
+          xml,
+          embedImageMedia(bitmap),
+          svgBase64 && SVG_BLIP_EMBED.test(xml) ? embedSvg(svgBase64) : undefined,
+        )
+      }
     } else if (fb.kind === 'chart') {
       xml = await embedChart(fb.chart, fb.extentPx)
     } else if (fb.kind === 'images') {
@@ -1897,7 +2300,21 @@ export async function saveDocx(
       if (wrap.first === i) xml = wrap.shell.openXml + xml
       if (wrap.last === i) xml = xml + wrap.shell.closeXml
     }
+    placed.push({ part: parts.length, docxIndex: fbDocxIndex })
     parts.push(xml)
+  }
+  // before regrouping: `placed` indexes `parts` as built above
+  if (documentXml.includes('<w:perm')) rehomeLostPermMarkers(parts, placed, elements, documentXml)
+  if (options.groups?.length || options.carried?.length) {
+    const lead = detachedOpaque.length
+    const at = <T extends { block: number }>(item: T): T => ({ ...item, block: item.block + lead })
+    const regrouped = regroupDrawings(
+      parts,
+      (options.groups ?? []).map((group) => ({ members: group.members.map(at) })),
+      (options.carried ?? []).map((block) => block + lead),
+      Math.max(maxDrawingId(documentXml), maxDrawingId(parts.join(''))) + 1,
+    )
+    parts.splice(0, parts.length, ...regrouped)
   }
   // Trailing hidden elements (w:sectPr) always keep their original bytes and position,
   // unless the editor changed the page setup.
@@ -1912,7 +2329,12 @@ export async function saveDocx(
         if (options.section) xml = applySectionSettings(xml, options.section)
         if (options.sectionStartType) xml = applySectionStartType(xml, options.sectionStartType)
         if (options.pgNumType)
-          xml = applyPageNumType(xml, options.pgNumType.fmt, options.pgNumType.start)
+          xml = applyPageNumType(
+            xml,
+            options.pgNumType.fmt,
+            options.pgNumType.start,
+            options.pgNumType.chapter,
+          )
         if (options.titlePg !== undefined) xml = applyTitlePg(xml, options.titlePg)
         // headerReference/footerReference must be the first sectPr children
         if (hfRefTags.length > 0) {
@@ -2025,6 +2447,13 @@ export async function saveDocx(
 
   // editor-generated formulas need the math namespace on the document root;
   // docx produced by non-Word generators may not declare it
+  // text effects set in the editor are Word 2010 markup: the root has to declare it
+  if (newDocumentXml.includes('<w14:') && !/<w:document[^>]*xmlns:w14=/.test(newDocumentXml)) {
+    newDocumentXml = newDocumentXml.replace(
+      /<w:document /,
+      '<w:document xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml" ',
+    )
+  }
   if (newDocumentXml.includes('<m:') && !/<w:document[^>]*xmlns:m=/.test(newDocumentXml)) {
     newDocumentXml = newDocumentXml.replace(
       /<w:document /,
@@ -2104,7 +2533,9 @@ export async function saveDocx(
   if (options.pageColor !== undefined) {
     newDocumentXml = applyPageColor(newDocumentXml, options.pageColor)
   }
+  if (options.noteProps) newDocumentXml = applySectionNoteProps(newDocumentXml, options.noteProps)
   newDocumentXml = fillRevisionIds(newDocumentXml, genCtx.allocateRevisionId)
+  newDocumentXml = bindUnboundPrefixes(newDocumentXml)
 
   const settingsPath = 'word/settings.xml'
   let settingsXml: string | null = null
@@ -2116,7 +2547,17 @@ export async function saveDocx(
     options.removePersonalInfo !== undefined ||
     options.evenAndOddHeaders !== undefined ||
     options.mirrorMargins !== undefined ||
-    options.trackRevisions !== undefined
+    options.trackRevisions !== undefined ||
+    options.trackMoves !== undefined ||
+    options.autoHyphenation !== undefined ||
+    options.hyphenation !== undefined ||
+    options.defaultTabStopTwips !== undefined ||
+    options.gutterAtTop !== undefined ||
+    options.compressPunctuation !== undefined ||
+    options.strictFirstAndLastChars !== undefined ||
+    options.mathPr !== undefined ||
+    options.noteProps !== undefined ||
+    options.settingsNoteProps !== undefined
   ) {
     const file = zip.file(settingsPath)
     let xml: string
@@ -2168,6 +2609,73 @@ export async function saveDocx(
       xml = applySettingsFlag(xml, 'w:trackRevisions', options.trackRevisions)
       touched = true
     }
+    if (options.trackMoves !== undefined) {
+      xml = applySettingsFlag(xml, 'w:doNotTrackMoves', !options.trackMoves)
+      touched = true
+    }
+    if (options.autoHyphenation !== undefined) {
+      xml = applySettingsFlag(xml, 'w:autoHyphenation', options.autoHyphenation)
+      touched = true
+    }
+    if (options.hyphenation) {
+      const { caps, consecutiveLimit, zoneTwips } = options.hyphenation
+      if (caps !== undefined) xml = applySettingsFlag(xml, 'w:doNotHyphenateCaps', !caps)
+      if (consecutiveLimit !== undefined) {
+        const limit = Math.max(0, Math.round(consecutiveLimit))
+        xml = applySettingsVal(xml, 'consecutiveHyphenLimit', limit > 0 ? limit : null)
+      }
+      if (zoneTwips !== undefined) {
+        xml = applySettingsVal(xml, 'hyphenationZone', Math.max(0, Math.round(zoneTwips)))
+      }
+      touched = true
+    }
+    if (options.gutterAtTop !== undefined) {
+      xml = applySettingsFlag(xml, 'w:gutterAtTop', options.gutterAtTop)
+      touched = true
+    }
+    if (options.defaultTabStopTwips !== undefined) {
+      const stop = Math.max(0, Math.round(options.defaultTabStopTwips))
+      xml = insertSettingsChild(
+        xml.replace(/<w:defaultTabStop(?=[\s/>])[^>]*>(?:<\/w:defaultTabStop>)?/, ''),
+        'defaultTabStop',
+        `<w:defaultTabStop w:val="${stop}"/>`,
+      )
+      touched = true
+    }
+    if (options.strictFirstAndLastChars !== undefined) {
+      xml = applySettingsFlag(xml, 'w:strictFirstAndLastChars', options.strictFirstAndLastChars)
+      touched = true
+    }
+    if (options.compressPunctuation !== undefined) {
+      const val = options.compressPunctuation ? 'compressPunctuation' : 'doNotCompress'
+      xml = insertSettingsChild(
+        xml.replace(
+          /<w:characterSpacingControl(?=[\s/>])[^>]*>(?:<\/w:characterSpacingControl>)?/,
+          '',
+        ),
+        'characterSpacingControl',
+        `<w:characterSpacingControl w:val="${val}"/>`,
+      )
+      touched = true
+    }
+    for (const [tag, own] of [
+      ['footnotePr', { ...options.noteProps?.footnote, ...options.settingsNoteProps?.footnote }],
+      ['endnotePr', { ...options.noteProps?.endnote, ...options.settingsNoteProps?.endnote }],
+    ] as const) {
+      // a kind the save sets nothing for must not gain an empty element
+      if (Object.keys(own).length === 0) continue
+      xml = applySettingsNoteProps(xml, `w:${tag}`, own, (x, child) =>
+        insertSettingsChild(x, tag, child),
+      )
+      touched = true
+    }
+    if (options.mathPr !== undefined) {
+      const next = saveMathPr(xml, options.mathPr, insertSettingsChild)
+      if (next !== xml) {
+        xml = next
+        touched = true
+      }
+    }
     if (touched) settingsXml = xml
   }
 
@@ -2194,6 +2702,7 @@ export async function saveDocx(
     commentsIsNew ||
     commentsExtIsNew ||
     numberingIsNew ||
+    stylesIsNew ||
     notesParts.some((p) => p.isNew) ||
     sourcesPart?.isNew ||
     themePart?.isNew ||
@@ -2212,7 +2721,7 @@ export async function saveDocx(
       }
       for (const ext of usedExtensions) {
         if (!new RegExp(`Extension="${ext}"`).test(contentTypesXml)) {
-          const mime = ext === 'png' ? 'image/png' : ext === 'gif' ? 'image/gif' : 'image/jpeg'
+          const mime = MEDIA_CONTENT_TYPE[ext] ?? 'image/jpeg'
           contentTypesXml = contentTypesXml.replace(
             '</Types>',
             `<Default Extension="${ext}" ContentType="${mime}"/></Types>`,
@@ -2249,7 +2758,13 @@ export async function saveDocx(
           'application/vnd.openxmlformats-officedocument.wordprocessingml.numbering+xml',
         )
       }
-      for (const part of newChartParts) addOverride(`/${part.path}`, CHART_CONTENT_TYPE)
+      if (stylesIsNew) {
+        addOverride(
+          '/word/styles.xml',
+          'application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml',
+        )
+      }
+      for (const part of newChartParts) addOverride(`/${part.path}`, part.contentType)
       for (const wb of newChartWorkbooks) addOverride(`/${wb.xlsxPath}`, XLSX_CONTENT_TYPE)
       for (const part of notesParts) {
         if (part.isNew) addOverride(`/${part.path}`, NOTE_CONTENT_TYPE[part.kind])
@@ -2271,6 +2786,15 @@ export async function saveDocx(
   const coreXmlOut = coreEntry
     ? patchCoreProps(await coreEntry.async('string'), options.savedAt)
     : null
+
+  // a part made here starts from a short root of its own, and content that came
+  // from the body relies on what the body's root declares
+  const bodyNamespaces = rootNamespaces(documentXml)
+  const bind = (xml: string) => bindUnboundPrefixes(xml, bodyNamespaces)
+  for (const part of hfParts) part.xml = bind(part.xml)
+  for (const part of notesParts) part.xml = bind(part.xml)
+  if (commentsXml !== null) commentsXml = bind(commentsXml)
+  if (numberingXmlOut !== null) numberingXmlOut = bind(numberingXmlOut)
 
   const out = new JSZip()
   for (const [name, entry] of Object.entries(zip.files)) {
@@ -2317,7 +2841,7 @@ export async function saveDocx(
     } else if (name === CORE_PROPS_PATH && coreXmlOut !== null) {
       out.file(name, coreXmlOut, { date: entry.date })
     } else if (options.partXml && options.partXml[name] !== undefined) {
-      out.file(name, options.partXml[name], { date: entry.date })
+      out.file(name, bind(options.partXml[name]), { date: entry.date })
     } else if (options.partBinary && options.partBinary[name] !== undefined) {
       out.file(name, options.partBinary[name], { base64: true, date: entry.date })
     } else {
@@ -2351,7 +2875,7 @@ export async function saveDocx(
   if (numberingRelsOut?.isNew) {
     out.file(numberingRelsOut.path, numberingRelsOut.xml)
   }
-  if (stylesXmlOut !== null && !zip.file(stylesPath)) {
+  if (stylesXmlOut !== null && stylesIsNew) {
     out.file(stylesPath, stylesXmlOut)
   }
   if (settingsIsNew && settingsXml !== null) {
@@ -2399,6 +2923,14 @@ export async function saveDocx(
       : undefined,
   )
   await cleanStoryMoveRanges(out, docPath)
+  if (removedStyleIds.length > 0) {
+    for (const [name, entry] of Object.entries(out.files)) {
+      if (entry.dir || (name !== docPath && !STORY_PART_RE.test(name))) continue
+      const xml = await entry.async('string')
+      const next = dropStyleRefsXml(xml, removedStyleIds)
+      if (next !== xml) out.file(name, next, { date: entry.date })
+    }
+  }
   if (scrubPersonalInfo) await scrubPersonalMetadata(out)
   // metadata scrubs come after every generated/copied part is in place, so a
   // customXml store the save itself created (bibliography sources) is covered too
@@ -3186,6 +3718,13 @@ function applySettingsFlag(xml: string, tag: string, on: boolean): string {
   return insertSettingsChild(out, tag.slice(tag.indexOf(':') + 1), `<${tag}/>`)
 }
 
+/** set (or with null remove) a w:val settings element at its CT_Settings position */
+function applySettingsVal(xml: string, localName: string, val: number | null): string {
+  const tag = `w:${localName}`
+  const out = xml.replace(new RegExp(`<${tag}(?=[\\s/>])[^>]*>(?:<\\/${tag}>)?`), '')
+  return val === null ? out : insertSettingsChild(out, localName, `<${tag} w:val="${val}"/>`)
+}
+
 /** set or remove <w:evenAndOddHeaders/> at its CT_Settings position */
 function applyEvenAndOddHeaders(xml: string, on: boolean): string {
   const out = xml.replace(/<w:evenAndOddHeaders(?=[\s/>])[^>]*>(?:<\/w:evenAndOddHeaders>)?/, '')
@@ -3248,7 +3787,7 @@ function maxDocPrId(documentXml: string): number {
  * bookmark that reused an id already in use made Word pair the two bookmarks
  * wrongly and land a cross-reference on the wrong target.
  */
-function nextBookmarkIdAllocator(documentXml: string): (name: string) => number {
+export function nextBookmarkIdAllocator(documentXml: string): (name: string) => number {
   let next = maxBookmarkId(documentXml) + 1
   return () => next++
 }
@@ -3342,7 +3881,9 @@ function nextDocPrSeq(zip: JSZip, documentXml: string): number {
  * editor shows the full image, so a Word-authored crop window applied to the
  * swapped bytes would show an arbitrary region.
  */
-function retargetImageBlip(xml: string, rId: string): string {
+const SVG_BLIP_EMBED = /(<\w+:svgBlip\b[^>]*r:embed=")[^"]*(")/
+
+function retargetImageBlip(xml: string, rId: string, svgRId?: string): string {
   const blip = /<a:blip\b[^>]*\/?>/.exec(xml)
   if (!blip) return xml
   let tag = blip[0]
@@ -3352,14 +3893,16 @@ function retargetImageBlip(xml: string, rId: string): string {
     tag = tag.replace(/r:embed="[^"]*"/, `r:embed="${rId}"`).replace(/\s+r:link="[^"]*"/, '')
   else if (/r:link="/.test(tag)) tag = tag.replace(/r:link="[^"]*"/, `r:embed="${rId}"`)
   else tag = tag.replace(/<a:blip\b/, `<a:blip r:embed="${rId}"`)
+  const out = (xml.slice(0, blip.index) + tag + xml.slice(blip.index + blip[0].length))
+    .replace(/<a:srcRect\b[^>]*\/>/, '')
+    // A non-default fill window would clip the swapped bytes the same way a
+    // crop would — reset it (the editor clears its imageFillRect in step)
+    .replace(/<a:fillRect\b[^>]+\/>/, '<a:fillRect/>')
+  if (svgRId) return out.replace(SVG_BLIP_EMBED, `$1${svgRId}$2`)
   return (
-    (xml.slice(0, blip.index) + tag + xml.slice(blip.index + blip[0].length))
-      .replace(/<a:srcRect\b[^>]*\/>/, '')
-      // A non-default fill window would clip the swapped bytes the same way a
-      // crop would — reset it (the editor clears its imageFillRect in step)
-      .replace(/<a:fillRect\b[^>]+\/>/, '<a:fillRect/>')
-      // The replacement is always raster and Word prefers a leftover Office-2016
-      // <asvg:svgBlip> extension over the retargeted r:embed — drop the extension
+    out
+      // A raster replacement: Word prefers a leftover Office-2016 <asvg:svgBlip>
+      // extension over the retargeted r:embed — drop the extension
       .replace(/<a:ext\b[^>]*>\s*<\w+:svgBlip\b[\s\S]*?<\/a:ext>/, '')
       .replace(/<a:extLst>\s*<\/a:extLst>/, '')
   )

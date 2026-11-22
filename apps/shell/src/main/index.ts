@@ -28,7 +28,7 @@ import {
   shell,
   webContents,
 } from 'electron'
-import type { MenuItemConstructorOptions, NativeImage, WebContents } from 'electron'
+import type { MenuItemConstructorOptions, NativeImage, Rectangle, WebContents } from 'electron'
 import { atomicCopyFile, atomicWriteFile } from './atomic-write'
 // first statement of the module body: the capture wrapper must be installed
 // before any ipcMain registration below (and in the app modules) so the web
@@ -64,6 +64,10 @@ import menuHomeIcon1x from './assets/menu-home.png?asset'
 import menuHomeIcon2x from './assets/menu-home@2x.png?asset'
 import { createI18n, isLang, normalizeLang, setUiLang, type Lang } from '@genoffice/i18n'
 import {
+  EXCLUDED_FOLDERS_KEY,
+  isUnderExcludedFolder,
+  normalizeExcludedFolders,
+  readExcludedFolders,
   DEFAULT_SAVE_DIR_KEY,
   DROP_OPEN_CHANNEL,
   GITHUB_REPO_URL,
@@ -98,6 +102,7 @@ import {
   readPdfDefaultZoom,
   sanitizePdfDefaultZoom,
   writePdfDefaultZoom,
+  tileWindows,
 } from '@genoffice/electron-utils'
 import { createMainProcessProxyDispatcher } from '@genoffice/electron-utils/main-proxy'
 import {
@@ -152,6 +157,7 @@ import {
   genofficeLogout,
   gskLoginInfo,
   loadGenofficeAuth,
+  setGenofficeLoginSuccessListener,
   setGskProxyUrl,
   startGenofficeLogin,
   watchGskApiKey,
@@ -407,7 +413,10 @@ import {
   detachedWebContentsFor,
   detachedSetTitleFor,
   detachedWindowForWebContents,
+  detachedWindowsOf,
+  holdDocking,
   dockBandFor,
+  releaseDetachedOf,
   dragTornWindow,
   endTornDrag,
   findDetachedTabByPath,
@@ -600,7 +609,13 @@ const publishOpenDocumentsIfOwner = (paths: readonly string[]) => {
 function publishAllOpenDocuments(): void {
   publishOpenDocumentsIfOwner([...(tabManager?.openFilePaths() ?? []), ...detachedFilePaths()])
 }
-setDetachedChangedListener(publishAllOpenDocuments)
+setDetachedChangedListener(() => {
+  publishAllOpenDocuments()
+  // Docs greys Merge All Windows while no window of its own stands outside the strip
+  const count = detachedWindowsOf('docs').length
+  for (const wc of webContents.getAllWebContents())
+    if (!wc.isDestroyed()) wc.send('win:detached-changed', count)
+})
 
 let uiLang: Lang | null = null
 
@@ -3866,6 +3881,11 @@ let tabManager: TabManager | null = null
  * created, and the tab's first save moves the fresh file there.
  * key: 'doc' | 'sheet' | 'slide' | 'markdown' | 'html' | 'pdf'
  */
+/** folders the user excluded from recents, search and session restore (#2844) */
+function excludedFolderPaths(): string[] {
+  return readExcludedFolders(readAppSettings(APP_SETTINGS_PATH()))
+}
+
 /** folders the user added to the home tree beside the default save folder */
 function extraFolderRoots(): string[] {
   return readExtraRoots(readAppSettings(APP_SETTINGS_PATH()), defaultSaveDir())
@@ -4047,6 +4067,7 @@ function ensureFileIndexer(): FileIndexer | null {
   fileIndexer = new FileIndexer(fileIndexStore, extractWorkerPath, {
     roots: () => folderRootPaths().filter((root) => existsSync(root)),
     extraPaths: () => [...readRecentFiles(), ...readStarredFiles()],
+    excludedFolders: excludedFolderPaths,
   })
   return fileIndexer
 }
@@ -4061,7 +4082,13 @@ const SEARCH_EXT_FAMILY: Record<string, readonly string[]> = {
 
 /** one recursive watcher per tree root; follows the save-folder setting and the added folders */
 function ensureFolderWatchers(): void {
-  const wanted = new Set(folderRootPaths().filter((root) => existsSync(root)))
+  const excluded = excludedFolderPaths()
+  const wanted = new Set(
+    folderRootPaths().filter(
+      (root) =>
+        existsSync(root) && (excluded.length === 0 || !isUnderExcludedFolder(root, excluded)),
+    ),
+  )
   for (const [root, watcher] of folderWatchers) {
     if (wanted.has(root) && watcher.active) continue
     watcher.close()
@@ -4415,11 +4442,15 @@ function createShellWindow(): void {
     openTab: (openPath, options) => ensureTabManager().openDocsTab(openPath, options),
     openAiDocTab: (content) =>
       ensureTabManager().openDocsTab(undefined, { newBlank: true, aiContent: content }),
+    openResultDocTab: (doc) => ensureTabManager().openDocsTab(undefined, { resultDoc: doc }),
     listTabs: () =>
       (tabManager?.list() ?? [])
         .filter((t) => t.kind === 'docs')
         .map((t) => ({ id: t.id, title: t.title, focused: t.active })),
     focusTab: (id) => tabManager?.activateTab(id),
+    arrangeAll: arrangeDocsWindows,
+    gatherWindows: gatherDocsWindows,
+    detachedWindowCount: () => detachedWindowsOf('docs').length,
     // ⌘W in a detached docs window closes that window (its own close guard runs)
     closeActiveTab: () => {
       const focused = BrowserWindow.getFocusedWindow()
@@ -4427,6 +4458,7 @@ function createShellWindow(): void {
       else tabManager?.closeActiveTab()
     },
     openGeneratedPath: (path) => openGeneratedDocument(path),
+    fileMoved: afterFileMoved,
   })
   setSheetsCloseTabHook(() => {
     const focused = BrowserWindow.getFocusedWindow()
@@ -4531,7 +4563,9 @@ function createShellWindow(): void {
       if (restoreLastSessionEnabled(readAppSettings(APP_SETTINGS_PATH()))) {
         try {
           writeAppSettings(APP_SETTINGS_PATH(), {
-            [LAST_SESSION_DOCUMENTS_KEY]: [...new Set(manager.openFilePaths())],
+            [LAST_SESSION_DOCUMENTS_KEY]: [...new Set(manager.openFilePaths())].filter(
+              (p) => !isUnderExcludedFolder(p, excludedFolderPaths()),
+            ),
           })
         } catch (err) {
           console.warn('[shell] could not save the session documents:', err)
@@ -5535,6 +5569,31 @@ function registerHomeIpc(): void {
     })
   })
 
+  ipcMain.handle(HOME_CHANNELS.getExcludedFolders, () => excludedFolderPaths())
+  ipcMain.handle(HOME_CHANNELS.setExcludedFolders, (_event, paths: unknown) => {
+    const next = normalizeExcludedFolders(Array.isArray(paths) ? paths : [])
+    // the key carries the list; an empty exclusion clears it entirely
+    writeAppSettings(APP_SETTINGS_PATH(), {
+      ...(next.length > 0
+        ? { [EXCLUDED_FOLDERS_KEY]: next }
+        : { [EXCLUDED_FOLDERS_KEY]: undefined }),
+    })
+    // the surfaces re-read the list on their next pass; the watchers and the
+    // search index re-decide now
+    ensureFolderWatchers()
+    fileIndexer?.refresh()
+    return next
+  })
+  ipcMain.handle(HOME_CHANNELS.pickExcludedFolder, async (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender) ?? shellWindow
+    if (!win) return null
+    // no custom title: the OS's own localized "Select Folder" wording
+    const result = await showOpenDialogWithMemory(dialog, win, {
+      properties: ['openDirectory', 'createDirectory'],
+    })
+    return result.canceled || result.filePaths.length === 0 ? null : result.filePaths[0]!
+  })
+
   ipcMain.handle(HOME_CHANNELS.getMcpStatus, () => mcpStatus())
 
   ipcMain.handle(HOME_CHANNELS.setMcpSettings, async (_event, patch: unknown) => {
@@ -5961,6 +6020,57 @@ function detachTabToWindow(id: string): void {
   if (!record) return
   const win = createDetachedEditorWindow({ ...record, applyMenuFor })
   win.focus()
+}
+
+/** Docs' Arrange All: the shell window is a tile only while its active tab is a Docs document */
+function arrangeDocsWindows(from: WebContents): void {
+  const fromWindow = detachedWindowForWebContents(from.id) ?? shellWindow
+  if (!fromWindow || fromWindow.isDestroyed()) return
+  let shellShowsDocs = false
+  if (tabManager && shellWindow && !shellWindow.isDestroyed()) {
+    for (const tab of tabManager.list()) {
+      if (tab.kind !== 'docs') continue
+      if (tab.active) {
+        shellShowsDocs = true
+        continue
+      }
+      tabManager.webContentsForTab(tab.id)
+      const record = tabManager.detachTab(tab.id)
+      if (record) createDetachedEditorWindow({ ...record, applyMenuFor })
+    }
+  }
+  const windows = [
+    ...(shellShowsDocs && shellWindow ? [shellWindow] : []),
+    ...detachedWindowsOf('docs'),
+  ]
+  const ordered = [fromWindow, ...windows.filter((w) => w !== fromWindow)].filter((w) =>
+    windows.includes(w),
+  )
+  if (shellShowsDocs && shellWindow && windows.length > 1)
+    shellBoundsBeforeArrange ??= shellWindow.getBounds()
+  tileWindows(ordered, screen.getDisplayMatching(fromWindow.getBounds()).workArea, holdDocking)
+  fromWindow.focus()
+  if (!from.isDestroyed()) from.focus()
+}
+
+/** the shell window's place before Arrange All made a tile of it */
+let shellBoundsBeforeArrange: Rectangle | null = null
+
+/** the inverse of Arrange All: every detached Docs window becomes a tab of the shell window again */
+function gatherDocsWindows(from: WebContents): void {
+  const tabs = releaseDetachedOf('docs')
+  const manager = ensureTabManager()
+  for (const tab of tabs) manager.attachTab(tab)
+  const win = shellWindow
+  if (!win || win.isDestroyed()) return
+  if (shellBoundsBeforeArrange && tabs.length > 0) win.setBounds(shellBoundsBeforeArrange)
+  shellBoundsBeforeArrange = null
+  const fromTab = from.isDestroyed() ? undefined : manager.tabIdForWebContents(from.id)
+  if (fromTab) manager.activateTab(fromTab)
+  if (win.isMinimized()) win.restore()
+  win.show()
+  win.focus()
+  if (!from.isDestroyed()) from.focus()
 }
 
 /** Tear-off: the tab leaves the strip for a window created under the held
@@ -7320,6 +7430,8 @@ app.whenReady().then(async () => {
     help: join(__dirname, '../renderer'),
   })
   if (headlessArgv.kind !== 'none') {
+    // Headless renderers use the same shared language as editor tabs.
+    currentLang()
     await runHeadlessExportEntry(headlessArgv)
     return
   }
@@ -7371,6 +7483,21 @@ app.whenReady().then(async () => {
     if (!loadGenofficeAuth()) return
     for (const w of BrowserWindow.getAllWindows())
       w.webContents.send(HOME_CHANNELS.accountLoginEvent, { phase: 'success' })
+  })
+  // A browser-approved login is otherwise invisible from the app: the approval
+  // happens in the system browser and nothing navigates back. Pull the window
+  // the user left back to the front and tell every view, so the surface they
+  // logged in from — an editor AI panel included — confirms the login at once.
+  setGenofficeLoginSuccessListener(() => {
+    if (shellWindow && !shellWindow.isDestroyed()) {
+      if (shellWindow.isMinimized()) shellWindow.restore()
+      shellWindow.show()
+      shellWindow.moveTop()
+      shellWindow.focus()
+    }
+    app.focus({ steal: true })
+    for (const wc of webContents.getAllWebContents())
+      if (!wc.isDestroyed()) wc.send('ai:gsk-login-landed')
   })
   // a registry left by a crashed instance must not block genoffice writes
   ownsOpenDocumentsRegistry = true
@@ -7568,7 +7695,10 @@ app.whenReady().then(async () => {
 /** the last session's documents ahead of the launch paths, forgotten as they are read */
 function consumeLastSessionPaths(launchPaths: readonly string[]): string[] {
   const settings = readAppSettings(APP_SETTINGS_PATH())
-  const paths = launchPathsWithLastSession(settings, launchPaths)
+  const excluded = readExcludedFolders(settings)
+  const paths = launchPathsWithLastSession(settings, launchPaths).filter(
+    (p) => !isUnderExcludedFolder(p, excluded),
+  )
   if (settings[LAST_SESSION_DOCUMENTS_KEY] !== undefined) {
     // consumed before opening: a document that crashes the app during restore
     // must not be restored again at the next launch

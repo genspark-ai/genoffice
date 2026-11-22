@@ -6,13 +6,16 @@
  *   touches nothing;
  * - atomic (default): snapshot → apply all → any failure restores the snapshot,
  *   the deck is untouched and the failure carries a guided error;
- * - per_op: each op applies independently; failures are collected per index and
- *   skipped, successes stay.
+ * - per_op: each op applies independently; a failed op is restored to the
+ *   state before it, failures are collected per index, successes stay.
  *
  * Snapshots clone the slides deep and the archive entry map shallow — entry
  * buffers are replaced wholesale, never mutated (the same invariant the
- * app's undo history relies on). Electron-free by design: callable from any
- * executor that holds an OpenedPptx, and testable in plain Node.
+ * app's undo history relies on). After a rollback opened.deck.slides holds a
+ * cloned slide instance for element ops (or a new array for structural ops);
+ * callers re-resolve the slide after the transaction.
+ * Electron-free by design: callable from any executor that holds an OpenedPptx,
+ * and testable in plain Node.
  */
 import {
   ensureCreationId,
@@ -104,6 +107,107 @@ function restoreSnapshot(opened: OpenedPptx, snap: Snapshot): void {
   const entries = opened.archive.entries as Map<string, unknown>
   entries.clear()
   for (const [k, v] of snap.entries) entries.set(k, v)
+}
+
+const STRUCTURAL_OR_DECK_OPS = new Set([
+  // Structural (affects slide order or count in opened.deck.slides)
+  'deleteSlide',
+  'duplicateSlide',
+  'addBlankSlide',
+  'addSlideWithLayout',
+  'pasteSlide',
+  'insertSlidePptx',
+  'moveSlide',
+  // Deck-level (affects deck.size, entire deck, or sections)
+  'setSlideSize',
+  'findReplace',
+  'applyHeaderFooter',
+  'applyTheme',
+  'setSections',
+  'addSection',
+  'renameSection',
+  'removeSection',
+  'moveSection',
+])
+
+interface Checkpoint {
+  targetSlide?: { index: number; slide: Slide }
+  fullSnap?: Snapshot
+  touched: Set<string>
+  parts: Map<string, Slide>
+  entries: Map<string, unknown>
+  size: OpenedPptx['deck']['size']
+}
+
+/** per_op: the state one op may change. Element-level ops snapshot only the
+    target slide to avoid O(ops × deck size) cloning overhead; structural or
+    deck-level ops fall back to a full deck snapshot. Parts an earlier op already
+    edited are copied (their edits live only in the parse cache until the flush);
+    seeded parts stay the caller's objects and are left alone. */
+function takeCheckpoint(
+  opened: OpenedPptx,
+  ctx: OpContext,
+  seeded: Set<string>,
+  op: Op,
+): Checkpoint {
+  const parts = new Map<string, Slide>()
+  for (const part of ctx.touchedParts) {
+    const slide = ctx.parts.get(part)
+    if (slide && !seeded.has(part)) parts.set(part, structuredClone(slide))
+  }
+
+  const touched = new Set(ctx.touchedParts)
+  const entries = new Map(opened.archive.entries as Map<string, unknown>)
+  const size = { ...opened.deck.size }
+
+  if (STRUCTURAL_OR_DECK_OPS.has(op.op)) {
+    return { fullSnap: takeSnapshot(opened), touched, parts, entries, size }
+  }
+
+  if (!op.target?.part && op.target?.slide != null) {
+    try {
+      const { slide, index } = resolveSlide(ctx, op)
+      return {
+        targetSlide: { index, slide: structuredClone(slide) },
+        touched,
+        parts,
+        entries,
+        size,
+      }
+    } catch {
+      return { fullSnap: takeSnapshot(opened), touched, parts, entries, size }
+    }
+  }
+
+  return { touched, parts, entries, size }
+}
+
+function restoreCheckpoint(
+  opened: OpenedPptx,
+  ctx: OpContext,
+  seeded: Set<string>,
+  cp: Checkpoint,
+): void {
+  if (cp.fullSnap) {
+    restoreSnapshot(opened, cp.fullSnap)
+  } else {
+    if (cp.targetSlide) {
+      opened.deck.slides[cp.targetSlide.index] = cp.targetSlide.slide
+    }
+    opened.deck.size = cp.size
+    const entries = opened.archive.entries as Map<string, unknown>
+    entries.clear()
+    for (const [k, v] of cp.entries) entries.set(k, v)
+  }
+
+  for (const part of ctx.touchedParts) {
+    if (seeded.has(part)) continue
+    const copy = cp.parts.get(part)
+    if (copy) ctx.parts.set(part, copy)
+    else ctx.parts.delete(part)
+  }
+  ctx.touchedParts.clear()
+  for (const part of cp.touched) ctx.touchedParts.add(part)
 }
 
 function planLine(i: number, op: Op): string {
@@ -234,15 +338,18 @@ export function runTxn(opened: OpenedPptx, req: TxnRequest): TxnResult {
     return { applied: true, records }
   }
 
+  const seeded = new Set(req.parts?.keys())
   const records: OpRecord[] = []
   const failures: OpFailure[] = [...planFailures]
   const failedIdx = new Set(planFailures.map((f) => f.index))
   for (const [i, op] of req.ops.entries()) {
     if (failedIdx.has(i)) continue
+    const checkpoint = takeCheckpoint(opened, ctx, seeded, op)
     try {
       records.push(applyStamped(op, ctx))
       hardenTargetIdentity(op, ctx)
     } catch (e) {
+      restoreCheckpoint(opened, ctx, seeded, checkpoint)
       failures.push({ index: i, op, error: withUsage(op, message(e)) })
     }
   }

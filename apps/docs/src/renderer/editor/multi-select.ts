@@ -409,7 +409,10 @@ export const MultiSelect = Extension.create<MultiSelectOptions>({
           },
           handleClick: (view, pos, event) => {
             const e = event as MouseEvent
-            if (e.button !== 0 || !isMultiSelectModifier(e) || isNavigationTarget(e)) return false
+            if (e.button !== 0 || !isMultiSelectModifier(e)) return false
+            // the app follows the link; the paragraph must not become a NodeSelection
+            // here either, or the next key typed would replace it
+            if (isNavigationTarget(e)) return true
             const before = beforeGesture
             beforeGesture = null
             gestureStart = null

@@ -5,6 +5,7 @@ export const hi = {
   aiEmptyBuildTitle: 'AI से यह वर्कबुक बनवाएँ',
   aiEmptyBuildBody: 'जो तालिका, डेटा या चार्ट चाहिए बताएँ — AI उसे तुरंत बना देता है।',
   aiGskLoginBtn: 'Genspark में साइन इन करें',
+  aiGskLoginOk: 'Genspark में साइन इन हो गए',
   aiUndelivered: 'भेजा नहीं गया',
   aiRetry: 'फिर से कोशिश करें',
   aiOpenAssistant: 'AI सहायक खोलें',

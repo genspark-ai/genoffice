@@ -44,6 +44,7 @@ import {
 } from '@genoffice/ui'
 import type { PmNode } from '../editor/convert'
 import { TABLE_TRAILING_SKIP } from '../editor/extensions'
+import { PERM_REGIONS_LOAD } from '../editor/perm-regions'
 import { countWords, findNumId, type NumIds } from './protocol'
 import { DOC_NAV_SCHEME, navigateToBlock, parseDocNavHref } from './doc-nav'
 import {
@@ -426,6 +427,23 @@ export function AiPanel({
   useEffect(() => {
     void refreshKbFiles()
   }, [])
+
+  // A browser-approved Genspark login landed (from this panel's sign-in button
+  // or any other surface): confirm it where the user is and retire the inline
+  // sign-in buttons — nothing else in an editor view changes visibly on login.
+  useEffect(
+    () =>
+      window.desktop?.onGskLoginLanded?.(() => {
+        gskLoggedInRef.current = true
+        setChat((prev) =>
+          prev.some((e) => e.loginRequired)
+            ? prev.map((e) => (e.loginRequired ? { ...e, loginRequired: false } : e))
+            : prev,
+        )
+        showToast(tModule('aiGskLoginOk'), 'success')
+      }),
+    [],
+  )
 
   useEffect(() => {
     // previews cover the composer plus every image echoed on a sent/history message
@@ -1343,6 +1361,7 @@ export function AiPanel({
     editor
       .chain()
       .setMeta(TABLE_TRAILING_SKIP, true)
+      .setMeta(PERM_REGIONS_LOAD, true)
       .setContent(snapshot as never)
       .run()
     // The document rewound to before this turn, so this and every later

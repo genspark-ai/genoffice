@@ -1,10 +1,11 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import type { Editor } from '@tiptap/core'
 import { mergeFieldInstruction } from '@genoffice/docx-engine'
 import type { MergeDataSource, MergeOutputMode } from '../../shared/ipc'
 import type { PmNode } from '../editor/convert'
 import { documentText, substituteMergeFields } from '../mail-merge/template'
 import type { MailMergeRequest, MailMergeResponse } from '../mail-merge/output'
+import { firstRecordInRange, recordsInRange, type MergeRange } from '../mail-merge/range'
 import {
   AVERY_5160,
   clampGridCount,
@@ -40,6 +41,14 @@ export interface MailMergePanelProps {
   /** the record the preview shows */
   recordIndex: number
   onRecordIndex: (index: number) => void
+  /** the records the merge takes, of those the preview steps through */
+  range: MergeRange
+  /** the kind of output the panel opens on */
+  initialMode?: MergeOutputMode
+  /** counts the asks, so the same kind asked for again is taken again */
+  pick?: number
+  /** turn the document into a sheet of labels on this layout (Update Labels then keeps it in step) */
+  onLabelSheet?: (layout: MergePageLayout) => void
   onClose: () => void
 }
 
@@ -51,11 +60,17 @@ export function MailMergePanel({
   onMerge,
   recordIndex,
   onRecordIndex,
+  range,
+  initialMode = 'perRecord',
+  pick,
+  onLabelSheet,
   onClose,
 }: MailMergePanelProps) {
   const { t } = useI18n()
   const modalKeys = useModalKeys(onClose)
-  const [mode, setMode] = useState<MergeOutputMode>('perRecord')
+  const [mode, setMode] = useState<MergeOutputMode>(initialMode)
+  // the menu still runs while the panel is open: Labels after Envelopes changes the kind
+  useEffect(() => setMode(initialMode), [initialMode, pick])
   const [namePattern, setNamePattern] = useState('')
   // the label stock: the built-in sheet, or an even custom grid on Letter/A4
   const [labelStock, setLabelStock] = useState<'avery5160' | 'custom'>('avery5160')
@@ -87,6 +102,7 @@ export function MailMergePanel({
 
   const records = source?.records ?? []
   const record = records[recordIndex]
+  const merged = recordsInRange(records, range, recordIndex)
   // the template with this record's values in it, as the user reads it
   const preview = useMemo(() => {
     if (!record) return ''
@@ -98,14 +114,15 @@ export function MailMergePanel({
   }
 
   const runMerge = async () => {
-    if (!source || records.length === 0) return
+    if (!source || merged.length === 0) return
     setBusy(true)
     setError('')
     setDone('')
     try {
       const result = await onMerge({
         mode,
-        records,
+        records: merged,
+        firstRecord: firstRecordInRange(range, recordIndex),
         fields: source.fields,
         namePattern,
         layout: layoutOf(),
@@ -119,7 +136,7 @@ export function MailMergePanel({
         setBusy(false)
         return
       }
-      setDone(t('ribbonMailingsMerged', { n: result.count ?? records.length }))
+      setDone(t('ribbonMailingsMerged', { n: result.count ?? merged.length }))
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
     } finally {
@@ -287,6 +304,18 @@ export function MailMergePanel({
                     </label>
                   </div>
                 )}
+                <div className="modal-row">
+                  <button
+                    name="createLabelSheet"
+                    disabled={!onLabelSheet || !editor.isEditable}
+                    onClick={() => {
+                      const layout = layoutOf()
+                      if (layout) onLabelSheet?.(layout)
+                    }}
+                  >
+                    {t('ribbonMailingsCreateSheet')}
+                  </button>
+                </div>
               </div>
             )}
             {mode === 'envelopes' && (
@@ -317,7 +346,11 @@ export function MailMergePanel({
               </label>
             )}
             <div className="modal-row">
-              <button className="btn-primary" disabled={busy} onClick={() => void runMerge()}>
+              <button
+                className="btn-primary"
+                disabled={busy || merged.length === 0}
+                onClick={() => void runMerge()}
+              >
                 {t('ribbonMailingsFinish')}
               </button>
             </div>

@@ -1418,6 +1418,77 @@ html.genoffice-popover-open .ribbon-tabs {
   color: inherit;
 }
 
+/* Tight band (ribbon-fit.ts): set only while the band would otherwise scroll,
+ * before any group drops its labels. Where everything fits none of this
+ * applies, so the band keeps the metrics it shares with Docs and Slides. The
+ * compact density (⌥⌘K) keeps its own tuned metrics. Only horizontal values
+ * change, so the 80px band height is untouched. */
+.excel-header:not(.ribbon-compact) .ribbon.ribbon-tight {
+  gap: 0;
+  padding-inline: 6px;
+}
+
+.excel-header:not(.ribbon-compact) .ribbon-tight > .ribbon-group:not(:has(.ai-entry)) {
+  padding-inline: 5px;
+}
+
+.excel-header:not(.ribbon-compact) .ribbon-tight .ribbon-tool.large,
+.excel-header:not(.ribbon-compact) .ribbon-tight .ribbon-tool.accent {
+  min-width: 0;
+  padding-inline: 5px;
+}
+
+.excel-header:not(.ribbon-compact) .ribbon-tight .select-like:not(.compact) {
+  min-width: 88px;
+}
+
+.excel-header:not(.ribbon-compact) .ribbon-tight .inline-tools {
+  gap: 2px;
+}
+
+.excel-header:not(.ribbon-compact) .ribbon-tight .inline-tools > button:not(.labeled) {
+  width: 24px;
+  min-width: 24px;
+}
+
+.excel-header:not(.ribbon-compact) .ribbon-tight .inline-tools button.labeled {
+  gap: 4px;
+  padding-inline: 5px;
+}
+
+.excel-header:not(.ribbon-compact) .ribbon-tight .menu-select > .select-like.compact {
+  gap: 3px;
+  padding-inline: 5px;
+}
+
+/* Adaptive fit, second step: a group that still does not fit shows its small
+ * labeled buttons and menu triggers as icons only. font-size 0 takes the
+ * label text out without touching the markup; the glyphs are px-sized SVGs,
+ * and text glyphs get their size back below. data-tip keeps every name on
+ * hover.
+ *
+ * Only controls that carry an icon are compressed: the icon is what is left
+ * to recognise them by. A trigger that shows a value instead of a command
+ * name (Scale to Fit Width / Height: "Automatic", "1 page") has no icon and
+ * keeps its text, and so does a styles row that holds such a dropdown (an
+ * invisible cover dropdown, as on Format as Table, does not count). */
+.ribbon-group.icons-only .inline-tools button.labeled:has(.tool-symbol),
+.ribbon-group.icons-only .menu-select > .select-like.compact:has(.tool-symbol) .menu-select-value,
+.ribbon-group.icons-only
+  .styles-row:has(.tool-symbol):not(:has(.menu-select:not(.menu-select-cover))) {
+  gap: 0;
+  font-size: 0;
+}
+
+.ribbon-group.icons-only
+  .styles-row:has(.tool-symbol):not(:has(.menu-select:not(.menu-select-cover))) {
+  gap: 2px;
+}
+
+.ribbon-group.icons-only .tool-symbol {
+  font-size: 15px;
+}
+
 .menu-select .menu-select-value {
   display: inline;
   min-width: 0;
@@ -4253,6 +4324,16 @@ textarea:focus {
 /* Insert Icons dialog */
 .icons-dialog {
   width: 560px;
+}
+
+/* nine categories are wider than the card: they wrap instead of widening
+   the single grid column (and with it the grid and the actions) past it */
+.icons-dialog .dialog-tabs {
+  flex-wrap: wrap;
+}
+
+.icons-dialog .dialog-tabs button {
+  white-space: nowrap;
 }
 
 .icons-toolbar {

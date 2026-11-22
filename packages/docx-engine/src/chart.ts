@@ -1,6 +1,13 @@
 import JSZip from 'jszip'
 import { chartWorkbookParts, colLetter } from '@genoffice/pptx-engine/chart-workbook'
-import type { ChartAxis, ChartDisplay, ChartSeries, NewChart, ThemeColors } from './types'
+import type {
+  ChartAxis,
+  ChartDisplay,
+  ChartexLayout,
+  ChartSeries,
+  NewChart,
+  ThemeColors,
+} from './types'
 import {
   attrsOf,
   childrenOf,
@@ -28,6 +35,9 @@ const CHART_KINDS: Record<string, ChartDisplay['kind']> = {
   'c:scatterChart': 'scatter',
   'c:bubbleChart': 'bubble',
   'c:radarChart': 'radar',
+  'c:stockChart': 'stock',
+  'c:surfaceChart': 'surface',
+  'c:surface3DChart': 'surface',
 }
 
 /** Word's chart-area border when c:chartSpace carries no c:spPr, as rendered by Word */
@@ -572,12 +582,24 @@ function chartPalette(
 }
 
 /** cx layoutId → closest classic display kind (degrade: shapes differ, data/labels/title survive) */
+/** cx layoutId → the shape the chart is drawn as; a clusteredColumn is a histogram unless a
+ *  paretoLine series makes the chart a Pareto */
+const CHARTEX_LAYOUTS: Record<string, ChartexLayout> = {
+  clusteredColumn: 'histogram',
+  boxWhisker: 'boxWhisker',
+  waterfall: 'waterfall',
+  funnel: 'funnel',
+  paretoLine: 'pareto',
+  sunburst: 'sunburst',
+  treemap: 'treemap',
+}
+
 const CHARTEX_KINDS: Record<string, ChartDisplay['kind']> = {
   clusteredColumn: 'bar',
   boxWhisker: 'bar',
   waterfall: 'bar',
   funnel: 'bar',
-  paretoLine: 'line',
+  paretoLine: 'bar',
   sunburst: 'pie',
   treemap: 'pie',
 }
@@ -631,11 +653,18 @@ function parseChartexPartXml(parsed: XNode[], partPath: string): ChartDisplay | 
     ? findChild(findChild(chart, 'cx:plotArea') ?? {}, 'cx:plotAreaRegion')
     : undefined
   let kind: ChartDisplay['kind'] = 'other'
+  let shape: ChartexLayout | undefined
   let categories: string[] = []
   const series: ChartSeries[] = []
   for (const ser of plotRegion ? findChildren(plotRegion, 'cx:series') : []) {
     const layout = attrsOf(ser)['layoutId'] ?? ''
     if (kind === 'other' && CHARTEX_KINDS[layout]) kind = CHARTEX_KINDS[layout]
+    if (layout === 'paretoLine') {
+      // the line is drawn from the columns it accumulates: it is not a series of its own
+      shape = 'pareto'
+      continue
+    }
+    shape ??= CHARTEX_LAYOUTS[layout]
     const dataId = attrsOf(findChild(ser, 'cx:dataId') ?? {})['val'] ?? ''
     const data = dataById.get(dataId)
     if (!data || data.vals.length === 0) continue
@@ -651,6 +680,7 @@ function parseChartexPartXml(parsed: XNode[], partPath: string): ChartDisplay | 
   return {
     partPath,
     kind,
+    ...(shape ? { layout: shape } : {}),
     ...(title !== undefined ? { title } : {}),
     categories,
     series,
@@ -755,6 +785,13 @@ function numCacheXml(values: (number | null)[], f: string): string {
   )
 }
 
+/** the x of each scatter point: the category as a number, else its 1-based position */
+export const scatterXValues = (categories: string[]): number[] =>
+  categories.map((c, i) => {
+    const n = Number(c.trim().replace(/,/g, ''))
+    return c.trim() !== '' && Number.isFinite(n) ? n : i + 1
+  })
+
 /**
  * Build a complete chart part (word/charts/chartN.xml) from data. The chart
  * references an embedded workbook via c:externalData so Word's "Edit Data" works.
@@ -777,21 +814,97 @@ export function buildChartPartXml(chart: NewChart, externalDataRId?: string): st
     .join('')
 
   let plot: string
-  if (chart.kind === 'pie') {
-    plot = `<c:pieChart><c:varyColors val="1"/>${sers}<c:firstSliceAng val="0"/></c:pieChart>`
-  } else {
-    const axes =
+  if (chart.kind === 'scatter') {
+    // each series pairs the shared x column with its own y column; the points stand alone
+    // (Word's plain Scatter: the connecting line is switched off on every series)
+    const xs = scatterXValues(chart.categories)
+    const lastRow = rows + 1
+    const points = chart.series
+      .map((ser, i) => {
+        const col = colLetter(i)
+        return (
+          `<c:ser><c:idx val="${i}"/><c:order val="${i}"/>` +
+          `<c:tx>${strCacheXml([ser.name], `Sheet1!$${col}$1`)}</c:tx>` +
+          '<c:spPr><a:ln w="19050"><a:noFill/></a:ln></c:spPr>' +
+          `<c:xVal>${numCacheXml(xs, `Sheet1!$A$2:$A$${lastRow}`)}</c:xVal>` +
+          `<c:yVal>${numCacheXml(ser.values.slice(0, rows), `Sheet1!$${col}$2:$${col}$${lastRow}`)}</c:yVal>` +
+          '</c:ser>'
+        )
+      })
+      .join('')
+    const valAx = (id: string, pos: string, cross: string) =>
+      `<c:valAx><c:axId val="${id}"/><c:scaling><c:orientation val="minMax"/></c:scaling>` +
+      `<c:delete val="0"/><c:axPos val="${pos}"/><c:crossAx val="${cross}"/></c:valAx>`
+    plot =
+      `<c:scatterChart><c:scatterStyle val="lineMarker"/><c:varyColors val="0"/>${points}` +
+      '<c:axId val="111111111"/><c:axId val="222222222"/></c:scatterChart>' +
+      valAx('111111111', 'b', '222222222') +
+      valAx('222222222', 'l', '111111111')
+  } else if (chart.kind === 'stock') {
+    // Word's High-Low-Close: no line along a series, a line from the highest to the lowest
+    // value of each category, and a mark on the last series (the close); with four series
+    // the first is the open, and is marked too
+    const last = chart.series.length - 1
+    const marked = (i: number) => i === last || (chart.series.length >= 4 && i === 0)
+    const points = chart.series
+      .map((ser, i) => {
+        const col = colLetter(i)
+        return (
+          `<c:ser><c:idx val="${i}"/><c:order val="${i}"/>` +
+          `<c:tx>${strCacheXml([ser.name], `Sheet1!$${col}$1`)}</c:tx>` +
+          '<c:spPr><a:ln w="19050"><a:noFill/></a:ln></c:spPr>' +
+          `<c:marker><c:symbol val="${marked(i) ? 'dash' : 'none'}"/>` +
+          `${marked(i) ? '<c:size val="5"/>' : ''}</c:marker>` +
+          `<c:cat>${strCacheXml(chart.categories, `Sheet1!$A$2:$A$${rows + 1}`)}</c:cat>` +
+          `<c:val>${numCacheXml(ser.values.slice(0, rows), `Sheet1!$${col}$2:$${col}$${rows + 1}`)}</c:val>` +
+          '<c:smooth val="0"/></c:ser>'
+        )
+      })
+      .join('')
+    plot =
+      `<c:stockChart>${points}<c:hiLowLines/>` +
+      '<c:axId val="111111111"/><c:axId val="222222222"/></c:stockChart>' +
       '<c:catAx><c:axId val="111111111"/><c:scaling><c:orientation val="minMax"/></c:scaling>' +
       '<c:delete val="0"/><c:axPos val="b"/><c:crossAx val="222222222"/></c:catAx>' +
       '<c:valAx><c:axId val="222222222"/><c:scaling><c:orientation val="minMax"/></c:scaling>' +
       '<c:delete val="0"/><c:axPos val="l"/><c:crossAx val="111111111"/></c:valAx>'
-    const inner =
-      chart.kind === 'bar'
-        ? `<c:barChart><c:barDir val="col"/><c:grouping val="clustered"/><c:varyColors val="0"/>${sers}` +
-          '<c:axId val="111111111"/><c:axId val="222222222"/></c:barChart>'
-        : `<c:lineChart><c:grouping val="standard"/><c:varyColors val="0"/>${sers}<c:marker val="1"/>` +
-          '<c:axId val="111111111"/><c:axId val="222222222"/></c:lineChart>'
-    plot = inner + axes
+  } else if (chart.kind === 'surface') {
+    // Word's Contour: the surface seen from straight above (see the c:view3D below)
+    const ax = (tag: string, id: string, pos: string, cross: string) =>
+      `<c:${tag}><c:axId val="${id}"/><c:scaling><c:orientation val="minMax"/></c:scaling>` +
+      `<c:delete val="0"/><c:axPos val="${pos}"/><c:crossAx val="${cross}"/></c:${tag}>`
+    plot =
+      `<c:surfaceChart><c:wireframe val="0"/>${sers}<c:bandFmts/>` +
+      '<c:axId val="111111111"/><c:axId val="222222222"/><c:axId val="333333333"/>' +
+      '</c:surfaceChart>' +
+      ax('catAx', '111111111', 'b', '222222222') +
+      ax('valAx', '222222222', 'l', '111111111') +
+      ax('serAx', '333333333', 'b', '222222222')
+  } else if (chart.kind === 'pie') {
+    plot = `<c:pieChart><c:varyColors val="1"/>${sers}<c:firstSliceAng val="0"/></c:pieChart>`
+  } else {
+    // horizontal bars put the categories up the side and the values along the bottom
+    const sideways = chart.kind === 'bar' && chart.horizontal === true
+    const axes =
+      '<c:catAx><c:axId val="111111111"/><c:scaling><c:orientation val="minMax"/></c:scaling>' +
+      `<c:delete val="0"/><c:axPos val="${sideways ? 'l' : 'b'}"/><c:crossAx val="222222222"/></c:catAx>` +
+      '<c:valAx><c:axId val="222222222"/><c:scaling><c:orientation val="minMax"/></c:scaling>' +
+      `<c:delete val="0"/><c:axPos val="${sideways ? 'b' : 'l'}"/><c:crossAx val="111111111"/></c:valAx>`
+    const axIds = '<c:axId val="111111111"/><c:axId val="222222222"/>'
+    const inner: Record<
+      Exclude<NewChart['kind'], 'pie' | 'scatter' | 'stock' | 'surface'>,
+      string
+    > = {
+      bar:
+        `<c:barChart><c:barDir val="${sideways ? 'bar' : 'col'}"/><c:grouping val="clustered"/>` +
+        `<c:varyColors val="0"/>${sers}${axIds}</c:barChart>`,
+      line:
+        `<c:lineChart><c:grouping val="standard"/><c:varyColors val="0"/>${sers}` +
+        `<c:marker val="1"/>${axIds}</c:lineChart>`,
+      area: `<c:areaChart><c:grouping val="standard"/><c:varyColors val="0"/>${sers}${axIds}</c:areaChart>`,
+      radar: `<c:radarChart><c:radarStyle val="marker"/><c:varyColors val="0"/>${sers}${axIds}</c:radarChart>`,
+    }
+    plot = inner[chart.kind] + axes
   }
 
   const title = chart.title
@@ -799,13 +912,18 @@ export function buildChartPartXml(chart: NewChart, externalDataRId?: string): st
       `<a:t>${escapeXmlText(chart.title)}</a:t></a:r></a:p></c:rich></c:tx>` +
       '<c:overlay val="0"/></c:title><c:autoTitleDeleted val="0"/>'
     : ''
+  const view3D =
+    chart.kind === 'surface'
+      ? '<c:view3D><c:rotX val="90"/><c:rotY val="0"/><c:rAngAx val="0"/>' +
+        '<c:perspective val="0"/></c:view3D>'
+      : ''
 
   return (
     '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n' +
     '<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" ' +
     'xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" ' +
     'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">' +
-    `<c:chart>${title}<c:plotArea><c:layout/>${plot}</c:plotArea>` +
+    `<c:chart>${title}${view3D}<c:plotArea><c:layout/>${plot}</c:plotArea>` +
     '<c:legend><c:legendPos val="b"/><c:overlay val="0"/></c:legend>' +
     '<c:plotVisOnly val="1"/><c:dispBlanksAs val="gap"/></c:chart>' +
     (externalDataRId
@@ -999,9 +1117,12 @@ function innerTextRanges(
 export async function buildChartWorkbookXlsxBase64(
   categories: string[],
   series: Array<{ name: string; values: (number | null)[] }>,
+  /** a scatter chart's x of each point: column A holds these numbers instead of the category names */
+  xValues?: number[],
 ): Promise<string> {
   const zip = new JSZip()
-  for (const [path, xml] of Object.entries(chartWorkbookParts({ categories, series }))) {
+  const parts = chartWorkbookParts({ categories, series, ...(xValues ? { xValues } : {}) })
+  for (const [path, xml] of Object.entries(parts)) {
     zip.file(path, xml)
   }
   return zipToBase64(zip)

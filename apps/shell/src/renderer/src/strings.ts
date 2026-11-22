@@ -15,6 +15,9 @@ export const strings = {
     askTitle: '问知识库',
     askEmptyCorpusHint: '还没有收藏文件——先在最近或文件夹里点星收藏,AI 就能读它们。',
     askCorpusCount: '知识库:{n} 个收藏文件',
+    askCorpusShow: '显示文件',
+    askCorpusHide: '隐藏文件',
+    askCorpusList: '知识库中的收藏文件',
     askIntro: '基于你收藏的文件提问,回答会标注来源文件,点击即可打开。',
     askToolSearch: '搜索知识库',
     askToolRead: '读取文件',
@@ -26,10 +29,13 @@ export const strings = {
     askSaveMd: '保存为 Markdown',
     askSaveDocx: '保存为 Word',
     askSavedAs: '已保存:{name}',
-    askSaveFailed: '保存失败:{error}',
+    askSaveFailed: '保存失败：{error}',
     askEmptyCorpus: '知识库还是空的:先收藏一些文件,再回来提问。',
     askNeedsLogin: '登录 Genspark 后即可使用 AI 问答。',
     askPlaceholder: '问一个关于收藏文件的问题…',
+    askMentionTitle: '引用知识库文件',
+    askMentionEmpty: '知识库里没有匹配的文件',
+    askMentionHint: '输入 @ 引用知识库文件',
     askHintIdle: 'Enter 发送',
     askHintBusy: 'AI 正在回答…',
     askRemoveAttachment: '移除附件',
@@ -210,6 +216,10 @@ export const strings = {
     saveLocation: '默认保存位置',
     setRestoreSession: '启动时重新打开上次的文档',
     setRestoreSessionDesc: '关闭 GenOffice 时打开的文档会在下次启动时自动重新打开。',
+    setExcludedFolders: '排除的文件夹',
+    setExcludedFoldersDesc: '这些文件夹下的文件不会进入最近列表、搜索和会话恢复。',
+    setExcludedFoldersAdd: '添加文件夹…',
+    setExcludedFoldersEmpty: '尚未排除任何文件夹',
     setTabSleep: '休眠不活跃的标签页',
     setTabSleepDesc:
       '标签页多到一定数量后，长时间没有查看的会释放内存；回到它时会重新打开文件。有未保存修改或已固定的标签页不会休眠。',
@@ -563,6 +573,9 @@ export const strings = {
     askTitle: 'Ask your knowledge base',
     askEmptyCorpusHint: 'No starred files yet — star some files first and the AI can read them.',
     askCorpusCount: 'Knowledge base: {n} starred files',
+    askCorpusShow: 'Show files',
+    askCorpusHide: 'Hide files',
+    askCorpusList: 'Starred files in the knowledge base',
     askIntro: 'Ask about your starred files. Answers cite their sources — click one to open it.',
     askToolSearch: 'Searching the knowledge base',
     askToolRead: 'Reading a file',
@@ -578,6 +591,9 @@ export const strings = {
     askEmptyCorpus: 'The knowledge base is empty: star some files first, then ask.',
     askNeedsLogin: 'Sign in to Genspark to use AI chat.',
     askPlaceholder: 'Ask about your starred files…',
+    askMentionTitle: 'Reference a knowledge-base file',
+    askMentionEmpty: 'No knowledge-base files match',
+    askMentionHint: 'Type @ to reference a knowledge-base file',
     askHintIdle: 'Enter to send',
     askHintBusy: 'The AI is answering…',
     askRemoveAttachment: 'Remove attachment',
@@ -758,6 +774,11 @@ export const strings = {
     setRestoreSession: 'Reopen documents from last time',
     setRestoreSessionDesc:
       'Documents open when GenOffice closes reopen automatically the next time it starts.',
+    setExcludedFolders: 'Excluded folders',
+    setExcludedFoldersDesc:
+      'Files under these folders stay out of recents, search and session restore.',
+    setExcludedFoldersAdd: 'Add folder…',
+    setExcludedFoldersEmpty: 'Nothing excluded yet',
     setTabSleep: 'Sleep inactive tabs',
     setTabSleepDesc:
       'Once many tabs are open, ones you have not looked at for a while release their memory and reopen their file when you return. Tabs with unsaved changes or pinned tabs never sleep.',
@@ -1127,6 +1148,9 @@ export const strings = {
     askEmptyCorpusHint:
       'Chưa có tệp nào được đánh dấu — hãy đánh dấu tệp trước để AI có thể đọc chúng.',
     askCorpusCount: 'Cơ sở tri thức: {n} tệp đã đánh dấu',
+    askCorpusShow: 'Hiện tệp',
+    askCorpusHide: 'Ẩn tệp',
+    askCorpusList: 'Các tệp đã đánh dấu trong cơ sở tri thức',
     askIntro: 'Hỏi về các tệp bạn đã đánh dấu. Câu trả lời dẫn nguồn — nhấp để mở.',
     askToolSearch: 'Đang tìm cơ sở tri thức',
     askToolRead: 'Đang đọc tệp',
@@ -1142,6 +1166,9 @@ export const strings = {
     askEmptyCorpus: 'Cơ sở tri thức trống: hãy đánh dấu tệp trước rồi hỏi.',
     askNeedsLogin: 'Đăng nhập Genspark để dùng trò chuyện AI.',
     askPlaceholder: 'Hỏi về các tệp đã đánh dấu…',
+    askMentionTitle: 'Tham chiếu tệp trong cơ sở tri thức',
+    askMentionEmpty: 'Không có tệp nào khớp trong cơ sở tri thức',
+    askMentionHint: 'Nhập @ để tham chiếu tệp trong cơ sở tri thức',
     askHintIdle: 'Enter để gửi',
     askHintBusy: 'AI đang trả lời…',
     askRemoveAttachment: 'Gỡ tệp đính kèm',
@@ -1321,6 +1348,11 @@ export const strings = {
     setRestoreSession: 'Mở lại tài liệu của lần trước',
     setRestoreSessionDesc:
       'Các tài liệu đang mở khi đóng GenOffice sẽ tự động mở lại vào lần khởi động tiếp theo.',
+    setExcludedFolders: 'Thư mục loại trừ',
+    setExcludedFoldersDesc:
+      'Tệp trong các thư mục này không vào danh sách gần đây, tìm kiếm và khôi phục phiên.',
+    setExcludedFoldersAdd: 'Thêm thư mục…',
+    setExcludedFoldersEmpty: 'Chưa loại trừ thư mục nào',
     setTabSleep: 'Tạm ngủ các thẻ không hoạt động',
     setTabSleepDesc:
       'Khi mở nhiều thẻ, những thẻ lâu không xem sẽ giải phóng bộ nhớ và mở lại tệp khi bạn quay lại. Thẻ có thay đổi chưa lưu hoặc đã ghim sẽ không ngủ.',
@@ -1694,6 +1726,9 @@ export const strings = {
     askEmptyCorpusHint:
       'Henüz yıldızlı dosya yok — önce bazı dosyaları yıldızlayın, AI onları okuyabilsin.',
     askCorpusCount: 'Bilgi tabanı: {n} yıldızlı dosya',
+    askCorpusShow: 'Dosyaları göster',
+    askCorpusHide: 'Dosyaları gizle',
+    askCorpusList: 'Bilgi tabanındaki yıldızlı dosyalar',
     askIntro:
       'Yıldızlı dosyalarınız hakkında soru sorun. Yanıtlar kaynaklarını gösterir — açmak için birine tıklayın.',
     askToolSearch: 'Bilgi tabanında aranıyor',
@@ -1710,6 +1745,9 @@ export const strings = {
     askEmptyCorpus: 'Bilgi tabanı boş: önce bazı dosyaları yıldızlayın, sonra sorun.',
     askNeedsLogin: 'AI sohbetini kullanmak için Genspark’a giriş yapın.',
     askPlaceholder: 'Yıldızlı dosyalarınız hakkında sorun…',
+    askMentionTitle: 'Bilgi tabanı dosyasına başvur',
+    askMentionEmpty: 'Bilgi tabanında eşleşen dosya yok',
+    askMentionHint: 'Bir bilgi tabanı dosyasına başvurmak için @ yazın',
     askHintIdle: 'Göndermek için Enter',
     askHintBusy: 'AI yanıtlıyor…',
     askRemoveAttachment: 'Eki kaldır',
@@ -1889,6 +1927,11 @@ export const strings = {
     setRestoreSession: 'Son oturumdaki belgeleri yeniden aç',
     setRestoreSessionDesc:
       'GenOffice kapatılırken açık olan belgeler bir sonraki başlatmada otomatik olarak yeniden açılır.',
+    setExcludedFolders: 'Hariç tutulan klasörler',
+    setExcludedFoldersDesc:
+      'Bu klasörlerdeki dosyalar son kullanılanlar, arama ve oturum geri yükleme dışında tutulur.',
+    setExcludedFoldersAdd: 'Klasör ekle…',
+    setExcludedFoldersEmpty: 'Hariç tutulan klasör yok',
     setTabSleep: 'Etkin olmayan sekmeleri uyut',
     setTabSleepDesc:
       'Çok sayıda sekme açıkken bir süredir bakmadıklarınız belleklerini serbest bırakır ve geri döndüğünüzde dosyalarını yeniden açar. Kaydedilmemiş değişiklikleri olan veya sabitlenmiş sekmeler hiçbir zaman uyumaz.',
@@ -2265,6 +2308,9 @@ export const strings = {
     askEmptyCorpusHint:
       'Még nincs csillagozott fájl — előbb csillagozz néhány fájlt, és az AI el tudja olvasni őket.',
     askCorpusCount: 'Tudásbázis: {n} csillagozott fájl',
+    askCorpusShow: 'Fájlok megjelenítése',
+    askCorpusHide: 'Fájlok elrejtése',
+    askCorpusList: 'A tudásbázis csillagozott fájljai',
     askIntro:
       'Kérdezz a csillagozott fájljaidról. A válaszok feltüntetik a forrásokat — kattints egy hivatkozásra a megnyitásához.',
     askToolSearch: 'Keresés a tudásbázisban',
@@ -2281,6 +2327,9 @@ export const strings = {
     askEmptyCorpus: 'A tudásbázis üres: előbb csillagozz néhány fájlt, utána kérdezz.',
     askNeedsLogin: 'Az AI-csevegés használatához jelentkezz be a Gensparkba.',
     askPlaceholder: 'Kérdezz a csillagozott fájljaidról…',
+    askMentionTitle: 'Tudásbázisfájl hivatkozása',
+    askMentionEmpty: 'Nincs egyező fájl a tudásbázisban',
+    askMentionHint: 'Írjon @ jelet egy tudásbázisfájl hivatkozásához',
     askHintIdle: 'Küldés: Enter',
     askHintBusy: 'Az AI válaszol…',
     askRemoveAttachment: 'Melléklet eltávolítása',
@@ -2464,6 +2513,11 @@ export const strings = {
     setRestoreSession: 'Legutóbbi dokumentumok újranyitása',
     setRestoreSessionDesc:
       'A GenOffice bezárásakor nyitva lévő dokumentumok a következő indításkor automatikusan megnyílnak.',
+    setExcludedFolders: 'Kizárt mappák',
+    setExcludedFoldersDesc:
+      'E mappák fájljai nem kerülnek a legutóbbiakba, a keresésbe és a munkamenet-helyreállításba.',
+    setExcludedFoldersAdd: 'Mappa hozzáadása…',
+    setExcludedFoldersEmpty: 'Nincs kizárt mappa',
     setTabSleep: 'Inaktív lapok elaltatása',
     setTabSleepDesc:
       'Ha már sok lap van megnyitva, azok, amelyeket egy ideje nem néztél meg, felszabadítják a memóriájukat, és visszatéréskor újra betöltik a fájljukat. A mentetlen módosításokat tartalmazó lapok és a rögzített lapok soha nem kerülnek alvó állapotba.',
@@ -2828,6 +2882,10 @@ export const strings = {
       'Érvénytelen fejlécformátum: minden sornak „Név: Érték” alakúnak kell lennie.',
     setAiEndpointModelsBad:
       'Érvénytelen modellmegadás: JSON-tömb kell legyen, pl. [{ "id": "m" }].',
+    skillDetailClose: 'Bezárás',
+    skillDetailLoading: 'Útmutató betöltése…',
+    skillDetailEmpty: 'Ehhez a készséghez nincs útmutató.',
+    skillDetailCopy: 'Útmutató másolása',
   },
   ja: {
     addFolderRoot: 'フォルダーを追加…',
@@ -2845,6 +2903,9 @@ export const strings = {
     askEmptyCorpusHint:
       'スター付きファイルがまだありません。先にファイルをスターすると、AI が読めます。',
     askCorpusCount: 'ナレッジベース:スター付き {n} 件',
+    askCorpusShow: 'ファイルを表示',
+    askCorpusHide: 'ファイルを隠す',
+    askCorpusList: 'ナレッジベースのスター付きファイル',
     askIntro: 'スター付きファイルについて質問できます。回答には出典が付き、クリックで開けます。',
     askToolSearch: 'ナレッジベースを検索中',
     askToolRead: 'ファイルを読み込み中',
@@ -2860,6 +2921,9 @@ export const strings = {
     askEmptyCorpus: 'ナレッジベースは空です:先にファイルをスターしてから質問してください。',
     askNeedsLogin: 'AI チャットには Genspark へのログインが必要です。',
     askPlaceholder: 'スター付きファイルについて質問…',
+    askMentionTitle: 'ナレッジベースのファイルを参照',
+    askMentionEmpty: '一致するナレッジベースのファイルがありません',
+    askMentionHint: '@ でナレッジベースのファイルを参照',
     askHintIdle: 'Enter で送信',
     askHintBusy: 'AI が回答中…',
     askRemoveAttachment: '添付を削除',
@@ -3049,6 +3113,11 @@ export const strings = {
     setRestoreSession: '前回のドキュメントを再度開く',
     setRestoreSessionDesc:
       'GenOffice を閉じたときに開いていたドキュメントを、次回起動時に自動で開き直します。',
+    setExcludedFolders: '除外フォルダー',
+    setExcludedFoldersDesc:
+      'これらのフォルダー内のファイルは、最近使った項目・検索・セッション復元の対象外になります。',
+    setExcludedFoldersAdd: 'フォルダーを追加…',
+    setExcludedFoldersEmpty: '除外されたフォルダーはありません',
     setTabSleep: '非アクティブなタブをスリープ',
     setTabSleepDesc:
       '多くのタブを開いているとき、しばらく見ていないタブはメモリを解放し、戻ったときにファイルを再度開きます。未保存の変更があるタブやピン留めしたタブはスリープしません。',
@@ -3424,6 +3493,9 @@ export const strings = {
     askEmptyCorpusHint:
       '즐겨찾기한 파일이 아직 없습니다. 먼저 파일을 즐겨찾기하면 AI가 읽을 수 있습니다.',
     askCorpusCount: '지식 베이스: 즐겨찾기 {n}개',
+    askCorpusShow: '파일 표시',
+    askCorpusHide: '파일 숨기기',
+    askCorpusList: '지식 베이스의 즐겨찾기 파일',
     askIntro: '즐겨찾기한 파일에 대해 질문하세요. 답변에는 출처가 표시되며 클릭하면 열립니다.',
     askToolSearch: '지식 베이스 검색 중',
     askToolRead: '파일 읽는 중',
@@ -3439,6 +3511,9 @@ export const strings = {
     askEmptyCorpus: '지식 베이스가 비어 있습니다. 먼저 파일을 즐겨찾기한 후 질문해 주세요.',
     askNeedsLogin: 'AI 채팅을 사용하려면 Genspark에 로그인하세요.',
     askPlaceholder: '즐겨찾기한 파일에 대해 질문…',
+    askMentionTitle: '지식 베이스 파일 참조',
+    askMentionEmpty: '일치하는 지식 베이스 파일이 없습니다',
+    askMentionHint: '@를 입력해 지식 베이스 파일을 참조하세요',
     askHintIdle: 'Enter로 보내기',
     askHintBusy: 'AI가 답변 중…',
     askRemoveAttachment: '첨부 파일 제거',
@@ -3624,6 +3699,10 @@ export const strings = {
     setRestoreSession: '지난번 문서 다시 열기',
     setRestoreSessionDesc:
       'GenOffice를 닫을 때 열려 있던 문서를 다음 실행 시 자동으로 다시 엽니다.',
+    setExcludedFolders: '제외된 폴더',
+    setExcludedFoldersDesc: '이 폴더 안의 파일은 최근 목록, 검색, 세션 복원에서 제외됩니다.',
+    setExcludedFoldersAdd: '폴더 추가…',
+    setExcludedFoldersEmpty: '제외된 폴더가 없습니다',
     setTabSleep: '비활성 탭 절전',
     setTabSleepDesc:
       '탭이 많이 열려 있으면 한동안 보지 않은 탭은 메모리를 해제하고 돌아올 때 파일을 다시 엽니다. 저장하지 않은 변경이 있거나 고정된 탭은 절전되지 않습니다.',
@@ -3994,6 +4073,9 @@ export const strings = {
     askEmptyCorpusHint:
       'Aucun fichier favori pour l’instant — ajoutez-en d’abord pour que l’IA puisse les lire.',
     askCorpusCount: 'Base de connaissances : {n} fichiers favoris',
+    askCorpusShow: 'Afficher les fichiers',
+    askCorpusHide: 'Masquer les fichiers',
+    askCorpusList: 'Fichiers favoris de la base de connaissances',
     askIntro:
       'Posez des questions sur vos fichiers favoris. Les réponses citent leurs sources — cliquez pour ouvrir.',
     askToolSearch: 'Recherche dans la base',
@@ -4010,6 +4092,9 @@ export const strings = {
     askEmptyCorpus: 'La base de connaissances est vide : ajoutez d’abord des fichiers favoris.',
     askNeedsLogin: 'Connectez-vous à Genspark pour utiliser le chat IA.',
     askPlaceholder: 'Posez une question sur vos fichiers…',
+    askMentionTitle: 'Référencer un fichier de la base de connaissances',
+    askMentionEmpty: 'Aucun fichier de la base ne correspond',
+    askMentionHint: 'Tapez @ pour référencer un fichier de la base de connaissances',
     askHintIdle: 'Entrée pour envoyer',
     askHintBusy: 'L’IA répond…',
     askRemoveAttachment: 'Retirer la pièce jointe',
@@ -4200,6 +4285,11 @@ export const strings = {
     setRestoreSession: 'Rouvrir les documents de la dernière fois',
     setRestoreSessionDesc:
       'Les documents ouverts à la fermeture de GenOffice se rouvrent automatiquement au prochain démarrage.',
+    setExcludedFolders: 'Dossiers exclus',
+    setExcludedFoldersDesc:
+      'Les fichiers de ces dossiers sont exclus des récents, de la recherche et de la restauration de session.',
+    setExcludedFoldersAdd: 'Ajouter un dossier…',
+    setExcludedFoldersEmpty: 'Aucun dossier exclu',
     setTabSleep: 'Mettre en veille les onglets inactifs',
     setTabSleepDesc:
       'Lorsque de nombreux onglets sont ouverts, ceux que vous n’avez pas consultés depuis un moment libèrent leur mémoire et rouvrent leur fichier à votre retour. Les onglets avec des modifications non enregistrées ou épinglés ne sont jamais mis en veille.',
@@ -4584,6 +4674,9 @@ export const strings = {
     askEmptyCorpusHint:
       'Noch keine Favoriten — markieren Sie zuerst Dateien, damit die KI sie lesen kann.',
     askCorpusCount: 'Wissensbasis: {n} favorisierte Dateien',
+    askCorpusShow: 'Dateien anzeigen',
+    askCorpusHide: 'Dateien ausblenden',
+    askCorpusList: 'Favorisierte Dateien in der Wissensbasis',
     askIntro:
       'Fragen Sie zu Ihren Favoriten. Antworten nennen ihre Quellen — Klick öffnet die Datei.',
     askToolSearch: 'Wissensbasis durchsuchen',
@@ -4600,6 +4693,9 @@ export const strings = {
     askEmptyCorpus: 'Die Wissensbasis ist leer: markieren Sie zuerst Dateien, dann fragen Sie.',
     askNeedsLogin: 'Melden Sie sich bei Genspark an, um den KI-Chat zu nutzen.',
     askPlaceholder: 'Fragen Sie zu Ihren Favoriten…',
+    askMentionTitle: 'Datei aus der Wissensbasis referenzieren',
+    askMentionEmpty: 'Keine passende Datei in der Wissensbasis',
+    askMentionHint: '@ eingeben, um eine Datei aus der Wissensbasis zu referenzieren',
     askHintIdle: 'Enter zum Senden',
     askHintBusy: 'Die KI antwortet…',
     askRemoveAttachment: 'Anhang entfernen',
@@ -4793,6 +4889,11 @@ export const strings = {
     setRestoreSession: 'Dokumente vom letzten Mal wieder öffnen',
     setRestoreSessionDesc:
       'Dokumente, die beim Schließen von GenOffice geöffnet waren, werden beim nächsten Start automatisch wieder geöffnet.',
+    setExcludedFolders: 'Ausgeschlossene Ordner',
+    setExcludedFoldersDesc:
+      'Dateien in diesen Ordnern bleiben außerhalb von „Zuletzt verwendet“, der Suche und der Sitzungswiederherstellung.',
+    setExcludedFoldersAdd: 'Ordner hinzufügen…',
+    setExcludedFoldersEmpty: 'Keine Ordner ausgeschlossen',
     setTabSleep: 'Inaktive Tabs schlafen legen',
     setTabSleepDesc:
       'Sind viele Tabs offen, geben länger nicht angesehene ihren Speicher frei und öffnen ihre Datei bei der Rückkehr neu. Tabs mit ungespeicherten Änderungen oder angeheftete Tabs schlafen nie.',
@@ -5171,6 +5272,9 @@ export const strings = {
     askEmptyCorpusHint:
       'Aún no hay archivos favoritos: marca algunos primero para que la IA pueda leerlos.',
     askCorpusCount: 'Base de conocimientos: {n} archivos favoritos',
+    askCorpusShow: 'Mostrar archivos',
+    askCorpusHide: 'Ocultar archivos',
+    askCorpusList: 'Archivos favoritos de la base de conocimientos',
     askIntro:
       'Pregunta sobre tus archivos favoritos. Las respuestas citan la fuente; haz clic para abrirla.',
     askToolSearch: 'Buscando en la base',
@@ -5187,6 +5291,9 @@ export const strings = {
     askEmptyCorpus: 'La base de conocimientos está vacía: marca archivos primero y luego pregunta.',
     askNeedsLogin: 'Inicia sesión en Genspark para usar el chat de IA.',
     askPlaceholder: 'Pregunta sobre tus archivos favoritos…',
+    askMentionTitle: 'Referenciar un archivo de la base de conocimientos',
+    askMentionEmpty: 'Ningún archivo de la base coincide',
+    askMentionHint: 'Escribe @ para referenciar un archivo de la base de conocimientos',
     askHintIdle: 'Enter para enviar',
     askHintBusy: 'La IA está respondiendo…',
     askRemoveAttachment: 'Quitar adjunto',
@@ -5378,6 +5485,11 @@ export const strings = {
     setRestoreSession: 'Volver a abrir los documentos de la última vez',
     setRestoreSessionDesc:
       'Los documentos abiertos al cerrar GenOffice se vuelven a abrir automáticamente la próxima vez que se inicie.',
+    setExcludedFolders: 'Carpetas excluidas',
+    setExcludedFoldersDesc:
+      'Los archivos de estas carpetas quedan fuera de recientes, búsqueda y restauración de sesión.',
+    setExcludedFoldersAdd: 'Añadir carpeta…',
+    setExcludedFoldersEmpty: 'Ninguna carpeta excluida',
     setTabSleep: 'Suspender pestañas inactivas',
     setTabSleepDesc:
       'Con muchas pestañas abiertas, las que no has mirado durante un tiempo liberan su memoria y vuelven a abrir el archivo al regresar. Las pestañas con cambios sin guardar o fijadas nunca se suspenden.',
@@ -5756,6 +5868,9 @@ export const strings = {
     askTitle: 'ถามคลังความรู้ของคุณ',
     askEmptyCorpusHint: 'ยังไม่มีไฟล์ที่ติดดาว — ติดดาวไฟล์ก่อนเพื่อให้ AI อ่านได้',
     askCorpusCount: 'คลังความรู้: {n} ไฟล์ที่ติดดาว',
+    askCorpusShow: 'แสดงไฟล์',
+    askCorpusHide: 'ซ่อนไฟล์',
+    askCorpusList: 'ไฟล์ที่ติดดาวในคลังความรู้',
     askIntro: 'ถามเกี่ยวกับไฟล์ที่ติดดาวของคุณ คำตอบจะอ้างอิงแหล่งที่มา — คลิกเพื่อเปิด',
     askToolSearch: 'กำลังค้นคลังความรู้',
     askToolRead: 'กำลังอ่านไฟล์',
@@ -5771,6 +5886,9 @@ export const strings = {
     askEmptyCorpus: 'คลังความรู้ว่างเปล่า: ติดดาวไฟล์ก่อนแล้วค่อยถาม',
     askNeedsLogin: 'เข้าสู่ระบบ Genspark เพื่อใช้แชท AI',
     askPlaceholder: 'ถามเกี่ยวกับไฟล์ที่ติดดาว…',
+    askMentionTitle: 'อ้างอิงไฟล์ในคลังความรู้',
+    askMentionEmpty: 'ไม่มีไฟล์ในคลังความรู้ที่ตรงกัน',
+    askMentionHint: 'พิมพ์ @ เพื่ออ้างอิงไฟล์ในคลังความรู้',
     askHintIdle: 'Enter เพื่อส่ง',
     askHintBusy: 'AI กำลังตอบ…',
     askRemoveAttachment: 'ลบไฟล์แนบ',
@@ -5955,6 +6073,11 @@ export const strings = {
     setRestoreSession: 'เปิดเอกสารจากครั้งที่แล้วอีกครั้ง',
     setRestoreSessionDesc:
       'เอกสารที่เปิดอยู่ตอนปิด GenOffice จะเปิดขึ้นอีกครั้งโดยอัตโนมัติเมื่อเริ่มโปรแกรมครั้งถัดไป',
+    setExcludedFolders: 'โฟลเดอร์ที่ยกเว้น',
+    setExcludedFoldersDesc:
+      'ไฟล์ในโฟลเดอร์เหล่านี้จะไม่อยู่ในรายการล่าสุด การค้นหา และการกู้คืนเซสชัน',
+    setExcludedFoldersAdd: 'เพิ่มโฟลเดอร์…',
+    setExcludedFoldersEmpty: 'ยังไม่มีโฟลเดอร์ที่ยกเว้น',
     setTabSleep: 'พักแท็บที่ไม่ได้ใช้งาน',
     setTabSleepDesc:
       'เมื่อเปิดแท็บจำนวนมาก แท็บที่ไม่ได้ดูสักพักจะคืนหน่วยความจำและเปิดไฟล์ใหม่เมื่อคุณกลับมา แท็บที่มีการเปลี่ยนแปลงที่ยังไม่บันทึกหรือปักหมุดไว้จะไม่พัก',
@@ -6320,6 +6443,9 @@ export const strings = {
     askEmptyCorpusHint:
       'Belum ada file berbintang — tandai beberapa file dahulu agar AI bisa membacanya.',
     askCorpusCount: 'Basis pengetahuan: {n} file berbintang',
+    askCorpusShow: 'Tampilkan file',
+    askCorpusHide: 'Sembunyikan file',
+    askCorpusList: 'File berbintang dalam basis pengetahuan',
     askIntro:
       'Bertanyalah tentang file berbintang anda. Jawaban menyebut sumbernya — klik untuk membuka.',
     askToolSearch: 'Mencari basis pengetahuan',
@@ -6336,6 +6462,9 @@ export const strings = {
     askEmptyCorpus: 'Basis pengetahuan kosong: tandai beberapa file dahulu, lalu bertanya.',
     askNeedsLogin: 'Masuk ke Genspark untuk memakai obrolan AI.',
     askPlaceholder: 'Tanya tentang file berbintang anda…',
+    askMentionTitle: 'Rujuk file basis pengetahuan',
+    askMentionEmpty: 'Tidak ada file basis pengetahuan yang cocok',
+    askMentionHint: 'Ketik @ untuk merujuk file basis pengetahuan',
     askHintIdle: 'Enter untuk mengirim',
     askHintBusy: 'AI sedang menjawab…',
     askRemoveAttachment: 'Hapus lampiran',
@@ -6524,6 +6653,11 @@ export const strings = {
     setRestoreSession: 'Buka kembali dokumen dari sesi terakhir',
     setRestoreSessionDesc:
       'Dokumen yang terbuka saat GenOffice ditutup akan dibuka kembali secara otomatis saat dijalankan berikutnya.',
+    setExcludedFolders: 'Folder yang dikecualikan',
+    setExcludedFoldersDesc:
+      'Berkas di folder ini tidak masuk daftar terbaru, pencarian, dan pemulihan sesi.',
+    setExcludedFoldersAdd: 'Tambah folder…',
+    setExcludedFoldersEmpty: 'Belum ada folder yang dikecualikan',
     setTabSleep: 'Tidurkan tab tidak aktif',
     setTabSleepDesc:
       'Saat banyak tab terbuka, tab yang lama tidak dilihat melepaskan memorinya dan membuka kembali berkasnya saat Anda kembali. Tab dengan perubahan belum disimpan atau yang disematkan tidak pernah tidur.',
@@ -6897,6 +7031,9 @@ export const strings = {
     askEmptyCorpusHint:
       'Пока нет избранных файлов — отметьте файлы звёздочкой, чтобы ИИ мог их читать.',
     askCorpusCount: 'База знаний: избранных файлов — {n}',
+    askCorpusShow: 'Показать файлы',
+    askCorpusHide: 'Скрыть файлы',
+    askCorpusList: 'Избранные файлы в базе знаний',
     askIntro:
       'Задавайте вопросы по избранным файлам. Ответы ссылаются на источники — нажмите, чтобы открыть.',
     askToolSearch: 'Поиск по базе',
@@ -6913,6 +7050,9 @@ export const strings = {
     askEmptyCorpus: 'База знаний пуста: сначала отметьте файлы, затем спрашивайте.',
     askNeedsLogin: 'Войдите в Genspark, чтобы пользоваться чатом с ИИ.',
     askPlaceholder: 'Спросите о своих файлах…',
+    askMentionTitle: 'Сослаться на файл базы знаний',
+    askMentionEmpty: 'В базе знаний нет подходящих файлов',
+    askMentionHint: 'Введите @, чтобы сослаться на файл базы знаний',
     askHintIdle: 'Enter — отправить',
     askHintBusy: 'ИИ отвечает…',
     askRemoveAttachment: 'Удалить вложение',
@@ -7099,6 +7239,11 @@ export const strings = {
     setRestoreSession: 'Открывать документы прошлого сеанса',
     setRestoreSessionDesc:
       'Документы, открытые при закрытии GenOffice, автоматически откроются при следующем запуске.',
+    setExcludedFolders: 'Исключённые папки',
+    setExcludedFoldersDesc:
+      'Файлы в этих папках не попадают в недавние, поиск и восстановление сеанса.',
+    setExcludedFoldersAdd: 'Добавить папку…',
+    setExcludedFoldersEmpty: 'Нет исключённых папок',
     setTabSleep: 'Усыплять неактивные вкладки',
     setTabSleepDesc:
       'Когда открыто много вкладок, давно не просматриваемые освобождают память и заново открывают файл при возврате. Вкладки с несохранёнными изменениями и закреплённые не усыпляются.',
@@ -7475,6 +7620,9 @@ export const strings = {
     askEmptyCorpusHint:
       'لا توجد ملفات مفضلة بعد — ضع نجمة على بعض الملفات أولاً ليتمكن الذكاء الاصطناعي من قراءتها.',
     askCorpusCount: 'قاعدة المعارف: {n} ملف مفضل',
+    askCorpusShow: 'إظهار الملفات',
+    askCorpusHide: 'إخفاء الملفات',
+    askCorpusList: 'الملفات المفضلة في قاعدة المعارف',
     askIntro: 'اسأل عن ملفاتك المفضلة. تذكر الإجابات مصادرها — انقر لفتحها.',
     askToolSearch: 'جارٍ البحث في القاعدة',
     askToolRead: 'جارٍ قراءة ملف',
@@ -7490,6 +7638,9 @@ export const strings = {
     askEmptyCorpus: 'قاعدة المعارف فارغة: ضع نجمة على بعض الملفات أولاً ثم اسأل.',
     askNeedsLogin: 'سجّل الدخول إلى Genspark لاستخدام محادثة الذكاء الاصطناعي.',
     askPlaceholder: 'اسأل عن ملفاتك المفضلة…',
+    askMentionTitle: 'الإشارة إلى ملف في قاعدة المعارف',
+    askMentionEmpty: 'لا توجد ملفات مطابقة في قاعدة المعارف',
+    askMentionHint: 'اكتب @ للإشارة إلى ملف في قاعدة المعارف',
     askHintIdle: 'Enter للإرسال',
     askHintBusy: 'الذكاء الاصطناعي يجيب…',
     askRemoveAttachment: 'إزالة المرفق',
@@ -7675,6 +7826,11 @@ export const strings = {
     setRestoreSession: 'إعادة فتح مستندات المرة السابقة',
     setRestoreSessionDesc:
       'تُعاد فتح المستندات المفتوحة عند إغلاق GenOffice تلقائيًا في المرة التالية التي يبدأ فيها.',
+    setExcludedFolders: 'مجلدات مستبعدة',
+    setExcludedFoldersDesc:
+      'الملفات في هذه المجلدات لا تظهر في الأخيرة ولا في البحث ولا في استعادة الجلسة.',
+    setExcludedFoldersAdd: 'إضافة مجلد…',
+    setExcludedFoldersEmpty: 'لا توجد مجلدات مستبعدة',
     setTabSleep: 'إسبات علامات التبويب غير النشطة',
     setTabSleepDesc:
       'عند فتح علامات تبويب كثيرة، تحرّر التي لم تطّلع عليها منذ فترة ذاكرتها وتعيد فتح ملفها عند عودتك. علامات التبويب ذات التغييرات غير المحفوظة أو المثبّتة لا تُسبَت أبدًا.',
@@ -8042,6 +8198,9 @@ export const strings = {
     askEmptyCorpusHint:
       'Ainda não há arquivos favoritos — marque alguns primeiro para a IA poder lê-los.',
     askCorpusCount: 'Base de conhecimento: {n} arquivos favoritos',
+    askCorpusShow: 'Mostrar arquivos',
+    askCorpusHide: 'Ocultar arquivos',
+    askCorpusList: 'Arquivos favoritos na base de conhecimento',
     askIntro:
       'Pergunte sobre seus arquivos favoritos. As respostas citam as fontes — clique para abrir.',
     askToolSearch: 'Pesquisando na base',
@@ -8059,6 +8218,9 @@ export const strings = {
       'A base de conhecimento está vazia: marque arquivos primeiro e depois pergunte.',
     askNeedsLogin: 'Entre no Genspark para usar o chat de IA.',
     askPlaceholder: 'Pergunte sobre seus arquivos favoritos…',
+    askMentionTitle: 'Referenciar um arquivo da base de conhecimento',
+    askMentionEmpty: 'Nenhum arquivo da base corresponde',
+    askMentionHint: 'Digite @ para referenciar um arquivo da base de conhecimento',
     askHintIdle: 'Enter para enviar',
     askHintBusy: 'A IA está respondendo…',
     askRemoveAttachment: 'Remover anexo',
@@ -8241,6 +8403,11 @@ export const strings = {
     setRestoreSession: 'Reabrir os documentos da última vez',
     setRestoreSessionDesc:
       'Os documentos abertos ao fechar o GenOffice são reabertos automaticamente na próxima vez que ele for iniciado.',
+    setExcludedFolders: 'Pastas excluídas',
+    setExcludedFoldersDesc:
+      'Os arquivos nessas pastas ficam fora de recentes, pesquisa e restauração de sessão.',
+    setExcludedFoldersAdd: 'Adicionar pasta…',
+    setExcludedFoldersEmpty: 'Nenhuma pasta excluída',
     setTabSleep: 'Suspender guias inativas',
     setTabSleepDesc:
       'As guias que você não acessa há algum tempo liberam memória e reabrem o arquivo quando você volta. Guias fixadas ou com alterações não salvas nunca são suspensas.',
@@ -8617,6 +8784,9 @@ export const strings = {
     askEmptyCorpusHint:
       'Ancora nessun file preferito — contrassegnane prima alcuni perché l’IA possa leggerli.',
     askCorpusCount: 'Base di conoscenza: {n} file preferiti',
+    askCorpusShow: 'Mostra file',
+    askCorpusHide: 'Nascondi file',
+    askCorpusList: 'File preferiti nella base di conoscenza',
     askIntro:
       'Chiedi informazioni sui tuoi file preferiti. Le risposte citano la fonte — clicca per aprire.',
     askToolSearch: 'Ricerca nella base',
@@ -8633,6 +8803,9 @@ export const strings = {
     askEmptyCorpus: 'La base di conoscenza è vuota: contrassegna prima alcuni file, poi chiedi.',
     askNeedsLogin: 'Accedi a Genspark per usare la chat IA.',
     askPlaceholder: 'Chiedi qualcosa sui tuoi file preferiti…',
+    askMentionTitle: 'Fai riferimento a un file della base di conoscenza',
+    askMentionEmpty: 'Nessun file della base di conoscenza corrisponde',
+    askMentionHint: 'Digita @ per fare riferimento a un file della base di conoscenza',
     askHintIdle: 'Invio per inviare',
     askHintBusy: 'L’IA sta rispondendo…',
     askRemoveAttachment: 'Rimuovi allegato',
@@ -8815,6 +8988,11 @@ export const strings = {
     setRestoreSession: "Riapri i documenti dell'ultima volta",
     setRestoreSessionDesc:
       'I documenti aperti alla chiusura di GenOffice si riaprono automaticamente al successivo avvio.',
+    setExcludedFolders: 'Cartelle escluse',
+    setExcludedFoldersDesc:
+      'I file in queste cartelle restano fuori da recenti, ricerca e ripristino della sessione.',
+    setExcludedFoldersAdd: 'Aggiungi cartella…',
+    setExcludedFoldersEmpty: 'Nessuna cartella esclusa',
     setTabSleep: 'Sospendi le schede inattive',
     setTabSleepDesc:
       'Con molte schede aperte, quelle che non guardi da un po’ liberano la memoria e riaprono il file al tuo ritorno. Le schede con modifiche non salvate o fissate non vengono mai sospese.',
@@ -9191,6 +9369,9 @@ export const strings = {
     askEmptyCorpusHint:
       'Nie ma jeszcze ulubionych plików — najpierw oznacz je gwiazdką, aby AI mogło je czytać.',
     askCorpusCount: 'Baza wiedzy: {n} ulubionych plików',
+    askCorpusShow: 'Pokaż pliki',
+    askCorpusHide: 'Ukryj pliki',
+    askCorpusList: 'Ulubione pliki w bazie wiedzy',
     askIntro: 'Zadawaj pytania o swoje pliki. Odpowiedzi podają źródła — kliknij, aby otworzyć.',
     askToolSearch: 'Wyszukiwanie w bazie',
     askToolRead: 'Czytanie pliku',
@@ -9206,6 +9387,9 @@ export const strings = {
     askEmptyCorpus: 'Baza wiedzy jest pusta: najpierw oznacz pliki, potem pytaj.',
     askNeedsLogin: 'Zaloguj się do Genspark, aby korzystać z czatu AI.',
     askPlaceholder: 'Zapytaj o swoje pliki…',
+    askMentionTitle: 'Odwołaj się do pliku bazy wiedzy',
+    askMentionEmpty: 'Brak pasujących plików w bazie wiedzy',
+    askMentionHint: 'Wpisz @, aby odwołać się do pliku bazy wiedzy',
     askHintIdle: 'Enter wysyła',
     askHintBusy: 'AI odpowiada…',
     askRemoveAttachment: 'Usuń załącznik',
@@ -9388,6 +9572,11 @@ export const strings = {
     setRestoreSession: 'Otwieraj ponownie dokumenty z ostatniej sesji',
     setRestoreSessionDesc:
       'Dokumenty otwarte w chwili zamknięcia GenOffice zostaną automatycznie otwarte przy następnym uruchomieniu.',
+    setExcludedFolders: 'Wykluczone foldery',
+    setExcludedFoldersDesc:
+      'Pliki w tych folderach nie trafiają do ostatnich, wyszukiwania i przywracania sesji.',
+    setExcludedFoldersAdd: 'Dodaj folder…',
+    setExcludedFoldersEmpty: 'Brak wykluczonych folderów',
     setTabSleep: 'Usypiaj nieaktywne karty',
     setTabSleepDesc:
       'Gdy otwartych jest wiele kart, te dawno nieoglądane zwalniają pamięć i ponownie otwierają plik po powrocie. Karty z niezapisanymi zmianami lub przypięte nigdy nie są usypiane.',
@@ -9761,6 +9950,9 @@ export const strings = {
     askEmptyCorpusHint:
       'Zatím nejsou žádné oblíbené soubory — nejprve je označte hvězdičkou, aby je AI mohla číst.',
     askCorpusCount: 'Znalostní databáze: {n} oblíbených souborů',
+    askCorpusShow: 'Zobrazit soubory',
+    askCorpusHide: 'Skrýt soubory',
+    askCorpusList: 'Oblíbené soubory ve znalostní databázi',
     askIntro: 'Ptejte se na své oblíbené soubory. Odpovědi uvádějí zdroje — kliknutím otevřete.',
     askToolSearch: 'Prohledávání databáze',
     askToolRead: 'Čtení souboru',
@@ -9776,6 +9968,9 @@ export const strings = {
     askEmptyCorpus: 'Znalostní databáze je prázdná: nejprve označte soubory a pak se ptejte.',
     askNeedsLogin: 'Pro používí AI chatu se přihlaste do Genspark.',
     askPlaceholder: 'Zeptejte se na své soubory…',
+    askMentionTitle: 'Odkazovat na soubor znalostní databáze',
+    askMentionEmpty: 'Žádné odpovídající soubory ve znalostní databázi',
+    askMentionHint: 'Napište @ pro odkaz na soubor znalostní databáze',
     askHintIdle: 'Enter odesílá',
     askHintBusy: 'AI odpovídá…',
     askRemoveAttachment: 'Odebrat přílohu',
@@ -10186,6 +10381,11 @@ export const strings = {
     setRestoreSession: 'Znovu otevřít dokumenty z minula',
     setRestoreSessionDesc:
       'Dokumenty otevřené při zavření GenOffice se při příštím spuštění automaticky znovu otevřou.',
+    setExcludedFolders: 'Vyloučené složky',
+    setExcludedFoldersDesc:
+      'Soubory v těchto složkách se nezobrazují v nedávných, hledání ani v obnově relace.',
+    setExcludedFoldersAdd: 'Přidat složku…',
+    setExcludedFoldersEmpty: 'Žádné vyloučené složky',
     setTabSleep: 'Uspávat neaktivní karty',
     setTabSleepDesc:
       'Když je otevřeno mnoho karet, ty dlouho nezobrazené uvolní paměť a při návratu znovu otevřou soubor. Karty s neuloženými změnami nebo připnuté se nikdy neuspí.',
@@ -10327,6 +10527,9 @@ export const strings = {
     askTitle: 'Vraag je kennisbank',
     askEmptyCorpusHint: 'Nog geen favorieten — markeer eerst bestanden zodat de AI ze kan lezen.',
     askCorpusCount: 'Kennisbank: {n} favoriete bestanden',
+    askCorpusShow: 'Bestanden tonen',
+    askCorpusHide: 'Bestanden verbergen',
+    askCorpusList: 'Favoriete bestanden in de kennisbank',
     askIntro: 'Vraag naar je favoriete bestanden. Antwoorden noemen hun bron — klik om te openen.',
     askToolSearch: 'Kennisbank doorzoeken',
     askToolRead: 'Bestand lezen',
@@ -10342,6 +10545,9 @@ export const strings = {
     askEmptyCorpus: 'De kennisbank is leeg: markeer eerst bestanden en stel dan je vraag.',
     askNeedsLogin: 'Log in bij Genspark om AI-chat te gebruiken.',
     askPlaceholder: 'Vraag naar je favoriete bestanden…',
+    askMentionTitle: 'Verwijzen naar een kennisbankbestand',
+    askMentionEmpty: 'Geen overeenkomende bestanden in de kennisbank',
+    askMentionHint: 'Typ @ om naar een kennisbankbestand te verwijzen',
     askHintIdle: 'Enter om te verzenden',
     askHintBusy: 'De AI beantwoordt…',
     askRemoveAttachment: 'Bijlage verwijderen',
@@ -10523,6 +10729,11 @@ export const strings = {
     setRestoreSession: 'Documenten van de vorige keer opnieuw openen',
     setRestoreSessionDesc:
       'Documenten die open waren toen GenOffice werd gesloten, worden bij de volgende start automatisch opnieuw geopend.',
+    setExcludedFolders: 'Uitgesloten mappen',
+    setExcludedFoldersDesc:
+      'Bestanden in deze mappen blijven buiten Recent, zoeken en sessieherstel.',
+    setExcludedFoldersAdd: 'Map toevoegen…',
+    setExcludedFoldersEmpty: 'Geen mappen uitgesloten',
     setTabSleep: 'Inactieve tabbladen laten slapen',
     setTabSleepDesc:
       'Als er veel tabbladen open zijn, geven tabbladen die u een tijd niet hebt bekeken hun geheugen vrij en openen ze het bestand opnieuw als u terugkeert. Tabbladen met niet-opgeslagen wijzigingen of vastgemaakte tabbladen slapen nooit.',
@@ -10897,6 +11108,9 @@ export const strings = {
     askEmptyCorpusHint:
       'Tiada fail kegemaran lagi — tanda beberapa fail dahulu supaya AI boleh membacanya.',
     askCorpusCount: 'Pangkalan pengetahuan: {n} fail kegemaran',
+    askCorpusShow: 'Tunjukkan fail',
+    askCorpusHide: 'Sembunyikan fail',
+    askCorpusList: 'Fail kegemaran dalam pangkalan pengetahuan',
     askIntro: 'Tanya tentang fail kegemaran anda. Jawapan memetik sumbernya — klik untuk membuka.',
     askToolSearch: 'Mencari pangkalan pengetahuan',
     askToolRead: 'Membaca fail',
@@ -10912,6 +11126,9 @@ export const strings = {
     askEmptyCorpus: 'Pangkalan pengetahuan kosong: tanda beberapa fail dahulu, kemudian tanya.',
     askNeedsLogin: 'Log masuk ke Genspark untuk menggunakan sembang AI.',
     askPlaceholder: 'Tanya tentang fail kegemaran anda…',
+    askMentionTitle: 'Rujuk fail pangkalan pengetahuan',
+    askMentionEmpty: 'Tiada fail pangkalan pengetahuan yang sepadan',
+    askMentionHint: 'Taip @ untuk merujuk fail pangkalan pengetahuan',
     askHintIdle: 'Enter untuk menghantar',
     askHintBusy: 'AI sedan menjawab…',
     askRemoveAttachment: 'Buang lampiran',
@@ -11093,6 +11310,11 @@ export const strings = {
     setRestoreSession: 'Buka semula dokumen dari kali terakhir',
     setRestoreSessionDesc:
       'Dokumen yang dibuka semasa GenOffice ditutup akan dibuka semula secara automatik apabila ia dimulakan seterusnya.',
+    setExcludedFolders: 'Folder dikecualikan',
+    setExcludedFoldersDesc:
+      'Fail dalam folder ini tidak masuk senarai terkini, carian dan pemulihan sesi.',
+    setExcludedFoldersAdd: 'Tambah folder…',
+    setExcludedFoldersEmpty: 'Tiada folder dikecualikan',
     setTabSleep: 'Tidurkan tab tidak aktif',
     setTabSleepDesc:
       'Apabila banyak tab dibuka, tab yang lama tidak dilihat melepaskan memorinya dan membuka semula failnya apabila anda kembali. Tab dengan perubahan belum disimpan atau yang disemat tidak akan tidur.',
@@ -11468,6 +11690,9 @@ export const strings = {
     askEmptyCorpusHint:
       'אין עדיין קבצים מסומנים — סמן קבצים בכוכבית תחילה כדי שה-AI יוכל לקרוא אותם.',
     askCorpusCount: 'בסיס ידע: {n} קבצים מסומנים',
+    askCorpusShow: 'הצגת קבצים',
+    askCorpusHide: 'הסתרת קבצים',
+    askCorpusList: 'קבצים מסומנים בבסיס הידע',
     askIntro: 'שאל על הקבצים המסומנים שלך. תשובות מציינות את המקור — לחיצה פותחת אותו.',
     askToolSearch: 'מחפש בבסיס הידע',
     askToolRead: 'קורא קובץ',
@@ -11483,6 +11708,9 @@ export const strings = {
     askEmptyCorpus: 'בסיס הידע ריק: סמן קבצים תחילה ואז שאל.',
     askNeedsLogin: 'התחבר ל-Genspark כדי להשתמש בצ׳אט AI.',
     askPlaceholder: 'שאל על הקבצים המסומנים שלך…',
+    askMentionTitle: 'הפניה לקובץ בבסיס הידע',
+    askMentionEmpty: 'אין קבצים תואמים בבסיס הידע',
+    askMentionHint: 'הקלידו @ כדי להפנות לקובץ בבסיס הידע',
     askHintIdle: 'Enter לשליחה',
     askHintBusy: 'ה-AI עונה…',
     askRemoveAttachment: 'הסרת קובץ מצורף',
@@ -11661,6 +11889,10 @@ export const strings = {
     setRestoreSession: 'פתיחה מחדש של המסמכים מהפעם הקודמת',
     setRestoreSessionDesc:
       'מסמכים שהיו פתוחים כש-GenOffice נסגרה ייפתחו מחדש אוטומטית בהפעלה הבאה.',
+    setExcludedFolders: 'תיקיות שהוחרגו',
+    setExcludedFoldersDesc: 'קבצים בתיקיות אלה לא יופיעו באחרונים, בחיפוש ובשחזור ההפעלה.',
+    setExcludedFoldersAdd: 'הוסף תיקייה…',
+    setExcludedFoldersEmpty: 'אין תיקיות שהוחרגו',
     setTabSleep: 'השהה כרטיסיות לא פעילות',
     setTabSleepDesc:
       'כשפתוחות כרטיסיות רבות, כרטיסיות שלא נצפו זמן מה משחררות את הזיכרון ופותחות מחדש את הקובץ כשחוזרים אליהן. כרטיסיות עם שינויים שלא נשמרו או מוצמדות לעולם לא מושהות.',
@@ -12021,6 +12253,9 @@ export const strings = {
     askEmptyCorpusHint:
       'अभी कोई स्टार की गई फ़ाइल नहीं है — पहले फ़ाइलों को स्टार करें ताकि AI उन्हें पढ़ सके।',
     askCorpusCount: 'नॉलेज बेस: {n} स्टार की गई फ़ाइलें',
+    askCorpusShow: 'फ़ाइलें दिखाएँ',
+    askCorpusHide: 'फ़ाइलें छिपाएँ',
+    askCorpusList: 'नॉलेज बेस में स्टार की गई फ़ाइलें',
     askIntro:
       'अपनी स्टार की गई फ़ाइलों के बारे में पूछें। उत्तर स्रोत बताते हैं — खोलने के लिए क्लिक करें।',
     askToolSearch: 'नॉलेज बेस खोज रहा है',
@@ -12037,6 +12272,9 @@ export const strings = {
     askEmptyCorpus: 'नॉलेज बेस खाली है: पहले फ़ाइलें स्टार करें, फिर पूछें।',
     askNeedsLogin: 'AI चैट के लिए Genspark में साइन इन करें।',
     askPlaceholder: 'अपनी फ़ाइलों के बारे में पूछें…',
+    askMentionTitle: 'नॉलेज बेस फ़ाइल का संदर्भ दें',
+    askMentionEmpty: 'नॉलेज बेस में कोई मेल खाती फ़ाइल नहीं',
+    askMentionHint: 'नॉलेज बेस फ़ाइल का संदर्भ देने के लिए @ टाइप करें',
     askHintIdle: 'भेजने के लिए Enter',
     askHintBusy: 'AI उत्तर दे रहा है…',
     askRemoveAttachment: 'अटैचमेंट हटाएँ',
@@ -12219,6 +12457,11 @@ export const strings = {
     setRestoreSession: 'पिछली बार के दस्तावेज़ फिर से खोलें',
     setRestoreSessionDesc:
       'GenOffice बंद करते समय खुले दस्तावेज़ अगली बार शुरू होने पर अपने-आप फिर से खुल जाते हैं।',
+    setExcludedFolders: 'बहिष्कृत फ़ोल्डर',
+    setExcludedFoldersDesc:
+      'इन फ़ोल्डर की फ़ाइलें हाल की सूची, खोज और सत्र पुनर्स्थापना में नहीं आतीं।',
+    setExcludedFoldersAdd: 'फ़ोल्डर जोड़ें…',
+    setExcludedFoldersEmpty: 'अभी कोई फ़ोल्डर बहिष्कृत नहीं है',
     setTabSleep: 'निष्क्रिय टैब को सुलाएँ',
     setTabSleepDesc:
       'कई टैब खुले होने पर, जिन्हें आपने कुछ समय से नहीं देखा वे मेमोरी छोड़ देते हैं और लौटने पर फ़ाइल फिर खोलते हैं। बिना सहेजे बदलाव वाले या पिन किए गए टैब कभी नहीं सोते।',
@@ -12586,6 +12829,9 @@ export const strings = {
     askTitle: '問知識庫',
     askEmptyCorpusHint: '還沒有收藏檔案——先在最近或資料夾裡點星收藏,AI 就能讀取它們。',
     askCorpusCount: '知識庫:{n} 個收藏檔案',
+    askCorpusShow: '顯示檔案',
+    askCorpusHide: '隱藏檔案',
+    askCorpusList: '知識庫中的收藏檔案',
     askIntro: '根據你收藏的檔案提問,回答會標註來源檔案,點擊即可開啟。',
     askToolSearch: '搜尋知識庫',
     askToolRead: '讀取檔案',
@@ -12597,10 +12843,13 @@ export const strings = {
     askSaveMd: '儲存為 Markdown',
     askSaveDocx: '儲存為 Word',
     askSavedAs: '已儲存:{name}',
-    askSaveFailed: '儲存失敗:{error}',
+    askSaveFailed: '儲存失敗：{error}',
     askEmptyCorpus: '知識庫還是空的:先收藏一些檔案,再回來提問。',
     askNeedsLogin: '登入 Genspark 後即可使用 AI 問答。',
     askPlaceholder: '問一個關於收藏檔案的問題…',
+    askMentionTitle: '引用知識庫檔案',
+    askMentionEmpty: '知識庫中沒有符合的檔案',
+    askMentionHint: '輸入 @ 引用知識庫檔案',
     askHintIdle: 'Enter 傳送',
     askHintBusy: 'AI 正在回答…',
     askRemoveAttachment: '移除附件',
@@ -12776,6 +13025,10 @@ export const strings = {
     saveLocation: '預設儲存位置',
     setRestoreSession: '啟動時重新開啟上次的文件',
     setRestoreSessionDesc: '關閉 GenOffice 時開啟的文件會在下次啟動時自動重新開啟。',
+    setExcludedFolders: '排除的資料夾',
+    setExcludedFoldersDesc: '這些資料夾下的檔案不會進入最近清單、搜尋與工作階段還原。',
+    setExcludedFoldersAdd: '新增資料夾…',
+    setExcludedFoldersEmpty: '尚未排除任何資料夾',
     setTabSleep: '休眠閒置的標籤頁',
     setTabSleepDesc:
       '開啟的標籤頁多到一定數量後，長時間未查看的會釋放記憶體；回到它時會重新開啟檔案。有未儲存變更或已釘選的標籤頁不會休眠。',

@@ -8,6 +8,7 @@ import {
   createDocumentSkill,
   createIpcTransport,
   createKnowledgeBaseSkill,
+  formatKbSize,
   RUN_GENOFFICE_TOOL,
   withAttachedSkills,
   type AgentImage,
@@ -26,6 +27,8 @@ import {
   AiUsageChip,
   addTokenUsage,
   createFileNav,
+  shortFileError,
+  useImeEnterGuard,
   Markdown,
   type AiTokenUsageView,
 } from '@genoffice/ui'
@@ -35,6 +38,7 @@ import type { ChatMessage, ChatMeta, ProjectApi } from '@genoffice/project-store
 import { useI18n } from './locale'
 import type { AttachmentAddResult } from '../../shared/home-api'
 import { AskAttachments } from './AskAttachments'
+import { FileBadge } from './file-badge'
 import { artifactFromCall, retryInstruction, settleArtifact, type Artifact } from './ask-artifacts'
 import { appendToolNote, toolNoteDetail, toolNoteKind, type ToolNote } from './ask-tool-notes'
 import sendEnterOn from './assets/send-enter-on.png'
@@ -190,6 +194,8 @@ export function KbAskPanel({
   const { t, lang } = useI18n()
   const [messages, setMessages] = useState<AskMessage[]>([])
   const [draft, setDraft] = useState('')
+  /** highlighted row in the @ mention list */
+  const [mentionIndex, setMentionIndex] = useState(0)
   const [attachedSkills, setAttachedSkills] = useState<string[]>([])
   const [attachments, setAttachments] = useState<AttachmentInfo[]>([])
   /** rejection / image-read messages, cleared after a few seconds */
@@ -197,9 +203,31 @@ export function KbAskPanel({
   const [dragOver, setDragOver] = useState(false)
   const [busy, setBusy] = useState(false)
   const [corpusCount, setCorpusCount] = useState<number | null>(null)
+  /** the corpus files themselves: the ref holds the same snapshot for the skill */
+  const [corpusFiles, setCorpusFiles] = useState<KbFileInfo[]>([])
+  /** whether the file list under the header is open */
+  const [corpusOpen, setCorpusOpen] = useState(false)
   const [gskEmail, setGskEmail] = useState<string | null>(null)
   const [provider, setProvider] = useState<string | null>(null)
   const corpusRef = useRef<KbFileInfo[]>([])
+  /** the @ token open at the end of the draft (null when none is being typed) */
+  const mention = useMemo(() => mentionToken(draft), [draft])
+  /** corpus files matching the typed mention, in starred order */
+  const mentionFiles = useMemo(
+    () => (mention ? matchMentionFiles(corpusFiles, mention.query) : []),
+    [mention, corpusFiles],
+  )
+  /** whether the reader has moved into the list; Enter picks only after that */
+  const [mentionNavigated, setMentionNavigated] = useState(false)
+  /** Escape closes the list without deleting what the reader typed */
+  const [mentionDismissed, setMentionDismissed] = useState(false)
+  // a new query is a new list: the highlight restarts at the top and the
+  // dismissal lifts, so typing reopens what Escape closed
+  useEffect(() => {
+    setMentionIndex(0)
+    setMentionNavigated(false)
+    setMentionDismissed(false)
+  }, [mention])
   const settingsRef = useRef<AiSettings | null>(null)
   const loopRef = useRef<AgentLoop<unknown> | null>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -363,6 +391,18 @@ export function KbAskPanel({
     [onOpenModelSettings],
   )
 
+  /**
+   * One corpus snapshot in both places the panel needs it: the ref the
+   * knowledge-base skill reads synchronously, and the state the file list
+   * renders. The count comes from the same snapshot, so the header and the
+   * list can never disagree about what is in the corpus.
+   */
+  const applyCorpus = (files: KbFileInfo[]): void => {
+    corpusRef.current = files
+    setCorpusFiles(files)
+    setCorpusCount(files.length)
+  }
+
   useEffect(() => {
     // one corpus snapshot per mount; sends refresh it again (see ask()).
     // A bridge without the kb channel (defensive: the shell always exposes
@@ -373,11 +413,8 @@ export function KbAskPanel({
     }
     void window.aiOffice
       .kbList()
-      .then((files) => {
-        corpusRef.current = files
-        setCorpusCount(files.length)
-      })
-      .catch(() => setCorpusCount(0))
+      .then(applyCorpus)
+      .catch(() => applyCorpus([]))
     refreshSettings()
     void window.aiOffice
       .aiGskStatus()
@@ -548,6 +585,48 @@ export function KbAskPanel({
   const removeAttachment = (path: string): void =>
     setAttachments((prev) => prev.filter((a) => a.path !== path))
 
+  /** pick a corpus file out of the @ list: drop the token and attach the file */
+  const pickMention = (file: KbFileInfo): void => {
+    if (!mention) return
+    setDraft(removeMentionToken(draft, mention.start))
+    void window.aiOffice
+      .addAttachmentPaths([file.path])
+      .then(mergeAttachments)
+      .catch(() => {})
+  }
+
+  /** @ list keys: captured before the composer's own Enter/Escape handling */
+  const imeEnter = useImeEnterGuard()
+  const onMentionKeyDown = (event: React.KeyboardEvent<HTMLDivElement>): void => {
+    const decided = mentionKeyAction({
+      key: event.key,
+      shiftKey: event.shiftKey,
+      isImeConfirm: imeEnter.isImeConfirm(event.nativeEvent),
+      listOpen: mention !== null && !mentionDismissed,
+      listLength: mentionFiles.length,
+      navigated: mentionNavigated,
+    })
+    if (decided.action === 'none') return
+    if (decided.action === 'dismiss') {
+      // close the list and keep the text: the token stays for further typing
+      event.preventDefault()
+      event.stopPropagation()
+      setMentionDismissed(true)
+      return
+    }
+    if (decided.action === 'move') {
+      event.preventDefault()
+      event.stopPropagation()
+      setMentionNavigated(true)
+      setMentionIndex((index) => nextMentionIndex(index, decided.step, mentionFiles.length))
+      return
+    }
+    event.preventDefault()
+    event.stopPropagation()
+    const file = mentionFiles[Math.min(mentionIndex, mentionFiles.length - 1)]
+    if (file) pickMention(file)
+  }
+
   /** image attachments go multimodal with the question; a failed read is reported, not fatal */
   const collectImages = async (atts: readonly AttachmentInfo[]): Promise<AgentImage[]> => {
     const images: AgentImage[] = []
@@ -613,9 +692,7 @@ export function KbAskPanel({
     runUsageRef.current = undefined
     // freshly starred files are answerable this very turn
     try {
-      const files = await window.aiOffice.kbList()
-      corpusRef.current = files
-      setCorpusCount(files.length)
+      applyCorpus(await window.aiOffice.kbList())
     } catch {
       // keep the mount snapshot
     }
@@ -720,10 +797,25 @@ export function KbAskPanel({
         </div>
       )}
       {corpusCount !== null && corpusCount > 0 && (
-        <div className="kb-ask-headbar">
-          <b>{t('askTitle')}</b>
-          <span>{t('askCorpusCount', { n: String(corpusCount) })}</span>
-        </div>
+        <>
+          <div className="kb-ask-headbar">
+            <b>{t('askTitle')}</b>
+            <span>{t('askCorpusCount', { n: String(corpusCount) })}</span>
+            <button
+              type="button"
+              className="kb-ask-corpus-toggle"
+              aria-expanded={corpusOpen}
+              aria-controls="kb-ask-corpus"
+              onClick={() => setCorpusOpen((open) => !open)}
+            >
+              <IconChevron open={corpusOpen} />
+              {corpusOpen ? t('askCorpusHide') : t('askCorpusShow')}
+            </button>
+          </div>
+          {corpusOpen && (
+            <KbCorpusList files={corpusFiles} onOpenPath={onOpenPath} label={t('askCorpusList')} />
+          )}
+        </>
       )}
       {threads.length > 0 && (
         <div className="kb-ask-threads" role="tablist" aria-label={t('askThreadsTitle')}>
@@ -917,7 +1009,7 @@ export function KbAskPanel({
                     </button>
                     {m.saved && typeof m.saved === 'object' && 'error' in m.saved && (
                       <span className="kb-ask-action-error">
-                        {t('askSaveFailed', { error: m.saved.error })}
+                        {t('askSaveFailed', { error: shortFileError(m.saved.error) })}
                       </span>
                     )}
                   </>
@@ -941,57 +1033,107 @@ export function KbAskPanel({
           {attachNotice}
         </p>
       )}
-      <AiComposer
-        value={draft}
-        busy={busy}
-        placeholder={t('askPlaceholder')}
-        hintIdle={t('askHintIdle')}
-        hintBusy={t('askHintBusy')}
-        sendLabel={t('askSend')}
-        stopLabel={t('askStop')}
-        ariaLabel={t('askPlaceholder')}
-        iconOnly
-        sendIconEnabled={<img src={sendEnterOn} alt="" aria-hidden />}
-        sendIconDisabled={<img src={sendEnterOff} alt="" aria-hidden />}
-        stopIcon={<img src={sendStop} alt="" aria-hidden />}
-        header={
-          <>
-            <AskAttachments
-              items={attachments}
-              onRemove={removeAttachment}
-              removeLabel={t('askRemoveAttachment')}
-            />
-            <AiSkillChips lang={lang} names={attachedSkills} onRemove={toggleSkill} />
-          </>
-        }
-        footerStart={
-          <>
-            <AiModelPicker bridge={modelBridge} lang={lang} />
-            {sessionUsage && <AiUsageChip usage={sessionUsage} session lang={lang} />}
-            <AiSkillsMenu
-              lang={lang}
-              listSkills={listSkillsForMenu}
-              selected={attachedSkills}
-              onToggle={toggleSkill}
-              onAddFile={() =>
-                void window.aiOffice
-                  .pickAttachments()
-                  .then(mergeAttachments)
-                  .catch(() => {})
-              }
-              onManage={() => void window.aiOffice.openSkillsSettings?.().catch(() => {})}
-            />
-          </>
-        }
-        onChange={setDraft}
-        onPasteFiles={(files) => void addDroppedFiles(files)}
-        onSend={() => void ask()}
-        onStop={() => {
-          askSeqRef.current++
-          loopRef.current?.cancel()
-          finishLast()
-        }}
-      />
+      {corpusCount !== null && corpusCount > 0 && (
+        <p
+          className="kb-ask-mention-hint"
+          style={draft === '' ? undefined : { visibility: 'hidden' }}
+        >
+          {t('askMentionHint')}
+        </p>
+      )}
+      <div
+        className="kb-ask-input-wrap"
+        onKeyDownCapture={onMentionKeyDown}
+        onCompositionStart={imeEnter.handleCompositionStart}
+        onCompositionEnd={imeEnter.handleCompositionEnd}
+      >
+        {mention &&
+          !mentionDismissed &&
+          (mentionFiles.length > 0 ? (
+            <div className="kb-ask-mention" role="listbox" aria-label={t('askMentionTitle')}>
+              {mentionFiles.slice(0, MENTION_LIST_CAP).map((file, index) => (
+                <button
+                  key={file.path}
+                  type="button"
+                  role="option"
+                  aria-selected={index === mentionIndex}
+                  className={
+                    index === mentionIndex ? 'kb-ask-mention-row active' : 'kb-ask-mention-row'
+                  }
+                  title={file.path}
+                  ref={
+                    index === mentionIndex
+                      ? (el) => el?.scrollIntoView({ block: 'nearest' })
+                      : undefined
+                  }
+                  onMouseDown={(event) => {
+                    event.preventDefault()
+                    pickMention(file)
+                  }}
+                >
+                  <FileBadge ext={file.ext} size={14} />
+                  <span className="kb-ask-mention-name">{file.name}</span>
+                  {file.folder && <span className="kb-ask-mention-folder">{file.folder}</span>}
+                </button>
+              ))}
+            </div>
+          ) : (
+            <div className="kb-ask-mention kb-ask-mention-none" role="status">
+              {t('askMentionEmpty')}
+            </div>
+          ))}
+        <AiComposer
+          value={draft}
+          busy={busy}
+          placeholder={t('askPlaceholder')}
+          hintIdle={t('askHintIdle')}
+          hintBusy={t('askHintBusy')}
+          sendLabel={t('askSend')}
+          stopLabel={t('askStop')}
+          ariaLabel={t('askPlaceholder')}
+          iconOnly
+          sendIconEnabled={<img src={sendEnterOn} alt="" aria-hidden />}
+          sendIconDisabled={<img src={sendEnterOff} alt="" aria-hidden />}
+          stopIcon={<img src={sendStop} alt="" aria-hidden />}
+          header={
+            <>
+              <AskAttachments
+                items={attachments}
+                onRemove={removeAttachment}
+                removeLabel={t('askRemoveAttachment')}
+              />
+              <AiSkillChips lang={lang} names={attachedSkills} onRemove={toggleSkill} />
+            </>
+          }
+          footerStart={
+            <>
+              <AiModelPicker bridge={modelBridge} lang={lang} />
+              {sessionUsage && <AiUsageChip usage={sessionUsage} session lang={lang} />}
+              <AiSkillsMenu
+                lang={lang}
+                listSkills={listSkillsForMenu}
+                selected={attachedSkills}
+                onToggle={toggleSkill}
+                onAddFile={() =>
+                  void window.aiOffice
+                    .pickAttachments()
+                    .then(mergeAttachments)
+                    .catch(() => {})
+                }
+                onManage={() => void window.aiOffice.openSkillsSettings?.().catch(() => {})}
+              />
+            </>
+          }
+          onChange={setDraft}
+          onPasteFiles={(files) => void addDroppedFiles(files)}
+          onSend={() => void ask()}
+          onStop={() => {
+            askSeqRef.current++
+            loopRef.current?.cancel()
+            finishLast()
+          }}
+        />
+      </div>
     </div>
   )
 }
@@ -1031,6 +1173,139 @@ function IconStar(): React.JSX.Element {
       <path d="M12 3.6l2.6 5.2 5.8.9-4.2 4.1 1 5.8-5.2-2.7-5.2 2.7 1-5.8L3.6 9.7l5.8-.9z" />
     </svg>
   )
+}
+
+/**
+ * The starred files the knowledge-base answer can draw from: the list behind
+ * the header's count. Each row opens the file the way a citation does; the
+ * list is deliberately a plain exported component so it can be tested without
+ * mounting the whole panel.
+ */
+export function KbCorpusList({
+  files,
+  onOpenPath,
+  label,
+}: {
+  files: readonly KbFileInfo[]
+  onOpenPath: (path: string) => void
+  label: string
+}): React.JSX.Element {
+  return (
+    <div id="kb-ask-corpus" className="kb-ask-corpus" role="list" aria-label={label}>
+      {files.map((file) => (
+        <div key={file.path} role="listitem" className="kb-ask-corpus-item">
+          <button
+            type="button"
+            className="kb-ask-corpus-row"
+            title={file.path}
+            onClick={() => onOpenPath(file.path)}
+          >
+            <FileBadge ext={file.ext} size={16} />
+            <span className="kb-ask-corpus-name">{file.name}</span>
+            {file.folder && <span className="kb-ask-corpus-folder">{file.folder}</span>}
+            <span className="kb-ask-corpus-size">{formatKbSize(file.sizeBytes)}</span>
+          </button>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+/** the disclosure chevron on the corpus toggle */
+function IconChevron({ open }: { open: boolean }): React.JSX.Element {
+  return (
+    <svg
+      className={open ? 'kb-ask-corpus-chevron open' : 'kb-ask-corpus-chevron'}
+      width="10"
+      height="10"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.4"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="m6 9 6 6 6-6" />
+    </svg>
+  )
+}
+
+export interface MentionToken {
+  /** index of the '@' in the draft */
+  start: number
+  /** the text typed after it (may be empty) */
+  query: string
+}
+
+/**
+ * The @ token open at the end of the draft, if any: '@' at the start or after
+ * whitespace with no whitespace after it, so '@lease' matches and 'a@b' does
+ * not. Only the tail matters: the token is whatever the reader is typing now.
+ */
+export function mentionToken(value: string): MentionToken | null {
+  const match = /(^|\s)@([^\s@]*)$/.exec(value)
+  if (!match) return null
+  return { start: value.length - match[2]!.length - 1, query: match[2]! }
+}
+
+/** Corpus files matching the typed mention: name, folder or extension; blank lists all. */
+export function matchMentionFiles(files: readonly KbFileInfo[], query: string): KbFileInfo[] {
+  const q = query.trim().toLowerCase()
+  if (q === '') return [...files]
+  return files.filter(
+    (file) =>
+      file.name.toLowerCase().includes(q) ||
+      file.folder.toLowerCase().includes(q) ||
+      file.ext.toLowerCase() === q,
+  )
+}
+
+/** Drop the open token (and its '@') from the draft. */
+export function removeMentionToken(value: string, start: number): string {
+  return value.slice(0, Math.max(0, start))
+}
+
+/** Move the highlighted row in the @ list, wrapping at both ends. */
+export function nextMentionIndex(index: number, step: number, length: number): number {
+  if (length <= 0) return 0
+  return (((index + step) % length) + length) % length
+}
+
+/** Rendered rows of the @ list; the corpus can be bigger than the popup. */
+export const MENTION_LIST_CAP = 50
+
+export type MentionKeyAction =
+  { action: 'pick' } | { action: 'move'; step: 1 | -1 } | { action: 'dismiss' } | { action: 'none' }
+
+/**
+ * One keydown against the open @ list, decided before the composer sees it.
+ *
+ * An IME confirmation (the event's isComposing, the legacy 229 keyCode, or the
+ * guard's composition flag) belongs to the candidate window, never to the
+ * list — Enter or Escape during composition must leave the token alone.
+ * Escape closes the list and keeps the typed text. Enter picks only once the
+ * reader has moved into the list with the arrow keys; a bare Enter (and
+ * Shift+Enter always) belongs to the composer even when a trailing token
+ * matches a corpus file — otherwise "what did we send to @acme" could never
+ * be sent with a folder named acme. Tab is an explicit pick anywhere.
+ */
+export function mentionKeyAction(input: {
+  key: string
+  shiftKey: boolean
+  isImeConfirm: boolean
+  listOpen: boolean
+  listLength: number
+  navigated: boolean
+}): MentionKeyAction {
+  if (!input.listOpen || input.isImeConfirm) return { action: 'none' }
+  if (input.key === 'Escape') return { action: 'dismiss' }
+  if (input.listLength === 0) return { action: 'none' }
+  if (input.key === 'ArrowDown') return { action: 'move', step: 1 }
+  if (input.key === 'ArrowUp') return { action: 'move', step: -1 }
+  if (input.key === 'Tab' || (input.key === 'Enter' && !input.shiftKey && input.navigated))
+    return { action: 'pick' }
+  return { action: 'none' }
 }
 
 function IconInfo(): React.JSX.Element {

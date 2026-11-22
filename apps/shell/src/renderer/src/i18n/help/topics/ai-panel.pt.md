@@ -37,4 +37,4 @@ Todos os editores podem chamar o painel de IA: selecione algo, dê uma instruç�
 ## Privacidade
 
 - As instruções e o conteúdo relevante do documento vão para **o serviço de modelo que configurou** (Genspark ou um endpoint personalizado, ver o capítulo seguinte); sem configuração, nada é enviado.
-- Os arquivos locais não são carregados para lado nenhum; as chaves BYOK ficam salvas no arquivo de configurações do aplicativo nesta máquina e são enviadas apenas nos cabeçalhos dos pedidos.
+- Os arquivos locais não são enviados para lugar nenhum; as chaves BYOK ficam salvas no arquivo de configurações do aplicativo nesta máquina e são enviadas apenas nos cabeçalhos dos pedidos.

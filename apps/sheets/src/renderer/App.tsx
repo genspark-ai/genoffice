@@ -33,6 +33,7 @@ import {
   installWrapMeasureLifecycle,
   noteSidecarCrash,
 } from './univer-sync'
+import { installEditorScrollFollow } from './editor-scroll-follow'
 import { installGridGrowth } from './grid-growth'
 import {
   pollUntilReady,
@@ -464,6 +465,8 @@ import { handleRemoveNotePicture } from './note-picture-actions'
 import { installFormulaNullResultFix } from './formula-null-result'
 import { installNumberFormatFix } from './numfmt-fix'
 import { installIfsEmptySetFix } from './ifs-empty-set'
+import { installExcel365Aggregators } from './excel-365-aggregators'
+import { installExcel365Functions } from './excel-365-functions'
 import { installCriteriaCompareCacheFix } from './criteria-compare-cache'
 import { installRateFallback } from './rate-function'
 import {
@@ -478,7 +481,11 @@ import {
   type PrintPreviewHost,
   type PageLayoutContext,
 } from './page-layout-actions'
-import { handleExportCsv as handleExportCsvImpl, type CsvExportContext } from './csv-export'
+import {
+  csvNeutralizeFormulasEnabled,
+  handleExportCsv as handleExportCsvImpl,
+  type CsvExportContext,
+} from './csv-export'
 import { effectivePageBreaks, installPageBreakPreview } from './page-break-preview'
 import { mapProtectedRanges } from './protected-ranges'
 import { handleSave as handleSaveImpl, type SaveContext, type SaveOutcome } from './save-actions'
@@ -1477,6 +1484,22 @@ export function App({
   // Display history survives restarts via localStorage; the AgentLoop's model
   // context does not, so restored turns are read-only transcript.
   const [chat, setChat] = useState<readonly AiChatMessage[]>([])
+  // A browser-approved Genspark login landed (from the chat's sign-in button
+  // or any other surface): confirm it where the user is and retire the inline
+  // sign-in buttons — nothing else in an editor view changes visibly on login.
+  useEffect(
+    () =>
+      window.desktopApi?.onGskLoginLanded?.(() => {
+        gskLoggedInRef.current = true
+        setChat((prev) =>
+          prev.some((m) => m.loginRequired)
+            ? prev.map((m) => (m.loginRequired ? { ...m, loginRequired: false } : m))
+            : prev,
+        )
+        showToast(t('aiGskLoginOk'), 'success')
+      }),
+    [],
+  )
   /** History loaded from project-store (read-only transcript, not fed to the model) */
   const [historicChat, setHistoricChat] = useState<readonly AiChatMessage[]>([])
   // ── Chat attachments (same structure as docs/slides: text types go through the
@@ -2454,6 +2477,9 @@ export function App({
     // the grid is sized to the data, so a blank sheet stops scrolling a few
     // columns past its last cell; this extends it ahead of the viewport
     const gridGrowthDispose = installGridGrowth(runtime)
+    // Univer places the open cell editor once; keep it on its cell while the
+    // grid scrolls (the bridge refresh is a no-op when no editor is open)
+    const editorScrollFollow = installEditorScrollFollow(runtime)
     // Load-time wrap-row measures queue until Univer's auto-height
     // interceptor exists (lifecycle Rendered).
     const wrapMeasureDisposable = installWrapMeasureLifecycle(runtime)
@@ -2604,6 +2630,9 @@ export function App({
     const rateFallbackDisposable = installRateFallback(runtime)
     // MINIFS/MAXIFS over zero matching cells return 0, not blank.
     const ifsEmptySetDisposable = installIfsEmptySetFix(runtime)
+    // GROUPBY/PIVOTBY with Excel's bare-function argument shape.
+    const excel365AggregatorsDisposable = installExcel365Aggregators(runtime)
+    const excel365Disposable = installExcel365Functions(runtime)
     // Repeated *IF(S) '=' compares on text columns survive the inverted-
     // index cache when the criteria was number-coerced ("2026-06").
     const criteriaCompareCacheDisposable = installCriteriaCompareCacheFix()
@@ -4037,6 +4066,7 @@ export function App({
       undoRedoSub.unsubscribe()
       findRevealDispose()
       gridGrowthDispose()
+      editorScrollFollow.dispose()
       wrapMeasureDisposable.dispose()
       prefersDark.removeEventListener('change', applyUniverDark)
       dateTextDisposable.dispose()
@@ -4056,6 +4086,8 @@ export function App({
       cellFilenameDisposable.dispose()
       rateFallbackDisposable.dispose()
       ifsEmptySetDisposable.dispose()
+      excel365AggregatorsDisposable.dispose()
+      excel365Disposable.dispose()
       criteriaCompareCacheDisposable.dispose()
       formulaLexerFixDisposable.dispose()
       sheetRenameFixDisposable.dispose()
@@ -5376,7 +5408,8 @@ export function App({
     loadWorkbookSkeleton(univerRef.current, selected)
     applyWorkbookNotes(univerRef.current, selected)
     threadStore.load(selected)
-    threadPane.close()
+    // a save reopens the same workbook: the user goes on with the comment they were on
+    if (!opts?.continueChat) threadPane.close()
     applyDefinedNames(univerRef.current, selected, state)
     const runtime = univerRef.current
     if (runtime) {
@@ -5729,7 +5762,9 @@ export function App({
     } else if (action === 'export-pdf') {
       void handleExportPdfImpl(pageLayoutContext())
     } else if (action === 'export-csv') {
-      void handleExportCsvImpl(csvExportContext())
+      void handleExportCsvImpl(csvExportContext(), undefined, {
+        neutralizeFormulas: csvNeutralizeFormulasEnabled(),
+      })
     } else if (action === 'undo' || action === 'redo') {
       // The shell's own text fields (AI prompt, dialog inputs) keep native
       // text undo; everywhere else ⌘Z means workbook history.

@@ -83,7 +83,7 @@ a mentés mindig OOXML-be ír, soha az eredeti formátumba.
 [Linux](https://github.com/genspark-ai/genoffice/releases/latest) (deb, rpm, AppImage) —
 a részletekkel és a rendszerkövetelményekkel a [Letöltés](#download) részben találod.
 
-## Demó
+## <a id="demo"></a>Demó
 
 Hat alkalmazás, egy AI-panel, egy TypeSafe Jevvel újrarendezett fájlkereső, egy AI kérdezése funkció,
 amely a csillagozott fájljaidból válaszol forrásokkal, valamint egy parancssor a kódoló ügynöködnek.
@@ -188,7 +188,7 @@ Mondd el, mire való az oldal, és kinek készül. Az AI először egy **tervez�
 
 **Összekapcsolt jegyzetek, ahogy az Obsidian teszi.** A `[[wiki links]]`-re kattintva az adott jegyzethez ugrasz, a `[[` begépelése jegyzetnév-kiegészítést kínál, a `![[…]]` pedig beágyaz egy jegyzetet vagy képet a szövegbe. A **Visszahivatkozások** panel felsorolja az összes jegyzetet, amely a megnyitottra mutat, a **Gráf** nézet pedig feltérképezi a teljes jegyzettár (vault) hivatkozásait.
 
-### 7 · Keresés — találd meg a kérdésedre válaszoló fájlt, TypeSafe Jevvel
+### <a id="7--search--find-the-file-that-answers-the-question-with-typesafe-jev"></a>7 · Keresés — találd meg a kérdésedre válaszoló fájlt, TypeSafe Jevvel
 
 A munkamappád minden fájlja helyben indexelve van: nevek, mappák, valamint a Word-, Excel-, PowerPoint-, PDF-, Markdown- és HTML-fájlok kinyert szövege, egy CJK-érzékeny tokenizálású, teljes szövegű SQLite-indexben. Kapcsold be a **Jev keresési átrendezést**, és a legjobb 20 helyi találatot a [TypeSafe Jev](https://typesafe.ai/blog/introducing-system-one-models-and-jev) értékeli, a System One modell, amely szöveg generálása helyett dokumentumonként egyetlen kalibrált relevanciapontszámot ad vissza egyetlen hívásban. A lista e pontszám alapján rendeződik újra; ha a hívás sikertelen, vagy időtúllépés lép fel, a helyi sorrend marad érvényben.
 
@@ -287,7 +287,7 @@ A **Parallel** fiók nélkül is működik: az ingyenes Search MCP-je (korlátoz
 
 A teljes csomag világos, sötét és rendszer szerinti témákkal érkezik. A témák csak a képernyőn látottakat változtatják meg: az exportálások, a nyomtatások és a mentett fájlok mindig a dokumentum saját színeit őrzik.
 
-## Képességek
+## <a id="skills"></a>Képességek
 
 Egy képesség egy `SKILL.md`, amely elmondja az AI-nak, hogyan oldjon meg egy adott feladatot jól: heti jelentés, NDA, óraterv. A GenOffice egy készletet szállít belőlük, és fogadja a sajátjaidat is, ugyanabban a formátumban, amelyet a kódoló ügynökök használnak.
 
@@ -296,7 +296,7 @@ Egy képesség egy `SKILL.md`, amely elmondja az AI-nak, hogyan oldjon meg egy a
 
 ---
 
-## Parancssor és ügynök-képesség
+## <a id="command-line-and-agent-skill"></a>Parancssor és ügynök-képesség
 
 Amit az alkalmazások egy fájllal tudnak, azt a `genoffice` parancssor is elvégzi terminálból:
 megvizsgál, konvertál, létrehoz, olvas és szerkeszt Word-, Excel-, PowerPoint-,
@@ -366,18 +366,18 @@ A `genoffice`-on belül nem történik modellhívás: a gondolkodást az ügynö
 az építést és az ellenőrzést a CLI, az eredmény pedig közönséges `.pptx`-ként nyílik meg
 a GenOffice-ban vagy a PowerPointban.
 
-### MCP-kiszolgáló
+### <a id="mcp-server"></a>MCP-kiszolgáló
 
 Ugyanezek a parancsok [Model Context Protocol](https://modelcontextprotocol.io)-eszközként is
 elérhetők, olyan asszisztenseknek, amelyek nem tudnak terminált futtatni, vagy amelyeknek
 inkább nem adnál egyet. Két út vezet hozzá, mindkettőhöz másolásra kész kódrészletek
 tartoznak a **Beállítások → Integrációk → MCP** panelen:
 
-| Mód                                | Mi ez                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
-| ---------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **A · `genoffice mcp`** (ajánlott) | Egy stdio-kiszolgáló, amelyet az asszisztens maga indít el; a GenOffice-nak nem kell nyitva lennie. Parancsonként egy eszköz (`info`, `convert`, `create_docx`, `create_xlsx`, `create_pptx`, `create_pdf`, `docs_read` / `docs_apply` / `docs_check`, `sheet_*`, `slides_*`, `render`, `guide`, `search`, `image`, `media`, `open`), plusz a szakaszos bemutatófolyamat: `deck_start` → `deck_page` → `deck_build` → `deck_replace`. Az opok, a specifikációk és a Markdown inline adódik át, így egy fájlrendszer nélküli kliens is működik. |
-| **B · Helyi HTTP-kiszolgáló**      | A GenOffice alkalmazáson belül fut, a `http://127.0.0.1:3093/mcp` címen (Streamable HTTP, örökölt SSE-vel). Az eszközei egy látható Word-szerkesztő lapot vezérelnek: `create_session`, `insert_content`, `replace_blocks`, `apply_ops`, `read_document`, `save_session` – és közben nézheted, ahogy a dokumentum formát ölt. Alapból kikapcsolva; ugyanabban a beállítási panelen kapcsolhatod be.                                                                                                                                            |
-| **C · `genoffice mcp --http`**     | A stdio-eszközkészlet Streamable HTTP-kiszolgálóként, más gépeken futó klienseknek: konténer, sandbox vagy a hálózatodon lévő megosztott gép. A fájlok a hívásokkal együtt utaznak: a `PUT /files/<name>` feltölt egyet és URL-t ad vissza, minden `file` paraméter elfogad http(s)-URL-t, és minden fájlt író eszköz letöltési URL-ként adja vissza, kicsi méret esetén a bájtokat is, MCP-erőforrásként. A `--host 0.0.0.0` megnyitja a hálózat felé, a `--token` védi.                                                                      |
+| Mód                                | Mi ez                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| ---------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **A · `genoffice mcp`** (ajánlott) | Egy stdio-kiszolgáló, amelyet az asszisztens maga indít el; a GenOffice-nak nem kell nyitva lennie. Parancsonként egy eszköz (`info`, `convert`, `create_docx`, `create_xlsx`, `create_pptx`, `create_pdf`, `docs_read` / `docs_apply` / `docs_check`, `sheet_*`, `slides_*`, `render`, `guide`, `search`, `image`, `media`, `open`), plusz a szakaszos bemutatófolyamat: `deck_start` → `deck_page` → `deck_build` → `deck_replace`. Az opok, a specifikációk és a Markdown inline adódik át, így egy fájlrendszer nélküli kliens is működik.       |
+| **B · Helyi HTTP-kiszolgáló**      | A GenOffice alkalmazáson belül fut, a `http://127.0.0.1:3093/mcp` címen (Streamable HTTP, örökölt SSE-vel). Az eszközei egy látható Word-szerkesztő lapot vezérelnek: `create_session`, `insert_content`, `replace_blocks`, `apply_ops`, `read_document`, `save_session` – és közben nézheted, ahogy a dokumentum formát ölt. Alapból kikapcsolva; ugyanabban a beállítási panelen kapcsolhatod be.                                                                                                                                                  |
+| **C · `genoffice mcp --http`**     | A stdio-eszközkészlet Streamable HTTP-kiszolgálóként, más gépeken futó klienseknek: konténer, sandbox vagy a hálózatodon lévő megosztott gép. A fájlok a hívásokkal együtt utaznak: a `PUT /files/<name>` feltölt egyet és URL-t ad vissza, minden `file` paraméter elfogad http(s)-URL-t, és minden fájlt író eszköz letöltési URL-ként adja vissza, kicsi méret esetén a bájtokat is, MCP-erőforrásként. A `--host 0.0.0.0` megnyitja a hálózat felé; loopbackon kívüli bind `--token` nélkül elutasított — az eszközök fájlokat olvasnak és írnak |
 
 ```bash
 # Claude Code
@@ -440,7 +440,7 @@ a számadatok, a fotók, az útmutatók, az ellenőrzések és a renderelések m
 MCP-eszközeredményként utaztak. Csak a `search` és a `media` hagyta el a gépet –
 a GenOffice-ban beállított szolgáltató felé.
 
-## Letöltés
+## <a id="download"></a>Letöltés
 
 | Platform                             | Követelmények                                         | Letöltés                                                                                      |
 | ------------------------------------ | ----------------------------------------------------- | --------------------------------------------------------------------------------------------- |
@@ -510,7 +510,7 @@ save      ─► dirty blocks → OOXML fragments (referencing existing styles o
 A csomagonkénti körbejárás (docx/pptx motorok, `pdf2docx`, `html2docx`,
 az ügynökmag és a szolgáltatók) a [CONTRIBUTING.md](../../CONTRIBUTING.md#engine-packages) fájlban található.
 
-### A korábbi formátumú és ODF-fájlok konvertált másolatként nyílnak meg
+### <a id="legacy-and-odf-files-open-as-converted-copies"></a>A korábbi formátumú és ODF-fájlok konvertált másolatként nyílnak meg
 
 Azok a formátumok, amelyeket a GenOffice nem tud visszaírni — a Word korábbi `.doc`/`.dot`,
 a Hancom `.hwp`/`.hwpx`, az Excel 97 `.xls`, a `.tsv`, a PowerPoint korábbi `.ppt`, valamint az

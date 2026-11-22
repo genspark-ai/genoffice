@@ -2602,6 +2602,8 @@ export default function App() {
   useEffect(() => {
     setOcrPages(new Map())
     setOcrRun(null)
+    // the pass torn down below returns without unwinding; Recognize would stay greyed out
+    setOcrRunning(false)
     if (!doc || sizes.length !== doc.numPages) return
     startOcrPass(null)
     return () => {
@@ -11537,7 +11539,7 @@ export default function App() {
                 </div>
               </div>
             )}
-            <PrintDialog print={print} printCurrentPage={print.printCurrentPage} />
+            <PrintDialog print={print} />
             {mergePagesDlg && (
               <div className="pdf-modal-mask" onClick={() => setMergePagesDlg(false)}>
                 <div className="pdf-modal" onClick={(e) => e.stopPropagation()}>

@@ -7,6 +7,8 @@ import { LocaleProvider, setModuleLang } from '../src/renderer/i18n/locale'
 import { Ribbon, docModeOf } from '../src/renderer/components/Ribbon'
 import { computeFormatState } from '../src/renderer/components/ribbon-format-state'
 import { ribbonProps } from './helpers/ribbon-props'
+import { runMenuCommand, type CommandHost } from '../src/renderer/commands/menu-commands'
+import type { ActionCommandId } from '../src/shared/commands'
 
 Object.assign(window, { desktop: { onLanguageChanged: () => () => undefined } })
 setModuleLang('en')
@@ -100,12 +102,20 @@ describe('top-right mode cluster', () => {
     cleanup()
   })
 
-  it('the Print Layout button asks to leave read mode, not to toggle it', () => {
-    // onViewMode('print') pairs with onReadMode(false) — a flip would queue
-    // setReadMode(!false) after it and land the document in read mode
-    const onReadMode = vi.fn()
-    const onViewMode = vi.fn()
-    const { host, cleanup } = mount({ onReadMode, onViewMode })
+  it('the Print Layout button leaves read mode instead of toggling it', () => {
+    const setMode = vi.fn()
+    const setReadMode = vi.fn()
+    const commandHost = new Proxy(
+      {
+        hasDoc: true,
+        editor: null,
+        view: { mode: 'print', readMode: true, setMode, setReadMode },
+      },
+      { get: (target, key) => (key in target ? target[key as keyof typeof target] : () => {}) },
+    ) as unknown as CommandHost
+    const onCommand = (id: ActionCommandId, payload?: string) =>
+      runMenuCommand(commandHost, id, payload)
+    const { host, cleanup } = mount({ onCommand })
     act(() =>
       [...host.querySelectorAll<HTMLButtonElement>('.ribbon-tab')]
         .find((b) => b.textContent === 'View')!
@@ -115,8 +125,8 @@ describe('top-right mode cluster', () => {
       b.textContent!.includes('Print Layout'),
     )!
     act(() => printBtn.click())
-    expect(onViewMode).toHaveBeenCalledWith('print')
-    expect(onReadMode).toHaveBeenCalledWith(false)
+    expect(setMode).toHaveBeenCalledWith('print')
+    expect(setReadMode).toHaveBeenCalledWith(false)
     cleanup()
   })
 

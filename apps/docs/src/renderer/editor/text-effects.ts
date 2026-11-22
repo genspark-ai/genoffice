@@ -1,4 +1,10 @@
-import type { TextEffect, TextGlow } from '@genoffice/docx-engine'
+import type {
+  TextEffect,
+  TextFxOwn,
+  TextGlow,
+  TextReflection,
+  TextShadow,
+} from '@genoffice/docx-engine'
 
 const TEXT_EFFECTS: ReadonlySet<string> = new Set(['outline', 'emboss', 'imprint', 'shadow'])
 
@@ -33,8 +39,88 @@ function cssColor(hex: string, alpha: number | undefined): string {
 
 /** two blur layers: one Gaussian alone fades far below Word's dense halo */
 export function glowDecl(glow: TextGlow): string {
+  return `text-shadow:${glowShadows(glow)}`
+}
+
+function glowShadows(glow: TextGlow): string {
   const c = cssColor(glow.color, glow.alpha)
-  return `text-shadow:0 0 ${glow.radiusPt / 2}pt ${c},0 0 ${glow.radiusPt}pt ${c}`
+  return `0 0 ${glow.radiusPt / 2}pt ${c},0 0 ${glow.radiusPt}pt ${c}`
+}
+
+/** an outer shadow: thrown `distPt` along its direction (clockwise from pointing right), blurred */
+function dropShadow(shadow: TextShadow): string {
+  const rad = (shadow.dirDeg * Math.PI) / 180
+  const round = (v: number) => Math.round(v * 100) / 100
+  const x = round(Math.cos(rad) * shadow.distPt)
+  const y = round(Math.sin(rad) * shadow.distPt)
+  return `${x}pt ${y}pt ${shadow.blurPt}pt ${cssColor(shadow.color, shadow.alpha)}`
+}
+
+/** The glow and the shadow of a run are one CSS property: the shadow drawn over the halo. */
+export function glowAndShadowDecl(glow?: TextGlow, shadow?: TextShadow): string | null {
+  const layers = [shadow ? dropShadow(shadow) : '', glow ? glowShadows(glow) : ''].filter(Boolean)
+  return layers.length > 0 ? `text-shadow:${layers.join(',')}` : null
+}
+
+export function parseTextShadowAttr(raw: string): TextShadow | undefined {
+  try {
+    const s = JSON.parse(raw) as Partial<TextShadow>
+    if (
+      typeof s.color !== 'string' ||
+      typeof s.blurPt !== 'number' ||
+      typeof s.distPt !== 'number' ||
+      typeof s.dirDeg !== 'number'
+    )
+      return undefined
+    return {
+      color: s.color,
+      ...(s.alpha !== undefined ? { alpha: s.alpha } : {}),
+      blurPt: s.blurPt,
+      distPt: s.distPt,
+      dirDeg: s.dirDeg,
+    }
+  } catch {
+    return undefined
+  }
+}
+
+/**
+ * The mirror image under the text. The mask is laid over the text's own box
+ * before it is flipped, so its opaque end is the edge that touches the text.
+ * The blur is not drawn.
+ */
+export function reflectionDecl(reflection: TextReflection): string {
+  const clear = Math.round((1 - reflection.endPos) * 100)
+  return (
+    `-webkit-box-reflect:below ${reflection.distPt}pt ` +
+    `linear-gradient(transparent ${clear}%,rgba(0,0,0,${reflection.startAlpha}))`
+  )
+}
+
+export function parseReflectionAttr(raw: string): TextReflection | undefined {
+  try {
+    const r = JSON.parse(raw) as Partial<TextReflection>
+    if (typeof r.startAlpha !== 'number' || typeof r.endPos !== 'number') return undefined
+    return {
+      startAlpha: r.startAlpha,
+      endPos: r.endPos,
+      blurPt: typeof r.blurPt === 'number' ? r.blurPt : 0,
+      distPt: typeof r.distPt === 'number' ? r.distPt : 0,
+    }
+  } catch {
+    return undefined
+  }
+}
+
+/** the mark's `fxOwn` attr: the effects the editor set on the text itself */
+export function parseFxOwnAttr(raw: unknown): TextFxOwn | undefined {
+  if (typeof raw !== 'string' || !raw) return undefined
+  try {
+    const fx = JSON.parse(raw) as TextFxOwn
+    return fx && typeof fx === 'object' ? fx : undefined
+  } catch {
+    return undefined
+  }
 }
 
 export function doubleStrikeDecl(): string {

@@ -39,8 +39,10 @@ macOS, Windows và Linux. Ứng dụng mở và lưu các tệp `.docx`, `.xlsx`
 mọi tài liệu — không phải một ô chat gắn thêm bên hông, mà là một trình
 soạn thảo đọc tệp, thực hiện thay đổi, và chỉ cho bạn chính xác những gì nó
 đã động tới. Các tệp ODF (`.odt`, `.ods`, `.odp` cùng các mẫu
-`.ott`/`.ots`/`.otp`) được mở dưới dạng bản sao OOXML chỉnh sửa được; việc
-nhập chỉ theo chiều mở — lưu thì ghi OOXML, không bao giờ ghi ODF.
+`.ott`/`.ots`/`.otp`) được mở dưới dạng bản sao OOXML chỉnh sửa được, và
+các tệp Word cũ `.doc`/`.dot`, Excel 97 `.xls`, PowerPoint 97–2003 `.ppt`
+cùng tài liệu Hancom (`.hwp`, `.hwpx`) cũng vậy; việc nhập chỉ theo chiều
+mở — lưu thì ghi OOXML, không bao giờ ghi định dạng nguồn.
 
 - **Định dạng gốc, giữ nguyên từng byte.** Chỉ những phần bạn chỉnh sửa mới
   được ghi lại. Mọi thứ khác trong tệp được giữ nguyên từng byte, nên tài
@@ -130,7 +132,7 @@ thay đổi thành một lô hoàn tác được cùng lúc.</td>
 đúng những ô đã dùng dưới dạng trích dẫn bấm được. Bên dưới: một engine
 <code>.xlsx</code> Rust tự phát triển, pivot table, slicer, định dạng có
 điều kiện, truy vết công thức, và ảnh nhúng trong ô dưới dạng rich value
-gốc của Excel — mở lại trong Excel chúng vẫn nằm trong ô.Ghi chú của ô có thể kèm ảnh, hiển thị bên dưới cửa sổ ghi chú.</td>
+gốc của Excel — mở lại trong Excel chúng vẫn nằm trong ô. Ghi chú của ô có thể kèm ảnh, hiển thị bên dưới cửa sổ ghi chú.</td>
 </tr>
 </table>
 
@@ -245,7 +247,7 @@ thiện tên ghi chú, và `![[…]]` nhúng một ghi chú hay một ảnh ngay
 Panel **Backlinks** liệt kê mọi ghi chú đang trỏ tới ghi chú đang mở, và
 chế độ xem **Graph** vẽ bản đồ liên kết của toàn bộ vault.
 
-### 7 · Search — tìm ra tệp trả lời được câu hỏi, với TypeSafe Jev
+### <a id="7--search--find-the-file-that-answers-the-question-with-typesafe-jev"></a>7 · Search — tìm ra tệp trả lời được câu hỏi, với TypeSafe Jev
 
 Mọi tệp trong thư mục làm việc của bạn được lập chỉ mục ngay trên máy: tên,
 thư mục và văn bản trích xuất của các tệp Word, Excel, PowerPoint, PDF,
@@ -364,7 +366,7 @@ trình soạn thảo Word hiện rõ. Cả hai được mô tả ở
 
 ### 11 · Tệp cũ — `.doc`, `.xls` và `.ppt` từ những năm 2000 cũng mở được
 
-Tệp `.doc` của Word 97–2003, `.xls` của Excel hoặc `.ppt` của PowerPoint được mở dưới dạng bản sao `.docx`, `.xlsx` hoặc `.pptx` đã chuyển đổi ngay trên máy của bạn; tệp gốc không bao giờ bị thay đổi. Hình ảnh, bảng, công thức, định dạng số, màu tô và bố cục đều được giữ lại.
+Tệp `.doc` của Word 97–2003, `.xls` của Excel hoặc `.ppt` của PowerPoint được mở dưới dạng bản sao `.docx`, `.xlsx` hoặc `.pptx` đã chuyển đổi ngay trên máy của bạn; tệp gốc không bao giờ bị thay đổi. Hình ảnh, bảng, công thức, định dạng số, màu tô và bố cục đều được giữ lại. Mỗi định dạng giữ lại gì và bỏ đi gì được nêu ở mục [Tệp định dạng cũ và ODF được mở dưới dạng bản sao đã chuyển đổi](#legacy-and-odf-files-open-as-converted-copies).
 
 <img src="../assets/readme/legacy-formats-motion.webp" alt="Video tua nhanh GenOffice mở các tệp .ppt, .doc và .xls của một báo cáo thường niên giả định năm 2004, sau đó là một slide hiển thị trong PowerPoint bên cạnh bản trình bày đã chuyển đổi trong GenOffice" width="100%">
 
@@ -451,9 +453,7 @@ Toàn bộ bộ ứng dụng có giao diện sáng, tối và theo hệ thống.
 thay đổi những gì trên màn hình: xuất, in và tệp đã lưu luôn giữ màu riêng
 của tài liệu.
 
-<a id="skills"></a>
-
-## Skill
+## <a id="skills"></a>Skill
 
 Skill là một tệp `SKILL.md` chỉ cho AI cách làm tốt một việc: báo cáo tuần, NDA, giáo án.
 GenOffice đi kèm một bộ skill và nhận cả skill của bạn, cùng định dạng mà các agent lập trình dùng.
@@ -463,7 +463,7 @@ GenOffice đi kèm một bộ skill và nhận cả skill của bạn, cùng đ�
 
 ---
 
-## Dòng lệnh và agent skill
+## <a id="command-line-and-agent-skill"></a>Dòng lệnh và agent skill
 
 Mọi thứ các ứng dụng làm được với một tệp, dòng lệnh `genoffice` làm được
 từ terminal: soát, chuyển đổi, tạo, đọc và chỉnh sửa Word, Excel,
@@ -494,7 +494,7 @@ kiểm tra sản phẩm của mình.
 ```bash
 genoffice --version
 genoffice info report.docx --json                  # headings and blocks; or sheets, slides, pages
-genoffice convert report.md --to pdf               # md/html/docx/xlsx/pptx → pdf, pdf → docx/xlsx/pptx/md/html, odt/ods/odp → docx/xlsx/pptx, doc/dot → docx, …
+genoffice convert report.md --to pdf               # md/html/docx/xlsx/pptx → pdf, pdf → docx/xlsx/pptx/md/html, odt/ods/odp → docx/xlsx/pptx, doc/dot → docx, ppt → pptx, …
 genoffice create --type docx --from notes.md --out notes.docx
 genoffice create --type xlsx --from table.json --out sales.xlsx   # "=SUM(B2:B9)" cells stay live formulas
 genoffice docs read report.docx --range 0-9 --json # then `docs apply --ops edits.json` edits in place
@@ -532,7 +532,7 @@ Không có lời gọi mô hình nào diễn ra bên trong `genoffice`: agent l�
 suy nghĩ, CLI là người dựng và kiểm tra, và kết quả mở trong GenOffice hay
 PowerPoint như một `.pptx` bình thường.
 
-### Máy chủ MCP
+### <a id="mcp-server"></a>Máy chủ MCP
 
 Các lệnh này cũng có sẵn dưới dạng công cụ
 [Model Context Protocol](https://modelcontextprotocol.io), cho những trợ lý
@@ -544,7 +544,7 @@ MCP**:
 | ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | **A · `genoffice mcp`** (khuyến nghị) | Một máy chủ stdio trợ lý tự khởi động; GenOffice không cần mở. Một công cụ cho mỗi lệnh (`info`, `convert`, `create_docx`, `create_xlsx`, `create_pptx`, `create_pdf`, `docs_read` / `docs_apply` / `docs_check`, `sheet_*`, `slides_*`, `render`, `guide`, `search`, `image`, `media`, `open`) cùng luồng deck theo giai đoạn `deck_start` → `deck_page` → `deck_build` → `deck_replace`. Ops, spec và Markdown được truyền inline, nên client không có hệ thống tệp vẫn dùng được. |
 | **B · Máy chủ HTTP cục bộ**           | Chạy bên trong ứng dụng GenOffice tại `http://127.0.0.1:3093/mcp` (Streamable HTTP, kèm SSE kiểu cũ). Các công cụ của nó điều khiển một tab trình soạn thảo Word hiện rõ: `create_session`, `insert_content`, `replace_blocks`, `apply_ops`, `read_document`, `save_session`, và bạn xem tài liệu thành hình. Mặc định tắt; bật trong cùng pane cài đặt.                                                                                                                             |
-| **C · `genoffice mcp --http`**        | Bộ công cụ stdio dưới dạng máy chủ Streamable HTTP cho client trên máy khác: một container, một sandbox, một máy dùng chung trong mạng của bạn. Tệp đi cùng lời gọi: `PUT /files/<name>` tải lên một tệp và trả về URL, mọi tham số `file` nhận URL http(s), và công cụ ghi tệp trả lại dưới dạng URL tải xuống cùng, khi tệp nhỏ, các byte dưới dạng MCP resource. `--host 0.0.0.0` mở ra mạng, `--token` bảo vệ nó.                                                                |
+| **C · `genoffice mcp --http`**        | Bộ công cụ stdio dưới dạng máy chủ Streamable HTTP cho client trên máy khác: một container, một sandbox, một máy dùng chung trong mạng của bạn. Tệp đi cùng lời gọi: `PUT /files/<name>` tải lên một tệp và trả về URL, mọi tham số `file` nhận URL http(s), và công cụ ghi tệp trả lại dưới dạng URL tải xuống cùng, khi tệp nhỏ, các byte dưới dạng MCP resource. `--host 0.0.0.0` mở ra mạng; bind ngoài loopback bị từ chối nếu không có `--token` — các công cụ đọc và ghi tệp  |
 
 ```bash
 # Claude Code
@@ -552,19 +552,19 @@ claude mcp add --transport stdio genoffice -- genoffice mcp
 ```
 
 ```jsonc
-// Cursor, Claude Desktop hoặc bất kỳ MCP client nào khác
+// Cursor, Claude Desktop or any other MCP client
 { "mcpServers": { "genoffice": { "command": "genoffice", "args": ["mcp"] } } }
 ```
 
 ```bash
-# Trên máy có GenOffice (mạng riêng; thêm --token cho máy dùng chung)
+# On the machine that has GenOffice (private network; add --token for a shared box)
 genoffice mcp --http 3093 --host 0.0.0.0 --token "$GENOFFICE_MCP_TOKEN"
 
-# Từ phía client: tải lên, rồi dùng URL ở mọi nơi công cụ nhận tệp
+# From the client: upload, then use the URL wherever a tool takes a file
 curl -T report.docx -H "Authorization: Bearer $GENOFFICE_MCP_TOKEN" http://server:3093/files/
 #   → { "url": "http://server:3093/files/<id>/report.docx", ... }
 #   docs_read({ "file": "http://server:3093/files/<id>/report.docx" })
-#   docs_apply(...) → output_url, tải về được bằng curl -o
+#   docs_apply(...) → output_url, downloadable with curl -o
 ```
 
 Qua HTTP, mỗi phiên có một thư mục riêng, đường dẫn tương đối và thư mục
@@ -608,7 +608,7 @@ shell: số liệu, ảnh, hướng dẫn, kiểm tra và bản kết xuất đ�
 công cụ MCP. Chỉ `search` và `media` rời khỏi máy, đến nhà cung cấp cấu
 hình trong GenOffice.
 
-## Tải xuống
+## <a id="download"></a>Tải xuống
 
 | Nền tảng                             | Yêu cầu                                               | Tải xuống                                                                                   |
 | ------------------------------------ | ----------------------------------------------------- | ------------------------------------------------------------------------------------------- |
@@ -640,6 +640,11 @@ Trên Fedora / họ RHEL / openSUSE, cài bản rpm:
 sudo dnf install ./genoffice-<version>.x86_64.rpm     # Fedora / RHEL family
 sudo zypper install ./genoffice-<version>.x86_64.rpm  # openSUSE
 ```
+
+Bản deb và rpm còn thêm các mẫu trống cho Dolphin của KDE Plasma: bấm chuột
+phải trong một thư mục → **Create New** sẽ liệt kê _GenOffice Document_,
+_GenOffice Spreadsheet_ và _GenOffice Presentation_. Chúng nằm trong
+`/usr/share/templates` và được gỡ cùng với gói.
 
 AppImage chạy tại chỗ: cài runtime FUSE 2
 (`sudo apt install libfuse2`; trên Ubuntu 24.04 gói tên là `libfuse2t64`),
@@ -674,6 +679,30 @@ save      ─► dirty blocks → OOXML fragments (referencing existing styles o
 Chuyến tham quan từng package (engine docx/pptx, `pdf2docx`, `html2docx`,
 phần lõi agent và các nhà cung cấp) nằm ở
 [CONTRIBUTING.md](../../CONTRIBUTING.md#engine-packages).
+
+### <a id="legacy-and-odf-files-open-as-converted-copies"></a>Tệp định dạng cũ và ODF được mở dưới dạng bản sao đã chuyển đổi
+
+Những định dạng GenOffice không ghi ngược lại được — Word cũ `.doc`/`.dot`,
+Hancom `.hwp`/`.hwpx`, Excel 97 `.xls`, `.tsv`, PowerPoint cũ `.ppt`, và họ
+OpenDocument (`.odt`, `.ott`, `.ods`, `.ots`, `.odp`, `.otp`) — là tệp nhập,
+không phải tệp gốc.
+Mở một tệp như vậy là chuyển đổi nó ngay trên máy của bạn thành một bản sao
+`.docx`, `.xlsx` hoặc `.pptx` rồi mở bản sao đó; tệp gốc không bao giờ được
+đọc lại và không bao giờ bị ghi.
+
+- Docs và Slides hỏi trước nơi đặt bản sao (mặc định là tệp `.docx`/`.pptx`
+  cùng tên nằm cạnh tệp gốc), nên mọi lần Save về sau đều ghi vào đó. Một tệp
+  `.ppt` được chuyển đổi cùng master, hình dạng shape, màu tô, ảnh và định
+  dạng chữ, nên bộ slide trông đúng như PowerPoint hiển thị; ghi chú, hoạt
+  ảnh, hiệu ứng chuyển slide và siêu liên kết hiện chưa được mang theo.
+- Sheets mở ngay sổ tính đã chuyển đổi và đưa lần Save đầu tiên qua Save As
+  sang một tệp `.xlsx` mới. `.csv` là ngoại lệ: nó giữ nguyên danh tính và
+  Save ghi giá trị ngược lại vào `.csv`, như Excel vẫn làm.
+- Việc chuyển đổi là một chiều và có thể làm mất những tính năng định dạng
+  nguồn có mà OOXML không có. `.doc`, `.ppt`, `.hwp` và các định dạng ODF
+  hiện một hộp thoại xác nhận nói rõ điều đó; tích "Convert without asking
+  next time" để bỏ qua nó, và "Ask before converting legacy files" trong
+  Settings → General bật nó trở lại.
 
 ## Phát triển
 
@@ -724,7 +753,10 @@ dùng thử, không bậc trả phí cho chính các ứng dụng.
 Có. GenOffice mở và lưu các tệp `.docx`, `.xlsx` và `.pptx` gốc. Việc lưu
 giữ nguyên từng byte: những phần của tệp bạn không đụng tới được ghi lại
 nguyên vẹn từng byte, nên tài liệu vẫn hoạt động bình thường trong
-Microsoft Office.
+Microsoft Office. Các tệp cũ `.doc`/`.dot`, `.xls` và `.ppt` cũng mở được,
+dưới dạng bản sao `.docx`/`.xlsx`/`.pptx` đã chuyển đổi — xem [Tệp định dạng
+cũ và ODF được mở dưới dạng bản sao đã chuyển
+đổi](#legacy-and-odf-files-open-as-converted-copies).
 
 </details>
 
@@ -842,6 +874,11 @@ GenOffice sẽ không thể có được nếu thiếu các dự án mã nguồn
   của sidecar xlsx Rust.
 - [libeot](https://github.com/umanwizard/libeot) (MPL-2.0) — bộ giải mã
   MicroType Express cho phông nhúng PowerPoint, được chuyển sang TypeScript.
+- [rhwp](https://github.com/edwardkim/rhwp) (MIT) — đọc tài liệu `.hwp` nhị
+  phân thành HWPX cho việc nhập Hancom; bản dựng WebAssembly của nó mang theo
+  các crate Rust và bản port hwp-extract của Volexity được liệt kê trong
+  thông báo bên thứ ba. "한글", "한컴", "HWP" và "HWPX" là nhãn hiệu đã đăng ký
+  của Hancom Inc.; GenOffice không liên kết với Hancom.
 - [React](https://react.dev/) (MIT) — tầng giao diện của mọi ứng dụng.
 - [Mermaid](https://mermaid.js.org/) (MIT) và [KaTeX](https://katex.org/)
   (MIT) — sơ đồ và công thức toán trong Markdown và Docs.

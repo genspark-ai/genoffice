@@ -135,6 +135,7 @@ pub fn read_styles(
                         bold: font.bold,
                         italic: font.italic,
                         underline: font.underline,
+                        underline_style: font.underline_style,
                         strikethrough: font.strikethrough,
                         vert_align: font.vert_align,
                         wrap_text: alignment
@@ -255,6 +256,7 @@ pub(crate) fn parse_dxf(dxf: Node<'_, '_>, colors: &ColorContext) -> CellStyle {
         bold: font.bold,
         italic: font.italic,
         underline: font.underline,
+        underline_style: font.underline_style,
         strikethrough: font.strikethrough,
         vert_align: font.vert_align,
         wrap_text: false,
@@ -315,6 +317,12 @@ pub(crate) fn parse_font(font: Node<'_, '_>, colors: &ColorContext) -> FontStyle
             .children()
             .find(|node| node.has_tag_name("u"))
             .is_some_and(|node| node.attribute("val") != Some("none")),
+        underline_style: font
+            .children()
+            .find(|node| node.has_tag_name("u"))
+            .and_then(|node| node.attribute("val"))
+            .filter(|value| *value == "double")
+            .map(ToOwned::to_owned),
         strikethrough: font
             .children()
             .find(|node| node.has_tag_name("strike"))

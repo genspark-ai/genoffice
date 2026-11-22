@@ -894,6 +894,16 @@ export function forcedCutYs(
   return out
 }
 
+/**
+ * ProseMirror puts an empty `img.ProseMirror-separator` (with the trailing
+ * break) after an inline widget that ends a textblock, so an empty paragraph
+ * holding any widget (a bookmark, an editable-region mark) carries one. It is
+ * editor scaffolding, not a picture: an empty paragraph with only that stays a
+ * line of its own, as pagination-measure already reads it.
+ */
+const NOT_SEPARATOR = ':not(.ProseMirror-separator)'
+const CELL_PICTURE_SEL = `img${NOT_SEPARATOR}, svg, canvas`
+
 function rowCutYs(
   tr: Element,
   rowTop: number,
@@ -989,7 +999,7 @@ function rowCutYs(
         }
       }
     }
-    for (const obj of cell.querySelectorAll('img, svg, canvas')) {
+    for (const obj of cell.querySelectorAll(CELL_PICTURE_SEL)) {
       // in-cell gap decorations may carry header/footer images: not row content
       if (obj.closest('.page-gap, .page-float-host')) continue
       const r = obj.getBoundingClientRect()
@@ -1004,7 +1014,7 @@ function rowCutYs(
     const contentB = bands.reduce((m, [, b]) => Math.max(m, b), -Infinity)
     for (const para of cell.querySelectorAll(PARA_SELECTOR)) {
       if (byPara.has(para) || para.closest('.page-gap, .page-float-host')) continue
-      if (para.textContent?.trim() || para.querySelector('img, svg, canvas')) continue
+      if (para.textContent?.trim() || para.querySelector(CELL_PICTURE_SEL)) continue
       const r = para.getBoundingClientRect()
       if (r.height <= 0 || r.width <= 0) continue
       const band = toBand(r)
@@ -1454,7 +1464,7 @@ function cellContentBottom(cell: Element): number {
     )
       continue
     if ((child.textContent ?? '').trim() === '' && !child.querySelector('table, svg')) {
-      const imgs = Array.from(child.querySelectorAll('img'))
+      const imgs = Array.from(child.querySelectorAll(`img${NOT_SEPARATOR}`))
       const isStrut = (im: Element) => {
         const r = im.getBoundingClientRect()
         return r.width <= 2.5 || r.height <= 2.5

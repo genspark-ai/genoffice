@@ -18,6 +18,7 @@ export const hi = {
   aiQcStopped: 'लेआउट जाँच रोक दी गई',
   aiQcCapped: 'शेष {count} पेज नहीं जाँचे गए (प्रति रन सीमा)',
   aiGskLoginBtn: 'Genspark में साइन इन करें',
+  aiGskLoginOk: 'Genspark में साइन इन हो गए',
   aiPanelTitle: 'Genspark',
   aiOpenAssistant: 'AI सहायक खोलें',
   aiFactCheckBtn: 'AI तथ्य जाँच',
