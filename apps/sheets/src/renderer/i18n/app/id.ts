@@ -1,7 +1,8 @@
 import type { zh } from './zh'
 
 export const id = {
-  appCollabOverwriteNotice: 'Perubahan dari rekan telah diterapkan ke buku kerja ini. Editan Anda yang belum disimpan ({count}) masih tertunda dan akan ditulis saat menyimpan.',
+  appCollabOverwriteNotice:
+    'Perubahan dari rekan telah diterapkan ke buku kerja ini. Editan Anda yang belum disimpan ({count}) masih tertunda dan akan ditulis saat menyimpan.',
   // ── Withholding cells from the model ──
   redactMenuLabel: 'Sembunyikan pilihan dari AI',
   redactDialogDesc:

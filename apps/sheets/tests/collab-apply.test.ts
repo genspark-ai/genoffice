@@ -22,7 +22,12 @@ describe('applyRemoteWorkbookSnapshot', () => {
             { id: 'chart-2', sheetId: 's1', kind: 'chart' },
           ],
         },
-        { id: 's2', name: 'S2', cells: {}, visuals: [{ id: 'chart-3', sheetId: 's2', kind: 'chart' }] },
+        {
+          id: 's2',
+          name: 'S2',
+          cells: {},
+          visuals: [{ id: 'chart-3', sheetId: 's2', kind: 'chart' }],
+        },
       ],
     })
     const { visuals } = applyRemoteWorkbookSnapshot(null, raw)
@@ -31,6 +36,8 @@ describe('applyRemoteWorkbookSnapshot', () => {
 
   it('returns no visuals for an empty or malformed snapshot', () => {
     expect(applyRemoteWorkbookSnapshot(null, 'not json').visuals).toEqual([])
-    expect(applyRemoteWorkbookSnapshot(null, JSON.stringify({ revision: 1, sheets: [] })).visuals).toEqual([])
+    expect(
+      applyRemoteWorkbookSnapshot(null, JSON.stringify({ revision: 1, sheets: [] })).visuals,
+    ).toEqual([])
   })
 })

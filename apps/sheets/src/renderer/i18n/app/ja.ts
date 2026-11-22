@@ -1,7 +1,8 @@
 import type { zh } from './zh'
 
 export const ja = {
-  appCollabOverwriteNotice: '共同編集者の変更がこのブックに適用されました。未保存の編集（{count} 件）は保留中で、保存時に書き込まれます。',
+  appCollabOverwriteNotice:
+    '共同編集者の変更がこのブックに適用されました。未保存の編集（{count} 件）は保留中で、保存時に書き込まれます。',
   // ── Withholding cells from the model ──
   redactMenuLabel: '選択範囲をAIから隠す',
   redactDialogDesc:

@@ -1,7 +1,8 @@
 import type { zh } from './zh'
 
 export const ko = {
-  appCollabOverwriteNotice: '공동 편집자의 변경 내용이 이 통합 문서에 적용되었습니다. 저장하지 않은 편집({count}개)이 대기 중이며 저장할 때 반영됩니다.',
+  appCollabOverwriteNotice:
+    '공동 편집자의 변경 내용이 이 통합 문서에 적용되었습니다. 저장하지 않은 편집({count}개)이 대기 중이며 저장할 때 반영됩니다.',
   // ── Withholding cells from the model ──
   redactMenuLabel: '선택한 부분을 AI에서 숨기기',
   redactDialogDesc:

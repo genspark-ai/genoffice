@@ -1,7 +1,8 @@
 import type { zh } from './zh'
 
 export const it = {
-  appCollabOverwriteNotice: 'Le modifiche di un collega sono state applicate a questa cartella di lavoro. Le tue modifiche non salvate ({count}) sono ancora in sospeso e verranno scritte al salvataggio.',
+  appCollabOverwriteNotice:
+    'Le modifiche di un collega sono state applicate a questa cartella di lavoro. Le tue modifiche non salvate ({count}) sono ancora in sospeso e verranno scritte al salvataggio.',
   // ── Withholding cells from the model ──
   redactMenuLabel: 'Nascondi la selezione all’IA',
   redactDialogDesc:
