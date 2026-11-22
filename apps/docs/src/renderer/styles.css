@@ -13266,12 +13266,22 @@ body.docs-crop-active
 /* ---- print / export PDF: only the document itself ---- */
 
 @media print {
+  /* paper-white behind the page boxes, and the light scheme: an A4 sheet is
+   * 841.92pt tall, so its last device row is only partly covered by the page
+   * box, and `none` let the canvas behind it show through — Chromium's
+   * dark-scheme color when the app theme was dark (#2837) */
+  html {
+    /* !important: the theme rules ([data-theme='dark'] and the system-mode
+     * :root fallback) are more specific than this @media print selector and
+     * would keep the scheme dark in print; the pin must beat them (#2837) */
+    color-scheme: light !important;
+  }
   html,
   body,
   #root {
     height: auto !important;
     overflow: visible !important;
-    background: none !important;
+    background: var(--docs-paper) !important;
   }
 
   .ribbon,
