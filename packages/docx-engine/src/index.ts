@@ -251,6 +251,7 @@ export {
   ommlToLatex,
   ommlToMathML,
 } from './math'
+export { extractEquationNativeStream, isMathTypeProgId, mtefToOmml, oleBytesToOmml } from './mtef'
 export {
   DEFAULT_MATH_BREAKS,
   DEFAULT_MATH_PR,
