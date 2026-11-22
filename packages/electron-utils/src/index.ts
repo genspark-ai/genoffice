@@ -63,6 +63,12 @@ export {
   resolveDefaultSaveDir,
   type PathProvider,
 } from './default-save-dir'
+export {
+  EXCLUDED_FOLDERS_KEY,
+  isUnderExcludedFolder,
+  normalizeExcludedFolders,
+  readExcludedFolders,
+} from './excluded-folders'
 export { installNavigationGuard } from './navigation-guard'
 export {
   decodeChunks,
