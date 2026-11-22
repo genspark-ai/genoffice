@@ -2799,7 +2799,6 @@ export const strings = {
     propProducer: 'Készítő',
     propCreated: 'Létrehozva',
     propModified: 'Módosítva',
-      'A szöveg megjelenítése az oldalon szerkesztés után; kikapcsolva a láthatatlan keresőrétegben marad',
   },
   ja: {
     ...fillFormStringsFor('ja'),
