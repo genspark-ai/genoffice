@@ -8,6 +8,11 @@ Copyright 2014-2021 Adobe (http://www.adobe.com/), Google LLC
 	with Reserved Font Name "Source". (Noto Sans CJK)
 Copyright 2017-2024 Adobe (http://www.adobe.com/)
 	with Reserved Font Name "Source". (Noto Serif CJK)
+Copyright (c) 2023, GitHub https://github.com/githubnext/monaspace
+	with Reserved Font Name "Monaspace", including subfamilies: "Argon",
+	"Neon", "Xenon", "Radon", and "Krypton". (Monaspace Neon)
+Copyright 2017 IBM Corp.
+	with Reserved Font Name "Plex". (IBM Plex Mono)
 Copyright (c) 2010, NHN Corporation (http://www.nhncorp.com),
 with Reserved Font Name Nanum, Naver Nanum, NanumGothic, Naver
 NanumGothic, NanumMyeongjo, Naver NanumMyeongjo, NanumBrush, Naver
