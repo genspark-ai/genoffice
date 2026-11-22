@@ -481,7 +481,7 @@ export const fr = {
     "Aucun signet pour le moment. Utilisez « Insertion → Signet » pour marquer l'emplacement à référencer.",
   ribbonChartInsertTitle: 'Insérer un graphique',
   ribbonChartTitlePh: 'Titre du graphique',
-  ribbonChartBar: 'Histogramme',
+  ribbonChartBar: 'Histogramme groupé',
   ribbonChartLine: 'Courbes',
   ribbonChartPie: 'Secteurs',
   ribbonCategoryN: 'Catégorie {n}',
