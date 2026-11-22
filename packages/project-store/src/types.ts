@@ -84,6 +84,14 @@ export interface ProjectIndex {
    * Old data without this map falls back to sha256(path) derivation.
    */
   chatIdByPath?: Record<string, string>
+  /**
+   * Identity of the file incarnation a chatId was minted for (device + inode +
+   * creation time). A path whose file was deleted and recreated is a new
+   * incarnation, so resolveChatForFile mints a fresh chat instead of handing the
+   * new document the old document's transcript. Absent for indexes written by
+   * older versions, in which case the existing mapping is adopted as-is.
+   */
+  incarnationByPath?: Record<string, string>
 }
 
 export interface ChatMeta {
