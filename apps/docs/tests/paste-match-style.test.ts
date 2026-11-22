@@ -73,8 +73,10 @@ function pasteEvent(html: string, text: string) {
   return { clipboardData: { getData: (type: string) => (type === 'text/html' ? html : text) } }
 }
 
-function makeEditor(paragraph: Record<string, unknown> = { text: 'host' }) {
-  const content = paragraph.text ? [{ type: 'text', text: paragraph.text }] : []
+function makeEditor(paragraph: { text?: string | null } = { text: 'host' }) {
+  const content: Array<{ type: 'text'; text: string }> = paragraph.text
+    ? [{ type: 'text', text: paragraph.text }]
+    : []
   return new Editor({
     element: document.createElement('div'),
     extensions: editorExtensions,
