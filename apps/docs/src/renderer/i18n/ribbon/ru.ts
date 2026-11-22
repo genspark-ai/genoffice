@@ -476,7 +476,7 @@ export const ru = {
     'Закладок пока нет. Используйте «Вставка → Закладка», чтобы отметить нужное место.',
   ribbonChartInsertTitle: 'Вставка диаграммы',
   ribbonChartTitlePh: 'Название диаграммы',
-  ribbonChartBar: 'Гистограмма',
+  ribbonChartBar: 'Гистограмма с группировкой',
   ribbonChartLine: 'График',
   ribbonChartPie: 'Круговая',
   ribbonCategoryN: 'Категория {n}',

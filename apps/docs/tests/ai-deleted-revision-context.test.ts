@@ -70,7 +70,9 @@ describe('document snapshot vs tracked deletions', () => {
     expect(context).toContain('3|p|[tracked deletion] Old block reference 75.')
     expect(context).toContain('2|p|New text')
     expect(context).not.toContain('old tail')
-    expect(context).toContain(`Full-text stats: words ${countWords('Keep this.New text ')}`)
+    // the surviving blocks, separated like the document text: Keep, this., New, text
+    expect(context).toContain(`Full-text stats: words ${countWords('Keep this. New text')}`)
+    expect(context).toContain('Full-text stats: words 4')
     expect(context).toContain('Tracked changes:')
   })
 

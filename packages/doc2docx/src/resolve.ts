@@ -31,17 +31,102 @@ import {
 } from './formatting'
 import { fontNamesFor, parseFontTable } from './fonts'
 import { iterateSprms, readSprmU16 } from './sprm'
-import { parseStsh, type Style, type StyleSheet } from './styles'
+import { legacyStyleId, parseStsh, type Style, type StyleSheet } from './styles'
 import { createWordControlMapper } from './text'
+import { BLANK_STYLES_BY_NAME, BLANK_STYLE_ON_TOGGLES_BY_ID } from '@genoffice/docx-engine'
 
 /** the style index Word applies to paragraphs with no PAPX / no explicit style */
 export const DEFAULT_PARAGRAPH_STYLE_ISTD = 0
-/** the Word 97 default character style ("Default Paragraph Font") */
+/** the Word 97 default character style ("Default Paragraph Font") in Word's own
+    stylesheet layout; the slot order varies between producers, so the skip tests
+    also check the stable built-in number (STI_DEFAULT_CHARACTER) */
 export const DEFAULT_CHARACTER_STYLE_ISTD = 10
 const SPRM_C_ISTD = 0x4a30
 const STI_HYPERLINK = 85
-const STI_FOLLOWED_HYPERLINK = 87
+const STI_FOLLOWED_HYPERLINK = 86
+/** the built-in style number (sti) of the null character style "Default Paragraph Font" */
+const STI_DEFAULT_CHARACTER = 65
 const NO_SPRMS = new Uint8Array(0)
+
+/**
+ * A source style whose name matches a style the blank template already defines
+ * maps onto that template style: emitting a second style under the same name
+ * makes Word repair the file, and the pStyle / rStyle references point at the
+ * template's id instead of a w97- one. Same kind only — Word's built-in names
+ * are kind-scoped, and a paragraph style never rides a character id.
+ */
+function templateStyleIdOf(style: Style): string | undefined {
+  const direct = BLANK_STYLES_BY_NAME.get(style.name)
+  if (direct && direct.kind === style.kind) return direct.id
+  const lower = style.name.toLowerCase()
+  for (const [name, def] of BLANK_STYLES_BY_NAME) {
+    if (name.toLowerCase() === lower && def.kind === style.kind) return def.id
+  }
+  return undefined
+}
+
+/** the null character style Word calls "Default Paragraph Font": producers
+    write it with wildly varying istd/sti (LibreOffice files store it
+    user-defined), so the skip matches the name too */
+function isDefaultParagraphFontStyle(style: Style): boolean {
+  return (
+    style.sti === STI_DEFAULT_CHARACTER || style.name.toLowerCase() === 'default paragraph font'
+  )
+}
+
+/** the template style id a paragraph's style maps onto (undefined for Normal,
+    undefined slots, and styles the template does not define under that name) */
+function paragraphTemplateStyleIdOf(styles: StyleSheet, istd: number): string | undefined {
+  const style = styles.styles.get(istd)
+  if (!style || istd === DEFAULT_PARAGRAPH_STYLE_ISTD || !styleIsDefined(style)) return undefined
+  return templateStyleIdOf(style)
+}
+
+/**
+ * A paragraph mapped onto a template style silently inherits that template
+ * style's toggles — so every toggle the template chain turns ON and the
+ * source's own chain leaves silent must be stated explicitly off on the
+ * resolved formatting, or the template's value leaks (a plain-heading document
+ * whose Heading 1 maps onto the bold template heading would come out bold).
+ * A value the source chain or the direct formatting states (either polarity)
+ * already wins in the written file, so only the silent ones are stamped.
+ */
+function reconcileTemplateToggles(
+  paragraph: ParagraphFormatting | undefined,
+  run: CharacterFormatting | undefined,
+  templateStyleId: string | undefined,
+): void {
+  if (!templateStyleId) return
+  const toggles = BLANK_STYLE_ON_TOGGLES_BY_ID.get(templateStyleId)
+  if (!toggles) return
+  for (const tag of toggles.run) {
+    if (!run) continue
+    if (tag === 'w:b' || tag === 'w:bCs') {
+      if (run.bold === undefined) run.bold = false
+    } else if (tag === 'w:i' || tag === 'w:iCs') {
+      if (run.italic === undefined) run.italic = false
+    } else if (tag === 'w:strike') {
+      if (run.strike === undefined) run.strike = false
+    } else if (tag === 'w:caps') {
+      if (run.caps === undefined) run.caps = false
+    } else if (tag === 'w:smallCaps') {
+      if (run.smallCaps === undefined && run.caps !== true) run.smallCaps = false
+    } else if (tag === 'w:vanish') {
+      if (run.hidden === undefined) run.hidden = false
+    }
+  }
+  if (paragraph) {
+    for (const tag of toggles.paragraph) {
+      if (tag === 'w:keepNext') {
+        if (paragraph.keepNext === undefined) paragraph.keepNext = false
+      } else if (tag === 'w:keepLines') {
+        if (paragraph.keepLines === undefined) paragraph.keepLines = false
+      } else if (tag === 'w:contextualSpacing') {
+        if (paragraph.contextualSpacing === undefined) paragraph.contextualSpacing = false
+      }
+    }
+  }
+}
 
 interface Resolver {
   styles: StyleSheet
@@ -101,6 +186,27 @@ function characterStyleIndex(sprms: Uint8Array): number | undefined {
   return istd
 }
 
+/** a stylesheet slot carries a definition worth emitting/referencing: not an
+    empty cbStd == 0 placeholder */
+function styleIsDefined(style: Style | undefined): boolean {
+  return (
+    style !== undefined &&
+    (style.name !== '' || style.papxSprms.length > 0 || style.chpxSprms.length > 0)
+  )
+}
+
+/** whether legacyStyleDefs emits this style's own def: the skip list, shared
+    so a basedOn pointing at a skipped style can be dropped instead of dangling */
+function styleIsEmitted(style: Style | undefined): boolean {
+  if (!style || !styleIsDefined(style)) return false
+  if (style.kind === 'paragraph' && style.istd === DEFAULT_PARAGRAPH_STYLE_ISTD) return false
+  if (style.sti === STI_HYPERLINK || style.sti === STI_FOLLOWED_HYPERLINK) return false
+  if (style.kind === 'character' && isDefaultParagraphFontStyle(style)) return false
+  if (style.kind === 'character' && style.istd === DEFAULT_CHARACTER_STYLE_ISTD) return false
+  if (style.kind !== 'paragraph' && style.kind !== 'character') return false
+  return true
+}
+
 function resolveParagraphFormatting(
   istd: number,
   sprms: Uint8Array,
@@ -112,6 +218,16 @@ function resolveParagraphFormatting(
     applyParagraphGrpprl(formatting, style.papxSprms, resolver.context, 'inherit')
   applyParagraphGrpprl(formatting, sprms, resolver.context, 'inherit')
   formatting.styleIndex = istd
+  // the writer references the style through this id; istd 0 is Normal, which
+  // the blank template already defines, so it is never emitted nor referenced.
+  // A style whose name the template already defines references the template's
+  // own id — the def is not emitted beside it, and the template style's own
+  // toggles must then be answered explicitly (see reconcileTemplateToggles).
+  const mapped = paragraphTemplateStyleIdOf(resolver.styles, istd)
+  if (istd !== DEFAULT_PARAGRAPH_STYLE_ISTD && styleIsDefined(resolver.styles.styles.get(istd))) {
+    formatting.styleId = mapped ?? legacyStyleId(istd)
+  }
+  reconcileTemplateToggles(formatting, undefined, mapped)
   return formatting
 }
 
@@ -122,11 +238,16 @@ function suppressedTocStyle(styles: StyleSheet, istd: number, inTocLink: boolean
   return sti === STI_HYPERLINK || sti === STI_FOLLOWED_HYPERLINK
 }
 
+/** Word's built-in heading style ids: sti 1..9 are heading 1..9 */
+const STI_HEADING_FIRST = 1
+const STI_HEADING_LAST = 9
+
 function resolveCharacterFormatting(
   sprms: Uint8Array,
   paragraphStyles: Style[],
   resolver: Resolver,
   inTocLink = false,
+  templateStyleId?: string,
 ): CharacterFormatting {
   const formatting: CharacterFormatting = {}
   for (const style of paragraphStyles) applyCharacterGrpprl(formatting, style.chpxSprms, 'inherit')
@@ -152,8 +273,25 @@ function resolveCharacterFormatting(
       'a run character style',
     ))
       applyCharacterGrpprl(formatting, style.chpxSprms, 'inherit')
+    // the run carries the character style through this id (w:rStyle); the null
+    // style ("Default Paragraph Font") is never referenced — its slot order
+    // varies, so the skip checks the built-in number as well as Word's own
+    // istd 10 — and a Hyperlink-family style is implied by the run's own link
+    // (the engine convention: rStyle Hyperlink is written by the generator)
+    const referencedStyle = resolver.styles.styles.get(characterIstd)
+    if (
+      characterIstd !== DEFAULT_CHARACTER_STYLE_ISTD &&
+      styleIsDefined(referencedStyle) &&
+      referencedStyle!.sti !== STI_HYPERLINK &&
+      referencedStyle!.sti !== STI_FOLLOWED_HYPERLINK &&
+      referencedStyle!.sti !== STI_DEFAULT_CHARACTER
+    ) {
+      const mapped = templateStyleIdOf(referencedStyle!)
+      formatting.styleId = mapped ?? legacyStyleId(characterIstd)
+    }
   }
   applyCharacterGrpprl(formatting, sprms, 'inherit')
+  reconcileTemplateToggles(undefined, formatting, templateStyleId)
   if (resolver.styles.fonts) {
     const names = fontNamesFor(resolver.styles.fonts, {
       ascii: formatting.ftcAscii,
@@ -164,6 +302,108 @@ function resolveCharacterFormatting(
     if (names) formatting.fontNames = names
   }
   return formatting
+}
+
+/** A stylesheet entry for the .docx writer's styles.xml: the style's own chain
+    (base first, the same layering the direct-formatting resolution uses)
+    resolved into formatting structs. The writer serializes these into
+    w:style definitions whose ids come from styles.ts legacyStyleId. */
+export interface LegacyStyleDef {
+  istd: number
+  kind: 'paragraph' | 'character'
+  name: string
+  basedOn?: number
+  /** the template style id the base maps onto, when it does (the base's own
+      def is not emitted, so the w97- id would dangle) */
+  basedOnTemplate?: string
+  /** the chain-resolved paragraph properties (paragraph styles) */
+  paragraph?: ParagraphFormatting
+  /** the chain-resolved run properties (a paragraph style's CHPX layer, or a
+      character style's whole chain) */
+  character?: CharacterFormatting
+}
+
+/** Resolve every defined style of the stylesheet into a LegacyStyleDef.
+    Normal (paragraph istd 0) is skipped — the blank .docx template already
+    defines it and its chain is baked into docDefaults. */
+export function legacyStyleDefs(
+  styles: StyleSheet,
+  context: ParagraphContext,
+  warnings: string[] = [],
+): LegacyStyleDef[] {
+  const warn = warnOnce(warnings)
+  const styleFonts = (formatting: CharacterFormatting): void => {
+    if (!styles.fonts) return
+    const names = fontNamesFor(styles.fonts, {
+      ascii: formatting.ftcAscii,
+      hAnsi: formatting.ftcHAnsi,
+      eastAsia: formatting.ftcEastAsia,
+      cs: formatting.ftcBi,
+    })
+    if (names) formatting.fontNames = names
+  }
+  const defs: LegacyStyleDef[] = []
+  for (const style of styles.styles.values()) {
+    if (!styleIsDefined(style)) continue
+    // Normal is the blank template's own style, and the Hyperlink family is
+    // provided by the template too (the generator implies it on link runs)
+    if (style.kind === 'paragraph' && style.istd === DEFAULT_PARAGRAPH_STYLE_ISTD) continue
+    if (style.sti === STI_HYPERLINK || style.sti === STI_FOLLOWED_HYPERLINK) continue
+    // the null character style ("Default Paragraph Font") is never emitted:
+    // its slot order and its built-in numbering vary between producers
+    // (LibreOffice files store it user-defined), so the skip matches the name too
+    if (style.kind === 'character' && isDefaultParagraphFontStyle(style)) continue
+    if (style.kind === 'character' && style.istd === DEFAULT_CHARACTER_STYLE_ISTD) continue
+    // table / numbering styles (Table Normal, No List) have no w:style the
+    // writer can model: the template's defaults apply implicitly
+    if (style.kind !== 'paragraph' && style.kind !== 'character') continue
+    // a style the template already defines under the same name maps onto it
+    // and is not emitted beside it (Word repairs duplicate names)
+    if (templateStyleIdOf(style)) continue
+    const chain = styleChain(styles, style.istd, warn, `style ${style.istd}`)
+    if (chain.length === 0) continue
+    // a base that mapped onto the template keeps the hierarchy visible in
+    // Word's style tree (basedOnTemplate); a base that is skipped outright —
+    // Normal, the Hyperlink family, the null character style — would leave a
+    // dangling w:basedOn, and the resolved formatting already folded that
+    // base in, so the link is simply dropped
+    const baseDef = style.basedOn !== undefined ? styles.styles.get(style.basedOn) : undefined
+    const baseMapped = baseDef ? templateStyleIdOf(baseDef) : undefined
+    const baseDropped = style.basedOn !== undefined && !styleIsEmitted(baseDef) && !baseMapped
+    const def: LegacyStyleDef = {
+      istd: style.istd,
+      kind: style.kind === 'paragraph' ? 'paragraph' : 'character',
+      name: style.name,
+      ...(style.basedOn !== undefined && !baseDropped ? { basedOn: style.basedOn } : {}),
+      ...(style.basedOn !== undefined && !baseDropped && baseMapped
+        ? { basedOnTemplate: baseMapped }
+        : {}),
+    }
+    if (style.kind === 'paragraph') {
+      const paragraph: ParagraphFormatting = {}
+      for (const entry of chain)
+        applyParagraphGrpprl(paragraph, entry.papxSprms, context, 'inherit')
+      delete paragraph.styleIndex
+      delete paragraph.styleId
+      // Word's built-in heading styles carry the outline level the sti maps
+      // to; a legacy PAPX sprmSOutLvl (already resolved) wins when present
+      if (
+        paragraph.outlineLevel === undefined &&
+        style.sti >= STI_HEADING_FIRST &&
+        style.sti <= STI_HEADING_LAST
+      )
+        paragraph.outlineLevel = style.sti - 1
+      if (Object.keys(paragraph).length > 0) def.paragraph = paragraph
+    }
+    const character: CharacterFormatting = {}
+    for (const entry of chain) applyCharacterGrpprl(character, entry.chpxSprms, 'inherit')
+    styleFonts(character)
+    delete character.styleIndex
+    delete character.styleId
+    if (Object.keys(character).length > 0) def.character = character
+    defs.push(def)
+  }
+  return defs
 }
 
 /** The stylesheet of a document with its font table attached (undefined without an STSH). */
@@ -184,6 +424,7 @@ function buildResolvedRuns(
   paragraphStyles: Style[],
   resolver: Resolver,
   rawText: string,
+  templateStyleId?: string,
 ): FormattedRun[] {
   const boundaries = new Set<number>([paragraph.startCp, paragraph.endCp])
   for (const run of read.characterRuns) {
@@ -205,6 +446,8 @@ function buildResolvedRuns(
       covering?.sprms ?? NO_SPRMS,
       paragraphStyles,
       resolver,
+      false,
+      templateStyleId,
     )
     const text = mapper.map(rawText.slice(segmentStart, segmentEnd))
     if (text === '') continue
@@ -389,7 +632,13 @@ export function resolveParagraphMarkFormatting(
     resolver.warn,
     `the paragraph style (index ${request.styleIstd})`,
   )
-  return resolveCharacterFormatting(covering.sprms, paragraphStyles, resolver)
+  return resolveCharacterFormatting(
+    covering.sprms,
+    paragraphStyles,
+    resolver,
+    false,
+    paragraphTemplateStyleIdOf(styles, request.styleIstd),
+  )
 }
 
 /**
@@ -420,6 +669,11 @@ export function resolveParagraphFormattingFor(
     applyParagraphGrpprl(formatting, style.papxSprms, resolver.context, 'inherit')
   applyParagraphGrpprl(formatting, request.papxSprms, resolver.context, 'inherit')
   formatting.styleIndex = request.styleIstd
+  reconcileTemplateToggles(
+    formatting,
+    undefined,
+    paragraphTemplateStyleIdOf(styles, request.styleIstd),
+  )
   return formatting
 }
 
@@ -461,6 +715,7 @@ export function resolveRunsForRange(
     resolver.warn,
     `the paragraph style (index ${request.styleIstd})`,
   )
+  const mapped = paragraphTemplateStyleIdOf(styles, request.styleIstd)
   return runsForRange(
     read,
     request.startCp,
@@ -471,6 +726,7 @@ export function resolveRunsForRange(
         paragraphStyles,
         resolver,
         inTocLink === true,
+        mapped,
       ),
     source.rawText,
     linkRanges,
@@ -537,12 +793,13 @@ export function resolveFormatting(
       resolver.warn,
       `the paragraph style (index ${raw.istd})`,
     )
+    const mapped = paragraphTemplateStyleIdOf(styles, raw.istd)
     return {
       startCp: paragraph.startCp,
       endCp: paragraph.endCp,
       text: paragraph.text,
       formatting: resolveParagraphFormatting(raw.istd, raw.sprms, paragraphStyles, resolver),
-      runs: buildResolvedRuns(paragraph, read, paragraphStyles, resolver, source.rawText),
+      runs: buildResolvedRuns(paragraph, read, paragraphStyles, resolver, source.rawText, mapped),
       ...markFormattingEntry(
         resolveParagraphMarkFormatting(read, source, styles, {
           startCp: paragraph.startCp,
