@@ -241,7 +241,7 @@ export function ChartInsertModal({
     <div className="modal-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
       <div className="modal modal-chart">
         <h2>{t('ribbonChartInsertTitle')}</h2>
-        <div className="modal-row">
+        <div className="modal-row chart-type-options">
           {CHART_TYPES.map((value) => (
             <button
               key={value}

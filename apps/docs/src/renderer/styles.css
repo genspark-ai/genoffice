@@ -9115,6 +9115,10 @@ body.docs-run-pic-dragging .doc-run-pic-frame {
   min-width: 460px;
 }
 
+.chart-type-options {
+  flex-wrap: wrap;
+}
+
 .chart-data-grid {
   border-collapse: collapse;
   margin-bottom: 8px;
