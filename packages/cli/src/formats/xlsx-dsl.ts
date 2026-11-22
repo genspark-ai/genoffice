@@ -45,6 +45,7 @@ import {
   type WorkbookOperation,
 } from '@genoffice/xlsx-gateway/domain/workbook-dsl'
 import JSZip from 'jszip'
+import { loadUserZip } from './gated-zip'
 import type { PathContext } from '../fs'
 import { classifyOpError } from '../op-errors'
 import { CliError, EXIT, type ErrorHints, type ErrorReason } from '../result'
@@ -833,7 +834,7 @@ interface WorkbookMeta extends WorkbookFileState {
  * (rules, filter, notes) so existing content is carried or the op refused.
  */
 async function readWorkbookMeta(source: Buffer): Promise<WorkbookMeta> {
-  const zip = await JSZip.loadAsync(source)
+  const zip = await loadUserZip(source)
   const workbook = (await zip.file('xl/workbook.xml')?.async('string')) ?? ''
   const rels = (await zip.file('xl/_rels/workbook.xml.rels')?.async('string')) ?? ''
   const targets = new Map(

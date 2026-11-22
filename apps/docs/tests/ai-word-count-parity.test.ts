@@ -48,11 +48,12 @@ function createEditor(content: JsonNode[]): Editor {
 
 describe('AI snapshot word count vs office_doc_info', () => {
   it('separates adjacent blocks and counts inline formula text', () => {
-    // "alpha" + "beta" concatenated would be one word; the formula adds two
-    // more. The right answer is 4.
+    // "alpha" + "beta" concatenated would be one word; the formula adds one
+    // more (Word counts an equation's unspaced text as one word). The right
+    // answer is 3.
     const editor = createEditor([para(text('alpha')), para(text('beta')), para(math('E=mc2'))])
     const infoWords = countWords(documentTextForWordCount(editor.state.doc))
-    expect(infoWords).toBe(4)
+    expect(infoWords).toBe(3)
     expect(buildDocumentContext(editor)).toContain(`Full-text stats: words ${infoWords}`)
   })
 
@@ -88,8 +89,8 @@ describe('AI snapshot word count vs office_doc_info', () => {
       para(math('E=mc2')),
     ])
     const docText = documentTextForWordCount(editor.state.doc)
-    expect(countWords(docText)).toBe(7)
-    const stats = `Full-text stats: words 7, characters (no spaces) ${
+    expect(countWords(docText)).toBe(6)
+    const stats = `Full-text stats: words 6, characters (no spaces) ${
       docText.replace(/\s/g, '').length
     }, characters (with spaces) ${docText.length}`
     expect(buildDocumentContext(editor)).toContain(stats)

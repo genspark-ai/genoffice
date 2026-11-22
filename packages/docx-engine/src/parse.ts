@@ -2,6 +2,7 @@ import JSZip from 'jszip'
 import { isEastAsianLangTag } from './char-class'
 import type { JSZipObject } from 'jszip'
 import { LAZY_MEDIA_PLACEHOLDER_BYTES, lazyMediaHashOf, lazyMediaUrl } from './lazy-media'
+import { hasPermRanges, permRangeMap } from './perm-ranges'
 import { parseCustGeom } from '@genoffice/pptx-engine/custgeom'
 import { parseChartPartXml } from './chart'
 import { findInkRuns, stripInkRuns } from './ink'
@@ -534,7 +535,12 @@ export async function parseDocx(
     endnotes,
     settingsNoteProps,
   )
+  // editing permission ranges, resolved once in document order (they cross blocks)
+  const permRanges = hasPermRanges(documentXml)
+    ? permRangeMap(documentXml, scan.elements)
+    : undefined
   const buildCtx: BuildContext = {
+    ...(permRanges ? { permTables: permRanges.tables } : {}),
     zip,
     compat,
     ...(layoutSettings.mathPr ? { mathLimits: layoutSettings.mathPr } : {}),
@@ -672,6 +678,7 @@ export async function parseDocx(
       const summary = dropStoryOwnedRecords(records, block.textboxes)
       if (summary.length > 0) block.revisionRecords = summary
     }
+    if (permRanges?.paragraphs.has(el.start)) block.permEditable = true
     blocks.push(block)
     buildCtx.floatTableAhead = floatTableColumnSpan(block, sectionAt(el.start))
   }
@@ -828,6 +835,8 @@ export async function parseDocx(
 
 interface BuildContext {
   zip: JSZip
+  /** editing permission ranges: per top-level table start offset, one editable flag per w:tc */
+  permTables?: ReadonlyMap<number, readonly boolean[]>
   sourcePath?: string
   styles: Map<string, StyleInfo>
   rels: Map<string, RelInfo>
@@ -5852,12 +5861,17 @@ function extractTableModel(
     const h = findChild(findChild(tc, 'w:tcPr') ?? {}, 'w:hMerge')
     return !!h && attrsOf(h)['w:val'] !== 'restart'
   }
+  // permission-range flags are resolved per w:tc in this same order (perm-ranges.ts)
+  const permFlags =
+    depth === 1 && docOffset !== undefined ? ctx.permTables?.get(docOffset) : undefined
+  let tcOrdinal = 0
   for (const [i, tr] of trs.entries()) {
     const cells: TableCell[] = []
     const tcws: Array<number | undefined> = []
     const tcs = trCells[i]
     let col = 0
     for (const [j, tc] of tcs.entries()) {
+      const permEditable = permFlags?.[tcOrdinal++] === true
       const span = spanOf(tc)
       // the conditions see the visual span: legacy w:hMerge continue cells fold into
       // this one below, so a restart reaching the last column still gets lastCol
@@ -5871,11 +5885,13 @@ function extractTableModel(
       // Legacy horizontal merge: continue cells fold into the cell to their left (same effect
       // as gridSpan)
       if (cell.hMerge === 'continue' && prev) {
+        if (permEditable) prev.permEditable = true
         prev.colSpan = (prev.colSpan ?? 1) + (cell.colSpan ?? 1)
         const prevW = tcws[tcws.length - 1]
         tcws[tcws.length - 1] = prevW !== undefined && tcw !== undefined ? prevW + tcw : undefined
         continue
       }
+      if (permEditable) cell.permEditable = true
       cells.push(cell)
       tcws.push(tcw)
     }
