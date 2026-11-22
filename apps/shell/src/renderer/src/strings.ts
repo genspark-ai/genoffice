@@ -2843,10 +2843,6 @@ export const strings = {
       'Érvénytelen fejlécformátum: minden sornak „Név: Érték” alakúnak kell lennie.',
     setAiEndpointModelsBad:
       'Érvénytelen modellmegadás: JSON-tömb kell legyen, pl. [{ "id": "m" }].',
-    skillDetailClose: 'Bezárás',
-    skillDetailLoading: 'Útmutató betöltése…',
-    skillDetailEmpty: 'Ehhez a készséghez nincs útmutató.',
-    skillDetailCopy: 'Útmutató másolása',
   },
   ja: {
     addFolderRoot: 'フォルダーを追加…',
@@ -5815,8 +5811,7 @@ export const strings = {
     askDropFiles: 'วางไฟล์เพื่อแนบ',
     askSend: 'ส่ง',
     askStop: 'หยุด',
-    askHeroTagline:
-      'ให้ดาวไฟล์ที่คุณอ่านบ่อย แล้ว AI จะค้นหาข้ามไฟล์พร้อมอ้างอิงแหล่งที่มา คลิกการอ้างอิงเพื่อเปิดไฟล์',
+    askHeroTagline: 'ให้ดาวไฟล์ที่คุณอ่านบ่อย แล้ว AI จะค้นหาข้ามไฟล์พร้อมอ้างอิงแหล่งที่มา คลิกการอ้างอิงเพื่อเปิดไฟล์',
     askStep1Title: 'ให้ดาวไฟล์',
     askStep1Desc: 'ในเมนูล่าสุดหรือโฟลเดอร์ คลิกดาวบนแถวไฟล์',
     askStep2Title: 'ถามคำถาม',
@@ -5827,8 +5822,7 @@ export const strings = {
     askNoSave: 'บทสนทนาจะไม่ถูกบันทึก และจะล้างเมื่อรีสตาร์ทแอป',
     askUnknownError: 'คำขอ AI ล้มเหลว โปรดลองอีกครั้ง',
     navCloud: 'Genspark Projects',
-    cloudSubtitle:
-      'โปรเจกต์ที่สร้างบนเว็บด้วย Genspark AI แก้ไขต่อได้ในเบราว์เซอร์ — คลิกโปรเจกต์เพื่อเปิด',
+    cloudSubtitle: 'โปรเจกต์ที่สร้างบนเว็บด้วย Genspark AI แก้ไขต่อได้ในเบราว์เซอร์ — คลิกโปรเจกต์เพื่อเปิด',
     cloudSearchPlaceholder: 'ค้นหา {n} โปรเจกต์…',
     cloudNoResults: 'ไม่มีโปรเจกต์ที่ตรงกัน',
     cloudSortRecent: 'ล่าสุด',
@@ -5990,8 +5984,7 @@ export const strings = {
     docThemeFollowApp: 'ตามธีมของแอป',
     saveLocation: 'ตำแหน่งบันทึก',
     setRestoreSession: 'เปิดเอกสารจากครั้งที่แล้วอีกครั้ง',
-    setRestoreSessionDesc:
-      'เอกสารที่เปิดอยู่ตอนปิด GenOffice จะเปิดขึ้นอีกครั้งโดยอัตโนมัติเมื่อเริ่มโปรแกรมครั้งถัดไป',
+    setRestoreSessionDesc: 'เอกสารที่เปิดอยู่ตอนปิด GenOffice จะเปิดขึ้นอีกครั้งโดยอัตโนมัติเมื่อเริ่มโปรแกรมครั้งถัดไป',
     setTabSleep: 'พักแท็บที่ไม่ได้ใช้งาน',
     setTabSleepDesc:
       'เมื่อเปิดแท็บจำนวนมาก แท็บที่ไม่ได้ดูสักพักจะคืนหน่วยความจำและเปิดไฟล์ใหม่เมื่อคุณกลับมา แท็บที่มีการเปลี่ยนแปลงที่ยังไม่บันทึกหรือปักหมุดไว้จะไม่พัก',
@@ -6040,8 +6033,7 @@ export const strings = {
     setAiShowSidebarDesc:
       'เมื่อปิด ตัวแก้ไขจะซ่อนแถบข้าง AI และปุ่มด้านข้าง; คำสั่ง AI ในริบบิ้นหรือเมนูยังเปิดแผง AI ได้ และเอกสารใหม่จะไม่เปิดให้',
     setAiOpenInNewDocs: 'เปิดแผง AI ในเอกสารใหม่',
-    setAiOpenInNewDocsDesc:
-      'เมื่อปิด เอกสารที่เปิดใหม่จะเริ่มโดยพับแผง AI ไว้ คลิกครั้งเดียวเพื่อเปิดเมื่อต้องการ',
+    setAiOpenInNewDocsDesc: 'เมื่อปิด เอกสารที่เปิดใหม่จะเริ่มโดยพับแผง AI ไว้ คลิกครั้งเดียวเพื่อเปิดเมื่อต้องการ',
     setAiShowAskTrigger: 'แสดงชิป «ถาม AI» เมื่อเลือกข้อความ',
     setAiShowAskTriggerDesc:
       'เมื่อปิด ปุ่มลอย «ถาม AI» ที่ตามการเลือกข้อความจะไม่แสดงอีกต่อไป แผง AI ยังใช้งานได้',
@@ -6093,10 +6085,8 @@ export const strings = {
     intgHeroStep2: 'ทำตามส่วนที่ตรงกันด้านล่าง ปกติคลิกครั้งเดียว',
     intgHeroStep3: 'เปิดแชตใหม่แล้วสั่งได้เลย',
     intgStep1Title: 'ติดตั้งสกิลลงในผู้ช่วยของคุณ',
-    intgStep1Desc:
-      'แสดงเฉพาะผู้ช่วยที่พบบนคอมพิวเตอร์เครื่องนี้ ติดตั้งเฉพาะตัวที่คุณใช้จริงก็พอ ไม่จำเป็นต้องติดตั้งทั้งหมด',
-    intgStep1Update:
-      'เมื่อการอัปเดต GenOffice มาพร้อมสกิลเวอร์ชันใหม่ ปุ่มอัปเดตจะปรากฏข้างผู้ช่วยนั้น',
+    intgStep1Desc: 'แสดงเฉพาะผู้ช่วยที่พบบนคอมพิวเตอร์เครื่องนี้ ติดตั้งเฉพาะตัวที่คุณใช้จริงก็พอ ไม่จำเป็นต้องติดตั้งทั้งหมด',
+    intgStep1Update: 'เมื่อการอัปเดต GenOffice มาพร้อมสกิลเวอร์ชันใหม่ ปุ่มอัปเดตจะปรากฏข้างผู้ช่วยนั้น',
     intgSkillVersion: 'สกิล {v}',
     intgStateMissing: 'ยังไม่ติดตั้งสกิล',
     intgSharedReaders: 'โฟลเดอร์สกิลที่ใช้ร่วมกัน ซึ่ง {list} อ่าน',
@@ -6108,8 +6098,7 @@ export const strings = {
     intgLegacyCleaned: 'ลบสำเนาเก่าแล้ว {n} ชุด เก็บไว้ {k} ชุดที่แก้ไขด้วยมือ',
     intgLegacyFailed: 'ลบสำเนาเก่าไม่สำเร็จ: {msg}',
     intgOtherToggle: 'ไม่พบผู้ช่วยของฉันในรายการ',
-    intgOtherDesc:
-      'เลือกเพียงวิธีใดวิธีหนึ่งจากสามวิธีนี้ ทุกวิธีติดตั้งสกิลเดียวกัน จึงไม่ต้องทำมากกว่าหนึ่งวิธี',
+    intgOtherDesc: 'เลือกเพียงวิธีใดวิธีหนึ่งจากสามวิธีนี้ ทุกวิธีติดตั้งสกิลเดียวกัน จึงไม่ต้องทำมากกว่าหนึ่งวิธี',
     intgOtherFolderTitle: 'ผู้ช่วยใดก็ได้ที่อ่านโฟลเดอร์ SKILL.md',
     intgOtherFolderDesc: 'เลือกโฟลเดอร์ skills ของผู้ช่วย แล้ว GenOffice จะเขียนไฟล์ลงไป',
     intgOtherZipTitle: 'ส่งไฟล์ให้ผู้ช่วย',
@@ -6141,8 +6130,7 @@ export const strings = {
     intgMcpOtherTitle: 'Cursor, Claude Desktop หรือผู้ช่วยอื่นที่รองรับ MCP',
     intgMcpOtherDesc:
       'เพิ่มส่วนนี้ลงในการตั้งค่าเซิร์ฟเวอร์ MCP ของผู้ช่วย (ไฟล์ JSON หรือ "เพิ่มเซิร์ฟเวอร์ MCP" ในการตั้งค่า):',
-    intgMcpNote:
-      'สกิลและ MCP ตั้งค่าไว้พร้อมกันได้ ผู้ช่วยจะเลือกใช้เอง ทั้งสองทำงานเหมือนกันทุกอย่าง',
+    intgMcpNote: 'สกิลและ MCP ตั้งค่าไว้พร้อมกันได้ ผู้ช่วยจะเลือกใช้เอง ทั้งสองทำงานเหมือนกันทุกอย่าง',
     intgCliTitle: 'ขั้นสูง: บรรทัดคำสั่ง genoffice',
     intgCliReady: 'genoffice {v} · พร้อมใช้ในเทอร์มินัล ({path})',
     intgCliNotOnPath:
@@ -6207,15 +6195,13 @@ export const strings = {
     setAiMaxTokensDesc:
       'งบผลลัพธ์ต่อหนึ่งรอบ โมเดลแบบใช้เหตุผลจะใช้ส่วนหนึ่งไปกับการคิด หากงบหมด คำตอบอาจกลับมาว่างเปล่า ให้เพิ่มค่านี้',
     setSecAiMedia: 'สื่อ AI และการค้นหา',
-    setAiMediaGensparkHint:
-      'การสร้างภาพและการวิเคราะห์ภาพ/วิดีโอใช้การลงชื่อเข้าใช้ Genspark ของคุณ',
+    setAiMediaGensparkHint: 'การสร้างภาพและการวิเคราะห์ภาพ/วิดีโอใช้การลงชื่อเข้าใช้ Genspark ของคุณ',
     setAiSearchGensparkHint:
       'การค้นหาเว็บและภาพใช้การลงชื่อเข้าใช้ Genspark หากไม่ได้ลงชื่อเข้าใช้หรือปิดเครื่องมือคลาวด์ จะใช้แหล่งข้อมูลฟรีแทน',
     setAiSearchSerperHint: 'Serper ให้บริการค้นหาเว็บและภาพด้วยคีย์ของคุณ',
     setAiSearchSerplyHint: 'Serply ให้บริการค้นหาเว็บและภาพด้วยคีย์ของคุณ',
     setAiSearchSearchApiHint: 'SearchApi ให้บริการค้นหาเว็บและภาพด้วยคีย์ของคุณ',
-    setAiSearchTavilyHint:
-      'Tavily ให้บริการค้นหาเว็บด้วยคีย์ของคุณ ส่วนการค้นหาภาพจะใช้แหล่งข้อมูลฟรีแทน',
+    setAiSearchTavilyHint: 'Tavily ให้บริการค้นหาเว็บด้วยคีย์ของคุณ ส่วนการค้นหาภาพจะใช้แหล่งข้อมูลฟรีแทน',
     setAiSearchParallelHint:
       'เว้นคีย์ว่างไว้เพื่อค้นหาด้วย Parallel ฟรี (จำกัดการใช้งาน) เพิ่มคีย์เพื่อใช้บัญชี Parallel ของคุณ การค้นหารูปภาพใช้แหล่งข้อมูลอื่น',
     setAiSearchKeenableHint:
@@ -6225,8 +6211,7 @@ export const strings = {
     setAiCapVideo: 'วิเคราะห์วิดีโอ',
     setAiCapSearch: 'ค้นหาเว็บ',
     setAiCapFileSearch: 'ค้นหาไฟล์ในเครื่อง',
-    setAiSharedKeyHint:
-      'คีย์และ Base URL ของผู้ให้บริการเดียวกันใช้ร่วมกันทุกความสามารถ กรอกครั้งเดียวพอ',
+    setAiSharedKeyHint: 'คีย์และ Base URL ของผู้ให้บริการเดียวกันใช้ร่วมกันทุกความสามารถ กรอกครั้งเดียวพอ',
     setAiGskTools: 'เครื่องมือคลาวด์ Genspark',
     setAiGskToolsDesc:
       'เมื่อผู้ให้บริการตั้งเป็น Genspark การค้นหาเว็บ การสร้างภาพ และการวิเคราะห์สื่อจะผ่าน Genspark และใช้เครดิต เมื่อปิด การค้นหาจะใช้แหล่งข้อมูลฟรีและเครื่องมือภาพของ Genspark จะใช้ไม่ได้',
@@ -6234,8 +6219,7 @@ export const strings = {
     starOnGitHub: 'กดดาวบน GitHub',
     starPromptTitle: 'ชอบ GenOffice ไหม?',
     starPromptTitleN: 'คุณเปิดเอกสารด้วย GenOffice ไปแล้ว {n} ไฟล์',
-    starPromptBody:
-      'GenOffice ฟรีและเป็นโอเพนซอร์ส การกดดาวบน GitHub คือกำลังใจที่ดีที่สุดสำหรับทีม',
+    starPromptBody: 'GenOffice ฟรีและเป็นโอเพนซอร์ส การกดดาวบน GitHub คือกำลังใจที่ดีที่สุดสำหรับทีม',
     starPromptGo: 'กดดาวเลย',
     starPromptDone: 'กดแล้ว',
     starPromptLater: 'ไว้ทีหลัง',
@@ -6320,8 +6304,7 @@ export const strings = {
     setAiEndpointHeaders: 'ส่วนหัวที่กำหนดเอง',
     setAiEndpointHeadersHint: 'หนึ่งบรรทัดต่อ "ชื่อ: ค่า" เช่น X-Tenant: office',
     setAiEndpointIdleTimeout: 'หมดเวลาว่างของสตรีม (วินาที)',
-    setAiEndpointIdleTimeoutHint:
-      'เพิ่มขึ้นเมื่อโมเดลในเครื่องช้าจนถึงโทเคนแรก เว้นว่างเพื่อใช้ค่าเริ่มต้น 180',
+    setAiEndpointIdleTimeoutHint: 'เพิ่มขึ้นเมื่อโมเดลในเครื่องช้าจนถึงโทเคนแรก เว้นว่างเพื่อใช้ค่าเริ่มต้น 180',
     setAiCompatTitle: 'ความสามารถของเอนด์พอยต์',
     setAiCompatEchoHint: 'เว้นว่างเพื่อให้ชื่อโมเดลตัดสินเอง; ตรงนี้แก้เท่านั้น',
     setAiCompatOmitTemp: 'ละแฟง temperature',
@@ -12085,14 +12068,12 @@ export const strings = {
     askThreadDeleteConfirm: '"{label}" बातचीत हटाएँ? इसे वापस नहीं किया जा सकेगा।',
     askThreadNew: 'नई बातचीत',
     askTitle: 'अपने नॉलेज बेस से पूछें',
-    askEmptyCorpusHint:
-      'अभी कोई स्टार की गई फ़ाइल नहीं है — पहले फ़ाइलों को स्टार करें ताकि AI उन्हें पढ़ सके।',
+    askEmptyCorpusHint: 'अभी कोई स्टार की गई फ़ाइल नहीं है — पहले फ़ाइलों को स्टार करें ताकि AI उन्हें पढ़ सके।',
     askCorpusCount: 'नॉलेज बेस: {n} स्टार की गई फ़ाइलें',
     askCorpusShow: 'फ़ाइलें दिखाएँ',
     askCorpusHide: 'फ़ाइलें छिपाएँ',
     askCorpusList: 'नॉलेज बेस में स्टार की गई फ़ाइलें',
-    askIntro:
-      'अपनी स्टार की गई फ़ाइलों के बारे में पूछें। उत्तर स्रोत बताते हैं — खोलने के लिए क्लिक करें।',
+    askIntro: 'अपनी स्टार की गई फ़ाइलों के बारे में पूछें। उत्तर स्रोत बताते हैं — खोलने के लिए क्लिक करें।',
     askToolSearch: 'नॉलेज बेस खोज रहा है',
     askToolRead: 'फ़ाइल पढ़ रहा है',
     askToolCreate: 'दस्तावेज़ बनाया जा रहा है',
@@ -12191,8 +12172,7 @@ export const strings = {
     rename: 'नाम बदलें',
     duplicate: 'प्रतिलिपि बनाएँ',
     renameFailed: 'नाम बदलने में विफल',
-    emptyStarred:
-      'कोई तारांकित फ़ाइल नहीं — फ़ाइल की पंक्ति पर कर्सर ले जाएँ और तारे पर क्लिक करें।',
+    emptyStarred: 'कोई तारांकित फ़ाइल नहीं — फ़ाइल की पंक्ति पर कर्सर ले जाएँ और तारे पर क्लिक करें।',
     emptyRecent: 'कोई हालिया फ़ाइल नहीं — शुरू करने के लिए कोई फ़ाइल बनाएँ या खोलें।',
     emptyFiltered: 'इस प्रकार की कोई फ़ाइल नहीं है।',
     // Folders panel
@@ -12228,8 +12208,7 @@ export const strings = {
     folderMoreActions: '{name} के लिए और कार्रवाइयाँ',
     conflictTitle: 'इस नाम का आइटम पहले से मौजूद है',
     conflictBodyOne: 'लक्ष्य फ़ोल्डर में पहले से "{name}" है। आप क्या करना चाहेंगे?',
-    conflictBodyMany:
-      'लक्ष्य फ़ोल्डर में पहले से इन्हीं नामों के {n} आइटम हैं। आप क्या करना चाहेंगे?',
+    conflictBodyMany: 'लक्ष्य फ़ोल्डर में पहले से इन्हीं नामों के {n} आइटम हैं। आप क्या करना चाहेंगे?',
     conflictKeepBoth: 'दोनों रखें',
     conflictReplace: 'बदलें',
     rootUnusable: 'डिफ़ॉल्ट सेव स्थान उपलब्ध नहीं है, इसलिए फ़ोल्डर नहीं दिखाए जा सकते।',
@@ -12245,8 +12224,7 @@ export const strings = {
     loginGenspark: 'Genspark से साइन इन करें',
     loggedIn: 'साइन इन हो गया',
     loggedInGenspark: 'Genspark में साइन इन है',
-    waitingLogin:
-      'ब्राउज़र में साइन इन की प्रतीक्षा है… साइन इन पेज दोबारा खोलने के लिए क्लिक करें',
+    waitingLogin: 'ब्राउज़र में साइन इन की प्रतीक्षा है… साइन इन पेज दोबारा खोलने के लिए क्लिक करें',
     waitingShort: 'प्रतीक्षा में…',
     loginTimeout: 'साइन इन का समय समाप्त — पुनः प्रयास के लिए क्लिक करें',
     loginLaunchFailed: 'साइन इन शुरू नहीं हो सका — पुनः प्रयास के लिए क्लिक करें',
@@ -12363,8 +12341,7 @@ export const strings = {
     setMcpConfigDesc:
       'अपने क्लाइंट के MCP सर्वर कॉन्फ़िगरेशन में जोड़ें (Claude Desktop का mcp.json, Cursor की MCP सेटिंग्स आदि)।',
     setMcpBg: 'बैकग्राउंड जनरेशन',
-    setMcpBgDesc:
-      'UI खोले बिना दस्तावेज़ सीधे किसी पाथ पर लिखता है; बंद होने पर जनरेशन ऐप में दिखती है।',
+    setMcpBgDesc: 'UI खोले बिना दस्तावेज़ सीधे किसी पाथ पर लिखता है; बंद होने पर जनरेशन ऐप में दिखती है।',
     setMcpLog: 'लॉगिंग',
     setMcpLogDesc: 'MCP सर्वर और टूल गतिविधि को लोकल लॉग फ़ाइल में रिकॉर्ड करता है',
     setMcpLogFile: 'लॉग फ़ाइल',
@@ -12394,8 +12371,7 @@ export const strings = {
     intgStep1Title: 'अपने असिस्टेंट में skill इंस्टॉल करें',
     intgStep1Desc:
       'यहाँ केवल इस कंप्यूटर पर मिले असिस्टेंट दिखते हैं। जिसे आप सच में इस्तेमाल करते हैं उसी में इंस्टॉल करें; सभी की ज़रूरत नहीं।',
-    intgStep1Update:
-      'जब GenOffice के अपडेट में नया skill आता है, तो उस असिस्टेंट के पास अपडेट बटन दिखता है।',
+    intgStep1Update: 'जब GenOffice के अपडेट में नया skill आता है, तो उस असिस्टेंट के पास अपडेट बटन दिखता है।',
     intgSkillVersion: 'skill {v}',
     intgStateMissing: 'skill इंस्टॉल नहीं है',
     intgSharedReaders: '{list} द्वारा पढ़ा जाने वाला साझा skills फ़ोल्डर',
@@ -12439,8 +12415,7 @@ export const strings = {
     intgMcpClaudeTitle: 'Claude Code',
     intgMcpClaudeDesc: 'टर्मिनल में इसे एक बार चलाएँ:',
     intgMcpOtherTitle: 'Cursor, Claude Desktop या कोई अन्य MCP-समर्थित असिस्टेंट',
-    intgMcpOtherDesc:
-      'इसे उसकी MCP सर्वर सेटिंग्स में जोड़ें (एक JSON फ़ाइल, या सेटिंग्स में "MCP सर्वर जोड़ें"):',
+    intgMcpOtherDesc: 'इसे उसकी MCP सर्वर सेटिंग्स में जोड़ें (एक JSON फ़ाइल, या सेटिंग्स में "MCP सर्वर जोड़ें"):',
     intgMcpNote:
       'स्किल और MCP एक साथ सेट किए जा सकते हैं; असिस्टेंट एक को चुन लेता है। दोनों बिल्कुल एक जैसे काम करते हैं।',
     intgCliTitle: 'उन्नत: genoffice कमांड लाइन',
@@ -12494,8 +12469,7 @@ export const strings = {
     setAiCodexPath: 'Codex निष्पादन फ़ाइल',
     setAiCodexPathHint: 'केवल कस्टम इंस्टॉलेशन के लिए भरें; स्वतः पहचान के लिए खाली छोड़ें।',
     setAiCodexAutoPlaceholder: 'स्वतः पहचान (अनुशंसित)',
-    setAiCodexHint:
-      'स्थानीय रूप से साइन-इन किए गए Codex CLI का उपयोग करता है; API कुंजी की आवश्यकता नहीं।',
+    setAiCodexHint: 'स्थानीय रूप से साइन-इन किए गए Codex CLI का उपयोग करता है; API कुंजी की आवश्यकता नहीं।',
     setAiByokNote:
       'चैट आपकी अपनी कुंजी का उपयोग करती हैं। इमेज जनरेशन और मीडिया विश्लेषण "AI मीडिया" अनुभाग के अनुसार होते हैं; वेब खोज अभी भी Genspark साइन-इन या मुफ़्त स्रोतों का उपयोग करती है।',
     setAiSave: 'सहेजें',
@@ -12508,15 +12482,13 @@ export const strings = {
     setAiMaxTokensDesc:
       'एक टर्न का आउटपुट बजट। रीज़निंग मॉडल इसका कुछ हिस्सा सोचने में खर्च करते हैं; बजट खत्म होने पर उत्तर खाली आ सकता है — ऐसा हो तो इसे बढ़ाएँ।',
     setSecAiMedia: 'AI मीडिया और खोज',
-    setAiMediaGensparkHint:
-      'इमेज जनरेशन और इमेज/वीडियो विश्लेषण आपके Genspark साइन-इन का उपयोग करते हैं।',
+    setAiMediaGensparkHint: 'इमेज जनरेशन और इमेज/वीडियो विश्लेषण आपके Genspark साइन-इन का उपयोग करते हैं।',
     setAiSearchGensparkHint:
       'वेब और इमेज खोज आपके Genspark साइन-इन का उपयोग करती हैं; साइन-आउट होने पर या क्लाउड टूल बंद होने पर वे मुफ़्त स्रोतों पर लौट जाती हैं।',
     setAiSearchSerperHint: 'Serper आपकी कुंजी से वेब और इमेज खोज दोनों देता है।',
     setAiSearchSerplyHint: 'Serply आपकी कुंजी से वेब और इमेज खोज दोनों देता है।',
     setAiSearchSearchApiHint: 'SearchApi आपकी कुंजी से वेब और इमेज खोज दोनों देता है।',
-    setAiSearchTavilyHint:
-      'Tavily आपकी कुंजी से वेब खोज देता है; इमेज खोज मुफ़्त स्रोतों पर लौट जाती है।',
+    setAiSearchTavilyHint: 'Tavily आपकी कुंजी से वेब खोज देता है; इमेज खोज मुफ़्त स्रोतों पर लौट जाती है।',
     setAiSearchParallelHint:
       'मुफ़्त Parallel खोज के लिए कुंजी खाली छोड़ें (सीमित उपयोग)। अपने Parallel खाते का उपयोग करने के लिए कुंजी जोड़ें। इमेज खोज अन्य स्रोतों का उपयोग करती है।',
     setAiSearchKeenableHint:
@@ -12526,8 +12498,7 @@ export const strings = {
     setAiCapVideo: 'वीडियो विश्लेषण',
     setAiCapSearch: 'वेब खोज',
     setAiCapFileSearch: 'स्थानीय फ़ाइल खोज',
-    setAiSharedKeyHint:
-      'एक प्रदाता की कुंजी और Base URL सभी क्षमताओं में साझा होते हैं; एक बार ही दर्ज करें।',
+    setAiSharedKeyHint: 'एक प्रदाता की कुंजी और Base URL सभी क्षमताओं में साझा होते हैं; एक बार ही दर्ज करें।',
     setAiGskTools: 'Genspark क्लाउड टूल',
     setAiGskToolsDesc:
       'जब प्रदाता Genspark हो, वेब खोज, इमेज जनरेशन और मीडिया विश्लेषण Genspark से होकर चलते हैं और क्रेडिट खर्च करते हैं; बंद होने पर खोज मुफ़्त स्रोत उपयोग करती है और Genspark इमेज टूल उपलब्ध नहीं रहते।',
@@ -12535,8 +12506,7 @@ export const strings = {
     starOnGitHub: 'GitHub पर स्टार दें',
     starPromptTitle: 'GenOffice पसंद आ रहा है?',
     starPromptTitleN: 'आपने GenOffice में {n} दस्तावेज़ खोले हैं',
-    starPromptBody:
-      'GenOffice मुफ़्त और ओपन सोर्स है। GitHub पर एक स्टार टीम का सबसे अच्छा समर्थन है।',
+    starPromptBody: 'GenOffice मुफ़्त और ओपन सोर्स है। GitHub पर एक स्टार टीम का सबसे अच्छा समर्थन है।',
     starPromptGo: 'स्टार दें',
     starPromptDone: 'पहले ही दे दिया',
     starPromptLater: 'बाद में',
