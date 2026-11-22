@@ -1,7 +1,8 @@
 import type { zh } from './zh'
 
 export const ar = {
-  appCollabOverwriteNotice: 'تم تطبيق تغييرات أحد الزملاء على هذا المصنف. لا تزال تعديلاتك غير المحفوظة ({count}) معلقة وستُكتب عند الحفظ.',
+  appCollabOverwriteNotice:
+    'تم تطبيق تغييرات أحد الزملاء على هذا المصنف. لا تزال تعديلاتك غير المحفوظة ({count}) معلقة وستُكتب عند الحفظ.',
   // ── Withholding cells from the model ──
   redactMenuLabel: 'إخفاء التحديد عن الذكاء الاصطناعي',
   redactDialogDesc:

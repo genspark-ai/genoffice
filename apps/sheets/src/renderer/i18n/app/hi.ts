@@ -1,7 +1,8 @@
 import type { zh } from './zh'
 
 export const hi = {
-  appCollabOverwriteNotice: 'सहकर्मी के बदलाव इस वर्कबुक में लागू हो गए। आपके असहेजे गए संपादन ({count}) लंबित हैं और सहेजने पर लिखे जाएँगे।',
+  appCollabOverwriteNotice:
+    'सहकर्मी के बदलाव इस वर्कबुक में लागू हो गए। आपके असहेजे गए संपादन ({count}) लंबित हैं और सहेजने पर लिखे जाएँगे।',
   // ── Withholding cells from the model ──
   redactMenuLabel: 'चयन को AI से छिपाएँ',
   redactDialogDesc:

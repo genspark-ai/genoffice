@@ -781,16 +781,15 @@ export function App({
       const state = lazyWorkbookRef.current
       if (!state) return adapterRef.current.getSnapshot().sheets.flatMap((s) => s.visuals ?? [])
       const edits = state.editJournal.visualEdits
-      const file = edits.size === 0 ? state.file.visuals : projectVisualEdits(state.file.visuals, edits)
+      const file =
+        edits.size === 0 ? state.file.visuals : projectVisualEdits(state.file.visuals, edits)
       return [...file, ...state.editJournal.visualAdds]
     }
     const collab = new SheetsCollab({
       bridge,
       snapshot: () => {
         const base = adapterRef.current.getSnapshot()
-        return JSON.stringify(
-          snapshotLiveWorkbook(univerRef.current, base.revision, liveVisuals()),
-        )
+        return JSON.stringify(snapshotLiveWorkbook(univerRef.current, base.revision, liveVisuals()))
       },
       apply: (raw) => {
         const { visuals } = applyRemoteWorkbookSnapshot(univerRef.current, raw)

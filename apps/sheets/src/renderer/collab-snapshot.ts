@@ -138,7 +138,9 @@ export function snapshotLiveWorkbook(
       if (typeof row?.h === 'number') rowHeights[String(Number(key) + 1)] = pixelsToPoints(row.h)
     }
     const colWidths: Record<string, number> = {}
-    for (const [key, column] of Object.entries((raw.columnData ?? {}) as Record<string, RawColumn>)) {
+    for (const [key, column] of Object.entries(
+      (raw.columnData ?? {}) as Record<string, RawColumn>,
+    )) {
       if (typeof column?.w === 'number') colWidths[columnLabel(Number(key))] = Math.round(column.w)
     }
 
