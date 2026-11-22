@@ -477,7 +477,7 @@ export const tr = {
     'Henüz yer işareti yok. Başvurmak istediğiniz noktayı işaretlemek için "Ekle → Yer İşareti" kullanın.',
   ribbonChartInsertTitle: 'Grafik Ekle',
   ribbonChartTitlePh: 'Grafik Başlığı',
-  ribbonChartBar: 'Çubuk',
+  ribbonChartBar: 'Sütun',
   ribbonChartLine: 'Çizgi',
   ribbonChartPie: 'Pasta',
   ribbonCategoryN: 'Kategori {n}',

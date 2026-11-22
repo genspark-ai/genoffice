@@ -384,7 +384,7 @@ export const hu = {
     'Még nincs könyvjelző. A „Beszúrás → Könyvjelző” menüponttal jelöld meg a hivatkozni kívánt helyet.',
   ribbonChartInsertTitle: 'Diagram beszúrása',
   ribbonChartTitlePh: 'Diagram címe',
-  ribbonChartBar: 'Sáv',
+  ribbonChartBar: 'Oszlop',
   ribbonChartLine: 'Vonal',
   ribbonChartPie: 'Kör',
   ribbonCategoryN: 'Kategória {n}',

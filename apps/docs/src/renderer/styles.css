@@ -9115,6 +9115,11 @@ body.docs-run-pic-dragging .doc-run-pic-frame {
   min-width: 460px;
 }
 
+/* the 16 chart types overflow the 460px modal on one line: wrap them */
+.modal-chart .modal-chart-types {
+  flex-wrap: wrap;
+}
+
 .chart-data-grid {
   border-collapse: collapse;
   margin-bottom: 8px;
