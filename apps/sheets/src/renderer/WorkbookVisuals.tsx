@@ -148,6 +148,9 @@ function shapeRunStyle(run: ShapeParagraph['runs'][number] | undefined, withDeco
     ...(run.bold ? { fontWeight: 700 } : {}),
     ...(run.italic ? { fontStyle: 'italic' } : {}),
     ...(withDecoration && run.underline ? { textDecoration: 'underline' } : {}),
+    ...(withDecoration && run.underline && run.underlineStyle === 'dbl'
+      ? { textDecorationStyle: 'double' as const }
+      : {}),
     ...(run.size ? { fontSize: shapeRunFontSize(run.size) } : {}),
     ...(withDecoration && run.caps === 'all' ? { textTransform: 'uppercase' as const } : {}),
     ...(withDecoration && run.caps === 'small' ? { fontVariantCaps: 'small-caps' as const } : {}),

@@ -5691,7 +5691,16 @@ export function cellFontTextStyle(style: WorkbookCellStyle | undefined): IStyleD
     ...(style.fontSize ? { fs: style.fontSize } : {}),
     ...(style.bold ? { bl: BooleanNumber.TRUE } : {}),
     ...(style.italic ? { it: BooleanNumber.TRUE } : {}),
-    ...(style.underline ? { ul: { s: BooleanNumber.TRUE } } : {}),
+    ...(style.underline
+      ? {
+          ul: {
+            s: BooleanNumber.TRUE,
+            ...(style.underlineStyle === 'double' || style.underlineStyle === 'doubleAccounting'
+              ? { t: 10 }
+              : {}),
+          },
+        }
+      : {}),
     ...(style.strikethrough ? { st: { s: BooleanNumber.TRUE } } : {}),
     ...(style.vertAlign ? { va: baselineOffsetOf(style.vertAlign) } : {}),
     ...(style.fontColor ? { cl: { rgb: style.fontColor } } : {}),
@@ -5711,7 +5720,9 @@ export function fontTextStyleOf(s: IStyleData | null | undefined): IStyleData {
     ...(s.fs ? { fs: s.fs } : {}),
     ...(s.bl ? { bl: s.bl } : {}),
     ...(s.it ? { it: s.it } : {}),
-    ...(s.ul?.s ? { ul: { s: BooleanNumber.TRUE } } : {}),
+    ...(s.ul?.s
+      ? { ul: { s: BooleanNumber.TRUE, ...(s.ul.t !== undefined ? { t: s.ul.t } : {}) } }
+      : {}),
     ...(s.st?.s ? { st: { s: BooleanNumber.TRUE } } : {}),
     ...(s.va ? { va: s.va } : {}),
     ...(s.cl?.rgb ? { cl: { rgb: s.cl.rgb } } : {}),
@@ -5822,6 +5833,7 @@ function runHasFormatting(run: WorkbookRichRun): boolean {
     run.bold ||
     run.italic ||
     run.underline ||
+    run.underlineStyle !== undefined ||
     run.strikethrough ||
     run.color !== undefined ||
     run.size !== undefined ||
@@ -5861,7 +5873,15 @@ export function toRichTextDocument(
             ...(run.size ? { fs: scaledFontSize(run.size, fontScale) } : {}),
             bl: run.bold ? BooleanNumber.TRUE : BooleanNumber.FALSE,
             it: run.italic ? BooleanNumber.TRUE : BooleanNumber.FALSE,
-            ul: { s: run.underline ? BooleanNumber.TRUE : BooleanNumber.FALSE },
+            // Univer TextDecoration.DOUBLE = 10; the accounting variants read
+            // double too (Excel draws them double over a wider line span).
+            ul: {
+              s: run.underline ? BooleanNumber.TRUE : BooleanNumber.FALSE,
+              ...(run.underline &&
+              (run.underlineStyle === 'double' || run.underlineStyle === 'doubleAccounting')
+                ? { t: 10 }
+                : {}),
+            },
             st: { s: run.strikethrough ? BooleanNumber.TRUE : BooleanNumber.FALSE },
             ...(run.color ? { cl: { rgb: run.color } } : {}),
             ...(run.vertAlign
@@ -7800,7 +7820,18 @@ export function toUniverStyle(style: WorkbookCellStyle): IStyleData {
     ...(style.fontSize ? { fs: style.fontSize } : {}),
     bl: style.bold ? BooleanNumber.TRUE : BooleanNumber.FALSE,
     it: style.italic ? BooleanNumber.TRUE : BooleanNumber.FALSE,
-    ...(style.underline ? { ul: { s: BooleanNumber.TRUE } } : {}),
+    // Univer TextDecoration.DOUBLE = 10; the accounting variants read double
+    // too (Excel draws them double over a wider line span).
+    ...(style.underline
+      ? {
+          ul: {
+            s: BooleanNumber.TRUE,
+            ...(style.underlineStyle === 'double' || style.underlineStyle === 'doubleAccounting'
+              ? { t: 10 }
+              : {}),
+          },
+        }
+      : {}),
     ...(style.strikethrough ? { st: { s: BooleanNumber.TRUE } } : {}),
     ...(style.vertAlign ? { va: baselineOffsetOf(style.vertAlign) } : {}),
     // xf alignment is fully resolved in the file: an explicit non-wrap cell

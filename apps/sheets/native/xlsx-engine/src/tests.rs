@@ -5074,3 +5074,43 @@ fn encrypted_workbook_reports_password_protection() {
         "expected a password-protection explanation, got: {message}"
     );
 }
+
+/// A rich run's rPr keeps the underline variant through the file read
+/// (#2912): double and bare-single stay distinguishable for the renderer.
+#[test]
+fn rich_run_underline_keeps_its_variant() {
+    let (_dir, path) = open_fixture(&[
+        (
+            "xl/workbook.xml",
+            r#"<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="S" sheetId="1" r:id="rId1"/></sheets></workbook>"#,
+        ),
+        (
+            "xl/_rels/workbook.xml.rels",
+            r#"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/></Relationships>"#,
+        ),
+        (
+            "xl/sharedStrings.xml",
+            r#"<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><si><r><rPr><u val="double"/></rPr><t>two</t></r><r><rPr><u/></rPr><t>one</t></r></si></sst>"#,
+        ),
+        (
+            "xl/worksheets/sheet1.xml",
+            r#"<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData><row r="1"><c r="A1" t="s"><v>0</v></c></row></sheetData></worksheet>"#,
+        ),
+    ]);
+    let mut sessions = WorkbookSessions::new();
+    let metadata = sessions.open(&path).unwrap();
+    let range = CellRange {
+        start_row: 0,
+        end_row: 0,
+        start_column: 0,
+        end_column: 0,
+    };
+    let result = sessions
+        .read_range(&metadata.session_id, "sheet-1", &range)
+        .unwrap();
+    let runs = result.cells[0].rich.as_ref().unwrap();
+    assert!(runs[0].underline);
+    assert_eq!(runs[0].underline_style.as_deref(), Some("double"));
+    assert!(runs[1].underline);
+    assert_eq!(runs[1].underline_style, None);
+}

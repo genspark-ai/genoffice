@@ -9,6 +9,7 @@ export const richRunSchema = z
     bold: z.boolean(),
     italic: z.boolean(),
     underline: z.boolean(),
+    underlineStyle: z.enum(['double', 'singleAccounting', 'doubleAccounting']).optional(),
     strikethrough: z.boolean(),
     color: z.string().optional(),
     size: z.number().positive().optional(),

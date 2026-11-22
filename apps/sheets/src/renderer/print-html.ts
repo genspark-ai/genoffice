@@ -119,7 +119,7 @@ export interface PrintWorksheet {
 interface PrintCellStyle {
   readonly bl?: number
   readonly it?: number
-  readonly ul?: { s?: number } | null
+  readonly ul?: { s?: number; t?: number } | null
   readonly st?: { s?: number } | null
   readonly fs?: number
   readonly ff?: string | null
@@ -958,6 +958,8 @@ function cellCss(
     style?.st?.s === 1 ? 'line-through' : '',
   ].filter(Boolean)
   if (decorations.length > 0) rules.push(`text-decoration:${decorations.join(' ')}`)
+  // Univer TextDecoration.DOUBLE = 10
+  if (style?.ul?.s === 1 && style?.ul?.t === 10) rules.push('text-decoration-style:double')
   if (style?.fs) rules.push(`font-size:${round(style.fs)}pt`)
   // a font name comes straight from styles.xml; anything outside the whitelist could
   // close the style attribute and inject markup into the exported page

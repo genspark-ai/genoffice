@@ -36,6 +36,7 @@ pub(crate) fn parse_text_paragraphs(
                         bold: false,
                         italic: false,
                         underline: false,
+                        underline_style: None,
                         size: None,
                         caps: None,
                     });
@@ -62,6 +63,11 @@ pub(crate) fn parse_text_paragraphs(
                     underline: properties
                         .and_then(|rpr| rpr.attribute("u"))
                         .is_some_and(|value| value != "none"),
+                    // DrawingML spells double "dbl"; the renderer maps it.
+                    underline_style: properties
+                        .and_then(|rpr| rpr.attribute("u"))
+                        .filter(|value| *value != "none" && *value != "sng")
+                        .map(ToOwned::to_owned),
                     size: properties
                         .and_then(|rpr| rpr.attribute("sz"))
                         .and_then(|value| value.parse::<f64>().ok())

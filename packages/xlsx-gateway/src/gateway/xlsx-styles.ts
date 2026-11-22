@@ -263,10 +263,8 @@ function buildFont(baseFontXml: string, delta: WorkbookStyleEdit): string {
   if (delta.italic !== undefined) override(/<i\b[^>]*\/?>/g, delta.italic ? '<i/>' : '')
   if (delta.underline !== undefined || delta.underlineStyle !== undefined) {
     const on = delta.underline ?? true
-    override(
-      /<u\b[^>]*\/?>/g,
-      on ? (delta.underlineStyle === 'double' ? '<u val="double"/>' : '<u/>') : '',
-    )
+    const variant = delta.underlineStyle !== undefined && delta.underlineStyle !== 'single'
+    override(/<u\b[^>]*\/?>/g, on ? (variant ? `<u val="${delta.underlineStyle}"/>` : '<u/>') : '')
   }
   if (delta.strikethrough !== undefined) {
     override(/<strike\b[^>]*\/?>/g, delta.strikethrough ? '<strike/>' : '')

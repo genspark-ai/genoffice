@@ -43,6 +43,10 @@ pub struct CellStyle {
     pub bold: bool,
     pub italic: bool,
     pub underline: bool,
+    /// font <u val> beyond single: "double" | "singleAccounting" |
+    /// "doubleAccounting"; absent for single. A bare <u/> reads as single.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub underline_style: Option<String>,
     pub strikethrough: bool,
     /// font <vertAlign val>: "superscript" | "subscript"; absent for baseline.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -308,6 +312,9 @@ pub struct ShapeRun {
     pub italic: bool,
     #[serde(skip_serializing_if = "is_false")]
     pub underline: bool,
+    /// a:rPr/@u beyond single ("dbl" in DrawingML); absent for single/none.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub underline_style: Option<String>,
     /// Points (a:rPr/@sz / 100).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub size: Option<f64>,
@@ -627,6 +634,8 @@ pub(crate) struct FontStyle {
     bold: bool,
     italic: bool,
     underline: bool,
+    /// font <u val> beyond single ("double" et al.); absent for single.
+    underline_style: Option<String>,
     strikethrough: bool,
     vert_align: Option<String>,
     color: Option<String>,
