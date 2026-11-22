@@ -42,3 +42,23 @@ describe('scanFiles budget', () => {
     expect(scanFiles(dir).files.map((f) => f.path)).toEqual([join(dir, 'real', 'a.md')])
   })
 })
+
+describe('scanFiles exclusions (#2844)', () => {
+  it('prunes excluded subfolders and skips their files', () => {
+    mkdirSync(join(dir, 'keep'))
+    writeFileSync(join(dir, 'keep', 'a.md'), 'x')
+    mkdirSync(join(dir, 'keep', 'secret'))
+    writeFileSync(join(dir, 'keep', 'secret', 'b.md'), 'x')
+    writeFileSync(join(dir, 'keep', 'c.md'), 'x')
+    const res = scanFiles(dir, {}, [join(dir, 'keep', 'secret')])
+    expect(res.files.some((f) => f.path.includes('b.md'))).toBe(false)
+    expect(res.files.some((f) => f.path.endsWith('a.md'))).toBe(true)
+    expect(res.files.some((f) => f.path.endsWith('c.md'))).toBe(true)
+    // a bare-prefix sibling is not caught by the boundary rule
+    mkdirSync(join(dir, 'secret-notes'))
+    writeFileSync(join(dir, 'secret-notes', 'd.md'), 'x')
+    expect(
+      scanFiles(dir, {}, [join(dir, 'secret')]).files.some((f) => f.path.includes('d.md')),
+    ).toBe(true)
+  })
+})

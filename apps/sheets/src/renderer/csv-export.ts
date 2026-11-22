@@ -15,6 +15,7 @@ import { t } from './i18n/locale'
 import { DATE_1904_OFFSET, isCalendarDatePattern, patternType } from './numfmt-fix'
 import { showToast } from './toast-bus'
 import type { LazyWorkbookState, UniverRuntime } from './univer-state'
+import { neutralizeCsvFormulaField } from '@genoffice/xlsx-gateway/domain/csv-formula-guard'
 
 /// Rows fetched per getDisplayValues call, bounding the facade's allocation.
 const EXPORT_ROW_BLOCK = 4096
@@ -51,13 +52,37 @@ export interface CsvWorksheet {
   }
 }
 
-export function csvField(text: string): string {
-  const normalized = text.replace(/\r\n|\r/g, '\n')
-  return /[",\n]/.test(normalized) ? `"${normalized.replace(/"/g, '""')}"` : normalized
+/** The CSV export's formula-neutralization preference: off by default —
+    accounting text ("-"), social handles ("@handle") and negative currency
+    keep their bytes, and the plain CSV save never rewrites a cell. Only the
+    explicit Export ▸ CSV command consults it. */
+export const CSV_NEUTRALIZE_KEY = 'aisheets.csv-neutralize-formulas'
+
+export function csvNeutralizeFormulasEnabled(
+  storage: Pick<Storage, 'getItem'> = globalThis.localStorage,
+): boolean {
+  return storage.getItem(CSV_NEUTRALIZE_KEY) === '1'
 }
 
-export function csvFromDisplayRows(rows: readonly (readonly string[])[]): string {
-  return rows.map((row) => row.map(csvField).join(',') + '\r\n').join('')
+export function csvField(text: string, neutralizeFormulas = false): string {
+  const normalized = text.replace(/\r\n|\r/g, '\n')
+  // formula-injection guard, shared with the CLI's writer (xlsx-gateway
+  // domain/csv-formula-guard): opt-in, and limited to the shapes the next app
+  // actually evaluates — a leading =, @/ +/- followed by a function call, or
+  // the DDE program|topic!cell form. Ordinary data never gains the apostrophe
+  // (Excel does not hide it on CSV open; pandas and DB imports read it as
+  // data).
+  const guarded = neutralizeFormulas ? neutralizeCsvFormulaField(normalized) : normalized
+  return /[",\n]/.test(guarded) ? `"${guarded.replace(/"/g, '""')}"` : guarded
+}
+
+export function csvFromDisplayRows(
+  rows: readonly (readonly string[])[],
+  neutralizeFormulas = false,
+): string {
+  return rows
+    .map((row) => row.map((cell) => csvField(cell, neutralizeFormulas)).join(',') + '\r\n')
+    .join('')
 }
 
 /// Runs `read` with the sheet dropped from the formula-view set, restoring it
@@ -151,6 +176,7 @@ export function serializeActiveSheetCsv(
   sheet: CsvWorksheet,
   state: LazyWorkbookState | null,
   patternOf?: CellPatternLookup,
+  neutralizeFormulas = false,
 ): string | 'too-large' {
   const rowCount = Math.max(sheet.getLastRow(), 0) + 1
   const columnCount = Math.max(sheet.getLastColumn(), 0) + 1
@@ -184,7 +210,7 @@ export function serializeActiveSheetCsv(
           }
         }
       }
-      const part = csvFromDisplayRows(displays)
+      const part = csvFromDisplayRows(displays, neutralizeFormulas)
       length += part.length
       if (length > MAX_CSV_EXPORT_CHARS) return true
       parts.push(part)
@@ -230,7 +256,14 @@ export function sheetHasFormulas(sheet: CsvWorksheet): boolean {
   return found
 }
 
-export async function handleExportCsv(ctx: CsvExportContext, targetPath?: string): Promise<void> {
+/** Export ▸ CSV. `neutralizeFormulas` rides the command path only (the
+    preference); a CSV Save As passes nothing — the plain save keeps every
+    cell's bytes (see save-actions). */
+export async function handleExportCsv(
+  ctx: CsvExportContext,
+  targetPath?: string,
+  opts?: { neutralizeFormulas?: boolean },
+): Promise<void> {
   const runtime = ctx.univerRef.current
   if (!runtime || !activeCsvSheet(runtime)) return
   const state = ctx.lazyWorkbookRef.current
@@ -248,6 +281,7 @@ export async function handleExportCsv(ctx: CsvExportContext, targetPath?: string
       sheet,
       state,
       cellPatternLookup(runtime, sheet.getSheetId()),
+      opts?.neutralizeFormulas ?? false,
     )
     if (content === 'too-large') {
       ctx.setMessage(t('appCsvExportTooLarge'))

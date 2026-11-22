@@ -1,6 +1,8 @@
+import JSZip from 'jszip'
 import { describe, expect, it } from 'vitest'
 import {
   LegacyDocError,
+  convertLegacyDocToDocx,
   openLegacyDoc,
   parseStsh,
   readLegacyDocModel,
@@ -462,5 +464,152 @@ describe('stylesheet errors', () => {
     new DataView(stsh.buffer).setUint16(2 + 18 + 2 + 10, 500, true)
     const bytes = syntheticDoc({ stsh })
     expect(errorCode(() => readResolvedLegacyDocModel(bytes))).toBe('bad_stsh')
+  })
+})
+
+describe('converted styles: the stylesheet becomes .docx styles', () => {
+  // istd 0 Normal (never emitted), istd 1 heading 1 (bold CHPX), istd 2
+  // Centered (basedOn 1, centered PAPX), istd 3 Strong (bold character),
+  // istd 4 an empty cbStd == 0 slot, istd 10 the null character style
+  const nullCharStyles = Array.from({ length: 10 }, () => ({ empty: true }) as SyntheticStyle)
+  const doc = syntheticDoc({
+    styles: [
+      { name: 'Normal', kind: 'paragraph', sti: 0 },
+      { name: 'heading 1', kind: 'paragraph', sti: 1, basedOn: 0, chpxSprms: sprm(0x0835, [1]) },
+      { name: 'Centered', kind: 'paragraph', basedOn: 1, papxSprms: sprm(0x2461, [0x01]) },
+      { name: 'Strong', kind: 'character', chpxSprms: sprm(0x0835, [1]) },
+      { empty: true },
+      ...nullCharStyles,
+      { name: 'Default Paragraph Font', kind: 'character', sti: 65 },
+    ],
+    text: 'Head\rCentered\r',
+    paragraphs: [{ istd: 1 }, { istd: 2 }],
+    runSprms: sprm(0x4a30, [3, 0]),
+  })
+
+  it('emits the defined styles and the paragraphs and runs reference them', async () => {
+    const { docx } = await convertLegacyDocToDocx(doc)
+    const zip = await JSZip.loadAsync(docx)
+    const stylesXml = (await zip.file('word/styles.xml')!.async('string'))!
+    // a built-in name maps onto the style the template already defines: the
+    // source's heading 1 IS the template's Heading1 — emitting a second style
+    // under one name makes Word repair the file
+    expect(stylesXml).not.toContain('w:styleId="w97-1">')
+    expect(stylesXml).not.toContain('w:styleId="w97-3">')
+    expect(stylesXml.match(/<w:name w:val="heading 1"\/>/g)).toHaveLength(1)
+    // the custom style keeps its own def, and its basedOn points at the
+    // template id the mapped base landed on
+    expect(stylesXml).toContain(
+      '<w:style w:type="paragraph" w:styleId="w97-2"><w:name w:val="Centered"/>',
+    )
+    // istd 2 inherits heading 1's bold through the chain: the flattened
+    // definition carries it in rPr beside its own centered pPr
+    expect(stylesXml).toContain(
+      '<w:style w:type="paragraph" w:styleId="w97-2"><w:name w:val="Centered"/>' +
+        '<w:basedOn w:val="Heading1"/><w:pPr><w:jc w:val="center"/></w:pPr>' +
+        '<w:rPr><w:b/><w:bCs/></w:rPr></w:style>',
+    )
+    // the null character style (sti 65) is never emitted as a real style
+    expect(stylesXml).not.toContain('w:styleId="w97-15">')
+    expect(stylesXml.match(/<w:name w:val="Default Paragraph Font"\/>/g)).toBeNull()
+    // Normal is the template's own style and the empty slot emits nothing
+    expect(stylesXml).not.toContain('w:styleId="w97-0">')
+    expect(stylesXml).not.toContain('w:styleId="w97-4">')
+    const documentXml = (await zip.file('word/document.xml')!.async('string'))!
+    // the paragraphs and runs reference the mapped template ids
+    expect(documentXml).toContain('<w:pStyle w:val="Heading1"/>')
+    expect(documentXml).toContain('<w:pStyle w:val="w97-2"/>')
+    expect(documentXml).toContain('<w:rStyle w:val="Strong"/>')
+  })
+
+  it('a run in the null character style and a paragraph on an empty slot stay unreferenced', async () => {
+    const plain = syntheticDoc({
+      styles: [
+        { name: 'Normal', kind: 'paragraph', sti: 0 },
+        { empty: true },
+        ...Array.from({ length: 9 }, () => ({ empty: true }) as SyntheticStyle),
+        { name: 'Default Paragraph Font', kind: 'character', sti: 65 },
+      ],
+      text: 'plain\r',
+      paragraphs: [{ istd: 1 }],
+      runSprms: sprm(0x4a30, [10, 0]),
+    })
+    const { docx } = await convertLegacyDocToDocx(plain)
+    const zip = await JSZip.loadAsync(docx)
+    const documentXml = (await zip.file('word/document.xml')!.async('string'))!
+    expect(documentXml).not.toContain('<w:pStyle')
+    expect(documentXml).not.toContain('<w:rStyle')
+    const stylesXml = (await zip.file('word/styles.xml')!.async('string'))!
+    expect(stylesXml).not.toContain('w:styleId="w97-1">')
+    expect(stylesXml).not.toContain('w:styleId="w97-10">')
+  })
+})
+
+describe('mapped template styles answer the template toggles explicitly', () => {
+  it('a plain-heading document stays plain when its Heading 1 rides the bold template style', async () => {
+    // the merrick case: the source's heading 1 carries no bold CHPX, so on
+    // main the runs render plain; with the paragraph carrying pStyle Heading1
+    // (the template's chain is bold), a silent run property would leak — the
+    // resolved runs state the off instead
+    const doc = syntheticDoc({
+      styles: [
+        { name: 'Normal', kind: 'paragraph', sti: 0 },
+        { name: 'heading 1', kind: 'paragraph', sti: 1, basedOn: 0 },
+        { name: 'Title', kind: 'paragraph', basedOn: 0 },
+      ],
+      text: 'Head\rTitle\r',
+      paragraphs: [{ istd: 1 }, { istd: 2 }],
+    })
+    const { docx } = await convertLegacyDocToDocx(doc)
+    const zip = await JSZip.loadAsync(docx)
+    const documentXml = (await zip.file('word/document.xml')!.async('string'))!
+    expect(documentXml).toContain('<w:pStyle w:val="Heading1"/>')
+    // the template's bold answered off, not absent
+    expect(documentXml).toContain('<w:b w:val="0"/>')
+    expect(documentXml).toContain('<w:bCs w:val="0"/>')
+    expect(documentXml).not.toContain('<w:b/>')
+    // the template's Title turns spacing collapse on: a silent paragraph
+    // property would leak the same way
+    expect(documentXml).toContain('<w:pStyle w:val="Title"/>')
+    expect(documentXml).toContain('<w:contextualSpacing w:val="0"/>')
+    // a run whose own chain or direct formatting states bold keeps it
+    const bold = syntheticDoc({
+      styles: [
+        { name: 'Normal', kind: 'paragraph', sti: 0 },
+        { name: 'heading 1', kind: 'paragraph', sti: 1, basedOn: 0 },
+      ],
+      text: 'Head\r',
+      paragraphs: [{ istd: 1 }],
+      runSprms: sprm(0x0835, [1]),
+    })
+    const boldOut = await convertLegacyDocToDocx(bold)
+    const boldZip = await JSZip.loadAsync(boldOut.docx)
+    const boldXml = (await boldZip.file('word/document.xml')!.async('string'))!
+    expect(boldXml).toContain('<w:b/>')
+    expect(boldXml).not.toContain('<w:b w:val="0"/>')
+  })
+
+  it('a user-defined Default Paragraph Font is skipped and its children do not dangle', async () => {
+    // LibreOffice files store the null character style user-defined (no built-in
+    // sti), so the skip matches the name — and the styles based on it lose the
+    // link instead of pointing at a definition that was never written
+    const doc = syntheticDoc({
+      styles: [
+        { name: 'Normal', kind: 'paragraph', sti: 0 },
+        ...Array.from({ length: 9 }, () => ({ empty: true }) as SyntheticStyle),
+        { name: 'Default Paragraph Font', kind: 'character', sti: 4094 },
+        { name: 'Header Char', kind: 'character', basedOn: 10, chpxSprms: sprm(0x4a30, [10, 0]) },
+      ],
+      text: 'x\r',
+      paragraphs: [{ istd: 0 }],
+    })
+    const { docx } = await convertLegacyDocToDocx(doc)
+    const zip = await JSZip.loadAsync(docx)
+    const stylesXml = (await zip.file('word/styles.xml')!.async('string'))!
+    expect(stylesXml.match(/<w:name w:val="Default Paragraph Font"\/>/g)).toBeNull()
+    expect(stylesXml).toContain('w:styleId="w97-11"')
+    // Header Char keeps its def but carries no basedOn to the skipped style
+    const headerChar = stylesXml.split('w:styleId="w97-11"')[1] ?? ''
+    expect(headerChar.slice(0, 200)).not.toContain('<w:basedOn')
   })
 })
