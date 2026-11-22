@@ -21,10 +21,12 @@ import {
   readStyleSheet,
   resolveFormatting,
   fieldRangesWithin,
+  legacyStyleDefs,
   markFormattingEntry,
   resolveParagraphFormattingFor,
   resolveParagraphMarkFormatting,
   resolveRunsForRange,
+  type LegacyStyleDef,
 } from './resolve'
 import type { FormattingRead, FormattingSource } from './formatting'
 import type { StyleSheet } from './styles'
@@ -508,6 +510,9 @@ export interface LegacyDocRead {
   body: LegacyDocBody
   /** the document has an STSH and the model carries style-resolved formatting */
   stylesResolved: boolean
+  /** every defined stylesheet entry resolved for the writer's styles.xml
+      (empty without an STSH) */
+  styleDefs: LegacyStyleDef[]
 }
 
 /** Open a .doc once and read the model, the layout and the body from that parse. */
@@ -524,6 +529,7 @@ export function readLegacyDoc(bytes: Uint8Array): LegacyDocRead {
     layout: layoutOf(doc, stories),
     body: bodyOf(doc, read, styles, [], stories),
     stylesResolved: styles !== undefined,
+    styleDefs: styles ? legacyStyleDefs(styles, { source: doc, warnings }, warnings) : [],
   }
 }
 
