@@ -25,7 +25,10 @@ const MD_TEXT = '# 标题\n\n- 一\n- 二'
 
 /** the App editorProps paste lanes this fix touches (cleanPastedHtml is a
  *  no-op on Markdown output, which has no loose-list <p>s to unwrap) */
-function handlePaste(view: EditorView, event: { clipboardData: { getData: (t: string) => string } }) {
+function handlePaste(
+  view: EditorView,
+  event: { clipboardData: { getData: (t: string) => string } },
+) {
   const data = event.clipboardData
   const html = data.getData('text/html')
   const plainReroute = takeTextReroute() || (!html && takePlainPaste())
