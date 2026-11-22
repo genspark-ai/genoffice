@@ -10150,12 +10150,14 @@ export function buildDocsMenu(): void {
     // not a native role item: the editor's Markdown paste lane would turn the
     // plain-text paste into headings and lists (#2856), so the click first arms
     // the renderer's plain-paste flag and only then runs the role's own paste.
-    // The chord matches Electron's built-in pasteAndMatchStyle accelerator.
+    // The role stays on the item — the menu tree keeps its shape and, with a
+    // click present, Electron runs the click instead of the role's paste.
     if (id === 'paste-match-style') {
       const builtIn = isMac ? 'CmdOrCtrl+Alt+Shift+V' : 'CmdOrCtrl+Shift+V'
       const accelerator = menuAccelerator(userKeyOverrides(), bindingId(id), builtIn)
       return {
         ...item,
+        ...(def.role ? { role: def.role } : {}),
         ...(accelerator ? { accelerator } : {}),
         click: () => armAndPastePlain(),
       }

@@ -5,7 +5,7 @@
  * Markdown conversion that a plain Ctrl+V of Markdown-looking text still gets.
  * The editor here carries the App paste lanes this fix touches, trimmed to
  * text payloads — the plain-text reroute, the match-style arm and the
- * Markdown conversion lane.
+ * Markdown conversion lane (including its empty-paragraph wholesale branch).
  */
 import { describe, expect, it, vi } from 'vitest'
 import { Editor } from '@tiptap/core'
@@ -24,7 +24,9 @@ import { markdownPasteHtml } from '../src/renderer/editor/markdown-paste'
 const MD_TEXT = '# 标题\n\n- 一\n- 二'
 
 /** the App editorProps paste lanes this fix touches (cleanPastedHtml is a
- *  no-op on Markdown output, which has no loose-list <p>s to unwrap) */
+ *  no-op on Markdown output, which has no loose-list <p>s to unwrap). The
+ *  carets the lanes see in the app are always inside a paragraph's inline
+ *  content, so every test pastes from that shape. */
 function handlePaste(
   view: EditorView,
   event: { clipboardData: { getData: (t: string) => string } },
@@ -44,12 +46,24 @@ function handlePaste(
     const markdownHtml = markdownPasteHtml(data.getData('text/plain'))
     if (markdownHtml !== null) {
       const dom = new window.DOMParser().parseFromString(markdownHtml, 'text/html')
-      view.dispatch(
-        view.state.tr
-          .replaceSelection(PmDOMParser.fromSchema(view.state.schema).parseSlice(dom.body))
-          .scrollIntoView(),
-      )
-      return true
+      const parser = PmDOMParser.fromSchema(view.state.schema)
+      const $from = view.state.selection.$from
+      if (
+        view.state.selection.empty &&
+        $from.parent.isTextblock &&
+        $from.parent.content.size === 0 &&
+        $from.depth === 1
+      ) {
+        // the App's wholesale replace of an empty paragraph by block content
+        const parsed = parser.parse(dom.body)
+        if (parsed.content.childCount > 0) {
+          view.dispatch(view.state.tr.replaceWith($from.before(1), $from.after(1), parsed.content))
+          return true
+        }
+      } else {
+        view.dispatch(view.state.tr.replaceSelection(parser.parseSlice(dom.body)).scrollIntoView())
+        return true
+      }
     }
   }
   return false
@@ -59,19 +73,23 @@ function pasteEvent(html: string, text: string) {
   return { clipboardData: { getData: (type: string) => (type === 'text/html' ? html : text) } }
 }
 
-function makeEditor() {
+function makeEditor(paragraph: Record<string, unknown> = { text: 'host' }) {
+  const content = paragraph.text ? [{ type: 'text', text: paragraph.text }] : []
   return new Editor({
     element: document.createElement('div'),
     extensions: editorExtensions,
     content: {
       type: 'doc',
-      content: [{ type: 'docParagraph', content: [{ type: 'text', text: 'host' }] }],
+      content: [{ type: 'docParagraph', content }],
     },
   })
 }
 
 function caretAtEnd(editor: Editor): void {
-  const pos = editor.state.doc.content.size
+  // inside the last paragraph's inline content: content.size itself is the
+  // block boundary, a state a real caret never sits in (there the open slice
+  // start stops merging into the host paragraph)
+  const pos = editor.state.doc.content.size - 1
   editor.view.dispatch(editor.state.tr.setSelection(TextSelection.create(editor.state.doc, pos)))
 }
 
@@ -100,7 +118,7 @@ describe('paste and match style pastes literally (#2856)', () => {
   })
 
   it('a plain Ctrl+V of the same text still converts Markdown', () => {
-    const editor = makeEditor()
+    const editor = makeEditor({ text: null })
     caretAtEnd(editor)
     expect(takePlainPaste()).toBe(false)
     expect(handlePaste(editor.view, pasteEvent('', MD_TEXT))).toBe(true)
@@ -112,7 +130,7 @@ describe('paste and match style pastes literally (#2856)', () => {
   it('an expired flag leaves the Markdown lane in charge', () => {
     vi.useFakeTimers()
     try {
-      const editor = makeEditor()
+      const editor = makeEditor({ text: null })
       caretAtEnd(editor)
       armPlainPaste()
       vi.advanceTimersByTime(501)
