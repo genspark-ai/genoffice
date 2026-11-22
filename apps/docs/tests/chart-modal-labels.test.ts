@@ -15,7 +15,8 @@ import { editorExtensions } from '../src/renderer/editor/extensions'
 
 describe('chart dialog type labels', () => {
   it('names every chart type distinctly in every language', () => {
-    for (const [lang, dict] of Object.entries(ribbonStrings)) {
+    for (const [lang, strings] of Object.entries(ribbonStrings)) {
+      const dict = strings as Record<string, string>
       const labels = CHART_TYPES.map((type) => dict[CHART_TYPE_LABELS[type]])
       expect(labels, `${lang} has a duplicate chart label`).toHaveLength(new Set(labels).size)
       expect(labels.every((label) => typeof label === 'string' && label.length > 0)).toBe(true)
