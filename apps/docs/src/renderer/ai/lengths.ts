@@ -49,4 +49,14 @@ export function parsePoints(value: unknown): number | undefined {
   return emu === undefined ? undefined : emu / 12700
 }
 
+/** Word's largest "Exactly" line height, 1584pt */
+export const MAX_EXACT_LINE_TWIPS = 31680
+
+/** exact line height: a length with a unit ("30pt", "0.5in") -> positive twips; bare numbers are multiples, not lengths */
+export function parseExactLineTwips(value: unknown): number | undefined {
+  if (typeof value !== 'string') return undefined
+  const twips = parseTwips(value)
+  return twips !== undefined && twips > 0 && twips <= MAX_EXACT_LINE_TWIPS ? twips : undefined
+}
+
 export const emuToPx = (emu: number): number => Math.round(emu / 9525)
