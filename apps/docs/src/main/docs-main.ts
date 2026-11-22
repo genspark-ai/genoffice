@@ -42,7 +42,6 @@ import {
   webContents,
 } from 'electron'
 import {
-  EXCLUDED_FOLDERS_KEY,
   isUnderExcludedFolder,
   readExcludedFolders,
   abortOnDestroyed,
