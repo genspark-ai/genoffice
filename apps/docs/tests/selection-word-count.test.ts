@@ -94,7 +94,8 @@ describe('selectedWordCount', () => {
       },
     ])
     editor.commands.setTextSelection({ from: 1, to: 2 })
-    expect(selectedWordCount(editor.state.doc, editor.state.selection)).toBe(2)
+    // Word counts the equation "E=mc2" as one word
+    expect(selectedWordCount(editor.state.doc, editor.state.selection)).toBe(1)
   })
 
   it('a NodeSelection (an image) has no text range, so the figure is 0', () => {

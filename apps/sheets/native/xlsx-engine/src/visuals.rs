@@ -133,6 +133,7 @@ impl CellStyle {
             || self.bold != default.bold
             || self.italic != default.italic
             || self.underline != default.underline
+            || self.underline_style != default.underline_style
             || self.strikethrough != default.strikethrough
             || self.vert_align != default.vert_align
             || self.font_color != default.font_color

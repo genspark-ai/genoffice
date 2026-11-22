@@ -5,7 +5,7 @@ import {
   FORMULA_REFERENCE_PATTERN,
   qualifierMatches,
 } from '@genoffice/xlsx-gateway/gateway/xlsx-structure'
-import JSZip from 'jszip'
+import { loadUserZip } from './gated-zip'
 import { excerpt, PLACEHOLDER, textWidthPx, type IssueDraft } from '../check'
 import { displayText } from './xlsx'
 
@@ -61,7 +61,7 @@ export interface WorkbookCheck {
 }
 
 export async function checkWorkbook(bytes: Uint8Array): Promise<WorkbookCheck> {
-  const zip = await JSZip.loadAsync(bytes)
+  const zip = await loadUserZip(bytes)
   const text = async (path: string) => (await zip.file(path)?.async('string')) ?? ''
   const workbook = await text('xl/workbook.xml')
   const rels = parseRelationships(await text('xl/_rels/workbook.xml.rels'))

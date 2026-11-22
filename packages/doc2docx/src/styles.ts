@@ -42,6 +42,11 @@ export interface StyleSheet {
   fonts?: FontTable
 }
 
+/** The w:styleId the .docx writer emits for a stylesheet slot. A pure function
+    of the istd, so the resolver can stamp references into the formatting model
+    and the writer can emit the matching definitions without threading a map. */
+export const legacyStyleId = (istd: number): string => `w97-${istd}`
+
 const STK_PARAGRAPH = 1
 const STK_CHARACTER = 2
 const STK_TABLE = 3

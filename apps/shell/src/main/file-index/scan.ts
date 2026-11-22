@@ -1,6 +1,7 @@
 import { readdirSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { isHiddenEntry, isSupportedTreeFile } from '../folder-tree'
+import { isUnderExcludedFolder } from '@genoffice/electron-utils'
 
 export interface ScannedFile {
   path: string
@@ -25,11 +26,14 @@ export const SCAN_MAX_FILES = 200_000
 export function scanFiles(
   root: string,
   limits: { maxDepth?: number; maxFiles?: number } = {},
+  /** folders the user excluded: the walk prunes them and skips their files (#2844) */
+  excludedFolders: readonly string[] = [],
 ): ScanResult {
   const maxDepth = limits.maxDepth ?? SCAN_MAX_DEPTH
   const maxFiles = limits.maxFiles ?? SCAN_MAX_FILES
   const out: ScannedFile[] = []
   let truncated = false
+  const excluded = (path: string): boolean => isUnderExcludedFolder(path, excludedFolders)
   const walk = (dir: string, depth: number) => {
     if (depth > maxDepth) {
       truncated = true
@@ -47,6 +51,7 @@ export function scanFiles(
         return
       }
       const path = join(dir, ent.name)
+      if (excluded(path)) continue
       if (ent.isDirectory()) {
         if (!isHiddenEntry(dir, ent.name, true)) walk(path, depth + 1)
       } else if (
