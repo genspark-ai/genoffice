@@ -1,3 +1,5 @@
+// local-only: must stay the first import (egress guard, docs/local-only-fork.md)
+import './local-only/install'
 import { execSync } from 'node:child_process'
 import {
   cpSync,
