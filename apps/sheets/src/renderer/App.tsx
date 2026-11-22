@@ -133,6 +133,7 @@ import UniverPresetSheetsTableEnUS from '@univerjs/preset-sheets-table/locales/e
 import '@univerjs/preset-sheets-table/lib/index.css'
 import { greenTheme } from '@univerjs/themes'
 import { createUniver } from './create-univer'
+import { sheetsDarkCanvasOverride } from './dark-canvas-color'
 import { planFileTableRegistrations } from './file-tables'
 import {
   createTableDefaultRange,
@@ -2262,6 +2263,8 @@ export function App({
       // green selection/highlight instead of Univer's default blue
       theme: greenTheme,
       darkMode: isDarkTheme(),
+      // the inverted formula-bar page must land on the chrome tone, not #000
+      override: sheetsDarkCanvasOverride,
       locale: LocaleType.EN_US,
       locales: {
         [LocaleType.EN_US]: mergeLocales(
