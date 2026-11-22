@@ -2843,10 +2843,6 @@ export const strings = {
       'Érvénytelen fejlécformátum: minden sornak „Név: Érték” alakúnak kell lennie.',
     setAiEndpointModelsBad:
       'Érvénytelen modellmegadás: JSON-tömb kell legyen, pl. [{ "id": "m" }].',
-    skillDetailClose: 'Bezárás',
-    skillDetailLoading: 'Útmutató betöltése…',
-    skillDetailEmpty: 'Ehhez a készséghez nincs útmutató.',
-    skillDetailCopy: 'Útmutató másolása',
   },
   ja: {
     addFolderRoot: 'フォルダーを追加…',
