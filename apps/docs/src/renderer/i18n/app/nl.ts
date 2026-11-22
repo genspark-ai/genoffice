@@ -678,6 +678,12 @@ export const nl = {
   appLatexPlaceholder: 'bijv. x = \\frac{-b \\pm \\sqrt{b^2-4ac}}{2a}',
   appLatexPreviewHint: 'Typ LaTeX om een voorbeeld te zien',
   appPreviewUnavailable: 'Kan geen voorbeeld genereren',
+  appMathTypeConvertNote:
+    'MathType-vergelijking — opslaan zet deze om naar een standaard Word-vergelijking (OMML).',
+  appMathTypeConvertOnlyNote:
+    'Deze MathType-vergelijking bevat structuren buiten de LaTeX-subset. U kunt deze direct omzetten naar een standaard Word-vergelijking (OMML) met behoud van de opmaak.',
+  appMathTypeConvertAction: 'Omzetten en bijwerken',
+  appMathTypeEditHint: 'MathType-vergelijking (dubbelklik om te bewerken of om te zetten)',
   appInlineEquationToggle: 'Inline vergelijking (ingevoegd bij de cursor, loopt mee met de tekst)',
   appInsertNewEquation: 'π Nieuwe vergelijking invoegen (LaTeX)…',
   appEqCircleArea: 'Oppervlakte van een cirkel',

@@ -663,6 +663,12 @@ export const vi = {
   appLatexPlaceholder: 'ví dụ: x = \\frac{-b \\pm \\sqrt{b^2-4ac}}{2a}',
   appLatexPreviewHint: 'Nhập mã LaTeX để xem trước',
   appPreviewUnavailable: 'Không thể tạo bản xem trước',
+  appMathTypeConvertNote:
+    'Công thức MathType — lưu lại sẽ chuyển đổi thành công thức Word gốc (OMML).',
+  appMathTypeConvertOnlyNote:
+    'Công thức MathType này chứa cấu trúc ngoài tập con LaTeX. Bạn có thể chuyển trực tiếp sang công thức Word gốc (OMML) mà vẫn giữ nguyên bố cục.',
+  appMathTypeConvertAction: 'Chuyển đổi & Cập nhật',
+  appMathTypeEditHint: 'Công thức MathType (nhấp đúp để chỉnh sửa hoặc chuyển đổi)',
   appInlineEquationToggle: 'Công thức cùng dòng (chèn tại vị trí con trỏ, hiển thị cùng văn bản)',
   appInsertNewEquation: 'π Chèn công thức mới (LaTeX)…',
   appEqCircleArea: 'Diện tích hình tròn',

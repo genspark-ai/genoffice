@@ -671,6 +671,12 @@ export const pl = {
   appLatexPlaceholder: 'np. x = \\frac{-b \\pm \\sqrt{b^2-4ac}}{2a}',
   appLatexPreviewHint: 'Wpisz LaTeX, aby zobaczyć podgląd',
   appPreviewUnavailable: 'Nie można wygenerować podglądu',
+  appMathTypeConvertNote:
+    'Równanie MathType — zapisanie przekształci je w natywne równanie programu Word (OMML).',
+  appMathTypeConvertOnlyNote:
+    'To równanie MathType zawiera struktury spoza podzbioru LaTeX. Możesz przekształcić je bezpośrednio w natywne równanie Word (OMML) z zachowaniem układu.',
+  appMathTypeConvertAction: 'Konwertuj i aktualizuj',
+  appMathTypeEditHint: 'Równanie MathType (kliknij dwukrotnie, aby edytować lub konwertować)',
   appInlineEquationToggle: 'Równanie w wierszu (wstawiane przy kursorze, przepływa z tekstem)',
   appInsertNewEquation: 'π Wstaw nowe równanie (LaTeX)…',
   appEqCircleArea: 'Pole koła',

@@ -1545,17 +1545,32 @@ export function runsToInline(runs: Run[]): PmNode[] {
     const marks = runMarks(run)
     const atomMarks = marks.length > 0 ? { marks } : {}
     if (run.math) {
+      // MathType OLE equations carry a negative w:position on the run only to
+      // align their WMF preview image's bottom edge with the text baseline.
+      // Native MathML already centers on the math axis, so drop positionHalfPoints
+      // from the display mark while oleRawRPr preserves it verbatim on save.
+      const mathMarks =
+        run.math.oleXml && run.positionHalfPoints
+          ? runMarks({ ...run, positionHalfPoints: undefined })
+          : marks
+      const useDisplayMathStyle =
+        !!run.math.display || Boolean(run.math.oleXml && /<m:(?:f|nary)\b/.test(run.math.omml))
       nodes.push({
         type: 'docInlineMath',
-        ...atomMarks,
+        ...(mathMarks.length > 0 ? { marks: mathMarks } : {}),
         attrs: {
           omml: run.math.omml,
-          mathml: inlineMathML(run.math.omml, !!run.math.display),
+          mathml: inlineMathML(run.math.omml, useDisplayMathStyle),
           display: !!run.math.display,
           // recovered LaTeX makes parsed formulas re-editable; null = atom only
           latex: ommlToLatex(run.math.omml),
           text: run.text,
           sizeHalfPoints: run.sizeHalfPoints ?? null,
+          oleXml: run.math.oleXml ?? null,
+          oleRawRPr: run.math.oleRawRPr ?? null,
+          oleProgId: run.math.oleProgId ?? null,
+          olePositionHalfPoints:
+            run.math.oleXml && run.positionHalfPoints ? run.positionHalfPoints : null,
         },
       })
       if (run.math.breakAfter) nodes.push({ type: 'hardBreak', attrs: { mathBreak: true } })
@@ -1612,9 +1627,11 @@ export function runsToInline(runs: Run[]): PmNode[] {
     // A run can carry both w:t text and a w:drawing; generate.ts writes the
     // text before the drawing, so emit the image after the text segments
     if (run.image) {
+      const loweredInline = !run.image.wrap && (run.positionHalfPoints ?? 0) < 0
+      const imgMarks = loweredInline ? runMarks({ ...run, positionHalfPoints: undefined }) : marks
       nodes.push({
         type: 'docInlineImage',
-        ...atomMarks,
+        ...(imgMarks.length > 0 ? { marks: imgMarks } : {}),
         attrs: {
           dataUrl: run.image.dataUrl,
           vector: pictureVectorAttr(run.image.dataUrl, run.image.vectorUrl),
@@ -1645,6 +1662,12 @@ export function runsToInline(runs: Run[]): PmNode[] {
                 ...((run.fontAscii ?? run.font) ? { fontAscii: run.fontAscii ?? run.font } : {}),
               }
             : null,
+          ...(loweredInline
+            ? {
+                baselineShiftPt: run.positionHalfPoints! / 2,
+                positionHalfPoints: run.positionHalfPoints!,
+              }
+            : {}),
           rawRPr: run.rawRPr ?? null,
         },
       })
@@ -3168,15 +3191,23 @@ function tableTextsPatchFromModel(
         return null
       }
       const origTexts = parsedCellParaTexts(originalCell)
-      if (cell.paras.join('\n') === origTexts.join('\n')) return null
-      changed = true
       const rich = cell.richParas
+      const origRich = originalCell.richParas
+      const hasMathChange =
+        !!rich &&
+        rich.length === origTexts.length &&
+        rich.some((p, i) => cellParaMathChanged(p.runs, origRich?.[i]?.runs))
+      if (cell.paras.join('\n') === origTexts.join('\n') && !hasMathChange) return null
+      changed = true
       // rich paragraph patches keep per-run formatting, hyperlinks and images;
-      // untouched paragraphs (per-index text match) keep their original bytes
+      // untouched paragraphs (per-index text and math match) keep their original bytes
       if (rich && rich.length === cell.paras.length) {
         if (rich.length === origTexts.length) {
           return rich.map((p, i): CellParaPatch =>
-            p.runs.map((run) => run.text).join('') === origTexts[i] ? null : { runs: p.runs },
+            p.runs.map((run) => run.text).join('') === origTexts[i] &&
+            !cellParaMathChanged(p.runs, origRich?.[i]?.runs)
+              ? null
+              : { runs: p.runs },
           )
         }
         return rich.map((p): CellParaPatch => ({ runs: p.runs }))
@@ -3185,6 +3216,14 @@ function tableTextsPatchFromModel(
     })
   })
   return changed ? texts : null
+}
+
+function cellParaMathChanged(current: Run[], original: Run[] | undefined): boolean {
+  const cur = current.filter((r) => r.math).map((r) => `${r.math!.omml}\0${r.math!.oleXml ?? ''}`)
+  const orig = (original ?? [])
+    .filter((r) => r.math)
+    .map((r) => `${r.math!.omml}\0${r.math!.oleXml ?? ''}`)
+  return cur.length !== orig.length || cur.some((m, i) => m !== orig[i])
 }
 
 /**
@@ -3981,12 +4020,38 @@ export function inlineToRuns(content: PmNode[]): Run[] {
     }
     if (node.type === 'docInlineMath') {
       const omml = String(node.attrs?.omml ?? '')
-      if (omml)
+      if (omml) {
+        const oleXml =
+          typeof node.attrs?.oleXml === 'string' && node.attrs.oleXml
+            ? node.attrs.oleXml
+            : undefined
+        const oleRawRPr =
+          typeof node.attrs?.oleRawRPr === 'string' && node.attrs.oleRawRPr
+            ? node.attrs.oleRawRPr
+            : undefined
+        const oleProgId =
+          typeof node.attrs?.oleProgId === 'string' && node.attrs.oleProgId
+            ? node.attrs.oleProgId
+            : undefined
+        const olePositionHalfPoints =
+          oleXml && node.attrs?.olePositionHalfPoints != null
+            ? Number(node.attrs.olePositionHalfPoints)
+            : undefined
         runs.push({
           ...atomBase(node),
+          ...(olePositionHalfPoints !== undefined
+            ? { positionHalfPoints: olePositionHalfPoints }
+            : {}),
           text: String(node.attrs?.text ?? ''),
-          math: { omml, ...(node.attrs?.display ? { display: true } : {}) },
+          math: {
+            omml,
+            ...(node.attrs?.display ? { display: true } : {}),
+            ...(oleXml ? { oleXml } : {}),
+            ...(oleRawRPr ? { oleRawRPr } : {}),
+            ...(oleProgId ? { oleProgId } : {}),
+          },
         })
+      }
       continue
     }
     if (node.type === 'docEqLayout') {
@@ -4042,6 +4107,9 @@ export function inlineToRuns(content: PmNode[]): Run[] {
         const vector = node.attrs?.vector as PictureVector | null | undefined
         runs.push({
           ...atomBase(node),
+          ...(node.attrs?.positionHalfPoints != null
+            ? { positionHalfPoints: Number(node.attrs.positionHalfPoints) }
+            : {}),
           text: '',
           ...(node.attrs?.rawRPr ? { rawRPr: String(node.attrs.rawRPr) } : {}),
           image: {
@@ -4343,6 +4411,7 @@ function runStyleKey(run: Run): string {
     run.fldDirty ?? null,
     run.sdtCheckboxXml ?? null,
     run.math?.omml ?? null,
+    run.math?.oleXml ?? null,
     run.sym ? [run.sym.font, run.sym.char] : null,
     run.ruby?.xml ?? null,
     run.eqLayout ?? null,
@@ -4414,6 +4483,7 @@ function normalizedRuns(runs: Run[]): unknown[] {
           r.fldDirty ?? null,
           r.sdtCheckboxXml ?? null,
           r.math?.omml ?? null,
+          r.math?.oleXml ?? null,
           r.sym ? [r.sym.font, r.sym.char] : null,
           r.ruby?.xml ?? null,
           r.eqLayout ?? null,

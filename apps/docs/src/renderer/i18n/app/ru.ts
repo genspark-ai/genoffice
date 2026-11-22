@@ -671,6 +671,12 @@ export const ru = {
   appLatexPlaceholder: 'например, x = \\frac{-b \\pm \\sqrt{b^2-4ac}}{2a}',
   appLatexPreviewHint: 'Введите LaTeX, чтобы увидеть предварительный просмотр',
   appPreviewUnavailable: 'Не удалось создать предварительный просмотр',
+  appMathTypeConvertNote:
+    'Уравнение MathType — сохранение преобразует его во встроенное уравнение Word (OMML).',
+  appMathTypeConvertOnlyNote:
+    'Это уравнение MathType содержит конструкции вне подмножества LaTeX. Его можно напрямую преобразовать в уравнение Word (OMML) с сохранением структуры.',
+  appMathTypeConvertAction: 'Преобразовать и обновить',
+  appMathTypeEditHint: 'Уравнение MathType (дважды щелкните для изменения или преобразования)',
   appInlineEquationToggle:
     'Встроенное уравнение (вставляется у курсора и перемещается вместе с текстом)',
   appInsertNewEquation: 'π Вставить новое уравнение (LaTeX)…',

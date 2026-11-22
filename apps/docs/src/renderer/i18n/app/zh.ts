@@ -673,6 +673,11 @@ export const zh = {
   appLatexPlaceholder: '例如 x = \\frac{-b \\pm \\sqrt{b^2-4ac}}{2a}',
   appLatexPreviewHint: '输入 LaTeX 查看预览',
   appPreviewUnavailable: '无法生成预览',
+  appMathTypeConvertNote: 'MathType 公式 — 保存后将转换为原生 Word 公式 (OMML)。',
+  appMathTypeConvertOnlyNote:
+    '此 MathType 公式包含超出 LaTeX 子集的结构，可直接转换为原生 Word 公式 (OMML) 并保留排版。',
+  appMathTypeConvertAction: '转换并更新',
+  appMathTypeEditHint: 'MathType 公式(双击编辑或转换为原生公式)',
   appInlineEquationToggle: '行内公式(插入光标处,随文字流动)',
   appInsertNewEquation: 'π 插入新公式(LaTeX)…',
   appEqCircleArea: '圆的面积',
