@@ -50,7 +50,6 @@ import {
   ImageViewer,
   aiPanelInitiallyOpen,
   rememberAiPanelOpen,
-  createZoomWheelClassifier,
   useAutoSavePref,
   useAiSidebarEnabled,
 } from '@genoffice/ui'
@@ -834,6 +833,7 @@ import { runHeadlessDocumentExport } from './headless-export'
 import { installMcpBridge } from './mcp-bridge'
 import {
   clampDocsZoom,
+  createDocsZoomWheelClassifier,
   DOCS_ZOOM_MAX,
   DOCS_ZOOM_MIN,
   nextDocsZoom,
@@ -2602,7 +2602,7 @@ export function App() {
   // actually changes, else a clamped tick would leave a stale anchor behind.
   const zoomAnchorRef = useRef<{ vx: number; vy: number } | null>(null)
   useEffect(() => {
-    const zoomWheel = createZoomWheelClassifier()
+    const zoomWheel = createDocsZoomWheelClassifier()
     const onWheel = (e: WheelEvent) => {
       if (!e.ctrlKey && !e.metaKey) return
       if (!(e.target as HTMLElement | null)?.closest?.('.editor-scroll')) return
