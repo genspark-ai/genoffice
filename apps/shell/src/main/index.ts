@@ -64,6 +64,10 @@ import menuHomeIcon1x from './assets/menu-home.png?asset'
 import menuHomeIcon2x from './assets/menu-home@2x.png?asset'
 import { createI18n, isLang, normalizeLang, setUiLang, type Lang } from '@genoffice/i18n'
 import {
+  EXCLUDED_FOLDERS_KEY,
+  isUnderExcludedFolder,
+  normalizeExcludedFolders,
+  readExcludedFolders,
   DEFAULT_SAVE_DIR_KEY,
   DROP_OPEN_CHANNEL,
   GITHUB_REPO_URL,
@@ -3877,6 +3881,11 @@ let tabManager: TabManager | null = null
  * created, and the tab's first save moves the fresh file there.
  * key: 'doc' | 'sheet' | 'slide' | 'markdown' | 'html' | 'pdf'
  */
+/** folders the user excluded from recents, search and session restore (#2844) */
+function excludedFolderPaths(): string[] {
+  return readExcludedFolders(readAppSettings(APP_SETTINGS_PATH()))
+}
+
 /** folders the user added to the home tree beside the default save folder */
 function extraFolderRoots(): string[] {
   return readExtraRoots(readAppSettings(APP_SETTINGS_PATH()), defaultSaveDir())
@@ -4058,6 +4067,7 @@ function ensureFileIndexer(): FileIndexer | null {
   fileIndexer = new FileIndexer(fileIndexStore, extractWorkerPath, {
     roots: () => folderRootPaths().filter((root) => existsSync(root)),
     extraPaths: () => [...readRecentFiles(), ...readStarredFiles()],
+    excludedFolders: excludedFolderPaths,
   })
   return fileIndexer
 }
@@ -4072,7 +4082,13 @@ const SEARCH_EXT_FAMILY: Record<string, readonly string[]> = {
 
 /** one recursive watcher per tree root; follows the save-folder setting and the added folders */
 function ensureFolderWatchers(): void {
-  const wanted = new Set(folderRootPaths().filter((root) => existsSync(root)))
+  const excluded = excludedFolderPaths()
+  const wanted = new Set(
+    folderRootPaths().filter(
+      (root) =>
+        existsSync(root) && (excluded.length === 0 || !isUnderExcludedFolder(root, excluded)),
+    ),
+  )
   for (const [root, watcher] of folderWatchers) {
     if (wanted.has(root) && watcher.active) continue
     watcher.close()
@@ -4547,7 +4563,9 @@ function createShellWindow(): void {
       if (restoreLastSessionEnabled(readAppSettings(APP_SETTINGS_PATH()))) {
         try {
           writeAppSettings(APP_SETTINGS_PATH(), {
-            [LAST_SESSION_DOCUMENTS_KEY]: [...new Set(manager.openFilePaths())],
+            [LAST_SESSION_DOCUMENTS_KEY]: [...new Set(manager.openFilePaths())].filter(
+              (p) => !isUnderExcludedFolder(p, excludedFolderPaths()),
+            ),
           })
         } catch (err) {
           console.warn('[shell] could not save the session documents:', err)
@@ -5549,6 +5567,31 @@ function registerHomeIpc(): void {
       [RESTORE_LAST_SESSION_KEY]: on,
       ...(on ? {} : { [LAST_SESSION_DOCUMENTS_KEY]: undefined }),
     })
+  })
+
+  ipcMain.handle(HOME_CHANNELS.getExcludedFolders, () => excludedFolderPaths())
+  ipcMain.handle(HOME_CHANNELS.setExcludedFolders, (_event, paths: unknown) => {
+    const next = normalizeExcludedFolders(Array.isArray(paths) ? paths : [])
+    // the key carries the list; an empty exclusion clears it entirely
+    writeAppSettings(APP_SETTINGS_PATH(), {
+      ...(next.length > 0
+        ? { [EXCLUDED_FOLDERS_KEY]: next }
+        : { [EXCLUDED_FOLDERS_KEY]: undefined }),
+    })
+    // the surfaces re-read the list on their next pass; the watchers and the
+    // search index re-decide now
+    ensureFolderWatchers()
+    fileIndexer?.refresh()
+    return next
+  })
+  ipcMain.handle(HOME_CHANNELS.pickExcludedFolder, async (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender) ?? shellWindow
+    if (!win) return null
+    // no custom title: the OS's own localized "Select Folder" wording
+    const result = await showOpenDialogWithMemory(dialog, win, {
+      properties: ['openDirectory', 'createDirectory'],
+    })
+    return result.canceled || result.filePaths.length === 0 ? null : result.filePaths[0]!
   })
 
   ipcMain.handle(HOME_CHANNELS.getMcpStatus, () => mcpStatus())
@@ -7652,7 +7695,10 @@ app.whenReady().then(async () => {
 /** the last session's documents ahead of the launch paths, forgotten as they are read */
 function consumeLastSessionPaths(launchPaths: readonly string[]): string[] {
   const settings = readAppSettings(APP_SETTINGS_PATH())
-  const paths = launchPathsWithLastSession(settings, launchPaths)
+  const excluded = readExcludedFolders(settings)
+  const paths = launchPathsWithLastSession(settings, launchPaths).filter(
+    (p) => !isUnderExcludedFolder(p, excluded),
+  )
   if (settings[LAST_SESSION_DOCUMENTS_KEY] !== undefined) {
     // consumed before opening: a document that crashes the app during restore
     // must not be restored again at the next launch

@@ -479,7 +479,7 @@ export const it = {
     'Nessun segnalibro presente. Usa "Inserisci → Segnalibro" per contrassegnare il punto a cui fare riferimento.',
   ribbonChartInsertTitle: 'Inserisci grafico',
   ribbonChartTitlePh: 'Titolo del grafico',
-  ribbonChartBar: 'Istogramma',
+  ribbonChartBar: 'Istogramma a cluster',
   ribbonChartLine: 'Linee',
   ribbonChartPie: 'Torta',
   ribbonCategoryN: 'Categoria {n}',

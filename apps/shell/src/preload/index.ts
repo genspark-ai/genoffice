@@ -459,6 +459,19 @@ const homeApi: HomeApi = {
     if (typeof on !== 'boolean') throw new Error('Invalid restore session setting.')
     await ipcRenderer.invoke(HOME_CHANNELS.setRestoreLastSession, on)
   },
+  async getExcludedFolders() {
+    const result: unknown = await ipcRenderer.invoke(HOME_CHANNELS.getExcludedFolders)
+    return Array.isArray(result) ? (result as string[]) : []
+  },
+  async setExcludedFolders(paths) {
+    if (!Array.isArray(paths)) throw new Error('Invalid excluded folders list.')
+    const result: unknown = await ipcRenderer.invoke(HOME_CHANNELS.setExcludedFolders, paths)
+    return Array.isArray(result) ? (result as string[]) : []
+  },
+  async pickExcludedFolder() {
+    const result: unknown = await ipcRenderer.invoke(HOME_CHANNELS.pickExcludedFolder)
+    return typeof result === 'string' ? result : null
+  },
   async setAutoSaveDefault(on) {
     if (typeof on !== 'boolean') throw new Error('Invalid AutoSave default.')
     await ipcRenderer.invoke(HOME_CHANNELS.setAutoSaveDefault, on)

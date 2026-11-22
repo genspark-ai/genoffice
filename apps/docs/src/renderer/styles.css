@@ -174,6 +174,10 @@
   --docs-paper-comment-bg: rgb(179 247 95 / 25%);
   --docs-paper-comment-flash: rgb(130 171 81 / 45%);
   --docs-paper-comment-line: #82ab51;
+  /* editing permission regions of a read-only protected document (Word's
+     "Highlight the regions I can edit": a pale yellow behind the text, olive brackets) */
+  --docs-paper-perm-bg: rgb(255 240 120 / 30%);
+  --docs-paper-perm-bracket: #a8912b;
   /* printed markup is document output, not chrome: fixed values, identical in both themes;
      the balloon fill is the anchor tint composited over white (balloons sit on the gray strip) */
   --docs-print-markup-band: #f2f2f2;
@@ -5627,6 +5631,8 @@ th[data-rev-fmt] {
     --docs-paper-comment-bg: rgb(106 166 32 / 25%);
     --docs-paper-comment-flash: rgb(145 181 102 / 45%);
     --docs-paper-comment-line: #91b566;
+    --docs-paper-perm-bg: rgb(118 105 30 / 30%);
+    --docs-paper-perm-bracket: #c2ad53;
     --docs-paper-ai-anchor-bg: rgb(74 116 197 / 14%);
     --docs-paper-ai-anchor-line: #4a74c5;
     --docs-paper-xe-ink: #c5ab7f;
@@ -9113,6 +9119,11 @@ body.docs-run-pic-dragging .doc-run-pic-frame {
 /* data grid of the Insert Chart dialog */
 .modal-chart {
   min-width: 460px;
+}
+
+/* the 16 chart types overflow the 460px modal on one line: wrap them */
+.modal-chart .modal-chart-types {
+  flex-wrap: wrap;
 }
 
 .chart-data-grid {
@@ -13261,12 +13272,22 @@ body.docs-crop-active
 /* ---- print / export PDF: only the document itself ---- */
 
 @media print {
+  /* paper-white behind the page boxes, and the light scheme: an A4 sheet is
+   * 841.92pt tall, so its last device row is only partly covered by the page
+   * box, and `none` let the canvas behind it show through — Chromium's
+   * dark-scheme color when the app theme was dark (#2837) */
+  html {
+    /* !important: the theme rules ([data-theme='dark'] and the system-mode
+     * :root fallback) are more specific than this @media print selector and
+     * would keep the scheme dark in print; the pin must beat them (#2837) */
+    color-scheme: light !important;
+  }
   html,
   body,
   #root {
     height: auto !important;
     overflow: visible !important;
-    background: none !important;
+    background: var(--docs-paper) !important;
   }
 
   .ribbon,
@@ -18312,6 +18333,95 @@ tr > .page-gap-cut {
 }
 .ProseMirror-yjs-selection {
   opacity: 0.3;
+}
+
+/* Editing permission regions (editor/perm-regions.ts): the open cells and
+   paragraphs of a read-only protected document. Editor display only, never
+   printed or exported, as in Word. */
+.perm-region {
+  background: var(--docs-paper-perm-bg);
+}
+
+.perm-region-nested .doc-cell-para > span {
+  background: var(--docs-paper-perm-bg);
+}
+
+/* Word's region brackets sit over the text at the region's edges and take no
+   width: over a template's own "[" / "]" they show as one olive bracket */
+.perm-region-bracket {
+  display: inline-block;
+  width: 0;
+  white-space: nowrap;
+  color: var(--docs-paper-perm-bracket);
+  font-weight: 700;
+  font-style: normal;
+  text-decoration: none;
+  pointer-events: none;
+  user-select: none;
+}
+
+.perm-region-bracket > span {
+  display: inline-block;
+}
+
+.perm-region-bracket-close > span {
+  transform: translateX(-100%);
+}
+
+/* Word paints each paragraph's mark: a patch at the paragraph's end that
+   takes no room at all, so line breaks, line heights, the caret and the
+   alignment stay put. The mark is a zero-size box on the baseline (a box with
+   height would stretch the line wherever the font's content area is taller
+   than its line pitch: 1px a line under Avenir Next, a page over a long form);
+   the patch is painted from it. A picture line sets --perm-mark-h to the
+   picture's height, standing on the baseline like the picture. An empty cell
+   of a nested table (an atom, drawn without widgets) gets the same patch over
+   its one line. */
+.perm-region-mark {
+  position: relative;
+  display: inline-block;
+  width: 0;
+  height: 0;
+  vertical-align: baseline;
+  pointer-events: none;
+  user-select: none;
+}
+
+.perm-region-mark::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  bottom: var(--perm-mark-drop, -0.25em);
+  width: 0.5em;
+  height: var(--perm-mark-h, 1em);
+  background: var(--docs-paper-perm-bg);
+}
+
+.perm-region-nested .doc-cell-para:not(:has(> span)) {
+  position: relative;
+}
+
+.perm-region-nested .doc-cell-para:not(:has(> span))::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 0.5em;
+  background: var(--docs-paper-perm-bg);
+  pointer-events: none;
+}
+
+@media print {
+  .perm-region,
+  .perm-region-nested .doc-cell-para > span {
+    background: none;
+  }
+
+  .perm-region-mark,
+  .perm-region-bracket,
+  .perm-region-nested .doc-cell-para::before {
+    display: none;
+  }
 }
 
 /* Mailings → Edit Recipient List: the list's rows, one check box each */

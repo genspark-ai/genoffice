@@ -116,9 +116,11 @@ describe('toDocxRun mapping', () => {
     expect(toDocxRun({ text: 'x', formatting: { highlight: 17 } }).highlight).toBeUndefined()
   })
 
-  it('drops explicit "off" formatting instead of inventing w:val="0" (blank template default is off)', () => {
+  it('keeps an explicit "off" toggle as val="0" (a template-mapped style may turn the toggle on)', () => {
     expect(toDocxRun({ text: 'x', formatting: { bold: false, italic: false } })).toEqual({
       text: 'x',
+      bold: false,
+      italic: false,
     })
   })
 })
@@ -592,7 +594,11 @@ describe('styles.doc -> docx round trip (resolved stylesheet)', () => {
     docx = result.docx
     warnings = result.warnings
     parsed = await parseDocx(docx)
-    paragraphs = paragraphsOf(parsed)
+    // the "heading 1" style now comes through as a real heading block, so the
+    // list holds paragraphs and headings in document order
+    paragraphs = parsed.blocks.filter(
+      (block) => block.type === 'paragraph' || block.type === 'heading',
+    )
   })
 
   it('writes every paragraph and no longer warns about unresolved styles', () => {

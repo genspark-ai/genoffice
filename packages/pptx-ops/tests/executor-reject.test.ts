@@ -5,7 +5,13 @@
  * to fix it, with the op usage appended for known ops.
  */
 import { describe, it, expect, beforeAll } from 'vitest'
-import { addElement, createBlankPptx, openPptx, type OpenedPptx } from '@genoffice/pptx-engine'
+import {
+  addElement,
+  createBlankPptx,
+  duplicateSlide,
+  openPptx,
+  type OpenedPptx,
+} from '@genoffice/pptx-engine'
 import { runTxn } from '../src/ops/executor'
 import '../src/ops/index'
 
@@ -199,5 +205,79 @@ describe('executor rejections', () => {
       ],
     })
     expect(r.failures ?? []).toEqual([])
+  })
+
+  it('element-level ops in per_op mode only snapshot the targeted slide', async () => {
+    const fresh = await openPptx(await createBlankPptx())
+    for (let i = 0; i < 5; i++) duplicateSlide(fresh, 0)
+    expect(fresh.deck.slides).toHaveLength(6)
+
+    const elSlide2 = addElement(fresh.deck.slides[2]!, {
+      kind: 'textbox',
+      offset: { x: 0, y: 0, cx: 1828800, cy: 914400 },
+      paragraphs: [{ runs: [{ text: 'Slide 2 initial' }] }],
+    })
+
+    const slide0Before = fresh.deck.slides[0]!
+    const slide4Before = fresh.deck.slides[4]!
+
+    const r = runTxn(fresh, {
+      isolation: 'per_op',
+      ops: [
+        {
+          op: 'setText',
+          target: { slide: 2, el: elSlide2.id },
+          paragraphs: [
+            {
+              runs: [{ text: 'Rejected' }],
+              bullet: 'blip',
+              bulletImage: { base64: 'AA==', ext: 'not-real' },
+            },
+          ],
+        },
+      ],
+    })
+
+    expect(r.applied).toBe(false)
+    expect(r.failures).toHaveLength(1)
+
+    // Slide 0 and slide 4 were NOT cloned or replaced — they are the exact same object references!
+    expect(fresh.deck.slides[0]).toBe(slide0Before)
+    expect(fresh.deck.slides[4]).toBe(slide4Before)
+
+    // Slide 2 was restored to pre-op state
+    const restoredEl = fresh.deck.slides[2]!.elements.find((e) => e.id === elSlide2.id)
+    expect(restoredEl?.text?.paragraphs[0]?.runs[0]?.text).toBe('Slide 2 initial')
+  })
+
+  it('per_op batch of 40 setText ops does not pay ops × deck size snapshot overhead', async () => {
+    const fresh = await openPptx(await createBlankPptx())
+    for (let i = 0; i < 59; i++) duplicateSlide(fresh, 0)
+    expect(fresh.deck.slides).toHaveLength(60)
+
+    const textEls: Array<{ slide: number; el: string }> = []
+    for (let i = 0; i < 40; i++) {
+      const slide = fresh.deck.slides[i]!
+      const el = addElement(slide, {
+        kind: 'textbox',
+        offset: { x: 0, y: 0, cx: 1828800, cy: 914400 },
+        paragraphs: [{ runs: [{ text: `Init ${i}` }] }],
+      })
+      textEls.push({ slide: i, el: el.id })
+    }
+
+    const start = performance.now()
+    const r = runTxn(fresh, {
+      isolation: 'per_op',
+      ops: textEls.map(({ slide, el }, idx) => ({
+        op: 'setText',
+        target: { slide, el },
+        paragraphs: [{ runs: [{ text: `Updated ${idx}` }] }],
+      })),
+    })
+    const elapsed = performance.now() - start
+    expect(r.applied).toBe(true)
+    expect(r.records).toHaveLength(40)
+    expect(elapsed).toBeLessThan(2000)
   })
 })
