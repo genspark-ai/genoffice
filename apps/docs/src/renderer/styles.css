@@ -18312,6 +18312,7 @@ tr > .page-gap-cut {
 }
 .ProseMirror-yjs-selection {
   opacity: 0.3;
+}
 
 /* Mailings → Edit Recipient List: the list's rows, one check box each */
 .recipients-table {
