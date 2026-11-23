@@ -1,6 +1,9 @@
 import { FloatWatch } from './editor/float-watch'
 import { attachCommentUndoSync, resetCommentUndoStore } from './editor/comment-undo-sync'
 import { scriptFontHtml } from './editor/script-fonts'
+import { storyEscLeavesView } from './editor/story-view'
+import { loadStoryFace, saveStoryFace, storyFaceRule } from './story-font'
+import { StoryFontPicker } from './components/StoryFontPicker'
 import { carryDocSeen } from './ai/tools'
 import {
   DOC_CSS_COMMITTED_EVENT,
@@ -721,8 +724,9 @@ import {
   buildReviewEntries,
   filterRevisions,
   revisionAuthorCss,
-  revisionAuthors,
+  revisionAuthorsInkOrder,
   revisionsInSelection,
+  storyAuthorshipCss,
   type ReviewEntry,
   type RevisionFilter,
   type RevisionScope,
@@ -1374,6 +1378,15 @@ export function App() {
   const [showReviewPane, setShowReviewPane] = useState(false)
   const [viewMode, setViewMode] = useState<ViewMode>('print')
   const [readMode, setReadMode] = useState(false)
+  // Story Focus: dim everything but the sentence the caret sits in (the
+  // story-view bar's toggle; the plugin draws the dim ranges)
+  const [storyFocus, setStoryFocus] = useState(false)
+  // the writing view's own face (the bar's font picker; a view preference,
+  // the document's fonts stay untouched). '' = the view's default stack.
+  const [storyFace, setStoryFace] = useState(loadStoryFace)
+  // the view Story View returns to when it closes (Leave Story, Esc): the one
+  // the document was in before entering
+  const [storyReturnView, setStoryReturnView] = useState<ViewMode>('print')
   // Read mode is a print-layout reading, so a view pick and Read Mode are exclusive
   const switchView = (mode: ViewMode) => {
     setViewMode(mode)
@@ -2713,11 +2726,25 @@ export function App() {
 
   // story view (View ▸ Story View): the plugin draws the margin markers and
   // keeps typed text off the document's hidden formatting, only while the view
-  // mode is story
+  // mode is story; Focus dims everything but the caret's sentence, inside the
+  // view only
   useEffect(() => {
     if (!editor) return
     editor.commands.setStoryViewActive(viewMode === 'story')
-  }, [editor, viewMode])
+    editor.commands.setStoryViewFocus(storyFocus && viewMode === 'story')
+  }, [editor, viewMode, storyFocus])
+
+  // entering Story View records the view it came from, so Leave Story (and Esc)
+  // returns the document to where it was
+  const viewBeforeStoryRef = useRef<ViewMode>('print')
+  useEffect(() => {
+    if (viewMode === 'story') {
+      if (viewBeforeStoryRef.current !== 'story') setStoryReturnView(viewBeforeStoryRef.current)
+      viewBeforeStoryRef.current = 'story'
+    } else {
+      viewBeforeStoryRef.current = viewMode
+    }
+  }, [viewMode])
 
   // Backstop for paths that bypass the view buttons (read-only opens land in read mode)
   useEffect(() => {
@@ -3604,6 +3631,33 @@ export function App() {
   /** the list style Bullets and Numbering opens on: one just added */
   const [addedListStyle, setAddedListStyle] = useState<string | undefined>()
   const [listRecentsEpoch, setListRecentsEpoch] = useState(0)
+
+  // Story View: Esc leaves, back to the view the document came in from. An
+  // Escape meant for something else never claims the view (storyEscLeavesView):
+  // the context menu, the comment popup and the dialogs close on their own
+  // Escape instead, and so does an Escape inside the find panel.
+  const [storyFontOpen, setStoryFontOpen] = useState(false)
+  useEffect(() => {
+    if (viewMode !== 'story') return
+    const onKey = (e: KeyboardEvent) => {
+      // the picker's Escape closes the picker first; the view's Escape still
+      // needs the other overlays to have closed themselves
+      if (storyFontOpen && storyEscLeavesView(e, false)) {
+        setStoryFontOpen(false)
+        return
+      }
+      if (
+        !storyEscLeavesView(
+          e,
+          !!(showLinkModal || listDialog || ctxMenu || commentPopup || storyFontOpen),
+        )
+      )
+        return
+      setViewMode(storyReturnView)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [viewMode, showLinkModal, listDialog, ctxMenu, commentPopup, storyFontOpen, storyReturnView])
   const recentLists = useMemo(
     () => ({
       bullets: recentListPresets('bullets'),
@@ -7218,7 +7272,15 @@ export function App() {
     () => filterRevisions(allRevisions, revisionFilter),
     [allRevisions, revisionFilter],
   )
-  const reviewAuthors = useMemo(() => revisionAuthors(allRevisions), [allRevisions])
+  // the review pane's author list in ink order: the document's own user keeps
+  // the plain default ink, AI edits and human collaborators get colored inks
+  // (revisionAuthorsInkOrder / #2654); the state mirror tracks Settings renames
+  const [ownAuthor, setOwnAuthor] = useState(authorName())
+  useEffect(() => onAuthorNameChanged(() => setOwnAuthor(authorName())), [])
+  const reviewAuthors = useMemo(
+    () => revisionAuthorsInkOrder(allRevisions, ownAuthor),
+    [allRevisions, ownAuthor],
+  )
   const reviewEntries = useMemo(
     () => (editor ? buildReviewEntries(editor.state.doc, shownRevisions, reviewAuthors) : []),
     [editor, shownRevisions, reviewAuthors],
@@ -7226,6 +7288,26 @@ export function App() {
   const revisionAuthorStyle = useMemo(
     () => revisionAuthorCss(reviewAuthors, revisionFilter.hiddenAuthors, movesByAuthor(tcOptions)),
     [reviewAuthors, revisionFilter.hiddenAuthors, tcOptions],
+  )
+  // the story view's four-ink split (own / others / AI; #2654), scoped under
+  // .view-story so the page view's per-author rainbow is untouched
+  const storyAuthorStyle = useMemo(
+    () =>
+      viewMode === 'story'
+        ? storyAuthorshipCss(
+            allRevisions,
+            ownAuthor,
+            revisionFilter.hiddenAuthors,
+            movesByAuthor(tcOptions),
+          )
+        : '',
+    [viewMode, allRevisions, ownAuthor, revisionFilter.hiddenAuthors, tcOptions],
+  )
+  // the picked face rides in front of the view's own stack: a missing font
+  // just falls through, the way the default stack always has
+  const storyFaceStyle = useMemo(
+    () => (viewMode === 'story' ? storyFaceRule(storyFace) : ''),
+    [viewMode, storyFace],
   )
   const isActiveEntry = (e: ReviewEntry) =>
     e.rev.story
@@ -10183,13 +10265,16 @@ export function App() {
     multipage ? 'multipage' : '',
     showMarks ? 'show-marks' : '',
     `view-${viewMode}`,
+    viewMode === 'story' && storyFocus ? 'story-focus-on' : '',
     showGrid ? 'show-grid' : '',
     tableGridlines ? 'show-table-gridlines' : '',
-  ].join(' ')
+  ]
+    .filter(Boolean)
+    .join(' ')
 
   return (
     <div
-      className={`app ${readMode ? 'read-mode' : ''}${focusMode ? ' focus-mode' : ''}${commentsUi.panel ? ' comments-pane-open' : ''}${revisionDisplay !== 'all' ? ` rev-display-${revisionDisplay}` : ''}${balloonsActive && balloonMode === 'revisions' ? ' rev-balloon' : ''}${revisionFilter.insDel ? '' : ' rev-hide-insdel'}${revisionFilter.format ? '' : ' rev-hide-format'}${tcOptions.balloonLines ? '' : ' markup-no-lines'}`}
+      className={`app ${readMode ? 'read-mode' : ''}${viewMode === 'story' ? ' story-chrome' : ''}${focusMode ? ' focus-mode' : ''}${commentsUi.panel ? ' comments-pane-open' : ''}${revisionDisplay !== 'all' ? ` rev-display-${revisionDisplay}` : ''}${balloonsActive && balloonMode === 'revisions' ? ' rev-balloon' : ''}${revisionFilter.insDel ? '' : ' rev-hide-insdel'}${revisionFilter.format ? '' : ' rev-hide-format'}${tcOptions.balloonLines ? '' : ' markup-no-lines'}`}
       data-balloons={balloonsActive ? balloonMode : undefined}
       data-comment-cards={commentsUi.cards ? '' : undefined}
       data-comment-focus={commentFocus?.id}
@@ -10199,6 +10284,8 @@ export function App() {
       {docCss && <style data-doc-css="">{docCss}</style>}
       {doc && <style data-doc-css="">{mathDefaultsCss(mathPr)}</style>}
       {revisionAuthorStyle && <style data-rev-authors="">{revisionAuthorStyle}</style>}
+      {storyAuthorStyle && <style data-story-authors="">{storyAuthorStyle}</style>}
+      {storyFaceStyle && <style data-story-face="">{storyFaceStyle}</style>}
       {tcOptionsStyle && <style data-rev-options="">{tcOptionsStyle}</style>}
       {liveLineFactor != null && (
         <style data-doc-css="">{`.doc-page { --doc-line-factor:${liveLineFactor} }`}</style>
@@ -10721,6 +10808,73 @@ export function App() {
               <button className="read-exit" onClick={() => setReadMode(false)}>
                 {t('appExitReadMode')}
               </button>
+            )}
+            {doc && editor && viewMode === 'story' && !readMode && (
+              <div className="story-bar" role="toolbar" aria-label={t('ribbonStoryView')}>
+                <button
+                  type="button"
+                  className="story-bar-btn"
+                  onClick={() => editor.chain().focus().toggleMark('bold').run()}
+                >
+                  {t('ribbonMarkerBold')}
+                </button>
+                <button
+                  type="button"
+                  className="story-bar-btn"
+                  onClick={() => editor.chain().focus().toggleMark('italic').run()}
+                >
+                  {t('ribbonMarkerItalic')}
+                </button>
+                <button
+                  type="button"
+                  className="story-bar-btn"
+                  onClick={() => setShowLinkModal(true)}
+                >
+                  {t('ribbonLink')}
+                </button>
+                <button
+                  type="button"
+                  className="story-bar-btn"
+                  onClick={() => setListDialog('bullet')}
+                >
+                  {t('storyBarList')}
+                </button>
+                <StoryFontPicker
+                  value={storyFace}
+                  open={storyFontOpen}
+                  onOpenChange={setStoryFontOpen}
+                  onChange={(family) => {
+                    setStoryFace(family)
+                    saveStoryFace(family)
+                  }}
+                />
+                <span className="story-bar-gap" />
+                <button
+                  type="button"
+                  className={`story-bar-btn${trackChanges ? ' on' : ''}`}
+                  aria-pressed={trackChanges}
+                  disabled={isProtected || trackChangesForced}
+                  onClick={toggleTrackChangesByUser}
+                >
+                  {t('ribbonTrackChanges')}
+                </button>
+                <button
+                  type="button"
+                  className={`story-bar-btn${storyFocus ? ' on' : ''}`}
+                  aria-pressed={storyFocus}
+                  onClick={() => setStoryFocus((v) => !v)}
+                >
+                  {t('storyBarFocus')}
+                </button>
+                <span className="story-bar-count">{t('appWordCountN', { n: wordCount })}</span>
+                <button
+                  type="button"
+                  className="story-bar-btn"
+                  onClick={() => setViewMode(storyReturnView)}
+                >
+                  {t('storyBarLeave')}
+                </button>
+              </div>
             )}
             {doc && commentsUi.panel && (
               <CommentsPanel

@@ -25,3 +25,41 @@ describe('JP Mincho fallback aliases synthesize bold', () => {
     })
   }
 })
+
+/**
+ * The writing view's bundled faces (--story-face names them first). The
+ * variable Monaspace face must declare the full weight range so bold and
+ * the heavier writing weights come from the one file; the Plex statics
+ * pair a normal and a bold face.
+ */
+describe('writing-view faces are bundled', () => {
+  it('Monaspace Neon registers the variable face across its weight range', () => {
+    const faces = facesOf('Monaspace Neon')
+    expect(faces).toHaveLength(1)
+    expect(faces[0]).toContain('MonaspaceNeon-VF.ttf')
+    expect(faces[0]).toContain('font-weight: 200 800')
+    expect(faces[0]).toContain('truetype-variations')
+  })
+
+  it('IBM Plex Mono registers a normal and a bold face', () => {
+    const faces = facesOf('IBM Plex Mono')
+    expect(faces).toHaveLength(2)
+    expect(faces.filter((f) => f.includes('IBMPlexMono-Regular.ttf')).join('\n')).toContain(
+      'font-weight: normal',
+    )
+    expect(faces.filter((f) => f.includes('IBMPlexMono-Bold.ttf')).join('\n')).toContain(
+      'font-weight: bold',
+    )
+  })
+
+  it('the bundled files exist next to fonts.css', () => {
+    const dir = join(__dirname, '../src/renderer/fonts')
+    for (const file of [
+      'MonaspaceNeon-VF.ttf',
+      'IBMPlexMono-Regular.ttf',
+      'IBMPlexMono-Bold.ttf',
+    ]) {
+      expect(() => readFileSync(join(dir, file))).not.toThrow()
+    }
+  })
+})

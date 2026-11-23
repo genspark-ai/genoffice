@@ -3453,6 +3453,22 @@
       "unicode-range": "U+0020-007E"
     }
   ],
+  "IBM Plex Mono": [
+    {
+      "font-display": "block",
+      "font-family": "'IBM Plex Mono'",
+      "font-style": "normal",
+      "font-weight": "normal",
+      "src": "url('./IBMPlexMono-Regular.ttf') format('truetype')"
+    },
+    {
+      "font-display": "block",
+      "font-family": "'IBM Plex Mono'",
+      "font-style": "normal",
+      "font-weight": "bold",
+      "src": "url('./IBMPlexMono-Bold.ttf') format('truetype')"
+    }
+  ],
   "KR Theme Latin GO": [
     {
       "font-display": "block",
@@ -3758,6 +3774,15 @@
       "font-weight": "bold",
       "size-adjust": "89.7%",
       "src": "local('Georgia-BoldItalic'), local('Georgia Bold Italic')"
+    }
+  ],
+  "Monaspace Neon": [
+    {
+      "font-display": "block",
+      "font-family": "'Monaspace Neon'",
+      "font-style": "normal",
+      "font-weight": "200 800",
+      "src": "url('./MonaspaceNeon-VF.ttf') format('truetype-variations')"
     }
   ],
   "Montserrat GO": [
