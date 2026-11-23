@@ -20,6 +20,7 @@ export type AiProviderId =
   | 'xai'
   | 'mistral'
   | 'openrouter'
+  | 'aimlapi'
   | 'requesty'
   | 'opper'
   | 'cheaperinference'
@@ -255,6 +256,7 @@ export type AiSearchProviderId =
   | 'exa'
   | 'firecrawl'
   | 'keenable'
+  | 'aimlapi'
 
 export interface AiSearchProviderMeta {
   id: AiSearchProviderId

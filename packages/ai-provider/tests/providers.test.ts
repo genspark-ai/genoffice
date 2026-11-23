@@ -91,6 +91,31 @@ describe('provider model catalog', () => {
     }
   })
 
+  it('seeds AI/ML API with vendor-prefixed ids and a live catalog', () => {
+    const aimlapi = AI_PROVIDERS.find((provider) => provider.id === 'aimlapi')!
+    expect(aimlapi.label).toBe('AI/ML API')
+    expect(aimlapi.liveModels).toBe(true)
+    expect(aimlapi.needsBaseUrl).toBeUndefined()
+    expect(aimlapi.models).toContain(aimlapi.defaultModel)
+    for (const model of aimlapi.models) {
+      expect(model).toMatch(/^[a-z0-9-]+\/[a-z0-9._-]+$/)
+    }
+  })
+
+  it('keeps Genspark as the default and ignores an AI/ML API pick without a key', () => {
+    const settings = defaultAiSettings()
+    expect(settings.provider).toBe('genspark')
+    expect(settings.providers.aimlapi).toEqual({
+      apiKey: '',
+      model: 'anthropic/claude-sonnet-5',
+      baseUrl: undefined,
+      cliPath: undefined,
+    })
+    expect(activeProvider({ ...settings, provider: 'aimlapi' })).toBe('genspark')
+    settings.providers.aimlapi.apiKey = 'k-1'
+    expect(activeProvider({ ...settings, provider: 'aimlapi' })).toBe('aimlapi')
+  })
+
   it('seeds Runcrate with lab-namespaced model ids', () => {
     const runcrate = AI_PROVIDERS.find((provider) => provider.id === 'runcrate')!
     expect(runcrate.models).toContain(runcrate.defaultModel)

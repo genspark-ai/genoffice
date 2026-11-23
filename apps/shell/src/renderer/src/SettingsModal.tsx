@@ -414,9 +414,13 @@ function AiModelPane({ t }: { t: TFunc }) {
   )
   const endpointProvider = liveEntry?.id
   const endpointConfig = settings ? settings.providers[settings.provider] : undefined
+  // AI/ML API's chat endpoint is pinned to api.aimlapi.com (registry.ts), so
+  // its list is asked there too and the key never follows a typed address.
   const endpointBaseUrl =
-    (endpointConfig?.baseUrl ?? '').trim() ||
-    (liveEntry?.liveModels ? liveEntry.defaultBaseUrl : '')
+    liveEntry?.id === 'aimlapi'
+      ? liveEntry.defaultBaseUrl
+      : (endpointConfig?.baseUrl ?? '').trim() ||
+        (liveEntry?.liveModels ? liveEntry.defaultBaseUrl : '')
   /** the lists as shipped, restored when a live list is withdrawn */
   const shippedModelsRef = useRef(new Map(catalog.map((entry) => [entry.id, entry.models])))
   const endpointApiKey = endpointConfig?.apiKey ?? ''
@@ -847,27 +851,30 @@ function AiModelPane({ t }: { t: TFunc }) {
               onChange={(e) => updateConfig({ apiKey: e.target.value.trim() })}
             />
           </div>
-          <div className="set-field">
-            <div className="set-field-text">
-              <div className="set-field-stack">
-                <label className="set-field-label" htmlFor="set-ai-base-url">
-                  {t('setAiBaseUrl')}
-                </label>
-                {!meta?.needsBaseUrl && (
-                  <div className="set-field-desc">{t('setAiBaseUrlHint')}</div>
-                )}
+          {/* AI/ML API's host is pinned in the registry, so there is no address to edit */}
+          {settings.provider !== 'aimlapi' && (
+            <div className="set-field">
+              <div className="set-field-text">
+                <div className="set-field-stack">
+                  <label className="set-field-label" htmlFor="set-ai-base-url">
+                    {t('setAiBaseUrl')}
+                  </label>
+                  {!meta?.needsBaseUrl && (
+                    <div className="set-field-desc">{t('setAiBaseUrlHint')}</div>
+                  )}
+                </div>
               </div>
+              <input
+                id="set-ai-base-url"
+                className="set-input"
+                type="text"
+                value={config.baseUrl ?? ''}
+                placeholder={meta?.needsBaseUrl ? 'https://…/v1' : meta?.defaultBaseUrl}
+                spellCheck={false}
+                onChange={(e) => updateConfig({ baseUrl: e.target.value.trim() })}
+              />
             </div>
-            <input
-              id="set-ai-base-url"
-              className="set-input"
-              type="text"
-              value={config.baseUrl ?? ''}
-              placeholder={meta?.needsBaseUrl ? 'https://…/v1' : meta?.defaultBaseUrl}
-              spellCheck={false}
-              onChange={(e) => updateConfig({ baseUrl: e.target.value.trim() })}
-            />
-          </div>
+          )}
 
           {endpoint && (
             <>
@@ -1624,9 +1631,11 @@ function AiMediaPane({
                   ? t('setAiSearchSerplyHint')
                   : search.provider === 'searchapi'
                     ? t('setAiSearchSearchApiHint')
-                    : searchMeta?.imageSearch
-                      ? t('setAiSearchSerperHint')
-                      : t('setAiSearchTavilyHint')}
+                    : search.provider === 'aimlapi'
+                      ? t('setAiSearchAimlapiHint')
+                      : searchMeta?.imageSearch
+                        ? t('setAiSearchSerperHint')
+                        : t('setAiSearchTavilyHint')}
         </div>
         {search.provider !== 'genspark' &&
           keyRow('set-ai-search-key', searchKey, searchMeta?.keyPlaceholder ?? 'API Key', (v) =>

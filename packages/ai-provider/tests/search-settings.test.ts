@@ -20,6 +20,7 @@ describe('search settings', () => {
         exa: { apiKey: '' },
         firecrawl: { apiKey: '' },
         keenable: { apiKey: '' },
+        aimlapi: { apiKey: '' },
       },
     })
     expect(defaultAiSettings().search?.provider).toBe('genspark')
@@ -55,6 +56,7 @@ describe('search settings', () => {
             exa: { apiKey: '' },
             firecrawl: { apiKey: '' },
             keenable: { apiKey: '' },
+            aimlapi: { apiKey: '' },
           },
         },
       }),
@@ -72,6 +74,7 @@ describe('search settings', () => {
             exa: { apiKey: '' },
             firecrawl: { apiKey: '' },
             keenable: { apiKey: '' },
+            aimlapi: { apiKey: '' },
           },
         },
       }),
@@ -89,6 +92,7 @@ describe('search settings', () => {
             exa: { apiKey: '' },
             firecrawl: { apiKey: '' },
             keenable: { apiKey: '' },
+            aimlapi: { apiKey: '' },
           },
         },
       }),
@@ -201,6 +205,7 @@ describe('exa and firecrawl providers', () => {
           exa: { apiKey: id === 'exa' ? apiKey : '' },
           firecrawl: { apiKey: id === 'firecrawl' ? apiKey : '' },
           keenable: { apiKey: '' },
+          aimlapi: { apiKey: '' },
         },
       },
     })
@@ -255,5 +260,32 @@ describe('Keenable search settings', () => {
   it('leaves the default provider on Genspark', () => {
     expect(defaultAiSearchSettings().provider).toBe('genspark')
     expect(activeSearchProvider({ search: defaultAiSearchSettings() })).toBe('genspark')
+  })
+})
+
+describe('aimlapi search provider', () => {
+  it('is in the catalog without image search and defaults to an empty key', () => {
+    const meta = AI_SEARCH_PROVIDERS.find((m) => m.id === 'aimlapi')
+    expect(meta?.label).toBe('AI/ML API')
+    expect(meta?.imageSearch).toBe(false)
+    expect(defaultAiSearchSettings().providers.aimlapi.apiKey).toBe('')
+  })
+
+  it('activates with a key, falls back to genspark without one, and keeps the stored key', () => {
+    const search = (apiKey: string) => ({
+      search: {
+        ...defaultAiSearchSettings(),
+        provider: 'aimlapi' as const,
+        providers: { ...defaultAiSearchSettings().providers, aimlapi: { apiKey } },
+      },
+    })
+    expect(activeSearchProvider(search(' '))).toBe('genspark')
+    expect(activeSearchProvider(search('k-1'))).toBe('aimlapi')
+    const resolved = resolveAiSearchSettings({
+      provider: 'aimlapi',
+      providers: { aimlapi: { apiKey: ' k-2 ' } } as never,
+    })
+    expect(resolved.provider).toBe('aimlapi')
+    expect(resolved.providers.aimlapi.apiKey).toBe('k-2')
   })
 })

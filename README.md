@@ -322,11 +322,11 @@ through the Genspark proxy (Claude, GPT and Gemini families) and the agents get
 web and image search, image generation, and image/audio/video analysis.
 
 **Or bring your own key.** Settings → AI lists Claude, OpenAI, Gemini,
-DeepSeek, Kimi, GLM, Qwen, Doubao, MiniMax, Grok, Mistral, OpenRouter, Requesty, Opper,
+DeepSeek, Kimi, GLM, Qwen, Doubao, MiniMax, Grok, Mistral, OpenRouter, AI/ML API, Requesty, Opper,
 Cheaper Inference, Atlas Cloud, SiliconFlow, PPIO, Command Code and OpenCode Zen/Go, plus a
 custom slot for any OpenAI-compatible endpoint (base URL + key), including local model servers. Search and media have their own
 per-capability providers under **AI Media & Search**: Serper, Serply, SearchApi, Tavily, Parallel,
-Keenable, Exa or Firecrawl for web search, and OpenAI, Gemini, Doubao/Seedream, GLM, Grok,
+Keenable, Exa, Firecrawl or AI/ML API for web search, and OpenAI, Gemini, Doubao/Seedream, GLM, Grok,
 Qwen, MiniMax, Stability, FLUX or any OpenAI-compatible images endpoint for image
 generation and image/video analysis, plus DeepSeek V4.1 Flash for image analysis.
 

@@ -438,6 +438,7 @@ export const strings = {
     setAiSearchSerplyHint: 'Serply 用你的 key 同时提供网页与图片搜索。',
     setAiSearchSearchApiHint: 'SearchApi 用你的 key 同时提供网页与图片搜索。',
     setAiSearchTavilyHint: 'Tavily 用你的 key 提供网页搜索；图片搜索改用免费来源。',
+    setAiSearchAimlapiHint: 'AI/ML API 用你的 key 提供网页搜索；图片搜索改用免费来源。',
     setAiSearchParallelHint:
       '留空 API key 即可免费使用 Parallel 搜索（用量有限）。填写 key 可使用你的 Parallel 账户。图片搜索使用其他来源。',
     setAiSearchKeenableHint:
@@ -1007,6 +1008,8 @@ export const strings = {
     setAiSearchSearchApiHint: 'SearchApi serves both web and image search with your key.',
     setAiSearchTavilyHint:
       'Tavily serves web search with your key; image search falls back to free sources.',
+    setAiSearchAimlapiHint:
+      'AI/ML API serves web search with your key; image search falls back to free sources.',
     setAiSearchParallelHint:
       'Leave the key blank for free Parallel search (limited usage). Add a key to use your Parallel account. Image search uses other sources.',
     setAiSearchKeenableHint:
@@ -1585,6 +1588,8 @@ export const strings = {
     setAiSearchSearchApiHint: 'SearchApi cung cấp cả tìm kiếm web và hình ảnh bằng key của bạn.',
     setAiSearchTavilyHint:
       'Tavily cung cấp tìm kiếm web bằng khóa của bạn; tìm kiếm hình ảnh sẽ chuyển sang dùng các nguồn miễn phí.',
+    setAiSearchAimlapiHint:
+      'AI/ML API cung cấp tìm kiếm web bằng khóa của bạn; tìm kiếm hình ảnh sẽ chuyển sang dùng các nguồn miễn phí.',
     setAiSearchParallelHint:
       'Để trống khóa để dùng tìm kiếm Parallel miễn phí (giới hạn lượt dùng). Nhập khóa để dùng tài khoản Parallel của bạn. Tìm kiếm hình ảnh sử dụng các nguồn khác.',
     setAiSearchKeenableHint:
@@ -2166,6 +2171,8 @@ export const strings = {
     setAiSearchSearchApiHint: 'SearchApi, anahtarınızla hem web hem görüntü aramasını sağlar.',
     setAiSearchTavilyHint:
       'Tavily, anahtarınızla web aramasını sağlar; görüntü araması ücretsiz kaynaklara döner.',
+    setAiSearchAimlapiHint:
+      'AI/ML API, anahtarınızla web aramasını sağlar; görüntü araması ücretsiz kaynaklara döner.',
     setAiSearchParallelHint:
       'Ücretsiz Parallel araması için anahtarı boş bırakın (sınırlı kullanım). Parallel hesabınızı kullanmak için bir anahtar ekleyin. Görüntü araması diğer kaynakları kullanır.',
     setAiSearchKeenableHint:
@@ -2755,6 +2762,8 @@ export const strings = {
     setAiSearchSearchApiHint: 'A SearchApi a kulcsoddal a webes és a képkeresést is biztosítja.',
     setAiSearchTavilyHint:
       'A Tavily a kulcsoddal a webes keresést biztosítja; a képkeresés ingyenes forrásokra vált.',
+    setAiSearchAimlapiHint:
+      'A AI/ML API a kulcsoddal a webes keresést biztosítja; a képkeresés ingyenes forrásokra vált.',
     setAiSearchParallelHint:
       'Hagyd üresen a kulcsot az ingyenes Parallel-kereséshez (korlátozott használat). Adj meg egy kulcsot a saját Parallel-fiókod használatához. A képkeresés más forrásokat használ.',
     setAiSearchKeenableHint:
@@ -3345,6 +3354,8 @@ export const strings = {
     setAiSearchSearchApiHint: 'SearchApi はあなたのキーで Web 検索と画像検索の両方を提供します。',
     setAiSearchTavilyHint:
       'Tavily はあなたのキーで Web 検索を提供します。画像検索は無料ソースにフォールバックします。',
+    setAiSearchAimlapiHint:
+      'AI/ML API はあなたのキーで Web 検索を提供します。画像検索は無料ソースにフォールバックします。',
     setAiSearchParallelHint:
       'キーを空欄にすると Parallel 検索を無料で使えます（利用制限あり）。キーを入力すると自分の Parallel アカウントを使用します。画像検索には他のソースを使用します。',
     setAiSearchKeenableHint:
@@ -3924,6 +3935,8 @@ export const strings = {
     setAiSearchSearchApiHint: 'SearchApi는 내 키로 웹 검색과 이미지 검색을 모두 제공합니다.',
     setAiSearchTavilyHint:
       'Tavily는 내 키로 웹 검색을 제공합니다. 이미지 검색은 무료 소스로 대체됩니다.',
+    setAiSearchAimlapiHint:
+      'AI/ML API는 내 키로 웹 검색을 제공합니다. 이미지 검색은 무료 소스로 대체됩니다.',
     setAiSearchParallelHint:
       '키를 비워 두면 Parallel 검색을 무료로 사용할 수 있습니다(사용량 제한). 키를 입력하면 자신의 Parallel 계정을 사용합니다. 이미지 검색은 다른 소스를 사용합니다.',
     setAiSearchKeenableHint:
@@ -4524,6 +4537,8 @@ export const strings = {
       "SearchApi assure la recherche web et la recherche d'images avec votre clé.",
     setAiSearchTavilyHint:
       "Tavily assure la recherche web avec votre clé ; la recherche d'images se rabat sur des sources gratuites.",
+    setAiSearchAimlapiHint:
+      "AI/ML API assure la recherche web avec votre clé ; la recherche d'images se rabat sur des sources gratuites.",
     setAiSearchParallelHint:
       'Laissez la clé vide pour la recherche Parallel gratuite (usage limité). Ajoutez une clé pour utiliser votre compte Parallel. La recherche d’images utilise d’autres sources.',
     setAiSearchKeenableHint:
@@ -5124,6 +5139,8 @@ export const strings = {
     setAiSearchSearchApiHint: 'SearchApi liefert mit deinem Schlüssel Web- und Bildsuche.',
     setAiSearchTavilyHint:
       'Tavily liefert mit deinem Schlüssel die Websuche; die Bildsuche greift auf kostenlose Quellen zurück.',
+    setAiSearchAimlapiHint:
+      'AI/ML API liefert mit deinem Schlüssel die Websuche; die Bildsuche greift auf kostenlose Quellen zurück.',
     setAiSearchParallelHint:
       'Ohne Schlüssel ist die Parallel-Suche kostenlos (begrenzte Nutzung). Mit einem Schlüssel verwenden Sie Ihr Parallel-Konto. Die Bildsuche nutzt andere Quellen.',
     setAiSearchKeenableHint:
@@ -5719,6 +5736,8 @@ export const strings = {
     setAiSearchSearchApiHint: 'SearchApi ofrece búsqueda web y de imágenes con tu clave.',
     setAiSearchTavilyHint:
       'Tavily ofrece búsqueda web con tu clave; la búsqueda de imágenes recurre a fuentes gratuitas.',
+    setAiSearchAimlapiHint:
+      'AI/ML API ofrece búsqueda web con tu clave; la búsqueda de imágenes recurre a fuentes gratuitas.',
     setAiSearchParallelHint:
       'Deja la clave vacía para usar la búsqueda gratuita de Parallel (uso limitado). Añade una clave para usar tu cuenta de Parallel. Las imágenes se buscan en otras fuentes.',
     setAiSearchKeenableHint:
@@ -6298,6 +6317,8 @@ export const strings = {
     setAiSearchSearchApiHint: 'SearchApi ให้บริการค้นหาเว็บและภาพด้วยคีย์ของคุณ',
     setAiSearchTavilyHint:
       'Tavily ให้บริการค้นหาเว็บด้วยคีย์ของคุณ ส่วนการค้นหาภาพจะใช้แหล่งข้อมูลฟรีแทน',
+    setAiSearchAimlapiHint:
+      'AI/ML API ให้บริการค้นหาเว็บด้วยคีย์ของคุณ ส่วนการค้นหาภาพจะใช้แหล่งข้อมูลฟรีแทน',
     setAiSearchParallelHint:
       'เว้นคีย์ว่างไว้เพื่อค้นหาด้วย Parallel ฟรี (จำกัดการใช้งาน) เพิ่มคีย์เพื่อใช้บัญชี Parallel ของคุณ การค้นหารูปภาพใช้แหล่งข้อมูลอื่น',
     setAiSearchKeenableHint:
@@ -6883,6 +6904,8 @@ export const strings = {
     setAiSearchSearchApiHint: 'SearchApi menyediakan pencarian web dan gambar dengan kunci Anda.',
     setAiSearchTavilyHint:
       'Tavily menyediakan pencarian web dengan kunci Anda; pencarian gambar memakai sumber gratis.',
+    setAiSearchAimlapiHint:
+      'AI/ML API menyediakan pencarian web dengan kunci Anda; pencarian gambar memakai sumber gratis.',
     setAiSearchParallelHint:
       'Kosongkan kunci untuk pencarian Parallel gratis (penggunaan terbatas). Tambahkan kunci untuk menggunakan akun Parallel Anda. Pencarian gambar memakai sumber lain.',
     setAiSearchKeenableHint:
@@ -7471,6 +7494,8 @@ export const strings = {
       'SearchApi обеспечивает веб-поиск и поиск изображений с вашим ключом.',
     setAiSearchTavilyHint:
       'Tavily обеспечивает веб-поиск с вашим ключом; поиск изображений использует бесплатные источники.',
+    setAiSearchAimlapiHint:
+      'AI/ML API обеспечивает веб-поиск с вашим ключом; поиск изображений использует бесплатные источники.',
     setAiSearchParallelHint:
       'Оставьте ключ пустым для бесплатного поиска Parallel (с ограничениями). Добавьте ключ для использования своего аккаунта Parallel. Поиск изображений использует другие источники.',
     setAiSearchKeenableHint:
@@ -8053,6 +8078,8 @@ export const strings = {
     setAiSearchSearchApiHint: 'يوفّر SearchApi البحث في الويب والصور بمفتاحك.',
     setAiSearchTavilyHint:
       'يوفّر Tavily البحث في الويب بمفتاحك؛ ويعود البحث في الصور إلى مصادر مجانية.',
+    setAiSearchAimlapiHint:
+      'يوفّر AI/ML API البحث في الويب بمفتاحك؛ ويعود البحث في الصور إلى مصادر مجانية.',
     setAiSearchParallelHint:
       'اترك المفتاح فارغًا لاستخدام بحث Parallel مجانًا (استخدام محدود). أضف مفتاحًا لاستخدام حسابك في Parallel. يستخدم بحث الصور مصادر أخرى.',
     setAiSearchKeenableHint:
@@ -8637,6 +8664,8 @@ export const strings = {
     setAiSearchSearchApiHint: 'A SearchApi oferece busca na web e de imagens com a sua chave.',
     setAiSearchTavilyHint:
       'O Tavily oferece busca na web com a sua chave; a busca de imagens recorre a fontes gratuitas.',
+    setAiSearchAimlapiHint:
+      'O AI/ML API oferece busca na web com a sua chave; a busca de imagens recorre a fontes gratuitas.',
     setAiSearchParallelHint:
       'Deixe a chave vazia para pesquisar gratuitamente com Parallel (uso limitado). Adicione uma chave para usar sua conta Parallel. A pesquisa de imagens usa outras fontes.',
     setAiSearchKeenableHint:
@@ -9222,6 +9251,8 @@ export const strings = {
     setAiSearchSearchApiHint: 'SearchApi offre ricerca web e di immagini con la tua chiave.',
     setAiSearchTavilyHint:
       'Tavily offre la ricerca web con la tua chiave; la ricerca di immagini ricorre a fonti gratuite.',
+    setAiSearchAimlapiHint:
+      'AI/ML API offre la ricerca web con la tua chiave; la ricerca di immagini ricorre a fonti gratuite.',
     setAiSearchParallelHint:
       'Lascia la chiave vuota per la ricerca Parallel gratuita (uso limitato). Aggiungi una chiave per usare il tuo account Parallel. Le immagini vengono cercate in altre fonti.',
     setAiSearchKeenableHint:
@@ -9804,6 +9835,8 @@ export const strings = {
     setAiSearchSearchApiHint: 'SearchApi zapewnia wyszukiwanie w sieci i obrazów z Twoim kluczem.',
     setAiSearchTavilyHint:
       'Tavily zapewnia wyszukiwanie w sieci z Twoim kluczem; wyszukiwanie obrazów używa darmowych źródeł.',
+    setAiSearchAimlapiHint:
+      'AI/ML API zapewnia wyszukiwanie w sieci z Twoim kluczem; wyszukiwanie obrazów używa darmowych źródeł.',
     setAiSearchParallelHint:
       'Pozostaw klucz pusty, aby bezpłatnie korzystać z wyszukiwania Parallel (z limitami). Dodaj klucz, aby używać swojego konta Parallel. Obrazy są wyszukiwane w innych źródłach.',
     setAiSearchKeenableHint:
@@ -10321,6 +10354,8 @@ export const strings = {
     setAiSearchSearchApiHint: 'SearchApi zajišťuje webové i obrázkové vyhledávání s vaším klíčem.',
     setAiSearchTavilyHint:
       'Tavily zajišťuje webové vyhledávání s vaším klíčem; obrázkové vyhledávání použije bezplatné zdroje.',
+    setAiSearchAimlapiHint:
+      'AI/ML API zajišťuje webové vyhledávání s vaším klíčem; obrázkové vyhledávání použije bezplatné zdroje.',
     setAiSearchParallelHint:
       'Nechte klíč prázdný pro bezplatné vyhledávání Parallel (omezené použití). Zadejte klíč pro použití svého účtu Parallel. Obrázky se vyhledávají v jiných zdrojích.',
     setAiSearchKeenableHint:
@@ -10961,6 +10996,8 @@ export const strings = {
     setAiSearchSearchApiHint: 'SearchApi levert web- en afbeeldingszoeken met je sleutel.',
     setAiSearchTavilyHint:
       'Tavily levert webzoeken met je sleutel; afbeeldingszoeken valt terug op gratis bronnen.',
+    setAiSearchAimlapiHint:
+      'AI/ML API levert webzoeken met je sleutel; afbeeldingszoeken valt terug op gratis bronnen.',
     setAiSearchParallelHint:
       'Laat de sleutel leeg voor gratis zoeken met Parallel (beperkt gebruik). Voeg een sleutel toe om je Parallel-account te gebruiken. Afbeeldingen komen uit andere bronnen.',
     setAiSearchKeenableHint:
@@ -11545,6 +11582,8 @@ export const strings = {
     setAiSearchSearchApiHint: 'SearchApi menyediakan carian web dan imej dengan kunci anda.',
     setAiSearchTavilyHint:
       'Tavily menyediakan carian web dengan kunci anda; carian imej menggunakan sumber percuma.',
+    setAiSearchAimlapiHint:
+      'AI/ML API menyediakan carian web dengan kunci anda; carian imej menggunakan sumber percuma.',
     setAiSearchParallelHint:
       'Biarkan kunci kosong untuk carian Parallel percuma (penggunaan terhad). Tambah kunci untuk menggunakan akaun Parallel anda. Carian imej menggunakan sumber lain.',
     setAiSearchKeenableHint:
@@ -12112,6 +12151,8 @@ export const strings = {
     setAiSearchSearchApiHint: 'SearchApi מספק חיפוש באינטרנט ובתמונות עם המפתח שלך.',
     setAiSearchTavilyHint:
       'Tavily מספק חיפוש באינטרנט עם המפתח שלך; חיפוש תמונות חוזר למקורות חינמיים.',
+    setAiSearchAimlapiHint:
+      'AI/ML API מספק חיפוש באינטרנט עם המפתח שלך; חיפוש תמונות חוזר למקורות חינמיים.',
     setAiSearchParallelHint:
       'השאירו את המפתח ריק לחיפוש Parallel בחינם (שימוש מוגבל). הוסיפו מפתח כדי להשתמש בחשבון Parallel שלכם. חיפוש תמונות משתמש במקורות אחרים.',
     setAiSearchKeenableHint:
@@ -12686,6 +12727,8 @@ export const strings = {
     setAiSearchSearchApiHint: 'SearchApi आपकी कुंजी से वेब और इमेज खोज दोनों देता है।',
     setAiSearchTavilyHint:
       'Tavily आपकी कुंजी से वेब खोज देता है; इमेज खोज मुफ़्त स्रोतों पर लौट जाती है।',
+    setAiSearchAimlapiHint:
+      'AI/ML API आपकी कुंजी से वेब खोज देता है; इमेज खोज मुफ़्त स्रोतों पर लौट जाती है।',
     setAiSearchParallelHint:
       'मुफ़्त Parallel खोज के लिए कुंजी खाली छोड़ें (सीमित उपयोग)। अपने Parallel खाते का उपयोग करने के लिए कुंजी जोड़ें। इमेज खोज अन्य स्रोतों का उपयोग करती है।',
     setAiSearchKeenableHint:
@@ -13243,6 +13286,7 @@ export const strings = {
     setAiSearchSerplyHint: 'Serply 用你的 key 同時提供網頁與圖片搜尋。',
     setAiSearchSearchApiHint: 'SearchApi 用你的 key 同時提供網頁與圖片搜尋。',
     setAiSearchTavilyHint: 'Tavily 用你的 key 提供網頁搜尋；圖片搜尋改用免費來源。',
+    setAiSearchAimlapiHint: 'AI/ML API 用你的 key 提供網頁搜尋；圖片搜尋改用免費來源。',
     setAiSearchParallelHint:
       '留空 API key 即可免費使用 Parallel 搜尋（用量有限）。填寫 key 可使用你的 Parallel 帳戶。圖片搜尋使用其他來源。',
     setAiSearchKeenableHint:

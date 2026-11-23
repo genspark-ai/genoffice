@@ -55,6 +55,22 @@ function entryId(entry: unknown): string | undefined {
  */
 const isBatchVariant = (id: string): boolean => /:batch$/i.test(id)
 
+/**
+ * AI/ML API lists every model it serves on one `/models` route: image, video,
+ * speech and embedding rows sit next to the chat ones, and only the rows typed
+ * `openai/chat-completions` answer on chat/completions. Matched on the exact
+ * host so no other server's listing is filtered.
+ */
+function isAimlapiNonChat(base: string, entry: unknown): boolean {
+  try {
+    if (new URL(base).hostname !== 'api.aimlapi.com') return false
+  } catch {
+    return false
+  }
+  const type = typeof entry === 'object' && entry !== null ? (entry as { type?: unknown }).type : ''
+  return type !== 'openai/chat-completions'
+}
+
 const posInt = (v: unknown): number | undefined =>
   typeof v === 'number' && Number.isFinite(v) && v > 0 ? Math.floor(v) : undefined
 
@@ -198,7 +214,7 @@ export async function listCustomModels(
       const profiles: AiCustomModelProfile[] = []
       for (const entry of list) {
         const id = entryId(entry)?.trim()
-        if (!id || seen.has(id) || isBatchVariant(id)) continue
+        if (!id || seen.has(id) || isBatchVariant(id) || isAimlapiNonChat(base, entry)) continue
         seen.add(id)
         const profile = profileOf(entry)
         // an entry that declares nothing beyond its id is not a declaration

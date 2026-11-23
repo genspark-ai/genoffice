@@ -1,11 +1,13 @@
 /**
  * Search utilities (main process) — gsk (Genspark CLI) first, then Serper Google API,
  * then Serply, SearchApi, Tavily, Parallel (whose free Search MCP answers keyless), Exa,
- * Firecrawl and Keenable (keyless only when selected), before the DuckDuckGo last resort. Runs
+ * Firecrawl, Keenable (keyless only when selected) and the AI/ML API Toolbox, before the DuckDuckGo
+ * last resort. Runs
  * in the main process (Node fetch / child process) to avoid renderer CORS; the Serper key reuses
  * SERPER_API_KEY, the Serply key reuses SERPLY_API_KEY, the SearchApi key reuses
  * SEARCHAPI_API_KEY, the Tavily key reuses TAVILY_API_KEY, Parallel uses PARALLEL_API_KEY, Exa
- * uses EXA_API_KEY, Firecrawl uses FIRECRAWL_API_KEY and Keenable uses KEENABLE_API_KEY.
+ * uses EXA_API_KEY, Firecrawl uses FIRECRAWL_API_KEY, Keenable uses KEENABLE_API_KEY; the AI/ML API
+ * Toolbox takes its key from settings only.
  * For Genspark auth see ./gsk.ts (GenOffice sign-in or explicit GSK_API_KEY).
  */
 
@@ -50,9 +52,18 @@ export interface SearchOptions {
   exaKey?: string
   firecrawlKey?: string
   keenableKey?: string
+  aimlapiKey?: string
   /** which backend to try first (default serper) */
   prefer?:
-    'serper' | 'serply' | 'searchapi' | 'tavily' | 'parallel' | 'exa' | 'firecrawl' | 'keenable'
+    | 'serper'
+    | 'serply'
+    | 'searchapi'
+    | 'tavily'
+    | 'parallel'
+    | 'exa'
+    | 'firecrawl'
+    | 'keenable'
+    | 'aimlapi'
 }
 
 const SEARCH_BACKENDS = new Set([
@@ -64,6 +75,7 @@ const SEARCH_BACKENDS = new Set([
   'exa',
   'firecrawl',
   'keenable',
+  'aimlapi',
 ] as const)
 
 function normalizeOptions(opts: boolean | SearchOptions | undefined): Required<SearchOptions> {
@@ -78,6 +90,8 @@ function normalizeOptions(opts: boolean | SearchOptions | undefined): Required<S
     exaKey: o.exaKey ?? EXA_KEY(),
     firecrawlKey: o.firecrawlKey ?? FIRECRAWL_KEY(),
     keenableKey: o.keenableKey ?? KEENABLE_KEY(),
+    // no env fallback: the Toolbox bills per run, so it only runs when chosen in settings
+    aimlapiKey: o.aimlapiKey ?? '',
     // `prefer` arrives from an ipc payload cast with `as`; an unknown id would make the
     // dispatch call a missing function.
     prefer:
@@ -473,6 +487,68 @@ async function keenableWebSearch(
   }
 }
 
+/** The AI/ML API Toolbox run route; the key goes to this exact host and nowhere else. */
+const AIMLAPI_TOOLS_RUN_URL = 'https://tools.aimlapi.com/v1/tools/run'
+/** Toolbox tool behind web search: Tavily search, billed per run to the AI/ML API account */
+const AIMLAPI_SEARCH_TOOL = 'tavily/search'
+/** Tavily is priced by result tier, so the Toolbox wants a ceiling; this is its worst-case price */
+const AIMLAPI_SEARCH_MAX_COST_USD = 0.03
+const AIMLAPI_SNIPPET_CHARS = 500
+
+/**
+ * AI/ML API Toolbox (tools.aimlapi.com): one key for its hosted tools. Web
+ * search runs its `tavily/search` tool, whose `output` is Tavily's own shape
+ * (results with `content`, optional `answer`). Redirects are refused so the
+ * Bearer key cannot follow a 3xx to another host.
+ */
+async function aimlapiWebSearch(
+  key: string,
+  query: string,
+  maxResults: number,
+): Promise<WebSearchResponse | null> {
+  key = key.trim()
+  if (!key) return null
+  try {
+    return await fetchWithTimeout(
+      AIMLAPI_TOOLS_RUN_URL,
+      {
+        method: 'POST',
+        redirect: 'error',
+        headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          tool: AIMLAPI_SEARCH_TOOL,
+          input: { query, max_results: maxResults },
+          max_cost_usd: AIMLAPI_SEARCH_MAX_COST_USD,
+        }),
+        timeoutMs: 30000,
+      },
+      async (resp) => {
+        if (!resp.ok) return null
+        const run = asRecord(await resp.json())
+        if (run.is_error === true) return null
+        const data = asRecord(run.output)
+        const raw: unknown[] = Array.isArray(data.results) ? data.results : []
+        const results: WebSearchResult[] = []
+        for (const item of raw) {
+          if (results.length >= maxResults) break
+          const o = asRecord(item)
+          const url = typeof o.url === 'string' ? o.url : ''
+          if (!/^https?:\/\//i.test(url)) continue
+          results.push({
+            title: typeof o.title === 'string' && o.title ? o.title : url,
+            url,
+            snippet: String(o.content ?? '').slice(0, AIMLAPI_SNIPPET_CHARS),
+          })
+        }
+        const answer = typeof data.answer === 'string' && data.answer ? data.answer : undefined
+        return results.length ? { results, method: 'aimlapi', ...(answer ? { answer } : {}) } : null
+      },
+    )
+  } catch {
+    return null
+  }
+}
+
 // ── Web search ──────────────────────────────────────────────────────
 
 /**
@@ -517,6 +593,7 @@ export async function webSearch(
     exa: () => exaWebSearch(o.exaKey, q, max),
     firecrawl: () => firecrawlWebSearch(o.firecrawlKey, q, max),
     keenable: () => keenableWebSearch(o.keenableKey, q, max, o.prefer === 'keenable'),
+    aimlapi: () => aimlapiWebSearch(o.aimlapiKey, q, max),
   }
   const order = [
     o.prefer,
@@ -530,6 +607,7 @@ export async function webSearch(
         'exa',
         'firecrawl',
         'keenable',
+        'aimlapi',
       ] as const
     ).filter((id) => id !== o.prefer),
   ]

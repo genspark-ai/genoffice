@@ -547,6 +547,119 @@ describe('webSearch (Keenable)', () => {
   })
 })
 
+describe('webSearch (AI/ML API Toolbox)', () => {
+  it('runs tavily/search on tools.aimlapi.com with the Bearer key', async () => {
+    const urls: string[] = []
+    let init: RequestInit | undefined
+    mockFetch((url, i) => {
+      urls.push(url)
+      init = i
+      return {
+        ok: true,
+        json: {
+          status: 'completed',
+          is_error: false,
+          output: {
+            answer: 'short answer',
+            results: [
+              { title: 'A', url: 'https://a.com', content: 'page text '.repeat(80) },
+              { title: '', url: 'https://b.com', content: 'short' },
+              { title: 'C', url: 'javascript:alert(1)', content: 'dropped' },
+            ],
+          },
+        },
+      }
+    })
+    const r = await webSearch('q', 5, { useGsk: false, aimlapiKey: ' ak-1 ', prefer: 'aimlapi' })
+    expect(urls).toEqual(['https://tools.aimlapi.com/v1/tools/run'])
+    expect(init?.redirect).toBe('error')
+    expect(init?.headers).toEqual({
+      Authorization: 'Bearer ak-1',
+      'Content-Type': 'application/json',
+    })
+    expect(JSON.parse(String(init?.body))).toEqual({
+      tool: 'tavily/search',
+      input: { query: 'q', max_results: 5 },
+      max_cost_usd: 0.03,
+    })
+    expect(r.method).toBe('aimlapi')
+    expect(r.answer).toBe('short answer')
+    expect(r.results).toHaveLength(2)
+    expect(r.results[0]?.snippet).toHaveLength(500)
+    expect(r.results[1]).toEqual({ title: 'https://b.com', url: 'https://b.com', snippet: 'short' })
+  })
+
+  it('never sends the key to another host, including after a failed run', async () => {
+    const calls: { url: string; auth?: string }[] = []
+    mockFetch((url, init) => {
+      const headers = (init?.headers ?? {}) as Record<string, string>
+      calls.push({ url, auth: headers.Authorization })
+      if (url.startsWith('https://tools.aimlapi.com/')) return { ok: false }
+      return {
+        ok: true,
+        text: '<a class="result__a" href="/l/?uddg=https%3A%2F%2Fx.com">X Title</a>',
+      }
+    })
+    const r = await webSearch('q', 2, { useGsk: false, aimlapiKey: 'ak-1', prefer: 'aimlapi' })
+    expect(r.method).not.toBe('aimlapi')
+    const keyed = calls.filter((c) => c.auth?.includes('ak-1'))
+    expect(keyed.map((c) => new URL(c.url).hostname)).toEqual(['tools.aimlapi.com'])
+  })
+
+  it('a tool-level error falls through to the next backend', async () => {
+    const urls: string[] = []
+    mockFetch((url) => {
+      urls.push(url)
+      return url.startsWith('https://tools.aimlapi.com/')
+        ? { ok: true, json: { is_error: true, output: { results: [{ url: 'https://a.com' }] } } }
+        : { ok: false }
+    })
+    const r = await webSearch('q', 2, { useGsk: false, aimlapiKey: 'ak-1', prefer: 'aimlapi' })
+    expect(urls[0]).toBe('https://tools.aimlapi.com/v1/tools/run')
+    expect(r.method).not.toBe('aimlapi')
+  })
+
+  it('stays out of the default chain without a key, even with AIMLAPI_API_KEY set', async () => {
+    process.env.AIMLAPI_API_KEY = 'env-key'
+    const urls: string[] = []
+    mockFetch((url) => {
+      urls.push(url)
+      if (url === 'https://search.parallel.ai/mcp') return { ok: false }
+      return {
+        ok: true,
+        text: '<a class="result__a" href="/l/?uddg=https%3A%2F%2Fx.com">X Title</a>',
+      }
+    })
+    try {
+      const r = await webSearch('q', 3)
+      expect(r.method).toBe('duckduckgo')
+      expect(urls.some((u) => u.includes('aimlapi.com'))).toBe(false)
+      // the settings key, not the env one, is what reaches the Toolbox when chosen
+      urls.length = 0
+      await webSearch('q', 3, { useGsk: false, aimlapiKey: 'ak-3', prefer: 'aimlapi' })
+      expect(urls[0]).toBe('https://tools.aimlapi.com/v1/tools/run')
+    } finally {
+      delete process.env.AIMLAPI_API_KEY
+    }
+  })
+
+  it('maps the aimlapi settings pick onto SearchOptions', () => {
+    const base = defaultAiSettings()
+    const settings = {
+      ...base,
+      search: {
+        provider: 'aimlapi' as const,
+        providers: { ...base.search!.providers, aimlapi: { apiKey: 'ak-2' } },
+      },
+    }
+    expect(searchOptionsFromSettings(settings)).toEqual({
+      useGsk: false,
+      aimlapiKey: 'ak-2',
+      prefer: 'aimlapi',
+    })
+  })
+})
+
 describe('search-tools', () => {
   it('maps the settings block onto SearchOptions', () => {
     const base = defaultAiSettings()
@@ -567,6 +680,7 @@ describe('search-tools', () => {
           exa: { apiKey: '' },
           firecrawl: { apiKey: '' },
           keenable: { apiKey: '' },
+          aimlapi: { apiKey: '' },
         },
       },
     }
@@ -584,6 +698,7 @@ describe('search-tools', () => {
           exa: { apiKey: '' },
           firecrawl: { apiKey: '' },
           keenable: { apiKey: '' },
+          aimlapi: { apiKey: '' },
         },
       },
     }
@@ -605,6 +720,7 @@ describe('search-tools', () => {
           exa: { apiKey: 'e' },
           firecrawl: { apiKey: '' },
           keenable: { apiKey: '' },
+          aimlapi: { apiKey: '' },
         },
       },
     }
@@ -622,6 +738,7 @@ describe('search-tools', () => {
           exa: { apiKey: '' },
           firecrawl: { apiKey: 'fc-1' },
           keenable: { apiKey: '' },
+          aimlapi: { apiKey: '' },
         },
       },
     }
@@ -644,6 +761,7 @@ describe('search-tools', () => {
           exa: { apiKey: '' },
           firecrawl: { apiKey: '' },
           keenable: { apiKey: '' },
+          aimlapi: { apiKey: '' },
         },
       },
     }

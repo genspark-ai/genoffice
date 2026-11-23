@@ -116,6 +116,9 @@ export function modelUsesResponsesApi(model: string): boolean {
   return /^gpt-(5\.[4-9]|6(\.\d+)?)(-|$)/i.test(model)
 }
 
+/** AI/ML API's OpenAI-compatible root (chat/completions and models ride under it) */
+export const AIMLAPI_BASE_URL = 'https://api.aimlapi.com/v1'
+
 function fixedEndpoint(
   protocol: AiProtocol,
   baseUrl: string,
@@ -277,6 +280,15 @@ export const AI_PROVIDER_ADAPTERS: Record<AiProviderId, ProviderAdapter> = {
     meta: metaOf('openrouter'),
     capabilities: { auth: 'api-key', vision: true },
     resolveEndpoint: fixedEndpoint('openai-compatible', 'https://openrouter.ai/api/v1'),
+  },
+  aimlapi: {
+    meta: metaOf('aimlapi'),
+    capabilities: { auth: 'api-key', vision: true },
+    // one chat-completions endpoint for every lab; the vendor-prefixed id picks
+    // it. The host is pinned: a stored base URL is ignored so the key only ever
+    // goes to api.aimlapi.com.
+    resolveEndpoint: (config) =>
+      fixedEndpoint('openai-compatible', AIMLAPI_BASE_URL)({ ...config, baseUrl: undefined }),
   },
   requesty: {
     meta: metaOf('requesty'),

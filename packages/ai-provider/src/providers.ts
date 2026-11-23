@@ -313,6 +313,30 @@ export const AI_PROVIDERS: AiProviderMeta[] = [
     keyPlaceholder: 'sk-or-...',
   },
   {
+    id: 'aimlapi',
+    label: 'AI/ML API',
+    // Vendor-prefixed ids exactly as GET api.aimlapi.com/v1/models?include=all
+    // lists them (2026-11-23, public endpoint, no key needed), picked from the
+    // rows typed openai/chat-completions whose capabilities include tools,
+    // vision and streaming. Shown until the live catalog replaces them; the
+    // listing is filtered to the same chat rows (see custom-models.ts).
+    liveModels: true,
+    models: [
+      'anthropic/claude-sonnet-5',
+      'anthropic/claude-opus-5.5',
+      'openai/gpt-5.6-sol',
+      'openai/gpt-4.1-mini',
+      'google/gemini-3.8-flash',
+      'deepseek/deepseek-v4.1-flash',
+      'moonshot/kimi-k3-1-pro',
+      'alibaba/qwen3.8-max',
+      'x-ai/grok-4-7',
+      'z-ai/glm-5.3-flash',
+    ],
+    defaultModel: 'anthropic/claude-sonnet-5',
+    keyPlaceholder: 'AI/ML API key',
+  },
+  {
     id: 'requesty',
     label: 'Requesty',
     // Managed policy ids exactly as GET router.requesty.ai/v1/models/managed
