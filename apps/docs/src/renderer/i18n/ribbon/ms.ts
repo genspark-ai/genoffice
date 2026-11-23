@@ -477,7 +477,7 @@ export const ms = {
     'Belum ada penanda buku. Gunakan "Sisip → Penanda Buku" untuk menandakan lokasi yang hendak dirujuk.',
   ribbonChartInsertTitle: 'Sisipkan Carta',
   ribbonChartTitlePh: 'Tajuk Carta',
-  ribbonChartBar: 'Bar',
+  ribbonChartBar: 'Lajur',
   ribbonChartLine: 'Garis',
   ribbonChartPie: 'Pai',
   ribbonCategoryN: 'Kategori {n}',

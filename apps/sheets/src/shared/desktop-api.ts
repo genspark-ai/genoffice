@@ -398,6 +398,7 @@ const cellStyleSchema = z
     bold: z.boolean(),
     italic: z.boolean(),
     underline: z.boolean(),
+    underlineStyle: z.enum(['single', 'double']).optional(),
     strikethrough: z.boolean(),
     /// font <vertAlign val>; absent for baseline.
     vertAlign: z.enum(['superscript', 'subscript']).optional(),

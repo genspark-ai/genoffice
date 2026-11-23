@@ -37,7 +37,12 @@ import type { CSSProperties, MouseEvent as ReactMouseEvent, SetStateAction } fro
 import { EditorContent, useEditor } from '@tiptap/react'
 import type { Editor } from '@tiptap/core'
 import { handleDocsControl, type ControlRequest } from './control'
-import { DOMParser as PmDOMParser, type Mark as PmMark, Slice as PmSlice } from '@tiptap/pm/model'
+import {
+  DOMParser as PmDOMParser,
+  type Mark as PmMark,
+  type Node as PmNode,
+  Slice as PmSlice,
+} from '@tiptap/pm/model'
 import { NodeSelection, TextSelection, type EditorState, type Transaction } from '@tiptap/pm/state'
 import { CellSelection } from '@tiptap/pm/tables'
 import {
@@ -196,13 +201,22 @@ import {
   type HfSectionState,
 } from './hf-sections'
 import { installHfFloatEdit, tagHfFloatEl } from './editor/hf-float-edit'
+import { HF_MARGIN_SKIP, hfBandAt, pageMarginBands } from './editor/hf-margin-hit'
 import { hfFooterLine, hfLayoutResolved, hfPhantomSpec, hfWithPhantom } from './hf-phantom'
 import { hfVariantHeightsPx, sectionHfHeights } from './hf-heights'
 import { makeGapNotesEl, measureNoteHeightDom, noteRowMetrics } from './editor/note-dom'
 import { AiAskPopover } from './components/AiAskPopover'
 import { EDIT_QUEUE_MAX, selectionForAnchor, type DocsEditQueueItem } from './ai/edit-queue'
 import { addQueueAnchor, clearQueueAnchors, removeQueueAnchors } from './editor/ai-queue-anchors'
-import { countWords, documentTextForWordCount, selectedWordCount, textStats } from './word-count'
+import {
+  asianCharCount,
+  countWords,
+  documentTextForWordCount,
+  listLabelText,
+  nonAsianWordCount,
+  selectedWordCount,
+  textStats,
+} from './word-count'
 import { CommentsPanel } from './components/CommentsPanel'
 import { EquationModal } from './components/EquationModal'
 import { HeaderFooterArea } from './components/HeaderFooterArea'
@@ -688,6 +702,7 @@ import {
   resolvedCommentsPluginKey,
   revisionDisplayState,
 } from './editor/extensions'
+import { setPermRegionsEnabled } from './editor/perm-regions'
 import { resolveDarkPage, writeDarkPagePref } from './dark-page-pref'
 import { useDocThemeIsDark, useUiThemeIsDark } from './ui-theme'
 import { type InkAnnotation, type InkTool } from './editor/ink'
@@ -898,7 +913,18 @@ const sortDialogScope = (state: EditorState) => {
 
 // O(doc) derivations cached by PM doc reference: caret moves and unrelated
 // state updates reuse the last result instead of re-walking the whole document
-const wordCountOfDoc = cachedByDoc((d) => countWords(documentTextForWordCount(d)))
+/** the status bar's words: the text plus the list numbers Word counts (listLabelText);
+ *  cached by doc and numbering defs (an edit to either replaces the reference) */
+const wordCountOfDoc = (() => {
+  const cache = new WeakMap<PmNode, { defs: unknown; words: number }>()
+  return (doc: PmNode, defs: Map<string, NumberingDef> | undefined): number => {
+    const hit = cache.get(doc)
+    if (hit && hit.defs === defs) return hit.words
+    const words = countWords(documentTextForWordCount(doc)) + countWords(listLabelText(doc, defs))
+    cache.set(doc, { defs, words })
+    return words
+  }
+})()
 const revisionsOfDoc = cachedByDoc((d) => collectRevisions(d))
 
 /**
@@ -2617,6 +2643,22 @@ export function App() {
     editRestriction === 'comments'
   /** comments restriction: body read-only but adding comments stays allowed */
   const commentsAllowed = !writeLocked && editRestriction === 'comments'
+  /**
+   * Read-only protection with regions open to everyone (Word's editing
+   * exceptions, w:permStart w:edGrp="everyone"): those regions stay editable
+   * and highlighted, the rest of the body stays locked (PermRegionsExtension).
+   */
+  const permRegionsActive = useMemo(
+    () =>
+      !writeLocked &&
+      editRestriction === 'readOnly' &&
+      !!doc?.parsed.blocks.some(
+        (block) =>
+          block.permEditable === true ||
+          !!block.table?.rows.some((row) => row.some((cell) => cell.permEditable === true)),
+      ),
+    [writeLocked, editRestriction, doc],
+  )
   /** trackedChanges restriction: editing allowed, revision recording forced on */
   const trackChangesForced = !writeLocked && editRestriction === 'trackedChanges'
 
@@ -2632,14 +2674,15 @@ export function App() {
   // StreamingTailGuardExtension; saves wait for the full content).
   useEffect(() => {
     if (!editor) return
-    setEditorEditable(editor, !readMode && !isProtected)
+    setEditorEditable(editor, !readMode && (!isProtected || permRegionsActive))
+    setPermRegionsEnabled(editor, !readMode && permRegionsActive)
     if (!readMode) return
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') setReadMode(false)
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [editor, readMode, isProtected])
+  }, [editor, readMode, isProtected, permRegionsActive])
 
   // Track Changes: the recorder plugin reads its toggle from extension storage
   useEffect(() => {
@@ -5761,20 +5804,10 @@ export function App() {
             secList
               ? { columnW: hfPartWidthPx(secList, hf.section, kind, hf.variant, hf.owner) }
               : {}
-          // Like Word there is no variant switcher: a header/footer part is edited on a
-          // page that shows it. The edge areas cover page 1's header and the last page's
-          // footer; a gap strip for any other (section, variant) pair is kept even while
-          // the part is empty so it still has a double-click target (an empty even-page
-          // header, a first-page footer on a multi-page document, ...)
-          const edgeHeaderHf = slices.length > 0 ? pageHfOf(0, 'header') : null
-          const edgeFooterHf = slices.length > 0 ? pageHfOf(slices.length - 1, 'footer') : null
-          const gapStripNeeded = (
-            gap: ReturnType<typeof pageHfOf>,
-            edge: ReturnType<typeof pageHfOf> | null,
-          ) =>
-            hfHasVisibleContent(gap.value, gap.images) ||
-            gap.variant !== edge?.variant ||
-            gap.section !== edge.section
+          // Like Word there is no variant switcher: a header/footer part is edited on the
+          // page that shows it. Every page turn carries both strips, empty ones too, so a
+          // double-click in any page's margin opens its own part in place (hfMarginDblClick)
+          // instead of the copy on the first or last page.
           /** page geometry a page's floating header images position against */
           const floatBoxOf = (pageIdx: number): HfFloatBox => {
             const s = secList?.[slices[pageIdx].section]?.settings ?? section
@@ -5918,7 +5951,7 @@ export function App() {
             const gapFooter = pageHfOf(k, 'footer')
             const gapHeader = pageHfOf(k + 1, 'header')
             const hfEls: HTMLElement[] = []
-            if (gapStripNeeded(gapFooter, edgeFooterHf)) {
+            {
               const box = sectionPageBox(prevSec)
               const el = makeGapHfEl({
                 kind: 'footer',
@@ -5950,7 +5983,7 @@ export function App() {
               el.style.setProperty('--hf-ml', `${bodyLeftOf(prevSec, k)}px`)
               hfEls.push(el)
             }
-            if (gapStripNeeded(gapHeader, edgeHeaderHf)) {
+            {
               const box = sectionPageBox(nextSec)
               const el = makeGapHfEl({
                 kind: 'header',
@@ -7216,7 +7249,13 @@ export function App() {
   useEffect(() => {
     if (!editor) return
     const refreshSelection = () => {
-      setSelectionWordCount(selectedWordCount(editor.state.doc, editor.state.selection))
+      setSelectionWordCount(
+        selectedWordCount(
+          editor.state.doc,
+          editor.state.selection,
+          editor.storage.listNumbering?.defs,
+        ),
+      )
       setSelectionHead(editor.state.selection.head)
       // a caret move in the body ends the stop on a change outside it
       if (lastStoryRef.current !== null) setActiveStoryId(null)
@@ -7234,9 +7273,15 @@ export function App() {
     const refresh = () => {
       timer = 0
       const started = performance.now()
-      setWordCount(wordCountOfDoc(editor.state.doc))
+      setWordCount(wordCountOfDoc(editor.state.doc, editor.storage.listNumbering?.defs))
       setRevisionRanges(doc ? revisionsOfDoc(editor.state.doc) : [])
-      setSelectionWordCount(selectedWordCount(editor.state.doc, editor.state.selection))
+      setSelectionWordCount(
+        selectedWordCount(
+          editor.state.doc,
+          editor.state.selection,
+          editor.storage.listNumbering?.defs,
+        ),
+      )
       slowWalk = performance.now() - started > WORD_COUNT_SLOW_WALK_MS
     }
     const onUpdate = () => {
@@ -7276,7 +7321,18 @@ export function App() {
       if (node.isTextblock && documentTextForWordCount(node).trim() !== '') paragraphs++
       return true
     })
-    return { ...textStats(text), pages: pageInfo.total, paragraphs, lines }
+    // Word counts list numbers as words (listLabelText), not as characters
+    const labels = listLabelText(editor.state.doc, editor.storage.listNumbering?.defs)
+    const stats = textStats(text)
+    return {
+      ...stats,
+      words: stats.words + countWords(labels),
+      asianChars: stats.asianChars + asianCharCount(labels),
+      nonAsianWords: stats.nonAsianWords + nonAsianWordCount(labels),
+      pages: pageInfo.total,
+      paragraphs,
+      lines,
+    }
   }, [editor, zoom, pageInfo.total])
   const openStats = useCallback(() => {
     const body = documentStats()
@@ -8510,6 +8566,46 @@ export function App() {
   }
   const openHfEditorRef = useRef(openHfEditor)
   openHfEditorRef.current = openHfEditor
+  // Word: a double-click anywhere in a page's top or bottom margin opens that
+  // page's header or footer, empty or not (the strips cover only their text)
+  const hfMarginHitOf = (e: { target: EventTarget | null; clientX: number; clientY: number }) => {
+    if (readMode || isProtected || viewMode !== 'print') return null
+    if (!(e.target instanceof Element) || e.target.closest(HF_MARGIN_SKIP)) return null
+    if (e.target.closest('.page-hf')) return null
+    const layout = pageLayoutRef.current
+    const pm = editor?.view.dom
+    if (!layout || layout.cuts.length === 0 || !pm) return null
+    const r = pm.getBoundingClientRect()
+    if (e.clientX < r.left || e.clientX > r.right) return null
+    const zf = zoom / 100
+    const secList = layout.flow?.secList
+    const bands = pageMarginBands(
+      layout.cuts,
+      parseFloat(getComputedStyle(pm).paddingTop) || 0,
+      r.height / zf,
+      (page) => {
+        const cut = layout.cuts[page]!
+        const set = secList?.[cut.section]?.settings ?? section
+        return set ? effectiveBottomPx(set, cut.hf.footerPx) : 0
+      },
+    )
+    return hfBandAt(bands, (e.clientY - r.top) / zf)
+  }
+  const hfMarginHitRef = useRef(hfMarginHitOf)
+  hfMarginHitRef.current = hfMarginHitOf
+  const hfMarginDblClickRef = useRef((e: ReactMouseEvent) => {
+    const hit = hfMarginHitRef.current(e)
+    if (hit) openHfEditorRef.current(hit.kind, hit.page)
+  })
+  // the body keeps its selection: no word under a margin double-click
+  useEffect(() => {
+    if (!editor) return
+    const storage = editor.storage.doubleClickWord
+    storage.claimed = (event) => hfMarginHitRef.current(event) != null
+    return () => {
+      storage.claimed = null
+    }
+  }, [editor])
   // floating header pictures: moved and resized in header editing, reached from
   // the body by a double-click (Word)
   const hfFloatEditRef = useRef({ open: openHfEditor, commit: commitHfPictureAt, editable: false })
@@ -8636,6 +8732,7 @@ export function App() {
     if (!target.closest('.doc-page')) return
     const gap = target.closest('.page-gap-hf') as HTMLElement | null
     if (gap) startGapHfEditRef.current(gap)
+    else hfMarginDblClickRef.current(e)
   }, [])
 
   // genoffice CLI (`open --block`, `selection`): the shell evaluates this hook
