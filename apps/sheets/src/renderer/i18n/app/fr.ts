@@ -1,6 +1,8 @@
 import type { zh } from './zh'
 
 export const fr = {
+  appCollabOverwriteNotice:
+    "Les modifications d'un collègue ont été appliquées à ce classeur. Vos modifications non enregistrées ({count}) restent en attente et seront écrites lors de l'enregistrement.",
   // ── Withholding cells from the model ──
   redactMenuLabel: 'Masquer la sélection à l’IA',
   redactDialogDesc:

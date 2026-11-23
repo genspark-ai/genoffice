@@ -1,5 +1,7 @@
 /** app strings, zh: defines the key set every other locale shard must match. */
 export const zh = {
+  appCollabOverwriteNotice:
+    '已应用协作者对该工作簿的修改。你未保存的编辑（{count} 处）仍在待处理，保存时仍会写入。',
   // ── Withholding cells from the model ──
   redactMenuLabel: '把选中的内容对 AI 隐藏',
   redactDialogDesc:

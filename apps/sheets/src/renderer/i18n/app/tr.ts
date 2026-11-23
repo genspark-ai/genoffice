@@ -1,6 +1,8 @@
 import type { zh } from './zh'
 
 export const tr = {
+  appCollabOverwriteNotice:
+    'Bir ekip üyesinin değişiklikleri bu çalışma kitabına uygulandı. Kaydedilmemiş düzenlemeleriniz ({count}) bekliyor ve kaydettiğinizde yazılacak.',
   // ── Withholding cells from the model ──
   redactMenuLabel: 'Seçimi AI’dan gizle',
   redactDialogDesc:

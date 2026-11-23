@@ -1,6 +1,8 @@
 import type { zh } from './zh'
 
 export const hu = {
+  appCollabOverwriteNotice:
+    'Egy munkatárs változtatásai kerültek alkalmazásra erre a munkafüzetre. A nem mentett szerkesztéseid ({count}) még függőben vannak, és mentéskor kerülnek írásra.',
   redactMenuLabel: 'Kijelölés elrejtése az AI elől',
   redactDialogDesc:
     'A kijelölés megmarad a dokumentumban és a fájlban; a modell helyette az alábbi helyőrzőt látja. Nevezd el úgy, hogy a modell tudja, mit helyettesít.',

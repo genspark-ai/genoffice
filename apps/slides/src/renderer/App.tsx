@@ -112,6 +112,7 @@ import {
   aiPanelInitiallyOpen,
   rememberAiPanelOpen,
   useAiSidebarEnabled,
+  WebShareChip,
 } from '@genoffice/ui'
 import type { ChartPresetDef, IconDef, SmartArtDef } from './insert-presets'
 import { GensparkMark, IconAiBeautify, IconAiFactCheck, IconAiImage } from './components/icons'
@@ -4516,6 +4517,7 @@ export function App() {
               {status && <span className="status-msg"> — {status}</span>}
             </div>
             <div className="status-right">
+              <WebShareChip lang={lang} />
               {hasDoc && (
                 <button
                   className={`status-notes-btn${showNotes ? ' on' : ''}`}

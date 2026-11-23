@@ -1,6 +1,8 @@
 import type { zh } from './zh'
 
 export const ru = {
+  appCollabOverwriteNotice:
+    'Изменения участника применены к этой книге. Ваши несохранённые изменения ({count}) остаются в ожидании и будут записаны при сохранении.',
   // ── Withholding cells from the model ──
   redactMenuLabel: 'Скрыть выделение от ИИ',
   redactDialogDesc:

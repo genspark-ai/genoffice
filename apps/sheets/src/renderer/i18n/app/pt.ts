@@ -1,6 +1,8 @@
 import type { zh } from './zh'
 
 export const pt = {
+  appCollabOverwriteNotice:
+    'As alterações de um colega foram aplicadas a esta pasta de trabalho. Suas edições não salvas ({count}) continuam pendentes e serão gravadas ao salvar.',
   // ── Withholding cells from the model ──
   redactMenuLabel: 'Ocultar a seleção da IA',
   redactDialogDesc:

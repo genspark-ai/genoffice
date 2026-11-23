@@ -1,6 +1,8 @@
 import type { zh } from './zh'
 
 export const en = {
+  appCollabOverwriteNotice:
+    "A teammate's changes to this workbook were applied. Your unsaved edits ({count}) are still pending and will be written when you save.",
   // ── Withholding cells from the model ──
   redactMenuLabel: 'Hide the selection from AI',
   redactDialogDesc:

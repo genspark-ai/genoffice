@@ -1,6 +1,8 @@
 import type { zh } from './zh'
 
 export const de = {
+  appCollabOverwriteNotice:
+    'Die Änderungen eines Mitarbeiters wurden auf diese Arbeitsmappe angewendet. Ihre ungespeicherten Änderungen ({count}) bleiben ausstehend und werden beim Speichern geschrieben.',
   // ── Withholding cells from the model ──
   redactMenuLabel: 'Auswahl vor der KI verbergen',
   redactDialogDesc:

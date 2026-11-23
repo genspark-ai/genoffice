@@ -3,6 +3,7 @@ import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import type { IpcRendererEvent } from 'electron'
 import type { ProjectApi } from '@genoffice/project-store'
 import { installDropOpenBridge } from '@genoffice/electron-utils/drop-open'
+import { installWebShareBridge } from '@genoffice/electron-utils/web-share-bridge'
 import type {
   DeckChange,
   AddChartOp,
@@ -581,3 +582,6 @@ contextBridge.exposeInMainWorld('projectApi', projectApi)
 
 // open documents dragged from the OS onto this tab as a new shell tab
 installDropOpenBridge()
+
+// status-bar share chips: runtime start/stop for the browser-access service
+installWebShareBridge()
