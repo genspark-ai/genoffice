@@ -10,6 +10,7 @@ const SELECTION: SelectionFormat = {
   bold: true,
   italic: false,
   underline: false,
+  doubleUnderline: false,
   strike: false,
   vertAlign: null,
   wrap: false,
