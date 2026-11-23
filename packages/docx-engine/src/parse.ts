@@ -5216,6 +5216,7 @@ function extractRuns(
         pushRun({ ...(base ?? {}), text: control.glyph, sdtCheckboxXml: control.sdtPrXml }, rev)
       } else if (
         name === 'w:smartTag' ||
+        name === 'w:customXml' ||
         name === 'w:sdt' ||
         name === 'w:sdtContent' ||
         name === 'w:dir' ||
