@@ -284,6 +284,7 @@ import { FormattingMarksExtension } from './formatting-marks'
 import { AiQueueAnchorsExtension } from './ai-queue-anchors'
 import { CheckboxToggleExtension } from './checkbox-toggle'
 import { DoubleClickWordExtension } from './dblclick-word'
+import { TableBorderPainterExtension } from './table-border-painter'
 import { OutlineViewExtension } from './outline-view'
 import { StoryViewExtension } from './story-view'
 import { PageGapNavExtension } from './page-gap-nav'
@@ -8162,6 +8163,7 @@ export const editorExtensions = [
   AiQueueAnchorsExtension,
   CheckboxToggleExtension,
   DoubleClickWordExtension,
+  TableBorderPainterExtension,
   OutlineViewExtension,
   PageGapNavExtension,
   TrailingTableExitExtension,

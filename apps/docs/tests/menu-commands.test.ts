@@ -110,6 +110,8 @@ function makeHost(over: Partial<CommandHost> = {}): CommandHost {
     showLayoutTab: vi.fn(),
     showTableDesignTab: vi.fn(),
     defineTableStyle: vi.fn(),
+    hasStyle: vi.fn(() => false),
+    tableStyleDisplay: vi.fn(() => undefined),
     insertField: vi.fn(),
     insertNote: vi.fn(),
     blocks: [],

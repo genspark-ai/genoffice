@@ -28,10 +28,17 @@ import type {
   SectionSettings,
   SourceInfo,
   StyleUpsert,
+  TableStyleDisplay,
   ThemeColors,
   ThemeFonts,
 } from '@genoffice/docx-engine'
-import { CITATION_STYLES, DEFAULT_LINE_PITCH_TWIPS } from '@genoffice/docx-engine'
+import {
+  BUILT_IN_TABLE_NORMAL_XML,
+  CITATION_STYLES,
+  DEFAULT_LINE_PITCH_TWIPS,
+  builtInTableStyle,
+  type CellBorder,
+} from '@genoffice/docx-engine'
 import { WORDART_PRESETS } from '@genoffice/ui'
 import { runUiOps } from '../ai/ops'
 import {
@@ -117,11 +124,9 @@ import { formulaPlace } from '../editor/table-formula'
 import {
   setTableAutoFit,
   toggleRepeatHeaderRows,
-  applyTablePreset,
-  tablePresetStyleXml,
   setTableLookOption,
-  type TablePreset,
 } from '../editor/table-properties'
+import { applyTableStyle } from '../editor/table-style-apply'
 import { textToTableScope } from '../editor/table-convert'
 import { distributeSelectedColumns } from '../editor/table-sizing'
 import { parseRunBorderAttr } from '../editor/run-border'
@@ -316,6 +321,10 @@ export interface CommandHost {
   showTableDesignTab(): void
   /** adds a table style to the document's styles, written out by the next save */
   defineTableStyle(style: StyleUpsert): void
+  /** the document defines this style (or has it pending from defineTableStyle) */
+  hasStyle(styleId: string): boolean
+  /** a table style as read for display: the document's own, else Word's built-in one */
+  tableStyleDisplay(styleId: string): TableStyleDisplay | undefined
   /** the format tab of the selected picture, text box or shape */
   showObjectFormatTab(): void
   /** `lang` is the language the field's text is marked as */
@@ -2099,28 +2108,55 @@ export const MENU_COMMAND_HANDLERS: Record<ActionCommandId, Handler> = {
     const direction = CELL_TEXT_DIRECTIONS.find((k) => k === payload)
     return direction ? setCellTextDirection(direction) : null
   }),
-  // payload: the table style's id, or none to drop the style
-  'table-style': tablePick((styleId, editor) => {
-    editor
-      .chain()
-      .updateAttributes('docTable', { tblStyleId: styleId === NONE ? null : styleId })
-      .run()
-  }),
-  // payload: option=true|false
-  'table-look': tablePick((payload) => {
+  // payload: the table style's id, or none to clear it. A Word built-in style the
+  // document does not define yet is written into its styles first, as Word does
+  'table-style': (host, payload) => {
+    if (payload === undefined) return
+    const styleId = payload === NONE ? null : payload
+    tableCommand(() => {
+      if (styleId && !host.hasStyle(styleId)) {
+        const builtIn = builtInTableStyle(styleId)
+        if (!builtIn) return
+        if (!host.hasStyle('TableNormal'))
+          host.defineTableStyle({ styleId: 'TableNormal', sourceXml: BUILT_IN_TABLE_NORMAL_XML })
+        host.defineTableStyle({ styleId, sourceXml: builtIn.xml })
+      }
+      return applyTableStyle(styleId, styleId ? host.tableStyleDisplay(styleId) : undefined)
+    })(host)
+  },
+  // payload: option=true|false; the style's shading and lines follow the new options
+  'table-look': (host, payload) => {
+    if (payload === undefined) return
     const [name, value] = payload.split('=')
     const option = TABLE_LOOK_OPTIONS.find((k) => k === name)
-    return option && (value === 'true' || value === 'false')
-      ? setTableLookOption(option, value === 'true')
-      : null
+    if (!option || (value !== 'true' && value !== 'false')) return
+    tableCommand((editor) => {
+      if (!setTableLookOption(option, value === 'true')(editor.state, editor.view.dispatch)) return
+      const styleId = editor.getAttributes('docTable').tblStyleId as string | null
+      const display = styleId ? host.tableStyleDisplay(styleId) : undefined
+      if (display) applyTableStyle(styleId, display)(editor.state, editor.view.dispatch)
+    })(host)
+  },
+  // Border Painter on or off
+  'table-border-painter': tableCommand((editor) => {
+    const painter = editor.storage.tableBorderPainter
+    painter.active = !painter.active
+    painter.onChange?.(painter.active)
+    editor.view.dispatch(editor.state.tr)
   }),
-  // payload: the preset as JSON; its look is saved as a table style of the document
-  'table-preset': (host, payload) => {
+  // payload: the pen as JSON {style, szEighths, color}; choosing one turns the
+  // Border Painter on, as in Word
+  'table-pen': (host, payload) => {
     if (payload === undefined) return
-    const preset = JSON.parse(payload) as TablePreset
-    tableCommand(() => {
-      host.defineTableStyle({ styleId: preset.styleId, sourceXml: tablePresetStyleXml(preset) })
-      return applyTablePreset(preset)
+    const pen = JSON.parse(payload) as CellBorder
+    tableCommand((editor) => {
+      const painter = editor.storage.tableBorderPainter
+      painter.pen = pen
+      if (!painter.active) {
+        painter.active = true
+        painter.onChange?.(true)
+        editor.view.dispatch(editor.state.tr)
+      }
     })(host)
   },
   // body paragraphs: a caret in a table or a text box has no text to turn into one

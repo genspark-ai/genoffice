@@ -1,17 +1,22 @@
 import { Editor } from '@tiptap/core'
 import { TextSelection } from '@tiptap/pm/state'
-import { generateTableModelXml, parseDocx, upsertStyleXml } from '@genoffice/docx-engine'
+import {
+  builtInTableStyle,
+  builtInTableStyleInfos,
+  generateTableModelXml,
+  parseDocx,
+  upsertStyleXml,
+} from '@genoffice/docx-engine'
 import { describe, expect, it, vi } from 'vitest'
 import { buildDocx } from '../../../packages/docx-engine/tests/helpers/build-docx'
 import { blocksToPmDoc, pmTableToModel, type PmNode } from '../src/renderer/editor/convert'
 import { measureWidthIn } from '../src/renderer/components/TablePropertiesDialog'
+import { applyTableStyle } from '../src/renderer/editor/table-style-apply'
 import { editorExtensions } from '../src/renderer/editor/extensions'
 import {
-  applyTablePreset,
   repeatHeaderState,
   setTableAutoFit,
   setTableLookOption,
-  tablePresetStyleXml,
   toggleRepeatHeaderRows,
   updateSelectedTableAttrs,
 } from '../src/renderer/editor/table-properties'
@@ -191,42 +196,56 @@ describe('editable table properties', () => {
     editor.destroy()
   })
 
-  it("a preset becomes the table's style, with the shading left to the style", async () => {
+  it("a built-in style gives the cells Word's shading and lines, and Clear takes them off", async () => {
     const editor = await openTable()
-    const preset = {
-      styleId: 'BlueBanded',
-      name: 'Blue Banded',
-      headerFill: 'BDD7EE',
-      band1Fill: 'DDEBF7',
-      band2Fill: 'FFFFFF',
-      borderColor: '9DC3E6',
-    }
-    expect(applyTablePreset(preset)(editor.state, editor.view.dispatch)).toBe(true)
-    const table = editor.getJSON().content![0] as unknown as PmNode
+    const infos = await builtInTableStyleInfos()
+    const display = infos.get('GridTable4-Accent1')!.tableDisplay
+    expect(applyTableStyle('GridTable4-Accent1', display)(editor.state, editor.view.dispatch)).toBe(
+      true,
+    )
+    let table = editor.getJSON().content![0] as unknown as PmNode
     expect(table.attrs).toMatchObject({
-      tblStyleId: 'BlueBanded',
+      tblStyleId: 'GridTable4-Accent1',
       tblLook: { firstRow: true, bandedRows: true },
       tblLookEdited: true,
     })
-    expect(table.content![0].content![0].attrs).toMatchObject({
-      fill: null,
-      borders: { top: { style: 'single', color: '9DC3E6' } },
-    })
+    const header = table.content![0].content![0].attrs!
+    expect(header.fill).toBe(display!.firstRow!.fill)
+    expect(header.borders).toMatchObject({ top: { style: 'single' } })
+    // row 2 is the first band under the header
+    expect(table.content![1].content![0].attrs!.fill).toBe(display!.band1Fill)
     const model = pmTableToModel(table)
-    expect(model.tblStyleId).toBe('BlueBanded')
-    expect(model.rows[1][0].borders?.left?.color).toBe('9DC3E6')
+    expect(model.tblStyleId).toBe('GridTable4-Accent1')
 
+    expect(applyTableStyle(null, undefined)(editor.state, editor.view.dispatch)).toBe(true)
+    table = editor.getJSON().content![0] as unknown as PmNode
+    expect(table.attrs!.tblStyleId).toBeNull()
+    expect(table.content![0].content![0].attrs).toMatchObject({ fill: null, borders: null })
+    editor.destroy()
+  })
+
+  it('header-row shading follows the Header Row option', async () => {
+    const editor = await openTable()
+    const display = (await builtInTableStyleInfos()).get('GridTable4-Accent1')!.tableDisplay
+    applyTableStyle('GridTable4-Accent1', display)(editor.state, editor.view.dispatch)
+    setTableLookOption('firstRow', false)(editor.state, editor.view.dispatch)
+    applyTableStyle('GridTable4-Accent1', display)(editor.state, editor.view.dispatch)
+    const table = editor.getJSON().content![0] as unknown as PmNode
+    // without a header row, row 1 is the first band
+    expect(table.content![0].content![0].attrs!.fill).toBe(display!.band1Fill)
+    editor.destroy()
+  })
+
+  it("writes a built-in style into styles.xml as Word's own definition", () => {
+    const grid = builtInTableStyle('GridTable4-Accent1')!
     const styles = upsertStyleXml(
       '<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"></w:styles>',
-      { styleId: preset.styleId, sourceXml: tablePresetStyleXml(preset), basedOn: 'TableNormal' },
+      { styleId: grid.styleId, sourceXml: grid.xml },
     )
     expect(styles).toContain(
-      '<w:style w:type="table" w:customStyle="1" w:styleId="BlueBanded"><w:name w:val="Blue Banded"/><w:basedOn w:val="TableNormal"/>',
+      '<w:style w:type="table" w:styleId="GridTable4-Accent1"><w:name w:val="Grid Table 4 Accent 1"/>',
     )
-    expect(styles).toMatch(
-      /<w:tblStylePr w:type="firstRow"><w:tcPr><w:shd [^>]*w:fill="BDD7EE"\/>.*<w:tblStylePr w:type="band1Horz"><w:tcPr><w:shd [^>]*w:fill="DDEBF7"\/>/,
-    )
-    editor.destroy()
+    expect(styles).toContain('<w:tblStylePr w:type="firstRow">')
   })
 
   it('drags a floating table handle into persisted x/y offsets', async () => {

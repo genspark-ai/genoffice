@@ -19,6 +19,7 @@ import type {
   DocDefaults,
   HeaderFooter,
   HfImage,
+  CellBorder,
   Run,
   SectionSettings,
   CitationStyleId,
@@ -123,6 +124,13 @@ import {
   stylePreviewCss,
 } from '../style-gallery'
 import { RibbonColorPalette } from './ribbon-color-palette'
+import {
+  LineSample,
+  PEN_STYLES,
+  PEN_WEIGHTS,
+  TableStyleGallery,
+  themeBorderPens,
+} from './table-style-gallery'
 import { HeaderFooterTab, type HfEditingInfo } from './ribbon-hf-tab'
 import { fontFamiliesFor, systemFamiliesBesidesCandidates } from '../font-list'
 import {
@@ -211,6 +219,9 @@ import {
   IconRowInsertAbove,
   IconRowInsertBelow,
   IconShading,
+  IconBorderPainter,
+  IconBorderStyles,
+  IconPen,
   IconChangeCase,
   IconFontColorA,
   IconShrinkFont,
@@ -395,17 +406,6 @@ const ZOTERO_TAB = 'zotero'
 const TABLE_TABS = ['tableDesign', 'tableLayout'] as const
 
 /** OOXML ST_Border values the renderer draws distinctly; glyph labels keep the picker language-neutral */
-const BORDER_STYLE_OPTIONS = [
-  { value: 'single', label: '\u2500\u2500\u2500\u2500\u2500' },
-  { value: 'thick', label: '\u2501\u2501\u2501\u2501\u2501' },
-  { value: 'double', label: '\u2550\u2550\u2550\u2550\u2550' },
-  { value: 'triple', label: '\u2261\u2261\u2261\u2261\u2261' },
-  { value: 'dotted', label: '\u2504\u2504\u2504\u2504\u2504' },
-  { value: 'dashed', label: '\u254c\u254c\u254c\u254c\u254c' },
-  { value: 'dotDash', label: '\u2500\u00b7\u2500\u00b7\u2500' },
-  { value: 'dotDotDash', label: '\u2500\u00b7\u00b7\u2500\u00b7\u00b7' },
-] as const
-
 /** Borders ▾ entries: label + gallery glyph, in TABLE_BORDER_MENU (Word) order */
 const TABLE_BORDER_ITEMS: Record<
   TableBorderMode,
@@ -522,62 +522,6 @@ type RibbonTab =
   | (typeof SHAPE_TABS)[number]
   | (typeof HF_TABS)[number]
 
-const TABLE_PRESETS = [
-  {
-    label: 'ribbonTablePresetGrid',
-    styleId: 'PlainGrid',
-    name: 'Plain Grid',
-    headerFill: null,
-    band1Fill: null,
-    band2Fill: null,
-    borderColor: '808080',
-  },
-  {
-    label: 'ribbonTablePresetBlueHeader',
-    styleId: 'BlueHeader',
-    name: 'Blue Header',
-    headerFill: 'D9EAF7',
-    band1Fill: null,
-    band2Fill: null,
-    borderColor: '5B9BD5',
-  },
-  {
-    label: 'ribbonTablePresetBlueBanded',
-    styleId: 'BlueBanded',
-    name: 'Blue Banded',
-    headerFill: 'BDD7EE',
-    band1Fill: 'DDEBF7',
-    band2Fill: 'FFFFFF',
-    borderColor: '9DC3E6',
-  },
-  {
-    label: 'ribbonTablePresetGrayBanded',
-    styleId: 'GrayBanded',
-    name: 'Gray Banded',
-    headerFill: 'D9E1F2',
-    band1Fill: 'E7E6E6',
-    band2Fill: 'FFFFFF',
-    borderColor: 'A5A5A5',
-  },
-  {
-    label: 'ribbonTablePresetGreenHeader',
-    styleId: 'GreenHeader',
-    name: 'Green Header',
-    headerFill: 'E2F0D9',
-    band1Fill: null,
-    band2Fill: null,
-    borderColor: '70AD47',
-  },
-] as const satisfies ReadonlyArray<{
-  label: StringKey
-  styleId: string
-  name: string
-  headerFill: string | null
-  band1Fill: string | null
-  band2Fill: string | null
-  borderColor: string
-}>
-
 // tab values double as internal-state / external tabRequest keys; translated for display via these string keys
 const TAB_LABEL_KEYS: Record<string, StringKey> = {
   file: 'ribbonTabFile',
@@ -686,6 +630,7 @@ function RibbonInner({
   watermarkPicture,
   watermarkDocImage,
   themeFonts,
+  themeColors,
   inkTool,
   onInkTool,
   inkPresets,
@@ -1228,6 +1173,24 @@ function RibbonInner({
     ? Math.max(1, section.pageHeight - section.marginTop - section.marginBottom)
     : 13200
 
+  const [lastShading, setLastShading] = useState<string | null>(null)
+  // a pen picked in Borders turns the Border Painter on, as in Word
+  const pickPen = (pen: CellBorder) => {
+    setBorderStyle(pen.style)
+    setBorderSz(pen.szEighths ?? 4)
+    setBorderColor(pen.color && pen.color !== 'auto' ? pen.color : '000000')
+    runCommand('table-pen', JSON.stringify(pen))
+  }
+  const [painterActive, setPainterActive] = useState(false)
+  useEffect(() => {
+    const painter = editor?.storage.tableBorderPainter
+    if (!painter) return
+    painter.onChange = setPainterActive
+    setPainterActive(painter.active)
+    return () => {
+      painter.onChange = null
+    }
+  }, [editor])
   const [lastBorderMode, setLastBorderMode] = useState<TableBorderMode>('bottom')
   const LastBorderIcon = TABLE_BORDER_ITEMS[lastBorderMode].Icon
   const applyCellBorders = (mode: TableBorderMode) => {
@@ -2636,96 +2599,42 @@ function RibbonInner({
               <div className="ribbon-group-label">{t('ribbonTableStyleOptions')}</div>
             </div>
             <div className="ribbon-sep" />
-            <div className="table-tool-group">
-              <div className="table-style-gallery">
-                <button
-                  className="table-style-card"
-                  data-tip={t('ribbonRemoveTableStyleTip')}
-                  onClick={() => runCommand('table-style', NONE)}
-                >
-                  <span className="table-style-card-grid plain" />
-                  <span>{t('ribbonNoStyle')}</span>
-                </button>
-                {TABLE_PRESETS.map((preset) => (
-                  <button
-                    key={preset.label}
-                    className={
-                      tableAttrs.tblStyleId === preset.styleId
-                        ? 'table-style-card active'
-                        : 'table-style-card'
-                    }
-                    data-tip={t(preset.label)}
-                    onClick={() => runCommand('table-preset', JSON.stringify(preset))}
-                  >
-                    <span
-                      className="table-style-card-grid"
-                      style={{
-                        borderColor: `#${preset.borderColor}`,
-                        borderTopColor: `#${preset.headerFill ?? 'FFFFFF'}`,
-                        background: `repeating-linear-gradient(to bottom,#${preset.band1Fill ?? 'FFFFFF'} 0 50%,#${preset.band2Fill ?? preset.band1Fill ?? 'FFFFFF'} 50% 100%)`,
-                      }}
-                    />
-                    <span>{t(preset.label)}</span>
-                  </button>
-                ))}
-                {[...(styles?.values() ?? [])]
-                  .filter(
-                    (info) =>
-                      info.type === 'table' &&
-                      info.styleId !== 'TableNormal' &&
-                      !TABLE_PRESETS.some((preset) => preset.styleId === info.styleId),
-                  )
-                  .map((info) => (
-                    <button
-                      key={info.styleId}
-                      className={
-                        tableAttrs.tblStyleId === info.styleId
-                          ? 'table-style-card active'
-                          : 'table-style-card'
-                      }
-                      data-tip={t('ribbonApplyTableStyleTip', { name: info.name })}
-                      onClick={() => runCommand('table-style', info.styleId)}
-                    >
-                      <span
-                        className="table-style-card-grid"
-                        style={{
-                          background: info.tableDisplay?.fill
-                            ? `#${info.tableDisplay.fill}`
-                            : undefined,
-                          borderTopColor: info.tableDisplay?.firstRow?.fill
-                            ? `#${info.tableDisplay.firstRow.fill}`
-                            : undefined,
-                        }}
-                      />
-                      <span>{info.name}</span>
-                    </button>
-                  ))}
-              </div>
-              <div className="ribbon-group-label">{t('ribbonGroupTableStyles')}</div>
-            </div>
-            <div className="ribbon-sep" />
-            <div className="table-tool-group">
-              <div className="table-tool-row">
+            <div className="ribbon-group">
+              <div className="ribbon-group-items">
+                <TableStyleGallery
+                  styles={styles}
+                  themeColors={themeColors}
+                  look={tableLook}
+                  activeStyleId={(tableAttrs.tblStyleId as string | null) ?? null}
+                  open={dropdown === 'tableStyles'}
+                  onOpenChange={(open) => setDropdown(open ? 'tableStyles' : null)}
+                  onPick={(styleId) => runCommand('table-style', styleId ?? NONE)}
+                />
                 <div className="rb-split-wrap">
                   <button
-                    className={`table-command-button${dropdown === 'tableShading' ? ' active' : ''}`}
+                    className={`rb-big${dropdown === 'tableShading' ? ' active' : ''}`}
                     data-tip={t('ribbonGroupShading')}
                     aria-expanded={dropdown === 'tableShading'}
                     onClick={() =>
                       setDropdown((current) => (current === 'tableShading' ? null : 'tableShading'))
                     }
                   >
-                    <IconShading />
-                    <span className="table-command-copy">
-                      <span>{t('ribbonGroupShading')}</span>
+                    <span className="rb-big-icon rb-big-icon-colored">
+                      <IconShading size={28} />
+                      <span
+                        className="rb-color-bar"
+                        style={{ background: lastShading ? `#${lastShading}` : '#FFFFFF' }}
+                      />
+                      <IconCaret />
                     </span>
-                    <IconCaret size={12} />
+                    <span>{t('ribbonGroupShading')}</span>
                   </button>
                   {dropdown === 'tableShading' && (
                     <RibbonColorPalette
                       current={(editor.getAttributes('docTableCell').fill as string | null) ?? null}
                       noneLabel={t('ribbonNoColor')}
                       onPick={(hex) => {
+                        setLastShading(hex)
                         runTableCommand(setCellAttr('fill', hex))
                         setDropdown(null)
                       }}
@@ -2733,34 +2642,131 @@ function RibbonInner({
                   )}
                 </div>
               </div>
-              <div className="ribbon-group-label">{t('ribbonGroupShading')}</div>
+              <div className="ribbon-group-label">{t('ribbonGroupTableStyles')}</div>
             </div>
             <div className="ribbon-sep" />
-            <div className="table-tool-group table-tool-borders">
-              <div className="table-border-opts">
-                <Dropdown
-                  tip={t('ribbonBorderStyle')}
-                  ariaLabel={t('ribbonBorderStyle')}
-                  className="table-border-style"
-                  value={borderStyle}
-                  options={BORDER_STYLE_OPTIONS}
-                  onPick={setBorderStyle}
-                />
-                <Dropdown
-                  tip={t('ribbonBorderWidth')}
-                  ariaLabel={t('ribbonBorderWidth')}
-                  value={String(borderSz)}
-                  options={[4, 8, 12, 18, 24].map((sz) => ({
-                    value: String(sz),
-                    label: t('ribbonPtValue', { n: sz / 8 }),
-                  }))}
-                  onPick={(v) => setBorderSz(Number(v))}
-                />
+            <div className="ribbon-group">
+              <div className="ribbon-group-items">
                 <div className="rb-split-wrap">
                   <button
-                    className={`table-pen-color${dropdown === 'tableBorderColor' ? ' active' : ''}`}
+                    className={`rb-big${dropdown === 'tableBorderStyles' ? ' active' : ''}`}
+                    data-tip={t('ribbonBorderStyle')}
+                    aria-expanded={dropdown === 'tableBorderStyles'}
+                    onClick={() =>
+                      setDropdown((current) =>
+                        current === 'tableBorderStyles' ? null : 'tableBorderStyles',
+                      )
+                    }
+                  >
+                    <span className="rb-big-icon">
+                      <IconBorderStyles size={28} />
+                      <IconCaret />
+                    </span>
+                    <span>{t('ribbonBorderStyle')}</span>
+                  </button>
+                  {dropdown === 'tableBorderStyles' && (
+                    <div data-rb-panel="" className="tbl-pen-panel">
+                      <div className="tbl-gallery-heading">{t('ribbonThemeBorders')}</div>
+                      {themeBorderPens(themeColors).map((row, r) => (
+                        <div key={r} className="tbl-pen-row">
+                          {row.map((pen) => (
+                            <button
+                              key={`${pen.style}${pen.szEighths}${pen.color}`}
+                              className="tbl-pen-swatch"
+                              style={{ color: `#${pen.color}` }}
+                              aria-label={`${pen.style} ${(pen.szEighths ?? 4) / 8} pt #${pen.color}`}
+                              onClick={() => {
+                                pickPen(pen)
+                                setDropdown(null)
+                              }}
+                            >
+                              <LineSample pen={pen} width={36} />
+                            </button>
+                          ))}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                <div className="tbl-pen-opts">
+                  <div className="rb-split-wrap">
+                    <button
+                      className={`tbl-pen-pick${dropdown === 'tablePenStyle' ? ' active' : ''}`}
+                      data-tip={t('ribbonBorderLineStyle')}
+                      aria-label={t('ribbonBorderLineStyle')}
+                      aria-expanded={dropdown === 'tablePenStyle'}
+                      onClick={() =>
+                        setDropdown((current) =>
+                          current === 'tablePenStyle' ? null : 'tablePenStyle',
+                        )
+                      }
+                    >
+                      <LineSample pen={{ style: borderStyle, szEighths: 4 }} />
+                      <IconCaret />
+                    </button>
+                    {dropdown === 'tablePenStyle' && (
+                      <div data-rb-panel="" className="layout-menu tbl-pen-menu">
+                        {PEN_STYLES.map((style) => (
+                          <button
+                            key={style}
+                            className={style === borderStyle ? 'active' : ''}
+                            aria-label={style}
+                            onClick={() => {
+                              pickPen({ style, szEighths: borderSz, color: borderColor })
+                              setDropdown(null)
+                            }}
+                          >
+                            <LineSample pen={{ style, szEighths: 4 }} width={96} />
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  <div className="rb-split-wrap">
+                    <button
+                      className={`tbl-pen-pick${dropdown === 'tablePenWeight' ? ' active' : ''}`}
+                      data-tip={t('ribbonBorderWidth')}
+                      aria-label={t('ribbonBorderWidth')}
+                      aria-expanded={dropdown === 'tablePenWeight'}
+                      onClick={() =>
+                        setDropdown((current) =>
+                          current === 'tablePenWeight' ? null : 'tablePenWeight',
+                        )
+                      }
+                    >
+                      <span className="tbl-pen-weight">
+                        {t('ribbonPtValue', {
+                          n: PEN_WEIGHTS.find(([sz]) => sz === borderSz)?.[1] ?? borderSz / 8,
+                        })}
+                      </span>
+                      <LineSample pen={{ style: 'single', szEighths: borderSz }} width={40} />
+                      <IconCaret />
+                    </button>
+                    {dropdown === 'tablePenWeight' && (
+                      <div data-rb-panel="" className="layout-menu tbl-pen-menu">
+                        {PEN_WEIGHTS.map(([sz, label]) => (
+                          <button
+                            key={sz}
+                            className={sz === borderSz ? 'active' : ''}
+                            onClick={() => {
+                              pickPen({ style: borderStyle, szEighths: sz, color: borderColor })
+                              setDropdown(null)
+                            }}
+                          >
+                            <span className="tbl-pen-weight">
+                              {t('ribbonPtValue', { n: label })}
+                            </span>
+                            <LineSample pen={{ style: 'single', szEighths: sz }} width={72} />
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+                <div className="rb-split-wrap">
+                  <button
+                    className={`rb-big${dropdown === 'tableBorderColor' ? ' active' : ''}`}
                     data-tip={t('ribbonBorderColor')}
-                    aria-label={t('ribbonBorderColor')}
                     aria-expanded={dropdown === 'tableBorderColor'}
                     onClick={() =>
                       setDropdown((current) =>
@@ -2768,61 +2774,82 @@ function RibbonInner({
                       )
                     }
                   >
-                    <span className="table-pen-swatch" style={{ background: `#${borderColor}` }} />
-                    <IconCaret size={12} />
+                    <span className="rb-big-icon rb-big-icon-colored">
+                      <IconPen size={28} />
+                      <span className="rb-color-bar" style={{ background: `#${borderColor}` }} />
+                      <IconCaret />
+                    </span>
+                    <span>{t('ribbonBorderColor')}</span>
                   </button>
                   {dropdown === 'tableBorderColor' && (
                     <RibbonColorPalette
                       current={borderColor}
                       noneLabel={t('ribbonAutomatic')}
                       onPick={(hex) => {
-                        setBorderColor(hex ?? '000000')
+                        pickPen({ style: borderStyle, szEighths: borderSz, color: hex ?? '000000' })
                         setDropdown(null)
                       }}
                     />
                   )}
                 </div>
-              </div>
-              <div className="rb-split-wrap table-split">
+                <div className="rb-split-wrap rb-big-split">
+                  <button
+                    className="rb-big"
+                    data-tip={t(TABLE_BORDER_ITEMS[lastBorderMode].label)}
+                    aria-label={t(TABLE_BORDER_ITEMS[lastBorderMode].label)}
+                    // command-exempt: moved with its group, not new; repeats the last border choice
+                    onClick={() => applyCellBorders(lastBorderMode)}
+                  >
+                    <span className="rb-big-icon">
+                      <LastBorderIcon size={28} />
+                    </span>
+                  </button>
+                  <button
+                    className={`rb-big-split-caret${dropdown === 'tableBorders' ? ' active' : ''}`}
+                    aria-haspopup="menu"
+                    aria-expanded={dropdown === 'tableBorders'}
+                    onClick={() =>
+                      setDropdown((current) => (current === 'tableBorders' ? null : 'tableBorders'))
+                    }
+                  >
+                    <span>{t('ribbonGroupBorders')}</span>
+                    <span className="rb-caret-inline">
+                      <IconCaret />
+                    </span>
+                  </button>
+                  {dropdown === 'tableBorders' && (
+                    <div data-rb-panel="" className="layout-menu table-autofit-menu">
+                      {TABLE_BORDER_MENU.map((mode) => {
+                        const { label, Icon } = TABLE_BORDER_ITEMS[mode]
+                        return (
+                          <button
+                            key={mode}
+                            className={mode === lastBorderMode ? 'active' : ''}
+                            // command-exempt: moved with its group, not new; the Borders gallery
+                            onClick={() => {
+                              applyCellBorders(mode)
+                              setDropdown(null)
+                            }}
+                          >
+                            <Icon size={17} />
+                            <span>{t(label)}</span>
+                          </button>
+                        )
+                      })}
+                    </div>
+                  )}
+                </div>
                 <button
-                  className="table-split-main"
-                  data-tip={t(TABLE_BORDER_ITEMS[lastBorderMode].label)}
-                  // command-exempt: moved with its group, not new; repeats the last border choice
-                  onClick={() => applyCellBorders(lastBorderMode)}
+                  className={`rb-big${painterActive ? ' active' : ''}`}
+                  data-tip={t('ribbonBorderPainterTip')}
+                  aria-pressed={painterActive}
+                  onClick={() => runCommand('table-border-painter')}
                 >
-                  <LastBorderIcon />
-                  <span>{t('ribbonGroupBorders')}</span>
+                  <span className="rb-big-icon">
+                    <IconBorderPainter size={28} />
+                  </span>
+                  <span>{t('ribbonBorderPainter')}</span>
                 </button>
-                <button
-                  className={`table-split-caret${dropdown === 'tableBorders' ? ' active' : ''}`}
-                  aria-label={t('ribbonGroupBorders')}
-                  aria-expanded={dropdown === 'tableBorders'}
-                  onClick={() =>
-                    setDropdown((current) => (current === 'tableBorders' ? null : 'tableBorders'))
-                  }
-                >
-                  <IconCaret size={12} />
-                </button>
-                {dropdown === 'tableBorders' && (
-                  <div data-rb-panel="" className="layout-menu table-autofit-menu">
-                    {TABLE_BORDER_MENU.map((mode) => {
-                      const { label, Icon } = TABLE_BORDER_ITEMS[mode]
-                      return (
-                        <button
-                          key={mode}
-                          className={mode === lastBorderMode ? 'active' : ''}
-                          onClick={() => {
-                            applyCellBorders(mode)
-                            setDropdown(null)
-                          }}
-                        >
-                          <Icon size={17} />
-                          <span>{t(label)}</span>
-                        </button>
-                      )
-                    })}
-                  </div>
-                )}
               </div>
               <div className="ribbon-group-label">{t('ribbonGroupBorders')}</div>
             </div>
