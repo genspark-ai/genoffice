@@ -3905,8 +3905,9 @@ function parseCellStyle(input: unknown): WorkbookCellStyle {
     typeof input.italic !== 'boolean' ||
     typeof input.underline !== 'boolean' ||
     (input.underlineStyle !== undefined &&
-      input.underlineStyle !== 'single' &&
-      input.underlineStyle !== 'double') ||
+      input.underlineStyle !== 'double' &&
+      input.underlineStyle !== 'singleAccounting' &&
+      input.underlineStyle !== 'doubleAccounting') ||
     typeof input.strikethrough !== 'boolean' ||
     typeof input.wrapText !== 'boolean' ||
     (input.shrinkToFit !== undefined && typeof input.shrinkToFit !== 'boolean') ||
