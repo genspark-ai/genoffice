@@ -154,6 +154,24 @@ describe('provider model catalog', () => {
     }
   })
 
+  it('seeds WorldRouter with bare model ids (no vendor prefix)', () => {
+    const worldrouter = AI_PROVIDERS.find((provider) => provider.id === 'worldrouter')!
+    expect(worldrouter.models).toEqual([
+      'deepseek-v4-flash',
+      'deepseek-v4-pro',
+      'claude-sonnet-5-5',
+      'gemini-4-neon',
+      'kimi-k3',
+    ])
+    expect(worldrouter.defaultModel).toBe('deepseek-v4-flash')
+    expect(worldrouter.models).toContain(worldrouter.defaultModel)
+    expect(worldrouter.needsBaseUrl).toBeUndefined()
+    expect(worldrouter.keyPlaceholder).toBe('sk-worldrouter-...')
+    for (const model of worldrouter.models) {
+      expect(model).not.toContain('/')
+    }
+  })
+
   it('seeds Command Code with vendor-prefixed ids and no Claude/GPT/Grok in the list', () => {
     const cc = AI_PROVIDERS.find((provider) => provider.id === 'commandcode')!
     expect(cc.label).toBe('Command Code')

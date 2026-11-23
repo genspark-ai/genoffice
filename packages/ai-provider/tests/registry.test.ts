@@ -184,6 +184,13 @@ describe('provider registry', () => {
     ).toEqual({ protocol: 'openai-compatible', baseUrl: 'https://api.ppio.com/openai/v1' })
   })
 
+  it('resolves WorldRouter to its chat-completions endpoint', () => {
+    expect(AI_PROVIDER_ADAPTERS.worldrouter.resolveEndpoint(config('deepseek-v4-flash'))).toEqual({
+      protocol: 'openai-compatible',
+      baseUrl: 'https://inference-api.worldrouter.ai/v1',
+    })
+  })
+
   it('pins the Spark host, model id and key prefix to the iFlytek product guide', () => {
     const spark = AI_PROVIDERS.find((p) => p.id === 'spark')!
     expect(spark.models).toEqual(['spark-x2.5'])
@@ -560,6 +567,14 @@ describe('modelLacksVision', () => {
     expect(modelLacksVision('glm-5.3-flash')).toBe(false)
     expect(modelLacksVision('kimi-k2.6')).toBe(false)
     expect(modelLacksVision('minimax-m3')).toBe(false)
+  })
+
+  it('records the existing vision heuristics for the WorldRouter ids', () => {
+    expect(modelLacksVision('deepseek-v4-flash')).toBe(true)
+    expect(modelLacksVision('deepseek-v4-pro')).toBe(true)
+    expect(modelLacksVision('claude-sonnet-5-5')).toBe(false)
+    expect(modelLacksVision('gemini-4-neon')).toBe(false)
+    expect(modelLacksVision('kimi-k3')).toBe(false)
   })
 
   it('matches case-insensitively like its sibling matchers', () => {

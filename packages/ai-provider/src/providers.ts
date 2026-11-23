@@ -465,6 +465,25 @@ export const AI_PROVIDERS: AiProviderMeta[] = [
     keyPlaceholder: 'sk-...',
   },
   {
+    id: 'worldrouter',
+    label: 'WorldRouter',
+    // Bare model ids exactly as https://www.worldrouter.ai/models lists them
+    // (2026-11-20); GET inference-api.worldrouter.ai/v1/models lists the same
+    // ids for a key, and the rest of the catalog works as-is when typed in.
+    // OpenAI-compatible /chat/completions; docs:
+    // https://www.worldrouter.ai/docs/quickstart. Vision follows the existing
+    // modelLacksVision() rules.
+    models: [
+      'deepseek-v4-flash',
+      'deepseek-v4-pro',
+      'claude-sonnet-5-5',
+      'gemini-4-neon',
+      'kimi-k3',
+    ],
+    defaultModel: 'deepseek-v4-flash',
+    keyPlaceholder: 'sk-worldrouter-...',
+  },
+  {
     id: 'opencode-zen',
     label: 'OpenCode Zen',
     // Pay-as-you-go gateway (opencode.ai/docs/zen); ids exactly as GET

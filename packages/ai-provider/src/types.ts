@@ -28,6 +28,7 @@ export type AiProviderId =
   | 'cloudgpu'
   | 'siliconflow'
   | 'ppio'
+  | 'worldrouter'
   | 'opencode-zen'
   | 'opencode-go'
   | 'commandcode'

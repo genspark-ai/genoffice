@@ -326,6 +326,12 @@ export const AI_PROVIDER_ADAPTERS: Record<AiProviderId, ProviderAdapter> = {
     // the official SDK base_url is https://api.ppio.com/openai; chat rides /v1
     resolveEndpoint: fixedEndpoint('openai-compatible', 'https://api.ppio.com/openai/v1'),
   },
+  worldrouter: {
+    meta: metaOf('worldrouter'),
+    capabilities: { auth: 'api-key', vision: true },
+    // one chat-completions endpoint for every model; the bare model id picks it
+    resolveEndpoint: fixedEndpoint('openai-compatible', 'https://inference-api.worldrouter.ai/v1'),
+  },
   'opencode-zen': {
     meta: metaOf('opencode-zen'),
     capabilities: { auth: 'api-key', vision: true },
