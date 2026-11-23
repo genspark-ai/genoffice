@@ -18307,40 +18307,67 @@ tr > .page-gap-cut {
   white-space: pre;
 }
 
-/* Editing permission regions (editor/perm-regions.ts): the open cells and
+/* Remote cursors of a shared document (y-prosemirror). The cursor colour and
+ * the name label come from the other participant's awareness state, so only the
+ * shape is styled here. */
+.ProseMirror-yjs-cursor {
+  position: relative;
+  margin-left: -1px;
+  margin-right: -1px;
+  border-left: 1px solid;
+  border-right: 1px solid;
+  border-color: inherit;
+  word-break: normal;
+  pointer-events: none;
+}
+.ProseMirror-yjs-cursor > div {
+  position: absolute;
+  top: -1.2em;
+  left: -1px;
+  padding: 1px 4px;
+  font-size: 11px;
+  line-height: 1.2;
+  color: var(--docs-on-accent);
+  white-space: nowrap;
+  border-radius: 3px;
+}
+.ProseMirror-yjs-selection {
+  opacity: 0.3;
+
+  /* Editing permission regions (editor/perm-regions.ts): the open cells and
    paragraphs of a read-only protected document. Editor display only, never
    printed or exported, as in Word. */
-.perm-region {
-  background: var(--docs-paper-perm-bg);
-}
+  .perm-region {
+    background: var(--docs-paper-perm-bg);
+  }
 
-.perm-region-nested .doc-cell-para > span {
-  background: var(--docs-paper-perm-bg);
-}
+  .perm-region-nested .doc-cell-para > span {
+    background: var(--docs-paper-perm-bg);
+  }
 
-/* Word's region brackets sit over the text at the region's edges and take no
+  /* Word's region brackets sit over the text at the region's edges and take no
    width: over a template's own "[" / "]" they show as one olive bracket */
-.perm-region-bracket {
-  display: inline-block;
-  width: 0;
-  white-space: nowrap;
-  color: var(--docs-paper-perm-bracket);
-  font-weight: 700;
-  font-style: normal;
-  text-decoration: none;
-  pointer-events: none;
-  user-select: none;
-}
+  .perm-region-bracket {
+    display: inline-block;
+    width: 0;
+    white-space: nowrap;
+    color: var(--docs-paper-perm-bracket);
+    font-weight: 700;
+    font-style: normal;
+    text-decoration: none;
+    pointer-events: none;
+    user-select: none;
+  }
 
-.perm-region-bracket > span {
-  display: inline-block;
-}
+  .perm-region-bracket > span {
+    display: inline-block;
+  }
 
-.perm-region-bracket-close > span {
-  transform: translateX(-100%);
-}
+  .perm-region-bracket-close > span {
+    transform: translateX(-100%);
+  }
 
-/* Word paints each paragraph's mark: a patch at the paragraph's end that
+  /* Word paints each paragraph's mark: a patch at the paragraph's end that
    takes no room at all, so line breaks, line heights, the caret and the
    alignment stay put. The mark is a zero-size box on the baseline (a box with
    height would stretch the line wherever the font's content area is taller
@@ -18349,50 +18376,51 @@ tr > .page-gap-cut {
    picture's height, standing on the baseline like the picture. An empty cell
    of a nested table (an atom, drawn without widgets) gets the same patch over
    its one line. */
-.perm-region-mark {
-  position: relative;
-  display: inline-block;
-  width: 0;
-  height: 0;
-  vertical-align: baseline;
-  pointer-events: none;
-  user-select: none;
-}
-
-.perm-region-mark::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  bottom: var(--perm-mark-drop, -0.25em);
-  width: 0.5em;
-  height: var(--perm-mark-h, 1em);
-  background: var(--docs-paper-perm-bg);
-}
-
-.perm-region-nested .doc-cell-para:not(:has(> span)) {
-  position: relative;
-}
-
-.perm-region-nested .doc-cell-para:not(:has(> span))::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  width: 0.5em;
-  background: var(--docs-paper-perm-bg);
-  pointer-events: none;
-}
-
-@media print {
-  .perm-region,
-  .perm-region-nested .doc-cell-para > span {
-    background: none;
+  .perm-region-mark {
+    position: relative;
+    display: inline-block;
+    width: 0;
+    height: 0;
+    vertical-align: baseline;
+    pointer-events: none;
+    user-select: none;
   }
 
-  .perm-region-mark,
-  .perm-region-bracket,
-  .perm-region-nested .doc-cell-para::before {
-    display: none;
+  .perm-region-mark::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    bottom: var(--perm-mark-drop, -0.25em);
+    width: 0.5em;
+    height: var(--perm-mark-h, 1em);
+    background: var(--docs-paper-perm-bg);
+  }
+
+  .perm-region-nested .doc-cell-para:not(:has(> span)) {
+    position: relative;
+  }
+
+  .perm-region-nested .doc-cell-para:not(:has(> span))::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 0.5em;
+    background: var(--docs-paper-perm-bg);
+    pointer-events: none;
+  }
+
+  @media print {
+    .perm-region,
+    .perm-region-nested .doc-cell-para > span {
+      background: none;
+    }
+
+    .perm-region-mark,
+    .perm-region-bracket,
+    .perm-region-nested .doc-cell-para::before {
+      display: none;
+    }
   }
 }
 

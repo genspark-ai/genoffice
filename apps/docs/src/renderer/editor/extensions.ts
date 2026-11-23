@@ -1,3 +1,4 @@
+import { CollabSync } from '../collab/sync-extension'
 import { isEastAsianLeadingFont } from '../text-layout/script-rules'
 import { selectionHighlightOverlay } from './selection-highlight'
 import { SEGOE_SYMBOL_CSS } from '../text-layout/font-rules/face-classes'
@@ -8096,6 +8097,7 @@ export const AutoLinkOnDelimiter = Extension.create({
 
 export const editorExtensions = [
   StreamingTailGuardExtension,
+  CollabSync,
   PermRegionsExtension,
   ScriptFonts,
   DocDocument,
