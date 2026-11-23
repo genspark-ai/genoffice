@@ -2198,7 +2198,15 @@ function registerPdfIpc(): void {
   )
 
   ipcMain.on(PDF_CHANNELS.releaseCertificate, (e, certId: unknown) => {
-    releaseCertEntry(certEntryOf(e.sender.id, certId))
+    if (typeof certId !== 'string') return
+    const entries = certEntriesByWc.get(e.sender.id)
+    const entry = entries?.get(certId)
+    if (!entry) return
+    releaseCertEntry(entry)
+    // The renderer releases when its dialog closes (#2927): the id stops
+    // resolving, so inspect and sign cannot start from it again
+    entries!.delete(certId)
+    if (entries!.size === 0) certEntriesByWc.delete(e.sender.id)
   })
 
   ipcMain.handle(
