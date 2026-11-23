@@ -1005,6 +1005,12 @@ export const pl = {
   storyBarList: 'Lista',
   storyBarFocus: 'Fokus',
   storyBarLeave: 'Opuść Story',
+  storyBarFont: 'Font pisania',
+  storyFontAuto: 'Automatycznie',
+  storyFontAutoHint: 'stos widoku',
+  storyFontBundled: 'wbudowany',
+  storyFontPlaceholder: 'Dowolna zainstalowana czcionka…',
+  storyFontUse: 'Użyj',
   ribbonReadMode: 'Tryb czytania',
   ribbonReadModeTip:
     'Tryb czytania: ukryj wstążkę, aby skupić się na czytaniu; naciśnij Esc, aby wyjść',

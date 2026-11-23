@@ -1013,6 +1013,12 @@ export const it = {
   storyBarList: 'Elenco',
   storyBarFocus: 'Focus',
   storyBarLeave: 'Esci da Story',
+  storyBarFont: 'Font di scrittura',
+  storyFontAuto: 'Automatico',
+  storyFontAutoHint: 'la catena della vista',
+  storyFontBundled: 'incluso',
+  storyFontPlaceholder: 'Qualsiasi font installato…',
+  storyFontUse: 'Usa',
   ribbonReadMode: 'Modalità di lettura',
   ribbonReadModeTip:
     'Modalità di lettura: nascondi la barra multifunzione per una lettura concentrata, premi Esc per uscire',

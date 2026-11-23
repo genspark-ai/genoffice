@@ -1007,6 +1007,12 @@ export const pt = {
   storyBarList: 'Lista',
   storyBarFocus: 'Foco',
   storyBarLeave: 'Sair da História',
+  storyBarFont: 'Fonte de escrita',
+  storyFontAuto: 'Automática',
+  storyFontAutoHint: 'a pilha da vista',
+  storyFontBundled: 'incluída',
+  storyFontPlaceholder: 'Qualquer fonte instalada…',
+  storyFontUse: 'Usar',
   ribbonReadMode: 'Modo de Leitura',
   ribbonReadModeTip:
     'Modo de leitura: ocultar a faixa de opções para leitura focada; pressione Esc para sair',

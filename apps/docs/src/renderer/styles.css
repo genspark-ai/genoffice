@@ -13652,6 +13652,100 @@ body.docs-crop-active
   white-space: nowrap;
 }
 
+/* the writing-font picker: one panel under the bar's button, the picked face
+   first in the stack (story-font.ts) */
+.story-font-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+}
+
+.story-font-pop {
+  position: fixed;
+  z-index: 91;
+  min-width: 240px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: var(--docs-shadow-chip);
+  padding: 6px;
+}
+
+.story-font-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  border: none;
+  background: none;
+  padding: 6px 9px;
+  border-radius: 6px;
+  font: inherit;
+  font-size: 13px;
+  color: var(--text);
+  cursor: pointer;
+  text-align: left;
+}
+
+.story-font-item:hover {
+  background: var(--hover);
+}
+
+.story-font-item.on {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.story-font-face {
+  font-family: var(--story-face);
+  white-space: nowrap;
+}
+
+.story-font-hint {
+  color: var(--text-tertiary);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.story-font-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--border-strong);
+  flex: none;
+}
+
+.story-font-dot.has {
+  background: var(--accent);
+}
+
+.story-font-bundled {
+  color: var(--text-tertiary);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.story-font-any {
+  display: flex;
+  gap: 6px;
+  padding: 6px 4px 2px;
+  border-top: 1px solid var(--border);
+  margin-top: 4px;
+}
+
+.story-font-any input {
+  flex: 1;
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px 8px;
+  font: inherit;
+  font-size: 13px;
+  color: var(--text);
+  background: var(--docs-paper);
+}
+
 /* Focus: everything but the caret's sentence dims (editor/story-view.ts paints
    the .story-dim ranges) */
 .view-story .story-dim {

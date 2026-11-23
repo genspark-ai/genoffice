@@ -1010,6 +1010,12 @@ export const es = {
   storyBarList: 'Lista',
   storyBarFocus: 'Enfoque',
   storyBarLeave: 'Salir de Historia',
+  storyBarFont: 'Fuente de escritura',
+  storyFontAuto: 'Automática',
+  storyFontAutoHint: 'la pila de la vista',
+  storyFontBundled: 'incluida',
+  storyFontPlaceholder: 'Cualquier fuente instalada…',
+  storyFontUse: 'Usar',
   ribbonReadMode: 'Modo de lectura',
   ribbonReadModeTip:
     'Modo de lectura: ocultar la cinta para leer sin distracciones; presione Esc para salir',

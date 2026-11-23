@@ -1011,6 +1011,12 @@ export const nl = {
   storyBarList: 'Lijst',
   storyBarFocus: 'Focus',
   storyBarLeave: 'Story verlaten',
+  storyBarFont: 'Schrijfletter',
+  storyFontAuto: 'Automatisch',
+  storyFontAutoHint: 'de stack van de weergave',
+  storyFontBundled: 'gebundeld',
+  storyFontPlaceholder: 'Elk geïnstalleerd lettertype…',
+  storyFontUse: 'Gebruiken',
   ribbonReadMode: 'Leesmodus',
   ribbonReadModeTip:
     'Leesmodus: het lint verbergen om geconcentreerd te lezen; druk op Esc om af te sluiten',

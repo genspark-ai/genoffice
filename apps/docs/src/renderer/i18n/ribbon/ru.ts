@@ -1004,6 +1004,12 @@ export const ru = {
   storyBarList: 'Список',
   storyBarFocus: 'Фокус',
   storyBarLeave: 'Выйти из истории',
+  storyBarFont: 'Шрифт письма',
+  storyFontAuto: 'Автоматически',
+  storyFontAutoHint: 'стек вида',
+  storyFontBundled: 'встроен',
+  storyFontPlaceholder: 'Любой установленный шрифт…',
+  storyFontUse: 'Применить',
   ribbonReadMode: 'Режим чтения',
   ribbonReadModeTip:
     'Режим чтения: скрыть ленту для сосредоточенного чтения, для выхода нажмите Esc',

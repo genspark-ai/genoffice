@@ -2,6 +2,8 @@ import { FloatWatch } from './editor/float-watch'
 import { attachCommentUndoSync, resetCommentUndoStore } from './editor/comment-undo-sync'
 import { scriptFontHtml } from './editor/script-fonts'
 import { storyEscLeavesView } from './editor/story-view'
+import { loadStoryFace, saveStoryFace, storyFaceRule } from './story-font'
+import { StoryFontPicker } from './components/StoryFontPicker'
 import { carryDocSeen } from './ai/tools'
 import {
   DOC_CSS_COMMITTED_EVENT,
@@ -1353,6 +1355,9 @@ export function App() {
   // Story Focus: dim everything but the sentence the caret sits in (the
   // story-view bar's toggle; the plugin draws the dim ranges)
   const [storyFocus, setStoryFocus] = useState(false)
+  // the writing view's own face (the bar's font picker; a view preference,
+  // the document's fonts stay untouched). '' = the view's default stack.
+  const [storyFace, setStoryFace] = useState(loadStoryFace)
   // the view Story View returns to when it closes (Leave Story, Esc): the one
   // the document was in before entering
   const [storyReturnView, setStoryReturnView] = useState<ViewMode>('print')
@@ -3588,15 +3593,28 @@ export function App() {
   // Escape meant for something else never claims the view (storyEscLeavesView):
   // the context menu, the comment popup and the dialogs close on their own
   // Escape instead, and so does an Escape inside the find panel.
+  const [storyFontOpen, setStoryFontOpen] = useState(false)
   useEffect(() => {
     if (viewMode !== 'story') return
     const onKey = (e: KeyboardEvent) => {
-      if (!storyEscLeavesView(e, !!(showLinkModal || listDialog || ctxMenu || commentPopup))) return
+      // the picker's Escape closes the picker first; the view's Escape still
+      // needs the other overlays to have closed themselves
+      if (storyFontOpen && storyEscLeavesView(e, false)) {
+        setStoryFontOpen(false)
+        return
+      }
+      if (
+        !storyEscLeavesView(
+          e,
+          !!(showLinkModal || listDialog || ctxMenu || commentPopup || storyFontOpen),
+        )
+      )
+        return
       setViewMode(storyReturnView)
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [viewMode, showLinkModal, listDialog, ctxMenu, commentPopup, storyReturnView])
+  }, [viewMode, showLinkModal, listDialog, ctxMenu, commentPopup, storyFontOpen, storyReturnView])
   const recentLists = useMemo(
     () => ({
       bullets: recentListPresets('bullets'),
@@ -7252,6 +7270,12 @@ export function App() {
         : '',
     [viewMode, allRevisions, ownAuthor, revisionFilter.hiddenAuthors, tcOptions],
   )
+  // the picked face rides in front of the view's own stack: a missing font
+  // just falls through, the way the default stack always has
+  const storyFaceStyle = useMemo(
+    () => (viewMode === 'story' ? storyFaceRule(storyFace) : ''),
+    [viewMode, storyFace],
+  )
   const isActiveEntry = (e: ReviewEntry) =>
     e.rev.story
       ? e.rev.story.id === activeStoryId
@@ -10164,6 +10188,7 @@ export function App() {
       {doc && <style data-doc-css="">{mathDefaultsCss(mathPr)}</style>}
       {revisionAuthorStyle && <style data-rev-authors="">{revisionAuthorStyle}</style>}
       {storyAuthorStyle && <style data-story-authors="">{storyAuthorStyle}</style>}
+      {storyFaceStyle && <style data-story-face="">{storyFaceStyle}</style>}
       {tcOptionsStyle && <style data-rev-options="">{tcOptionsStyle}</style>}
       {liveLineFactor != null && (
         <style data-doc-css="">{`.doc-page { --doc-line-factor:${liveLineFactor} }`}</style>
@@ -10717,6 +10742,15 @@ export function App() {
                 >
                   {t('storyBarList')}
                 </button>
+                <StoryFontPicker
+                  value={storyFace}
+                  open={storyFontOpen}
+                  onOpenChange={setStoryFontOpen}
+                  onChange={(family) => {
+                    setStoryFace(family)
+                    saveStoryFace(family)
+                  }}
+                />
                 <span className="story-bar-gap" />
                 <button
                   type="button"
