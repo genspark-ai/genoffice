@@ -254,7 +254,14 @@ export interface Run {
   otf?: RunOpenType
   /** hyperlink info; rId references an existing relationship in the original docx.
    *  plain: unstyled run of a bookmark link (Word shows it in the paragraph's ink) */
-  link?: { href: string; rId?: string; tooltip?: string; plain?: boolean }
+  link?: {
+    href: string
+    rId?: string
+    anchor?: string
+    history?: string
+    tooltip?: string
+    plain?: boolean
+  }
   /**
    * ids of comments whose range covers this run. Only set when the whole
    * commentRangeStart..End pair lives inside the same paragraph, so an edited

@@ -5197,7 +5197,18 @@ function extractRuns(
             ? `#${anchor}`
             : ''
         const first = runs.length
-        walk(childrenOf(node), { href, rId, ...(tooltip ? { tooltip } : {}) }, rev)
+        const history = attrs['w:history']
+        walk(
+          childrenOf(node),
+          {
+            href,
+            rId,
+            ...(rId && anchor !== undefined ? { anchor } : {}),
+            ...(rId && history !== undefined ? { history } : {}),
+            ...(tooltip ? { tooltip } : {}),
+          },
+          rev,
+        )
         // Word paints a bookmark link only through its character style: an
         // unstyled run (TOC entries under \h) keeps the paragraph's ink
         if (!rId && anchor) {
