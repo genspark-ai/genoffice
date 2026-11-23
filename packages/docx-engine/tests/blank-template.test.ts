@@ -309,3 +309,32 @@ describe('blank document template (new-document / AI generation base)', () => {
     expect(app).toContain('<AppVersion>9.9.9</AppVersion>')
   })
 })
+
+describe('a new document starts in the current Word layout mode', () => {
+  it("writes compatibilityMode 15 and Word's Normal Table style when asked", async () => {
+    const bytes = await buildBlankDocx({ wordDefaults: true })
+    const zip = await JSZip.loadAsync(bytes)
+    expect(await zip.file('word/settings.xml')!.async('string')).toContain(
+      'w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="15"',
+    )
+    expect(await zip.file('[Content_Types].xml')!.async('string')).toContain(
+      'PartName="/word/settings.xml"',
+    )
+    expect(await zip.file('word/_rels/document.xml.rels')!.async('string')).toContain(
+      'Target="settings.xml"',
+    )
+    const styles = await zip.file('word/styles.xml')!.async('string')
+    expect(styles).toContain('w:styleId="TableNormal"')
+    expect(styles).toContain('<w:left w:w="108" w:type="dxa"/>')
+
+    const parsed = await parseDocx(bytes)
+    expect(parsed.compatibilityMode).toBe(15)
+  })
+
+  it("leaves the converters' blank without a settings part or table style", async () => {
+    const zip = await JSZip.loadAsync(await buildBlankDocx())
+    expect(zip.file('word/settings.xml')).toBeNull()
+    expect(await zip.file('[Content_Types].xml')!.async('string')).not.toContain('settings')
+    expect(await zip.file('word/styles.xml')!.async('string')).not.toContain('TableNormal')
+  })
+})

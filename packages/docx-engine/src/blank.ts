@@ -128,7 +128,25 @@ const QUICK_STYLES_XML =
   '<w:style w:type="paragraph" w:styleId="ListParagraph"><w:name w:val="List Paragraph"/><w:basedOn w:val="Normal"/>' +
   '<w:uiPriority w:val="34"/><w:qFormat/><w:pPr><w:ind w:left="720"/><w:contextualSpacing/></w:pPr></w:style>'
 
-const stylesXml = (eastAsiaFont?: string): string =>
+// A document without w:compat is laid out in Word's oldest table mode: a table's
+// indent is measured to its cell text, so its border hangs into the left margin.
+// New documents start in the current mode, as Word's own do.
+const SETTINGS_XML =
+  XML_DECL +
+  '<w:settings xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">' +
+  '<w:defaultTabStop w:val="720"/><w:compat>' +
+  '<w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="15"/>' +
+  '</w:compat></w:settings>'
+
+// Word's default table style: without it Word gives a table no cell margins, so
+// text in a table inserted here touched its borders (probe 2026-11-23)
+const TABLE_NORMAL_XML =
+  '<w:style w:type="table" w:default="1" w:styleId="TableNormal"><w:name w:val="Normal Table"/>' +
+  '<w:uiPriority w:val="99"/><w:semiHidden/><w:unhideWhenUsed/><w:tblPr><w:tblInd w:w="0" w:type="dxa"/>' +
+  '<w:tblCellMar><w:top w:w="0" w:type="dxa"/><w:left w:w="108" w:type="dxa"/>' +
+  '<w:bottom w:w="0" w:type="dxa"/><w:right w:w="108" w:type="dxa"/></w:tblCellMar></w:tblPr></w:style>'
+
+const stylesXml = (eastAsiaFont?: string, wordDefaults = false): string =>
   XML_DECL +
   '<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">' +
   '<w:docDefaults><w:rPrDefault><w:rPr>' +
@@ -136,6 +154,7 @@ const stylesXml = (eastAsiaFont?: string): string =>
   '</w:rPr></w:rPrDefault>' +
   '<w:pPrDefault><w:pPr><w:spacing w:after="120" w:line="276" w:lineRule="auto"/></w:pPr></w:pPrDefault></w:docDefaults>' +
   '<w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/><w:qFormat/></w:style>' +
+  (wordDefaults ? TABLE_NORMAL_XML : '') +
   headingStyle(1, 32) +
   headingStyle(2, 28) +
   headingStyle(3, 26) +
@@ -666,6 +685,10 @@ export interface BlankDocxOptions {
   appVersion?: string
   /** docProps/app.xml Template; defaults to Word's "Normal.dotm". */
   template?: string
+  /** start like a document Word creates: the current compatibility mode
+   *  (settings.xml) and the Normal Table style. Converters that write their own
+   *  settings part, or keep an older mode, leave it off; defaults to false. */
+  wordDefaults?: boolean
   /** drop the Application / AppVersion generator fields from docProps/app.xml
    *  (the Word-default Template stays); defaults to false. */
   omitGeneratorFields?: boolean
@@ -683,6 +706,9 @@ export async function buildBlankDocx(options?: BlankDocxOptions): Promise<Uint8A
       '<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>' +
       '<Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/>' +
       '<Override PartName="/word/numbering.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.numbering+xml"/>' +
+      (options?.wordDefaults
+        ? '<Override PartName="/word/settings.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.settings+xml"/>'
+        : '') +
       `<Override PartName="/${CORE_PROPERTIES_PATH}" ContentType="${CORE_PROPERTIES_CONTENT_TYPE}"/>` +
       `<Override PartName="/${APP_PROPERTIES_PATH}" ContentType="${APP_PROPERTIES_CONTENT_TYPE}"/>` +
       '</Types>',
@@ -702,11 +728,16 @@ export async function buildBlankDocx(options?: BlankDocxOptions): Promise<Uint8A
     `${XML_DECL}<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">` +
       '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>' +
       '<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/numbering" Target="numbering.xml"/>' +
+      (options?.wordDefaults
+        ? '<Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/settings" Target="settings.xml"/>'
+        : '') +
       '</Relationships>',
   )
 
-  zip.file('word/styles.xml', stylesXml(options?.eastAsiaFont))
+  const wordDefaults = options?.wordDefaults === true
+  zip.file('word/styles.xml', stylesXml(options?.eastAsiaFont, wordDefaults))
   zip.file('word/numbering.xml', NUMBERING_XML)
+  if (wordDefaults) zip.file('word/settings.xml', SETTINGS_XML)
 
   // Word always writes both parts; a document created here carries minimal
   // Word-like ones so later property sets have a home (and DMS tools see the
