@@ -3449,6 +3449,8 @@ export const DocTable = Node.create({
       /** grid wider than the text column (display-only): w:noWrap cells wrap like Word's */
       tblOverWide: { default: false },
       indentTwips: { default: null as number | null },
+      /** w:tblInd was edited (AutoFit Window resets it): the save writes indentTwips */
+      tblIndentEdited: { default: false },
       tblStyleId: { default: null as string | null },
       tblLook: { default: null as Record<string, boolean> | null },
       tblLookEdited: { default: false },

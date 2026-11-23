@@ -3113,6 +3113,12 @@ function tableModelXml(
       `<w:tblLayout w:type="${effectiveAutoFit === 'fixed' ? 'fixed' : 'autofit'}"/>`,
     )
   }
+  // an edited indent replaces the original w:tblInd; AutoFit Window resets it to
+  // zero, and Word then drops the element (probe 2026-11-23)
+  if (originalTblPr && model.indentTwips !== undefined) {
+    const ind = Math.round(model.indentTwips)
+    tblPr = setTblPrChild(tblPr, 'w:tblInd', ind ? `<w:tblInd w:w="${ind}" w:type="dxa"/>` : null)
+  }
   if (model.cellMarTwips !== undefined) {
     tblPr = setTblPrChild(tblPr, 'w:tblCellMar', cellMar || null)
   }

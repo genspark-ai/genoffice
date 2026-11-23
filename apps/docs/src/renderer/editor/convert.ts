@@ -1523,6 +1523,9 @@ export function pmTableToModel(table: PmNode): TableModel {
     ...(tablePropsEdited('tblAutoFitEdited')
       ? { autoFit: table.attrs?.tblAutoFit as NonNullable<TableModel['autoFit']> }
       : {}),
+    ...(tablePropsEdited('tblIndentEdited') && !isNew
+      ? { indentTwips: Number(table.attrs?.indentTwips) || 0 }
+      : {}),
     ...(tablePropsEdited('cellMarEdited') && table.attrs?.cellMar
       ? { cellMarTwips: table.attrs.cellMar as NonNullable<TableModel['cellMarTwips']> }
       : {}),
