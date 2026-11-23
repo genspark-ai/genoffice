@@ -5,11 +5,15 @@ import { sdtCheckboxGlyphs } from '@genoffice/docx-engine'
 import { TRACK_IGNORE } from './revisions'
 
 /**
- * Click-to-toggle for the two kinds of checkbox a docx can hold: legacy
- * FORMCHECKBOX form fields and w14:checkbox content controls. Both are one
- * glyph run in the editor whose write-back reads the state off the glyph, so
- * toggling is swapping the character; the marks stay so the field or control
- * survives. Plain box characters typed as text are not controls and stay text.
+ * Click-to-toggle for the three kinds of checkbox a docx can hold: legacy
+ * FORMCHECKBOX form fields, w14:checkbox content controls, and ballot-box
+ * characters typed as plain text. The first two are one glyph run in the
+ * editor whose write-back reads the state off the glyph, so toggling is
+ * swapping the character; the marks stay so the field or control survives.
+ * A plain ballot-box character (☐ ☑ ☒) is just text — no control survives a
+ * round trip through editors that drop them — but it is still a box a reader
+ * expects to click: the swap is an ordinary text edit (undoable, saved as the
+ * new character). Other text never toggles.
  */
 
 export interface CheckboxToggleStorage {
@@ -25,7 +29,23 @@ declare module '@tiptap/core' {
 
 const FORM_FIELD_GLYPHS = { checked: '\u2612', unchecked: '\u2610' }
 
-function toggledGlyph(glyph: string, marks: readonly PmMark[]): string | null {
+/** plain ballot-box characters: box↔check and box/X↔box, as Word's glyphs read */
+const PLAIN_GLYPHS: Record<string, string> = {
+  '\u2610': '\u2611', // ☐ → ☑
+  '\u2611': '\u2610', // ☑ → ☐
+  '\u2612': '\u2610', // ☒ → ☐
+}
+
+export interface CheckboxToggleOptions {
+  /** forms protection: plain text is locked, only the field and control glyphs toggle */
+  allowPlainGlyphs?: boolean
+}
+
+function toggledGlyph(
+  glyph: string,
+  marks: readonly PmMark[],
+  options: CheckboxToggleOptions = {},
+): string | null {
   const field = marks.find((m) => m.type.name === 'instrField')
   const control = marks.find((m) => m.type.name === 'ctrlCheckbox')
   const glyphs = control
@@ -33,7 +53,12 @@ function toggledGlyph(glyph: string, marks: readonly PmMark[]): string | null {
     : field?.attrs.instr === 'FORMCHECKBOX'
       ? FORM_FIELD_GLYPHS
       : null
-  if (!glyphs) return null
+  if (!glyphs) {
+    // a plain ballot-box character toggles as ordinary text; other plain
+    // characters are prose, not boxes
+    if (options.allowPlainGlyphs !== false) return PLAIN_GLYPHS[glyph] ?? null
+    return null
+  }
   if (glyph === glyphs.checked) return glyphs.unchecked
   if (glyph === glyphs.unchecked) return glyphs.checked
   return null
@@ -48,13 +73,14 @@ export function toggleCheckboxAt(
   state: EditorState,
   pos: number,
   side: 'before' | 'after',
+  options: CheckboxToggleOptions = {},
 ): Transaction | null {
   const from = side === 'after' ? pos : pos - 1
   if (from < 0 || from >= state.doc.content.size) return null
   const node = state.doc.resolve(from).nodeAfter
   if (!node?.isText || !node.text) return null
   const glyph = node.text[0]
-  const next = toggledGlyph(glyph, node.marks)
+  const next = toggledGlyph(glyph, node.marks, options)
   if (next === null) return null
   const tr = state.tr.replaceWith(from, from + glyph.length, state.schema.text(next, node.marks))
   tr.setSelection(TextSelection.create(tr.doc, from + next.length))
@@ -85,7 +111,11 @@ export const CheckboxToggleExtension = Extension.create<object, CheckboxToggleSt
             } catch {
               // a position without layout (mid-rerender): fall through
             }
-            const tr = toggleCheckboxAt(view.state, pos, side)
+            // forms protection: plain text is locked, only the field and
+            // control glyphs fill
+            const tr = toggleCheckboxAt(view.state, pos, side, {
+              allowPlainGlyphs: view.editable,
+            })
             if (!tr) return false
             view.dispatch(tr)
             return true

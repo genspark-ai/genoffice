@@ -67,13 +67,66 @@ describe('toggleCheckboxAt', () => {
     expect(text(editor)).toBe('☐')
   })
 
-  it('leaves a plain box character and other fields alone', () => {
+  it('leaves other fields alone', () => {
     const editor = editorWith([
       { type: 'text', text: '☐ ' },
       { type: 'text', text: '3', marks: [{ type: 'instrField', attrs: { instr: 'PAGE' } }] },
     ])
-    expect(toggleCheckboxAt(editor.state, 1, 'after')).toBeNull()
     expect(toggleCheckboxAt(editor.state, 3, 'after')).toBeNull()
-    expect(toggleCheckboxAt(editor.state, 0, 'before')).toBeNull()
+    // a plain ballot box is not prose: it toggles as an ordinary text edit
+    let tr = toggleCheckboxAt(editor.state, 1, 'after')
+    expect(tr).not.toBeNull()
+    editor.view.dispatch(tr!)
+    expect(text(editor)).toBe('☑ 3')
+    tr = toggleCheckboxAt(editor.state, 2, 'before')
+    expect(tr).not.toBeNull()
+    editor.view.dispatch(tr!)
+    expect(text(editor)).toBe('☐ 3')
+  })
+
+  it('a plain ballot box round-trips as text and keeps its run marks', () => {
+    const editor = editorWith([{ type: 'text', text: '☐', marks: [{ type: 'bold' }] }])
+    const tr = toggleCheckboxAt(editor.state, 1, 'after')
+    expect(tr).not.toBeNull()
+    editor.view.dispatch(tr!)
+    expect(text(editor)).toBe('☑')
+    const node = editor.state.doc.nodeAt(1)!
+    expect(node.marks.map((m) => m.type.name)).toEqual(['bold'])
+  })
+
+  it('an X box clears to a plain box, as the glyph reads', () => {
+    const editor = editorWith([{ type: 'text', text: '☒' }])
+    const tr = toggleCheckboxAt(editor.state, 1, 'after')
+    expect(tr).not.toBeNull()
+    editor.view.dispatch(tr!)
+    expect(text(editor)).toBe('☐')
+  })
+
+  it('plain prose characters never toggle', () => {
+    const editor = editorWith([{ type: 'text', text: 'a☑b' }])
+    expect(toggleCheckboxAt(editor.state, 1, 'after')).toBeNull()
+    // the ☑ under the pointer toggles from either side
+    expect(toggleCheckboxAt(editor.state, 2, 'after')).not.toBeNull()
+    expect(toggleCheckboxAt(editor.state, 3, 'before')).not.toBeNull()
+    expect(toggleCheckboxAt(editor.state, 3, 'after')).toBeNull()
+  })
+
+  it('forms protection keeps plain boxes locked; the field glyphs still fill', () => {
+    const editor = editorWith([
+      {
+        type: 'text',
+        text: '☐',
+        marks: [{ type: 'instrField', attrs: { instr: 'FORMCHECKBOX' } }],
+      },
+    ])
+    const locked = { allowPlainGlyphs: false }
+    // the plain box next to it stays locked
+    const plain = editorWith([{ type: 'text', text: '☐' }])
+    expect(toggleCheckboxAt(plain.state, 1, 'after', locked)).toBeNull()
+    // the form field's glyph still fills
+    const tr = toggleCheckboxAt(editor.state, 1, 'after', locked)
+    expect(tr).not.toBeNull()
+    editor.view.dispatch(tr!)
+    expect(text(editor)).toBe('☒')
   })
 })
