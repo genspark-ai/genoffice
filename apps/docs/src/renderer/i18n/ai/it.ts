@@ -159,6 +159,8 @@ export const it = {
     'Sono arrivati {blocks} blocchi prima che la scrittura si interrompesse. Conservare questa parte o scartarla?',
   aiPartialAdopt: 'Conserva',
   aiPartialDiscard: 'Scarta',
+  aiSumProtectedBlocked:
+    'Non applicato: il documento è protetto al di fuori delle aree modificabili',
   aiSumInsertedBlocks: '{count} blocco/i inserito/i',
   aiSumCreateDocument: 'Crea nuovo documento',
   aiSumCreatedDocument: '{name} creato',

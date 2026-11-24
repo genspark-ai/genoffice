@@ -154,6 +154,7 @@ export const en = {
     '{blocks} blocks arrived before the writing stopped. Keep this part or discard it?',
   aiPartialAdopt: 'Keep',
   aiPartialDiscard: 'Discard',
+  aiSumProtectedBlocked: 'Not applied: the document is protected outside its editable regions',
   aiSumInsertedBlocks: 'Inserted {count} block(s)',
   aiSumCreateDocument: 'Create new document',
   aiSumCreatedDocument: 'Created {name}',

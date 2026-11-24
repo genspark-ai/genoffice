@@ -144,6 +144,7 @@ export const zh = {
   aiPartialBody: '已收到 {blocks} 个内容块，生成中断了。采用这部分，还是放弃？',
   aiPartialAdopt: '采用',
   aiPartialDiscard: '放弃',
+  aiSumProtectedBlocked: '未应用：文档受保护，只能编辑可编辑区域',
   aiSumInsertedBlocks: '插入 {count} 个块',
   aiSumCreateDocument: '新建文档',
   aiSumCreatedDocument: '已创建 {name}',

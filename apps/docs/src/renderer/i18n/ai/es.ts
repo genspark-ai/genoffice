@@ -158,6 +158,7 @@ export const es = {
     'Llegaron {blocks} bloques antes de que la redacción se detuviera. ¿Conservar esta parte o descartarla?',
   aiPartialAdopt: 'Conservar',
   aiPartialDiscard: 'Descartar',
+  aiSumProtectedBlocked: 'No aplicado: el documento está protegido fuera de sus zonas editables',
   aiSumInsertedBlocks: '{count} bloque(s) insertado(s)',
   aiSumCreateDocument: 'Crear documento nuevo',
   aiSumCreatedDocument: '{name} creado',

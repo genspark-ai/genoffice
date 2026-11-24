@@ -159,6 +159,7 @@ export const hu = {
     '{blocks} blokk érkezett, mielőtt az írás leállt. Ezt a részt megtartod vagy elveted?',
   aiPartialAdopt: 'Megtartás',
   aiPartialDiscard: 'Elvetés',
+  aiSumProtectedBlocked: 'Nem lett alkalmazva: a dokumentum a szerkeszthető részeken kívül védett',
   aiSumInsertedBlocks: 'Beszúrva: {count} blokk',
   aiSumCreateDocument: 'Új dokumentum létrehozása',
   aiSumCreatedDocument: 'Létrehozva: {name}',

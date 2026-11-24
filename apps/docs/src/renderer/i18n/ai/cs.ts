@@ -156,6 +156,7 @@ export const cs = {
     'Dorazilo {blocks} bloků, než se psaní přerušilo. Ponechat tuto část, nebo zahodit?',
   aiPartialAdopt: 'Ponechat',
   aiPartialDiscard: 'Zahodit',
+  aiSumProtectedBlocked: 'Nepoužito: dokument je mimo upravitelné oblasti chráněn',
   aiSumInsertedBlocks: 'Vloženo bloků: {count}',
   aiSumCreateDocument: 'Vytvořit nový dokument',
   aiSumCreatedDocument: 'Vytvořeno {name}',

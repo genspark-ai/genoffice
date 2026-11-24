@@ -155,6 +155,7 @@ export const vi = {
     'Đã nhận được {blocks} khối trước khi quá trình viết dừng lại. Giữ lại phần này hay hủy bỏ?',
   aiPartialAdopt: 'Giữ lại',
   aiPartialDiscard: 'Hủy bỏ',
+  aiSumProtectedBlocked: 'Chưa áp dụng: tài liệu được bảo vệ ngoài các vùng có thể chỉnh sửa',
   aiSumInsertedBlocks: 'Đã chèn {count} khối',
   aiSumCreateDocument: 'Tạo tài liệu mới',
   aiSumCreatedDocument: 'Đã tạo {name}',

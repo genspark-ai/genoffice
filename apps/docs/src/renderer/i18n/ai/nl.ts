@@ -157,6 +157,7 @@ export const nl = {
     '{blocks} blokken kwamen aan voordat het schrijven stopte. Dit deel behouden of weggooien?',
   aiPartialAdopt: 'Behouden',
   aiPartialDiscard: 'Weggooien',
+  aiSumProtectedBlocked: 'Niet toegepast: het document is buiten de bewerkbare gebieden beveiligd',
   aiSumInsertedBlocks: '{count} blok(ken) ingevoegd',
   aiSumCreateDocument: 'Nieuw document maken',
   aiSumCreatedDocument: '{name} aangemaakt',
