@@ -166,6 +166,10 @@ export interface CommandHost {
   toggleStylesPane(): void
   toggleSelectionPane(): void
   toggleCitationsPane(): void
+  /** the Quick Cite bar over the document */
+  openZoteroQuickCite(): void
+  toggleZoteroLibrary(): void
+  toggleZoteroAutoRefresh(): void
   /** the pen on, or back to the text caret */
   toggleDrawing(): void
   /** new blank documents start with this document's theme fonts, colours and paragraph spacing */
@@ -1627,6 +1631,13 @@ export const MENU_COMMAND_HANDLERS: Record<ActionCommandId, Handler> = {
   'format-selection-pane': (host) => {
     if (host.hasDoc && host.editor) host.toggleSelectionPane()
   },
+  'zotero-quick-cite': (host) => {
+    if (host.hasDoc && host.editor) host.openZoteroQuickCite()
+  },
+  'zotero-library': (host) => {
+    if (host.hasDoc && host.editor) host.toggleZoteroLibrary()
+  },
+  'zotero-auto-refresh': (host) => host.toggleZoteroAutoRefresh(),
   'align-left': align('left'),
   'align-center': align('center'),
   'align-right': align('right'),

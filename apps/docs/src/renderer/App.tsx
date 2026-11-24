@@ -161,6 +161,12 @@ import {
   type MailMergeResponse,
 } from './mail-merge/output'
 import { ZoteroDocumentController } from './zotero/controller'
+import { citeFromZotero, hasZoteroFields } from './zotero/quick-cite'
+import {
+  loadZoteroAutoRefresh,
+  saveZoteroAutoRefresh,
+  shouldAutoRefresh,
+} from './zotero/auto-refresh'
 import { AiPanel, aiRevisionAuthor } from './ai/AiPanel'
 import type { AiCommentsAccess, AiDocExtras, AiHeaderFooterAccess } from './ai/tools'
 import type { AiStyleInfo } from './ai/style-ops'
@@ -466,6 +472,8 @@ import { setMergePreview } from './editor/merge-preview'
 import { DEFAULT_CITATION_STYLE, nextFieldId } from './editor/source-citations'
 import type { MergePrompt } from './mail-merge/template'
 import { SelectionPane } from './components/SelectionPane'
+import { ZoteroLibraryPane } from './components/ZoteroLibraryPane'
+import { ZoteroQuickCite } from './components/ZoteroQuickCite'
 import { CitationsPane } from './components/CitationsPane'
 import { selectChartForData } from './editor/page-objects'
 import {
@@ -784,6 +792,7 @@ import {
 import {
   applyAiDocContent as applyAiDocContentImpl,
   buildDocBytes as buildDocBytesImpl,
+  currentDocGeneration,
   exportPdf as exportPdfImpl,
   exportHtml as exportHtmlImpl,
   exportMarkdown as exportMarkdownImpl,
@@ -801,7 +810,7 @@ import {
 import { reduceFileSize } from './reduce-file-size'
 import { selectedPictureSources } from './reduce-pictures'
 import { BlockIndex } from './pagination-index'
-import { isPhasedContentPending } from './phased-content'
+import { isPhasedContentPending, waitForFullContent } from './phased-content'
 import { sameSectionInfos } from './pagination-sections'
 import {
   blocksKeepSlicing,
@@ -1548,6 +1557,38 @@ export function App() {
       live = false
       window.removeEventListener('focus', check)
     }
+  }, [])
+  const [showZoteroQuickCite, setShowZoteroQuickCite] = useState(false)
+  const [showZoteroLibrary, setShowZoteroLibrary] = useState(false)
+  const [zoteroAutoRefresh, setZoteroAutoRefreshState] = useState(loadZoteroAutoRefresh)
+  const zoteroAutoRefreshRef = useRef(zoteroAutoRefresh)
+  zoteroAutoRefreshRef.current = zoteroAutoRefresh
+  const toggleZoteroAutoRefresh = useCallback(() => {
+    setZoteroAutoRefreshState((on) => {
+      saveZoteroAutoRefresh(!on)
+      return !on
+    })
+  }, [])
+  const zoteroNoteFieldsRef = useRef(zoteroNoteFields)
+  zoteroNoteFieldsRef.current = zoteroNoteFields
+  /** Quick Cite and the library pane: cites the items at the caret, or names what went wrong */
+  const citeZoteroItems = useCallback(async (keys: string[]): Promise<StringKey | null> => {
+    const target = editorRef.current
+    if (!target) return 'zoteroCannotInsert'
+    const result = await citeFromZotero(target, keys, {
+      documentData: zoteroDocumentDataRef.current,
+      noteFields: zoteroNoteFieldsRef.current,
+      citeData: (wanted, style) => window.desktop.zoteroCiteData(wanted, style),
+      refresh: async () => {
+        const refreshed = await window.desktop.zoteroCommand('refresh')
+        if (!refreshed.ok) throw new Error(refreshed.error ?? 'Zotero refresh failed')
+      },
+    })
+    return result.ok ? null : result.error
+  }, [])
+  const closeZoteroQuickCite = useCallback(() => {
+    setShowZoteroQuickCite(false)
+    editorRef.current?.view.focus()
   }, [])
   const [themeFonts, setThemeFonts] = useState<ThemeFonts | null>(null)
   const [themeFontsDirty, setThemeFontsDirty] = useState(false)
@@ -3914,6 +3955,38 @@ export function App() {
       }),
     [setZoteroDocumentData],
   )
+
+  // Refresh on Open: once per opened document, after all of it has streamed in
+  const zoteroRefreshedGenerationRef = useRef(-1)
+  const openedParsed = doc?.parsed
+  useEffect(() => {
+    // Zotero is looked for at startup: a document opened before the answer waits for it
+    if (!openedParsed || !editor || !zoteroInstalled) return
+    const generation = currentDocGeneration()
+    if (zoteroRefreshedGenerationRef.current === generation) return
+    zoteroRefreshedGenerationRef.current = generation
+    let live = true
+    void waitForFullContent().then(() => {
+      if (!live || currentDocGeneration() !== generation || editorRef.current !== editor) return
+      const run = shouldAutoRefresh({
+        enabled: zoteroAutoRefreshRef.current,
+        zoteroInstalled: true,
+        editable: editor.isEditable,
+        hasDocumentData: zoteroDocumentDataRef.current !== '',
+        hasFields: hasZoteroFields(editor),
+        noteFields: zoteroNoteFieldsRef.current,
+      })
+      if (!run) return
+      // Zotero not running, or busy with another document: the user can still press Refresh
+      void window.desktop.zoteroCommand('refresh').then(
+        (result) => !result.ok && console.warn('Zotero Refresh on Open skipped', result.error),
+        (error: unknown) => console.warn('Zotero Refresh on Open skipped', error),
+      )
+    })
+    return () => {
+      live = false
+    }
+  }, [openedParsed, editor, zoteroInstalled])
 
   /** Pasted list items lacking a numId (schema default null; saving would lose list semantics):
    *  reuse the numId of an existing same-kind instance, otherwise fall back to creating a definition */
@@ -7842,6 +7915,9 @@ export function App() {
     toggleStylesPane: () => setShowStylesPane((v) => !v),
     toggleSelectionPane: () => setShowSelectionPane((v) => !v),
     toggleCitationsPane: () => setShowCitationsPane((v) => !v),
+    openZoteroQuickCite: () => setShowZoteroQuickCite(true),
+    toggleZoteroLibrary: () => setShowZoteroLibrary((v) => !v),
+    toggleZoteroAutoRefresh,
     toggleDrawing: () => {
       if (inkTool !== 'select') return setInkTool('select')
       // the pen's controls are on the Draw tab, and the ribbon puts the pen away off it
@@ -10373,6 +10449,8 @@ export function App() {
         sources={sources}
         citationStyle={citationStyle}
         zoteroNoteFields={zoteroNoteFields}
+        zoteroLibraryOpen={showZoteroLibrary}
+        zoteroAutoRefresh={zoteroAutoRefresh}
         showZotero={zoteroInstalled || zoteroDocumentData !== '' || zoteroNoteFields}
         zoom={Math.round(zoom)}
         darkPage={darkPage}
@@ -10917,6 +10995,15 @@ export function App() {
             )}
             {doc && editor && showSelectionPane && (
               <SelectionPane editor={editor} onClose={() => setShowSelectionPane(false)} />
+            )}
+            {doc && showZoteroLibrary && (
+              <ZoteroLibraryPane
+                onCite={citeZoteroItems}
+                onClose={() => setShowZoteroLibrary(false)}
+              />
+            )}
+            {doc && showZoteroQuickCite && (
+              <ZoteroQuickCite onCite={citeZoteroItems} onClose={closeZoteroQuickCite} />
             )}
             {doc && showReviewPane && (
               <ReviewingPane

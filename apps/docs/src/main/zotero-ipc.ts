@@ -3,6 +3,12 @@ import { ipcMain, type WebContents } from 'electron'
 import type { ZoteroCommandResult, ZoteroRendererResponse } from '../shared/ipc'
 import { zoteroAvailable } from './zotero-detect'
 import { ZoteroWireClient, type ZoteroWireRequest } from './zotero-wire'
+import {
+  listZoteroCollectionItems,
+  listZoteroCollections,
+  searchZoteroItems,
+  zoteroCiteData,
+} from './zotero-local-api'
 
 const clients = new Map<number, ZoteroWireClient>()
 const pending = new Map<
@@ -39,6 +45,23 @@ export function registerZoteroIpc(): void {
   registered = true
 
   ipcMain.handle('zotero:available', () => zoteroAvailable())
+  // the local API: arguments come from the renderer, so each is checked here
+  ipcMain.handle('zotero:local-search', (_event, query: unknown) =>
+    searchZoteroItems(typeof query === 'string' ? query : ''),
+  )
+  ipcMain.handle('zotero:local-collections', () => listZoteroCollections())
+  ipcMain.handle('zotero:local-collection-items', (_event, key: unknown, query: unknown) =>
+    listZoteroCollectionItems(
+      typeof key === 'string' ? key : null,
+      typeof query === 'string' ? query : '',
+    ),
+  )
+  ipcMain.handle('zotero:local-cite-data', (_event, keys: unknown, style: unknown) =>
+    zoteroCiteData(
+      Array.isArray(keys) ? keys.filter((key): key is string => typeof key === 'string') : [],
+      typeof style === 'string' ? style : 'apa',
+    ),
+  )
 
   ipcMain.handle('zotero:command', async (event, command: string): Promise<ZoteroCommandResult> => {
     if (!/^(addEditCitation|addEditBibliography|refresh|setDocPrefs|removeCodes)$/.test(command)) {

@@ -223,6 +223,10 @@ export const COMMANDS = {
   'toc-add-text': {},
   'footnote-next': {},
   'citations-pane': {},
+  // the Zotero tab's own controls, beside Zotero's integration commands
+  'zotero-quick-cite': {},
+  'zotero-library': {},
+  'zotero-auto-refresh': {},
   'insert-table-of-figures': {},
   'update-table-of-figures': {},
   'citation-style': {},

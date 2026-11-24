@@ -78,6 +78,11 @@ const api: DesktopApi = {
   },
   zoteroAvailable: () => ipcRenderer.invoke('zotero:available'),
   zoteroCommand: (command) => ipcRenderer.invoke('zotero:command', command),
+  zoteroSearch: (query) => ipcRenderer.invoke('zotero:local-search', query),
+  zoteroCollections: () => ipcRenderer.invoke('zotero:local-collections'),
+  zoteroCollectionItems: (collectionKey, query) =>
+    ipcRenderer.invoke('zotero:local-collection-items', collectionKey, query),
+  zoteroCiteData: (keys, style) => ipcRenderer.invoke('zotero:local-cite-data', keys, style),
   onZoteroRequest: (handler) => {
     const listener = (_event: IpcRendererEvent, request: ZoteroRendererRequest) => handler(request)
     ipcRenderer.on('zotero:request', listener)
