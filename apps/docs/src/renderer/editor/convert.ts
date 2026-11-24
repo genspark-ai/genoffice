@@ -1720,6 +1720,8 @@ function runMarks(run: Run): PmMark[] {
       attrs: {
         href: run.link.href,
         rId: run.link.rId ?? null,
+        anchor: run.link.anchor ?? null,
+        history: run.link.history ?? null,
         tooltip: run.link.tooltip ?? null,
         plain: run.link.plain === true,
       },
@@ -4121,6 +4123,8 @@ function runFromMarks(text: string, marks: PmMark[]): Run {
       run.link = {
         href: String(mark.attrs?.href ?? ''),
         rId: (mark.attrs?.rId as string) ?? undefined,
+        ...(typeof mark.attrs?.anchor === 'string' ? { anchor: mark.attrs.anchor } : {}),
+        ...(typeof mark.attrs?.history === 'string' ? { history: mark.attrs.history } : {}),
         tooltip: (mark.attrs?.tooltip as string) ?? undefined,
         ...(mark.attrs?.plain ? { plain: true } : {}),
       }
@@ -4329,6 +4333,8 @@ function runStyleKey(run: Run): string {
     run.vertAlign ?? null,
     run.link?.href ?? null,
     run.link?.rId ?? null,
+    run.link?.anchor ?? null,
+    run.link?.history ?? null,
     run.commentIds?.join(' ') ?? null,
     revisionKey(run),
     run.noteRef

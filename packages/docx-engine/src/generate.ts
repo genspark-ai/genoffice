@@ -3866,8 +3866,14 @@ function runsXml(
         const group: Run[] = []
         const groupStart = i
         const href = run.link.href
+        const { anchor, history } = run.link
         let rId = run.link.rId
-        while (i < to && runs[i].link && runs[i].link!.href === href) {
+        while (
+          i < to &&
+          runs[i].link?.href === href &&
+          runs[i].link?.anchor === anchor &&
+          runs[i].link?.history === history
+        ) {
           const next = runs[i].link!.rId
           if (group.length > 0 && next !== undefined && rId !== undefined && next !== rId) break
           rId = rId ?? next
@@ -3886,9 +3892,12 @@ function runsXml(
         } else {
           const finalRId = rId ?? allocate?.(href)
           if (finalRId) {
+            const anchorAttr = anchor === undefined ? '' : ` w:anchor="${escapeXmlAttr(anchor)}"`
+            const historyAttr =
+              history === undefined ? '' : ` w:history="${escapeXmlAttr(history)}"`
             const inner = group.map((r) => fragment(r, true)).join('')
             parts.push(
-              `<w:hyperlink r:id="${escapeXmlAttr(finalRId)}"${tipAttr}>${inner}</w:hyperlink>`,
+              `<w:hyperlink r:id="${escapeXmlAttr(finalRId)}"${anchorAttr}${tipAttr}${historyAttr}>${inner}</w:hyperlink>`,
             )
           } else {
             parts.push(group.map((r) => fragment(r, false)).join(''))
