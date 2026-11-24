@@ -501,8 +501,8 @@ test.describe.serial('docs Word interaction smoke', () => {
 
     await cell(1, 0).click()
     await showTab('Table Design')
-    const bordersMain = editor.locator('.table-split-main')
-    await expect(bordersMain).toHaveText('Borders')
+    await expect(editor.locator('.rb-big-split-caret', { hasText: 'Borders' })).toBeVisible()
+    const bordersMain = editor.getByRole('button', { name: 'Bottom Border', exact: true })
     await bordersMain.click()
     await expect(cell(rowCount - 1, 0)).toHaveCSS('border-bottom-style', 'solid')
     await expect(cell(rowCount - 1, cols - 1)).toHaveCSS('border-bottom-style', 'solid')

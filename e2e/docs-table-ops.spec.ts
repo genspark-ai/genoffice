@@ -115,13 +115,19 @@ test.describe('docs table operations', () => {
       await expect(cell(0, 3)).toHaveCSS('vertical-align', 'bottom')
       await expect(cell(0, 3).locator('p').first()).toHaveCSS('text-align', 'right')
 
-      // ---- double border via Table Design: Border Styles, then Borders ▾ › All Borders
+      // ---- double border via Table Design: Line Style, then Borders ▾ › All Borders
       await editorPage.locator('.ribbon-tab', { hasText: 'Table Design' }).click()
-      await editorPage.getByRole('button', { name: 'Border Styles' }).click()
-      await editorPage.getByRole('option', { name: '═════' }).click()
-      await editorPage.locator('.table-split-caret').click()
+      await editorPage.getByRole('button', { name: 'Line Style' }).click()
+      await editorPage.locator('.tbl-pen-menu button[aria-label="double"]').click()
+      await editorPage.locator('.rb-big-split-caret', { hasText: 'Borders' }).click()
       await editorPage.locator('.layout-menu button', { hasText: 'All Borders' }).click()
       await expect(cell(0, 3)).toHaveCSS('border-top-style', 'double')
+      // picking a pen turned the Border Painter on (Word): off again before clicking cells
+      await editorPage.getByRole('button', { name: 'Border Painter' }).click()
+      await expect(editorPage.getByRole('button', { name: 'Border Painter' })).toHaveAttribute(
+        'aria-pressed',
+        'false',
+      )
 
       // ---- alt text through Table Properties
       await editorPage.locator('.ribbon-tab', { hasText: 'Table Layout' }).click()
