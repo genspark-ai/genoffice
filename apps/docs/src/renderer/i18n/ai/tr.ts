@@ -153,6 +153,7 @@ export const tr = {
   aiPartialBody: 'Yazma durmadan önce {blocks} blok geldi. Bu kısım tutulsun mu, yoksa atılsın mı?',
   aiPartialAdopt: 'Tut',
   aiPartialDiscard: 'At',
+  aiSumProtectedBlocked: 'Uygulanmadı: belge, düzenlenebilir alanların dışında korumalı',
   aiSumInsertedBlocks: '{count} blok eklendi',
   aiSumCreateDocument: 'Yeni belge oluştur',
   aiSumCreatedDocument: '{name} oluşturuldu',

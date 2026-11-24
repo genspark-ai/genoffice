@@ -156,6 +156,7 @@ export const pl = {
     'Dotarło {blocks} bloków, zanim pisanie zostało przerwane. Zachować tę część czy odrzucić?',
   aiPartialAdopt: 'Zachowaj',
   aiPartialDiscard: 'Odrzuć',
+  aiSumProtectedBlocked: 'Nie zastosowano: dokument jest chroniony poza obszarami edytowalnymi',
   aiSumInsertedBlocks: 'Wstawiono bloków: {count}',
   aiSumCreateDocument: 'Utwórz nowy dokument',
   aiSumCreatedDocument: 'Utworzono {name}',

@@ -146,6 +146,7 @@ export const zhTW = {
   aiPartialBody: '已收到 {blocks} 個內容區塊，產生中斷了。採用這部分，還是放棄？',
   aiPartialAdopt: '採用',
   aiPartialDiscard: '放棄',
+  aiSumProtectedBlocked: '未套用：文件受保護，只能編輯可編輯區域',
   aiSumInsertedBlocks: '插入 {count} 個區塊',
   aiSumCreateDocument: '建立新文件',
   aiSumCreatedDocument: '已建立 {name}',

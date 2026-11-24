@@ -158,6 +158,7 @@ export const pt = {
     '{blocks} blocos chegaram antes de a escrita parar. Manter esta parte ou descartar?',
   aiPartialAdopt: 'Manter',
   aiPartialDiscard: 'Descartar',
+  aiSumProtectedBlocked: 'Não aplicado: o documento está protegido fora das áreas editáveis',
   aiSumInsertedBlocks: '{count} bloco(s) inserido(s)',
   aiSumCreateDocument: 'Criar novo documento',
   aiSumCreatedDocument: '{name} criado',

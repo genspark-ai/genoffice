@@ -7,6 +7,7 @@ import { parseDocx, saveDocx } from '@genoffice/docx-engine'
 import { describe, expect, it } from 'vitest'
 import { buildDocx } from '../../../packages/docx-engine/tests/helpers/build-docx'
 import { blocksToPmDoc, pmDocToSavePlan, type PmNode } from '../src/renderer/editor/convert'
+import { executeTool, PROTECTED_DOC_ERROR } from '../src/renderer/ai/tools'
 import { editorExtensions } from '../src/renderer/editor/extensions'
 import {
   PERM_REGIONS_LOAD,
@@ -361,6 +362,48 @@ describe('editing permission regions in the editor', () => {
     const plan = pmDocToSavePlan(editor.getJSON() as PmNode, parsed.blocks)
     expect(plan.changedCount).toBe(0)
     expect(await saveDocx(parsed, plan.saveBlocks)).toEqual(source)
+    editor.destroy()
+  })
+})
+
+describe('AI edits in a protected document', () => {
+  const NUM_IDS = { bullet: '1', ordered: '2' }
+  const call = (name: string, input: Record<string, unknown>) => ({ id: name, name, input })
+
+  it('reports an edit the protection turned away instead of claiming it', async () => {
+    const { editor } = await open()
+    const before = editor.state.doc
+    // after the last block: outside every open region
+    const exec = await executeTool(
+      editor,
+      call('insert_content', {
+        html: '<p>Added by AI</p>',
+        afterBlockIndex: editor.state.doc.childCount - 1,
+      }),
+      NUM_IDS,
+    )
+    expect(exec.isError).toBe(true)
+    expect(exec.mutated).toBe(false)
+    expect(exec.output).toBe(PROTECTED_DOC_ERROR)
+    expect(exec.summary).not.toMatch(/Inserted/)
+    expect(editor.state.doc).toBe(before)
+    expect(editor.storage.permRegions.blocked).toBeGreaterThan(0)
+    editor.destroy()
+  })
+
+  it('lets an edit through where the protection is off', async () => {
+    const { editor } = await open(false)
+    const exec = await executeTool(
+      editor,
+      call('insert_content', {
+        html: '<p>Added by AI</p>',
+        afterBlockIndex: editor.state.doc.childCount - 1,
+      }),
+      NUM_IDS,
+    )
+    expect(exec.isError).toBeUndefined()
+    expect(exec.mutated).toBe(true)
+    expect(editor.state.doc.lastChild?.textContent).toBe('Added by AI')
     editor.destroy()
   })
 })

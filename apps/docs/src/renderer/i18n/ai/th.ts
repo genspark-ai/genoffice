@@ -152,6 +152,7 @@ export const th = {
   aiPartialBody: 'ได้รับ {blocks} บล็อกก่อนที่การเขียนจะหยุดลง ต้องการเก็บส่วนนี้ไว้หรือทิ้ง?',
   aiPartialAdopt: 'เก็บไว้',
   aiPartialDiscard: 'ทิ้ง',
+  aiSumProtectedBlocked: 'ไม่ได้นำไปใช้: เอกสารได้รับการป้องกันนอกพื้นที่ที่แก้ไขได้',
   aiSumInsertedBlocks: 'แทรก {count} บล็อก',
   aiSumCreateDocument: 'สร้างเอกสารใหม่',
   aiSumCreatedDocument: 'สร้าง {name} แล้ว',

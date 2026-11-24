@@ -154,6 +154,7 @@ export const id = {
   aiPartialBody: '{blocks} blok diterima sebelum penulisan terhenti. Simpan bagian ini atau buang?',
   aiPartialAdopt: 'Simpan',
   aiPartialDiscard: 'Buang',
+  aiSumProtectedBlocked: 'Tidak diterapkan: dokumen terkunci di luar bagian yang boleh diedit',
   aiSumInsertedBlocks: '{count} blok disisipkan',
   aiSumCreateDocument: 'Buat dokumen baru',
   aiSumCreatedDocument: '{name} dibuat',

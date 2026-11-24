@@ -157,6 +157,8 @@ export const fr = {
     "{blocks} blocs sont arrivés avant l'arrêt de la rédaction. Conserver cette partie ou l'abandonner ?",
   aiPartialAdopt: 'Conserver',
   aiPartialDiscard: 'Abandonner',
+  aiSumProtectedBlocked:
+    'Non appliqué : le document est protégé en dehors de ses zones modifiables',
   aiSumInsertedBlocks: '{count} bloc(s) inséré(s)',
   aiSumCreateDocument: 'Créer un nouveau document',
   aiSumCreatedDocument: '{name} créé',

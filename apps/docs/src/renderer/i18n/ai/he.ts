@@ -148,6 +148,7 @@ export const he = {
   aiPartialBody: 'התקבלו {blocks} בלוקים לפני שהכתיבה נעצרה. לשמור את החלק הזה או להשליך?',
   aiPartialAdopt: 'לשמור',
   aiPartialDiscard: 'להשליך',
+  aiSumProtectedBlocked: 'לא הוחל: המסמך מוגן מחוץ לאזורים הניתנים לעריכה',
   aiSumInsertedBlocks: 'הוספו {count} בלוקים',
   aiSumCreateDocument: 'יצירת מסמך חדש',
   aiSumCreatedDocument: '{name} נוצר',
