@@ -64,7 +64,7 @@ import { groupSelectedObjects, ungroupSelectedObjects } from '../editor/object-g
 import { nextNoteRefPos, noteRefNear } from '../editor/note-nav'
 import { applyCase, type CaseMode } from '../editor/case-transform'
 import { COVER_PRESETS, insertCoverPage, removeCoverPage } from '../editor/cover-pages'
-import { setParagraphDirection, setSelectionAlign } from '../editor/direction'
+import { alignSelectionOrTable, setParagraphDirection } from '../editor/direction'
 import {
   bringForward,
   bringToFront,
@@ -519,7 +519,7 @@ const align =
   (value: 'left' | 'center' | 'right' | 'justify' | 'distribute'): Handler =>
   (host) => {
     const target = formatTarget(host)
-    if (target) setSelectionAlign(target, value)
+    if (target) alignSelectionOrTable(target, value)
   }
 
 const TEXTBOX_INDENT_STEP_TWIPS = 720

@@ -1,7 +1,7 @@
 import type { Editor } from '@tiptap/core'
 import type { Lang } from '@genoffice/i18n'
 import { Extension } from '@tiptap/core'
-import { Plugin, PluginKey } from '@tiptap/pm/state'
+import { NodeSelection, Plugin, PluginKey } from '@tiptap/pm/state'
 import { Mapping } from '@tiptap/pm/transform'
 import type { ParaFormat, Run } from '@genoffice/docx-engine'
 
@@ -129,6 +129,48 @@ export function setSelectionAlign(
       return changed
     })
     .run()
+}
+
+/**
+ * The Home alignment buttons and ⌘L / ⌘E / ⌘R. Word: with the whole table
+ * selected (its move handle), Left / Center / Right move the table itself, not
+ * the text in its cells. Kept to these entry points: the Paragraph dialog
+ * applies its alignment to the paragraphs through setSelectionAlign, and must
+ * leave the table where it is.
+ */
+export function alignSelectionOrTable(
+  editor: Editor,
+  align: 'left' | 'center' | 'right' | 'justify' | 'distribute',
+): boolean {
+  const { selection } = editor.state
+  if (
+    selection instanceof NodeSelection &&
+    selection.node.type.name === 'docTable' &&
+    (align === 'left' || align === 'center' || align === 'right')
+  ) {
+    return alignSelectedTable(editor, selection, align)
+  }
+  return setSelectionAlign(editor, align)
+}
+
+function alignSelectedTable(
+  editor: Editor,
+  selection: NodeSelection,
+  align: 'left' | 'center' | 'right',
+): boolean {
+  const table = selection.node
+  // a floating table is placed by its w:tblpPr, which the alignment does not move
+  if (table.attrs.tblFloat === 'left' || table.attrs.tblFloat === 'right') return false
+  const tr = editor.state.tr.setNodeMarkup(selection.from, undefined, {
+    ...table.attrs,
+    // 'left' is written as no w:jc; the indent only applies to a left-aligned table
+    tblAlign: align,
+  })
+  // keep the whole table selected, as Word does, so a second press works too
+  tr.setSelection(NodeSelection.create(tr.doc, selection.from))
+  editor.view.dispatch(tr)
+  editor.commands.focus()
+  return true
 }
 
 /** Set the writing direction of every paragraph-like block in the selection. */
