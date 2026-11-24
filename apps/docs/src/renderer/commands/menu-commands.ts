@@ -1611,7 +1611,7 @@ export const MENU_COMMAND_HANDLERS: Record<ActionCommandId, Handler> = {
     if (target)
       void pasteFromClipboard(
         target,
-        PASTE_MODES.find((m) => m === payload),
+        payload === 'picture' ? 'picture' : PASTE_MODES.find((m) => m === payload),
       )
   },
   'styles-pane': (host) => host.toggleStylesPane(),
