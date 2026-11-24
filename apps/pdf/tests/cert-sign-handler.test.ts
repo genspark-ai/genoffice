@@ -144,6 +144,21 @@ describe('certificate signing handlers', () => {
     expect(await s.call(PDF_CHANNELS.listDigitalSignatures, s.signedCopy)).toHaveLength(1)
   })
 
+  it('forgets a released file id: inspect and sign refuse it afterwards', async () => {
+    const s = await setup()
+    expect(await s.call(PDF_CHANNELS.inspectCertificate, s.certId, PASSWORD)).toMatchObject({
+      ok: true,
+    })
+    s.call(PDF_CHANNELS.releaseCertificate, s.certId)
+    expect(await s.call(PDF_CHANNELS.inspectCertificate, s.certId, PASSWORD)).toEqual({
+      ok: false,
+      error: 'cert-invalid',
+    })
+    pickSave.mockResolvedValue({ canceled: false, filePath: s.signedCopy })
+    expect(await s.sign()).toEqual({ ok: false, error: 'cert-invalid' })
+    expect(pickSave).not.toHaveBeenCalled()
+  })
+
   it('reports a cancelled save dialog without touching anything', async () => {
     const s = await setup()
     pickSave.mockResolvedValue({ canceled: true })
@@ -238,7 +253,7 @@ describe('certificate signing handlers', () => {
       expect(pickSave).not.toHaveBeenCalled()
     })
 
-    it('unlocks the store again when a released identity has to be re-exported for signing', async () => {
+    it('forgets a released store id and never exports its key for it again', async () => {
       const s = await setup()
       vi.mocked(listSystemCertificates).mockResolvedValue({ certs: [listed], issues: [] })
       vi.mocked(openSystemSigner).mockClear()
@@ -250,12 +265,17 @@ describe('certificate signing handlers', () => {
       expect(
         await s.call(PDF_CHANNELS.inspectCertificate, certs[0].certId, '', 'store-pw'),
       ).toMatchObject({ ok: true })
+      expect(openSystemSigner).toHaveBeenCalledTimes(1)
       s.call(PDF_CHANNELS.releaseCertificate, certs[0].certId)
+      expect(
+        await s.call(PDF_CHANNELS.inspectCertificate, certs[0].certId, '', 'store-pw'),
+      ).toEqual({ ok: false, error: 'cert-invalid' })
       pickSave.mockResolvedValue({ canceled: false, filePath: s.signedCopy })
       expect(
         await s.sign({ certId: certs[0].certId, password: '', storePassword: 'store-pw' }),
-      ).toEqual({ ok: true, path: s.signedCopy })
-      expect(openSystemSigner).toHaveBeenCalledTimes(2)
+      ).toEqual({ ok: false, error: 'cert-invalid' })
+      expect(openSystemSigner).toHaveBeenCalledTimes(1)
+      expect(pickSave).not.toHaveBeenCalled()
     })
 
     it('forgets ids from an earlier listing when the store is listed again', async () => {

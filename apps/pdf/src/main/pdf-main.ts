@@ -803,6 +803,20 @@ function releaseCertEntry(entry: CertEntry | undefined): void {
   if (entry?.kind === 'system') delete entry.identity
 }
 
+/**
+ * Forget an id altogether, not just the key material it happens to hold: a
+ * renderer that released a certificate must not be able to inspect or sign with
+ * that id again. Dropping the view's map when it empties keeps the short-lived
+ * capability from outliving the dialog that asked for it.
+ */
+function forgetCertEntry(wcId: number, certId: string): void {
+  const entries = certEntriesByWc.get(wcId)
+  if (!entries) return
+  releaseCertEntry(entries.get(certId))
+  entries.delete(certId)
+  if (entries.size === 0) certEntriesByWc.delete(wcId)
+}
+
 /** What signs: PKCS#12 bytes with their password, or an OS store that signs in place */
 type CertMaterial =
   { kind: 'p12'; p12: Uint8Array; password: string } | { kind: 'in-place'; signer: ExternalSigner }
@@ -2181,7 +2195,8 @@ function registerPdfIpc(): void {
       // A fresh listing replaces the previous one; ids from the old listing stop working
       const entries = certEntriesByWc.get(e.sender.id)
       if (entries) {
-        for (const [id, entry] of entries) if (entry.kind === 'system') entries.delete(id)
+        for (const [id, entry] of entries)
+          if (entry.kind === 'system') forgetCertEntry(e.sender.id, id)
       }
       return {
         issues: listing.issues,
@@ -2198,7 +2213,7 @@ function registerPdfIpc(): void {
   )
 
   ipcMain.on(PDF_CHANNELS.releaseCertificate, (e, certId: unknown) => {
-    releaseCertEntry(certEntryOf(e.sender.id, certId))
+    if (typeof certId === 'string') forgetCertEntry(e.sender.id, certId)
   })
 
   ipcMain.handle(
