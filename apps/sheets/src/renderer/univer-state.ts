@@ -92,7 +92,7 @@ export interface LazyWorkbookState {
   /// conditional formatting / filters / validations were not yet available,
   /// so an already-loaded range must not satisfy the next load request.
   readonly decorationsPendingSheets: Set<string>
-  /// File-side worksheet protection, known once a sheet finishes indexing.
+  /// File-side worksheet protection, delivered at open by the current sidecar.
   readonly sheetProtections: Map<string, SheetProtectionInfo>
   /// File-side manual page breaks (0-based index of the row/column after the
   /// break, file coordinates), known once a sheet finishes indexing.
@@ -100,7 +100,7 @@ export interface LazyWorkbookState {
   /// File-side saved print settings (pageSetup / margins / headerFooter),
   /// known once a sheet finishes indexing.
   readonly sheetFilePageSetups: Map<string, WorkbookPagePrintSettings>
-  /// File-side allow-edit ranges, known once a sheet finishes indexing.
+  /// File-side allow-edit ranges, delivered at open by the current sidecar.
   readonly sheetProtectedRanges: Map<
     string,
     {

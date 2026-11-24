@@ -54,6 +54,7 @@ export const IPC_CHANNELS = {
   /** Open explicit paths (chat attachments) as merge-source sessions — no dialog */
   openWorkbooksForMerge: 'workbook:open-for-merge',
   readWorkbookRange: 'workbook:read-range',
+  filterWorkbookRows: 'workbook:filter-rows',
   readWorkbookFormulas: 'workbook:read-formulas',
   /** Sidecar-side Find over the file's chunk index (streamed workbooks) */
   findWorkbookCells: 'workbook:find-cells',
