@@ -123,7 +123,7 @@ import {
   type TablePreset,
 } from '../editor/table-properties'
 import { textToTableScope } from '../editor/table-convert'
-import { distributeSelectedColumns } from '../editor/table-sizing'
+import { distributeSelectedColumns, pinRenderedColumnWidths } from '../editor/table-sizing'
 import { parseRunBorderAttr } from '../editor/run-border'
 import {
   borderAttrsOf,
@@ -2080,7 +2080,11 @@ export const MENU_COMMAND_HANDLERS: Record<ActionCommandId, Handler> = {
   'table-merge-cells': tableCommand(() => mergeCells),
   'table-split-cells': tableDialog('splitCells'),
   'table-split-table': tableCommand(() => splitTableAtSelection()),
-  'table-autofit-contents': tableCommand((_, w) => setTableAutoFit('contents', w)),
+  'table-autofit-contents': tableCommand((editor, w) => {
+    // laid out synchronously by the dispatch, so the fitted columns can be read back
+    if (setTableAutoFit('contents', w)(editor.state, editor.view.dispatch))
+      pinRenderedColumnWidths(editor.view)
+  }),
   'table-autofit-window': tableCommand((_, w) => setTableAutoFit('window', w)),
   'table-autofit-fixed': tableCommand((_, w) => setTableAutoFit('fixed', w)),
   'table-distribute-rows': tableCommand((editor) => {
