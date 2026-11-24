@@ -14,6 +14,7 @@ import {
   type PasteMode,
 } from './paste-options'
 import { isForeignPasteHtml } from './paste-web-html'
+import { clipboardPicture } from './paste-picture'
 
 export type ClipboardPayload = { html: string; text: string; image: Blob | null }
 
@@ -84,8 +85,19 @@ export function pastePayload(
 ): boolean {
   const { html, text, image } = payload
   if (mode === 'picture') {
-    if (!image) return false
-    insertBlobImage(editor, image)
+    if (image) {
+      insertBlobImage(editor, image)
+      return true
+    }
+    // Word's Paste as Picture: copied text or a table is drawn as one picture
+    if (!html.trim() && !text.trim()) return false
+    void clipboardPicture(html, text).then((picture) => {
+      if (!picture) return
+      void insertImageFromDataUrl(editor, picture.dataUrl, 'Picture (pasted)', {
+        width: picture.widthPx,
+        height: picture.heightPx,
+      })
+    })
     return true
   }
   if (html) {
@@ -132,6 +144,6 @@ export function pastePayload(
   return true
 }
 
-export async function pasteFromClipboard(editor: Editor, mode?: PasteMode): Promise<boolean> {
+export async function pasteFromClipboard(editor: Editor, mode?: PasteChoice): Promise<boolean> {
   return pastePayload(editor, await readClipboardPayload(), mode)
 }

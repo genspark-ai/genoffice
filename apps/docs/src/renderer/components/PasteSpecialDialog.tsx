@@ -43,7 +43,8 @@ export function availableFlavors(payload: ClipboardPayload): Flavor[] {
   const flavors: Flavor[] = []
   if (payload.html) flavors.push('html')
   if (payload.text.trim() || payload.html) flavors.push('text')
-  if (payload.image) flavors.push('picture')
+  // a bitmap pastes as itself; copied text or a table is drawn as one (Word's Paste as Picture)
+  if (payload.image || payload.html || payload.text.trim()) flavors.push('picture')
   return flavors
 }
 
