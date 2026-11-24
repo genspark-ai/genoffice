@@ -10164,6 +10164,21 @@ export function buildDocsMenu(): void {
       ...stateOf(id),
       label: tm(labelKey ?? (def.menuKey as MainKey)),
     }
+    // not a native role item: the editor's Markdown paste lane would turn the
+    // plain-text paste into headings and lists (#2856), so the click first arms
+    // the renderer's plain-paste flag and only then runs the role's own paste.
+    // The role stays on the item — the menu tree keeps its shape and, with a
+    // click present, Electron runs the click instead of the role's paste.
+    if (id === 'paste-match-style') {
+      const builtIn = isMac ? 'CmdOrCtrl+Alt+Shift+V' : 'CmdOrCtrl+Shift+V'
+      const accelerator = menuAccelerator(userKeyOverrides(), bindingId(id), builtIn)
+      return {
+        ...item,
+        ...(def.role ? { role: def.role } : {}),
+        ...(accelerator ? { accelerator } : {}),
+        click: () => armAndPastePlain(),
+      }
+    }
     // a role item is carried out natively by whatever text target has the focus
     if (def.role) return { ...item, role: def.role }
     if (id === 'repeat' && state.repeat)
@@ -10474,6 +10489,38 @@ ipcMain.handle('docs:set-key-overrides', (_event, value: unknown) => {
   }
   return keyOverrides
 })
+
+// ── paste and match style (#2856) ──────────────────────────────────────────
+// ⌥⇧⌘V / Ctrl+Shift+V must paste the clipboard's text literally, but the
+// editor's Markdown paste lane turns plain text that looks like Markdown into
+// headings and lists. So the menu item arms a one-shot plain-paste flag in the
+// renderer before running the native paste: the renderer acks over IPC and
+// only then does webContents.pasteAndMatchStyle() fire its paste event, which
+// carries the plain-text flavor only. A renderer that never acks (no editor
+// mounted yet) still pastes after a short wait — the flag expires on its own
+// and pastes into plain text fields ignore it.
+
+const PLAIN_PASTE_ACK_TIMEOUT_MS = 250
+let plainPasteAckTimer: ReturnType<typeof setTimeout> | null = null
+
+ipcMain.on('docs:paste-plain-armed', (event) => {
+  if (event.sender.id !== activeDocsWebContents()?.id) return
+  if (plainPasteAckTimer === null) return
+  clearTimeout(plainPasteAckTimer)
+  plainPasteAckTimer = null
+  event.sender.pasteAndMatchStyle()
+})
+
+function armAndPastePlain(): void {
+  const wc = activeDocsWebContents()
+  if (!wc || wc.isDestroyed()) return
+  if (plainPasteAckTimer !== null) clearTimeout(plainPasteAckTimer)
+  plainPasteAckTimer = setTimeout(() => {
+    plainPasteAckTimer = null
+    if (!wc.isDestroyed()) wc.pasteAndMatchStyle()
+  }, PLAIN_PASTE_ACK_TIMEOUT_MS)
+  wc.send('docs:paste-plain')
+}
 
 ipcMain.on('docs:close-check-result', (event, state: unknown) => {
   const waiter = closeCheckWaiters.get(event.sender.id)
