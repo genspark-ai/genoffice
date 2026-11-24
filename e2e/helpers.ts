@@ -77,6 +77,9 @@ export async function launchShell(options: LaunchOptions): Promise<LaunchedApp> 
       ...hostEnv,
       GENOFFICE_USER_DATA: userDataDir,
       GENOFFICE_NO_SPARE_VIEW: '1',
+      // e2e drives open-path channels with fixture paths that were never
+      // picked or listed: production read/open checks key off this flag
+      GENOFFICE_E2E: '1',
       GENOFFICE_LANG: options.lang ?? 'en',
       ...(options.env ?? {}),
       ...(process.platform === 'linux' ? { ELECTRON_DISABLE_SANDBOX: '1' } : {}),

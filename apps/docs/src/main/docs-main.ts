@@ -75,6 +75,8 @@ import {
   readBodyCapped,
   writeJsonAtomic,
   restrictFileToOwner,
+  isBesideDocument,
+  sharedPathGrants,
   recoveryCopyDiskNewer,
   readLegacyImportSkip,
   writeLegacyImportSkip,
@@ -7296,6 +7298,21 @@ const tornDownWcIds = new Set<number>()
 // per renderer, kept current on open/save/save-as/rename; only the local-media allowlist reads it
 const openDocByWc = new Map<number, string>()
 
+// the encrypted document a password prompt is open for, per renderer: the
+// decrypt retry's path must be the one main itself flagged as needing a
+// password, not any path the renderer names
+const pendingDecryptByWc = new Map<number, string>()
+
+/** Attachment reads verify against what this view's user put in front of the
+ *  app: dialog picks, OS drops and clipboard file pastes land in the shared
+ *  grant ledger (shell records them), and files sitting beside the open
+ *  document are its own neighbors. Everything else is refused — without this
+ *  the extension whitelist was the only bar between a compromised renderer
+ *  and arbitrary file reads. */
+function canReadAttachment(wcId: number, filePath: string): boolean {
+  return sharedPathGrants().has(wcId, filePath) || isBesideDocument(openDocByWc.get(wcId), filePath)
+}
+
 function rememberOpenDoc(wcId: number, filePath: string): void {
   openDocByWc.set(wcId, filePath)
 }
@@ -7661,7 +7678,10 @@ async function loadDocx(
   const encrypted = isEncryptedDocx(original)
   if (encrypted) {
     const pwd = password ?? docPasswordFor(wcId, filePath)
-    if (!pwd) return { needsPassword: true, path: filePath, name: basename(filePath) }
+    if (!pwd) {
+      pendingDecryptByWc.set(wcId, filePath)
+      return { needsPassword: true, path: filePath, name: basename(filePath) }
+    }
     plainBytes = await decryptDocx(original, pwd) // throws DocxDecryptError
     rememberDocPassword(wcId, filePath, pwd)
   } else {
@@ -8499,6 +8519,15 @@ export function registerDocsIpc(): void {
   })
 
   ipcMain.handle('docs:open-path', async (event, filePath: string) => {
+    // renderer-facing open channel: the File > Open Recent menu echoes paths
+    // main itself handed out (recent.json), and the shared ledger carries
+    // anything this view's user picked or dropped. e2e drives fixture paths.
+    if (
+      process.env.GENOFFICE_E2E !== '1' &&
+      !readRecentFiles().includes(filePath) &&
+      !sharedPathGrants().has(event.sender.id, filePath)
+    )
+      return null
     const prepared = await prepareDocumentForOpen(filePath, dialogParent(event))
     if (!prepared) return null
     return loadDocx(prepared, event.sender.id)
@@ -8591,6 +8620,11 @@ export function registerDocsIpc(): void {
     async (event, filePath: string, password: string): Promise<DecryptOpenResult> => {
       if (typeof filePath !== 'string' || typeof password !== 'string' || password.length === 0) {
         return { ok: false, reason: 'error', error: 'invalid arguments' }
+      }
+      // the retry's path must be the one main itself flagged as needing a
+      // password for this view — not any path the renderer names
+      if (pendingDecryptByWc.get(event.sender.id) !== filePath) {
+        return { ok: false, reason: 'error', error: 'docs: path not pending decrypt' }
       }
       try {
         const result = await loadDocx(filePath, event.sender.id, password)
@@ -9292,19 +9326,28 @@ export function registerDocsIpc(): void {
       properties: ['openFile', 'multiSelections'],
     })
     if (result.canceled || result.filePaths.length === 0) return null
+    sharedPathGrants().grant(event.sender.id, result.filePaths)
     return collectAttachments(result.filePaths)
   })
 
-  ipcMain.handle('files:add', (_event, paths: string[]) => collectAttachments(paths))
+  ipcMain.handle('files:add', (_event, paths: string[]) => {
+    // panel drops and clipboard file pastes are recorded by the preload
+    // bridge before this runs, so the ledger already holds every path a
+    // real drop carried; minting a grant for renderer-named paths here
+    // would let a compromised renderer read whatever it names
+    return collectAttachments(paths)
+  })
 
   ipcMain.handle(
     'files:read',
     async (
-      _event,
+      event,
       filePath: string,
       offset: number,
       maxChars: number,
     ): Promise<AttachmentReadResult> => {
+      if (!canReadAttachment(event.sender.id, filePath))
+        return { ok: false, error: 'docs: path not granted to this view' }
       const name = basename(filePath)
       const ext = name.split('.').pop()?.toLowerCase() ?? ''
       if (!ATTACHMENT_EXTS.has(ext)) return { ok: false, error: tm('errUnsupportedExt', { ext }) }
@@ -9329,7 +9372,9 @@ export function registerDocsIpc(): void {
   )
 
   // image attachments read raw bytes → base64; AiPanel puts them into the user message's images for multimodal
-  ipcMain.handle('files:read-image', (_event, filePath: string): AttachmentImageResult => {
+  ipcMain.handle('files:read-image', (event, filePath: string): AttachmentImageResult => {
+    if (!canReadAttachment(event.sender.id, filePath))
+      return { ok: false, error: 'docs: path not granted to this view' }
     const name = basename(filePath)
     const ext = name.split('.').pop()?.toLowerCase() ?? ''
     const mime = ATTACHMENT_IMAGE_MIME[ext]
@@ -9348,8 +9393,9 @@ export function registerDocsIpc(): void {
   // clipboard-pasted images (screenshots and other bitmaps with no local path): saved to a temp file then use the regular attachment path
   ipcMain.handle(
     'files:add-pasted-image',
-    (_event, data: unknown, ext: unknown): AttachmentAddResult => {
+    (event, data: unknown, ext: unknown): AttachmentAddResult => {
       const filePath = savePastedImage(data, ext)
+      if (filePath) sharedPathGrants().grant(event.sender.id, [filePath])
       return filePath
         ? collectAttachments([filePath])
         : { accepted: [], rejected: [tm('errNotImage')] }
@@ -9857,7 +9903,14 @@ export function registerDocsIpc(): void {
     },
   )
 
-  ipcMain.handle('win:new', (_event, openPath: string | null) => {
+  ipcMain.handle('win:new', (event, openPath: string | null) => {
+    // the only legitimate argument is this view's own open document
+    if (
+      openPath !== null &&
+      openPath !== undefined &&
+      openDocByWc.get(event.sender.id) !== openPath
+    )
+      return
     // A pathless new tab/window starts as a blank document, not the start screen
     const path = openPath ?? undefined
     if (shellHooks) shellHooks.openTab(path, path ? undefined : { newBlank: true })

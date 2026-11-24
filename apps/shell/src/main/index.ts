@@ -63,6 +63,10 @@ import {
   readExcludedFolders,
   DEFAULT_SAVE_DIR_KEY,
   DROP_OPEN_CHANNEL,
+  USER_FILE_PATHS_SEEN_CHANNEL,
+  seenFilePaths,
+  isBesideDocument,
+  sharedPathGrants,
   GITHUB_REPO_URL,
   appMenuLabels,
   appMenuTemplate,
@@ -3899,6 +3903,18 @@ function isRevealablePath(path: string): boolean {
   return [...readRecentFiles(), ...readStarredFiles()].some((p) => resolve(p) === key)
 }
 
+/** Wiki links resolve beside the document that holds them, and a wiki note
+ *  commonly opens a sibling — or a note in a subfolder ([[sub/Note]]) — the
+ *  user never opened alone. A directory the user has a document open in,
+ *  including its subdirectories, therefore counts as revealed for the open
+ *  channel: still the user's own active workspace, not the disk. A document
+ *  in a detached window counts the same. */
+function isBesideOpenDocument(path: string): boolean {
+  const resolved = resolve(path)
+  const openPaths = [...(tabManager?.openFilePaths() ?? []), ...detachedFilePaths()]
+  return openPaths.some((open) => isBesideDocument(open, resolved))
+}
+
 function isAnyRoot(path: string): boolean {
   const key = resolve(path)
   return folderRootPaths().some((root) => resolve(root) === key)
@@ -4262,6 +4278,15 @@ let currentUiScale = 1
  * window. Each gets it on `did-finish-load`, because a stylesheet inserted
  * before the document exists is thrown away.
  */
+/** Grants die with the view: a webContents id is never reused, and a closed
+ *  view's ledger entries would otherwise keep paths readable for the whole
+ *  process life (the ledger comment promises this wiring; here it is). */
+function installGrantRelease(): void {
+  app.on('web-contents-created', (_event, contents) => {
+    contents.once('destroyed', () => sharedPathGrants().release(contents.id))
+  })
+}
+
 function installUiScale(): void {
   currentUiScale = readUiScale(APP_SETTINGS_PATH())
   app.on('web-contents-created', (_event, contents) => {
@@ -4637,9 +4662,18 @@ const droppedFilesDeps = () => ({
 })
 
 function registerDroppedFilesIpc(): void {
-  ipcMain.on(DROP_OPEN_CHANNEL, (_event, raw: unknown) =>
-    handleDroppedFiles(raw, droppedFilesDeps()),
-  )
+  ipcMain.on(DROP_OPEN_CHANNEL, (event, raw: unknown) => {
+    // the drop itself is the user action: grant the paths for this view so
+    // editor reads of what was just dropped verify against the ledger
+    sharedPathGrants().grant(event.sender.id, seenFilePaths(raw))
+    handleDroppedFiles(raw, droppedFilesDeps())
+  })
+  // the grant-ledger feed for page-handled drops (AI attachment panels,
+  // image inserts) and clipboard file pastes: the preload bridge records
+  // every OS file drop/paste it resolves, claimed or not
+  ipcMain.on(USER_FILE_PATHS_SEEN_CHANNEL, (event, raw: unknown) => {
+    sharedPathGrants().grant(event.sender.id, seenFilePaths(raw))
+  })
 }
 
 /** the single router: extension decides which module owns the file; false = nothing opened */
@@ -5243,8 +5277,26 @@ function registerHomeIpc(): void {
     if (typeof path === 'string') toggleStarredFile(path)
   })
 
-  ipcMain.handle(HOME_CHANNELS.openPath, (_event, path: unknown) => {
+  ipcMain.handle(HOME_CHANNELS.openPath, (event, path: unknown) => {
     if (typeof path !== 'string' || !path || path.length > 4096) return
+    // Renderer-facing open channel: the path must be one the home UI can
+    // legitimately show (folder tree, recents, starred, save folder), one
+    // beside a document the view has open (wiki links resolve there), or
+    // one this view's user physically handed over (OS drop / clipboard
+    // file — the drop bridge records those in the shared grant ledger).
+    // Without the check the channel is an open-any-file primitive for a
+    // compromised renderer; e2e drives it with fixture paths and skips
+    // the check.
+    if (
+      process.env.GENOFFICE_E2E !== '1' &&
+      !isRevealablePath(path) &&
+      !isBesideOpenDocument(path) &&
+      !sharedPathGrants().has(event.sender.id, path)
+    )
+      return
+    // no grant here: opening is its own authority, and a grant to the calling
+    // view would let any view read anything beside a folder root or a recent
+    // through files:read without ever opening it
     openDocumentPath(path)
     fileIndexer?.refresh()
   })
@@ -5268,7 +5320,13 @@ function registerHomeIpc(): void {
       ],
       properties: ['openFile', 'multiSelections'],
     })
-    if (!result.canceled) for (const path of result.filePaths) openDocumentPath(path)
+    if (!result.canceled) {
+      if (result.filePaths.length > 0) {
+        // user picked them through the dialog: grant for this view's reads
+        sharedPathGrants().grant(event.sender.id, result.filePaths)
+        for (const path of result.filePaths) openDocumentPath(path)
+      }
+    }
   })
 
   ipcMain.handle(HOME_CHANNELS.newDoc, (_event, opts?: NewFileOpts) => {
@@ -7597,6 +7655,7 @@ app.whenReady().then(async () => {
   void startMcpFromSettings(currentMcpSettings()).catch((error) => {
     console.error('[mcp] failed to start on boot:', error)
   })
+  installGrantRelease()
   installUiScale()
   createShellWindow()
   // deferred to ready: labels need currentLang(), which reads app.getLocale()
