@@ -667,6 +667,12 @@ export const cs = {
   appLatexPlaceholder: 'např. x = \\frac{-b \\pm \\sqrt{b^2-4ac}}{2a}',
   appLatexPreviewHint: 'Zadejte LaTeX a zobrazí se náhled',
   appPreviewUnavailable: 'Náhled se nepodařilo vygenerovat',
+  appMathTypeConvertNote:
+    'Rovnice MathType — uložením se převede na nativní rovnici aplikace Word (OMML).',
+  appMathTypeConvertOnlyNote:
+    'Tato rovnice MathType používá struktury mimo podmnožinu LaTeX. Můžete ji převést přímo na nativní rovnici Wordu (OMML) při zachování rozvržení.',
+  appMathTypeConvertAction: 'Převést a aktualizovat',
+  appMathTypeEditHint: 'Rovnice MathType (upravíte nebo převedete poklepáním)',
   appInlineEquationToggle: 'Řádková rovnice (vložena na pozici kurzoru, plyne s textem)',
   appInsertNewEquation: 'π Vložit novou rovnici (LaTeX)…',
   appEqCircleArea: 'Obsah kruhu',

@@ -667,6 +667,11 @@ export const hi = {
   appLatexPlaceholder: 'जैसे x = \\frac{-b \\pm \\sqrt{b^2-4ac}}{2a}',
   appLatexPreviewHint: 'पूर्वावलोकन देखने के लिए LaTeX लिखें',
   appPreviewUnavailable: 'पूर्वावलोकन जनरेट नहीं किया जा सका',
+  appMathTypeConvertNote: 'MathType समीकरण — सहेजने पर यह मूल Word समीकरण (OMML) में बदल जाएगा।',
+  appMathTypeConvertOnlyNote:
+    'इस MathType समीकरण में LaTeX सबसेट से बाहर की संरचनाएँ हैं। आप इसका लेआउट बनाए रखते हुए इसे सीधे मूल Word समीकरण (OMML) में बदल सकते हैं।',
+  appMathTypeConvertAction: 'रूपांतरित करें और अपडेट करें',
+  appMathTypeEditHint: 'MathType समीकरण (संपादित या रूपांतरित करने के लिए डबल-क्लिक करें)',
   appInlineEquationToggle: 'इनलाइन समीकरण (कर्सर पर सम्मिलित, टेक्स्ट के साथ प्रवाहित)',
   appInsertNewEquation: 'π नया समीकरण सम्मिलित करें (LaTeX)…',
   appEqCircleArea: 'वृत्त का क्षेत्रफल',

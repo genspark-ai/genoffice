@@ -4021,9 +4021,13 @@ function splitGlyphRuns(
 }
 
 function runFragmentXml(run: Run, insideLink: boolean): string {
-  // atomic inline formula: the stored <m:oMath> fragment is already valid
-  // paragraph content (patch.ts adds the xmlns:m declaration when missing)
+  // atomic inline formula: a MathType OLE equation decoded to OMML keeps its
+  // original <w:object> bytes verbatim until the user converts/edits it; a
+  // native <m:oMath> fragment is emitted directly (patch.ts adds xmlns:m)
   if (run.math) {
+    if (run.math.oleXml) {
+      return `<w:r>${run.math.oleRawRPr ?? ''}${run.math.oleXml}</w:r>`
+    }
     return run.math.display ? `<m:oMathPara>${run.math.omml}</m:oMathPara>` : run.math.omml
   }
   // atomic phonetic guide: the <w:ruby> fragment re-wrapped in a run

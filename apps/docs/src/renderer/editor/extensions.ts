@@ -790,6 +790,10 @@ export const DocInlineImage = Node.create({
       flipV: { default: false },
       /** pictures of a picture-only group, bottom first, in fractions of the box (display only) */
       layers: { default: null as PictureLayer[] | null },
+      /** lowered inline image/OLE baseline shift (pt, negative = lowered) so line box expands instead of overlapping */
+      baselineShiftPt: { default: null as number | null },
+      /** original w:position (half-points) stripped from docTextStyle for lowered inline images */
+      positionHalfPoints: { default: null as number | null, rendered: false },
       /** the run's raw <w:rPr> slice, re-emitted before the fragment on save (not rendered) */
       rawRPr: { default: null as string | null, rendered: false },
       /** VML horizontal rule (alone or sharing the paragraph): {colorHex?, thicknessPx?, sizeHalfPoints?, widthPx?, align?}; drawn as a rule on its own line */
@@ -829,6 +833,10 @@ export const DocInlineImage = Node.create({
     const h = Number(node.attrs.heightPx)
     const styles: string[] = []
     if (w > 0) styles.push(`width:${w}px`, h > 0 ? `height:${h}px` : 'height:auto')
+    const shiftPt = node.attrs.baselineShiftPt as number | null
+    if (shiftPt && shiftPt < 0 && !node.attrs.wrap) {
+      styles.push(`vertical-align:${shiftPt}pt`)
+    }
     const ib = node.attrs.border as { color: string; widthPt: number } | null
     if (ib) {
       // picture outline (document data, not chrome)
@@ -1130,6 +1138,14 @@ export const DocInlineMath = Node.create({
       /** flat token strip (word count / AI read fallback) */
       text: { default: '' },
       sizeHalfPoints: { default: null as number | null },
+      /** original <w:object> XML when decoded from a MathType OLE embed (null for native OMML) */
+      oleXml: { default: null as string | null, rendered: false },
+      /** original <w:rPr> XML of the MathType OLE run */
+      oleRawRPr: { default: null as string | null, rendered: false },
+      /** original o:OLEObject ProgID (e.g. "Equation.DSMT4") */
+      oleProgId: { default: null as string | null, rendered: false },
+      /** original w:position (half-points) stripped from docTextStyle for MathType OLE display */
+      olePositionHalfPoints: { default: null as number | null, rendered: false },
       /** came from an m:oMathPara (display equation in a table cell) */
       display: { default: false },
     }
@@ -1157,13 +1173,21 @@ export const DocInlineMath = Node.create({
       }
       render()
       dom.addEventListener('dblclick', () => {
-        // only editor-created formulas carry LaTeX and can be re-edited
+        // formulas with recovered LaTeX can be re-edited; MathType OLE formulas
+        // can also be converted to native OMML even when outside the LaTeX subset
         const latex = currentNode.attrs.latex
+        const isMathType = Boolean(currentNode.attrs.oleXml)
+        const omml = String(currentNode.attrs.omml ?? '')
         const pos = (getPos as () => number | undefined)()
-        if (latex && typeof pos === 'number') {
+        if (typeof pos === 'number' && (latex || (isMathType && omml))) {
           window.dispatchEvent(
             new CustomEvent('ai-docs-edit-inline-math', {
-              detail: { pos, latex: String(latex), kind: 'inline' },
+              detail: {
+                pos,
+                latex: latex ? String(latex) : '',
+                kind: 'inline',
+                ...(isMathType ? { isMathType: true, omml } : {}),
+              },
             }),
           )
         }
@@ -1183,13 +1207,16 @@ export const DocInlineMath = Node.create({
 
 function inlineMathDomAttrs(node: { attrs: Record<string, unknown> }): Record<string, string> {
   const size = node.attrs.sizeHalfPoints as number | null
+  const isMathType = Boolean(node.attrs.oleXml)
   return {
     'data-inline-math': '1',
     class: node.attrs.display ? 'doc-inline-math doc-inline-math-display' : 'doc-inline-math',
     ...(size ? { style: `font-size:${size / 2}pt` } : {}),
-    title: node.attrs.latex
-      ? t('editorEquationEditHint', { latex: String(node.attrs.latex) })
-      : t('editorEquation'),
+    title: isMathType
+      ? t('appMathTypeEditHint')
+      : node.attrs.latex
+        ? t('editorEquationEditHint', { latex: String(node.attrs.latex) })
+        : t('editorEquation'),
   }
 }
 
@@ -6065,39 +6092,51 @@ function wireFieldEditing(
   }
 }
 
-/** hover button on display formulas whose LaTeX was recovered: full re-edit */
+/** hover button on display formulas whose LaTeX was recovered (or MathType OLE formulas): full re-edit / convert */
 function wireFormulaLatexEdit(
   dom: HTMLElement,
   getNode: () => PmNode,
   getPos: () => number | undefined,
 ): (() => void) | null {
   const formula = getNode().attrs.formulaDisplay as FormulaDisplay | null
-  if (!formula?.latex) return null
+  const isMathType = Boolean(formula?.oleMathType)
+  if (!formula?.latex && !(isMathType && formula?.omml)) return null
   const host = dom.querySelector('.doc-formula-wrap') ?? dom
+  const openModal = (e: Event) => {
+    e.preventDefault()
+    e.stopPropagation()
+    const pos = getPos()
+    const current = getNode().attrs.formulaDisplay as FormulaDisplay | null
+    const currentMathType = Boolean(current?.oleMathType)
+    if (typeof pos === 'number' && (current?.latex || (currentMathType && current?.omml))) {
+      window.dispatchEvent(
+        new CustomEvent('ai-docs-edit-inline-math', {
+          detail: {
+            pos,
+            latex: current?.latex ?? '',
+            kind: 'block',
+            ...(currentMathType ? { isMathType: true, omml: current?.omml ?? '' } : {}),
+          },
+        }),
+      )
+    }
+  }
   const button = document.createElement('button')
   button.className = 'doc-formula-edit'
-  button.title = t('editorEditFormulaLatex')
+  button.title = isMathType ? t('appMathTypeEditHint') : t('editorEditFormulaLatex')
   button.textContent = t('editorEdit')
   button.setAttribute('contenteditable', 'false')
   button.addEventListener('mousedown', (e) => {
     e.preventDefault()
     e.stopPropagation()
   })
-  button.addEventListener('click', (e) => {
-    e.preventDefault()
-    e.stopPropagation()
-    const pos = getPos()
-    const latex = (getNode().attrs.formulaDisplay as FormulaDisplay | null)?.latex
-    if (typeof pos === 'number' && latex) {
-      window.dispatchEvent(
-        new CustomEvent('ai-docs-edit-inline-math', {
-          detail: { pos, latex, kind: 'block' },
-        }),
-      )
-    }
-  })
+  button.addEventListener('click', openModal)
+  if (isMathType) host.addEventListener('dblclick', openModal)
   host.appendChild(button)
-  return () => button.remove()
+  return () => {
+    if (isMathType) host.removeEventListener('dblclick', openModal)
+    button.remove()
+  }
 }
 
 /** Edit OMML leaf tokens while keeping formula structure outside the editor. */
@@ -6108,7 +6147,9 @@ function wireFormulaEditing(
   view: EditorView,
 ): (ProtectedContentEditor & { cleanup(): void }) | null {
   const formula = getNode().attrs.formulaDisplay as FormulaDisplay | null
-  if (!formula?.tokens.length) return null
+  // MathType OLE blocks have <w:object> in originalXml, not <m:t> tokens;
+  // editing goes through the convert-to-native-equation modal instead.
+  if (!formula?.tokens.length || formula.oleMathType) return null
   const targets = Array.from(dom.querySelectorAll<HTMLElement>('.doc-formula-token'))
   if (targets.length !== formula.tokens.length) return null
 

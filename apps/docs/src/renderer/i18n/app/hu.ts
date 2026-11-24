@@ -661,6 +661,11 @@ export const hu = {
   appLatexPlaceholder: 'pl. x = \\frac{-b \\pm \\sqrt{b^2-4ac}}{2a}',
   appLatexPreviewHint: 'Írj LaTeX-kódot az előnézethez',
   appPreviewUnavailable: 'Nem sikerült előnézetet készíteni',
+  appMathTypeConvertNote: 'MathType-egyenlet — a mentés natív Word-egyenletté (OMML) alakítja át.',
+  appMathTypeConvertOnlyNote:
+    'Ez a MathType-egyenlet a LaTeX-részhalmazon kívüli szerkezeteket tartalmaz. Az elrendezés megőrzésével közvetlenül natív Word-egyenletté (OMML) alakítható.',
+  appMathTypeConvertAction: 'Átalakítás és frissítés',
+  appMathTypeEditHint: 'MathType-egyenlet (dupla kattintással szerkeszthető vagy átalakítható)',
   appInlineEquationToggle:
     'Soron belüli egyenlet (a kurzornál szúródik be, a szöveggel együtt tördelődik)',
   appInsertNewEquation: 'π Új egyenlet beszúrása (LaTeX)…',

@@ -9,6 +9,7 @@ import { findInkRuns, stripInkRuns } from './ink'
 import { isMetafileMime, metafileToDataUrl } from './metafile'
 import { isTiffMime, tiffToDataUrlAsync } from './tiff'
 import { ommlEndsWithBreak, ommlFragmentsOf, ommlToLatex, ommlToMathML } from './math'
+import { isMathTypeProgId, oleBytesToOmml } from './mtef'
 import { readMathPr, type MathLimits, type MathPr } from './math-pr'
 import { splitXmlChildren } from './generate'
 import { readPropChangeXml } from './revision-xml'
@@ -470,6 +471,7 @@ export async function parseDocx(
 
   const scan = scanBody(documentXml)
   const mediaByRid = await tableBlipMedia(scan.elements, documentXml, zip, rels, docPath)
+  const oleMathByRid = await tableOleMath(scan.elements, documentXml, zip, rels, docPath)
   const externalTxbxByRid = await externalTxbxParts(documentXml, zip, rels, docPath)
   // sections end at their w:sectPr: the one governing an offset is the first
   // sectPr at or after it (page/margin-anchored drawing placement)
@@ -558,6 +560,7 @@ export async function parseDocx(
     themeColors: theme.colors,
     themeFonts: theme.fonts,
     mediaByRid,
+    oleMathByRid,
     externalTxbxByRid,
     referenceOnlyComments,
     sectionAt,
@@ -844,6 +847,8 @@ interface BuildContext {
   themeFonts?: ThemeFonts | null
   /** pre-resolved a:blip rId -> data/external URL for pictures inside w:tbl (extractCell is sync, media reads are async) */
   mediaByRid?: Map<string, string>
+  /** pre-decoded MathType OLE o:OLEObject rId -> <m:oMath> OMML (extractRuns is sync, zip reads are async) */
+  oleMathByRid?: Map<string, string>
   /** pre-fetched external textbox parts (wps:txbx r:txbx -> word/txbx*.xml content; extractTextboxes is sync) */
   externalTxbxByRid?: Map<string, string>
   /** comment ids anchored only by a bare w:commentReference (no range markers anywhere in document.xml, LibreOffice style) */
@@ -1539,20 +1544,24 @@ async function buildBlock(
       (plainText(stripTextboxes(detect)).trim() !== '' || detect.includes('<w:drawing'))
     ) {
       await resolveBlipMedia(detect, ctx)
+      await resolveOleMath(detect, ctx)
       const objects = detect.match(/<w:object[\s\S]*?<\/w:object>/g) ?? []
       const displayable = objects.every((o) => {
+        const oleTarget = oleMathTargetOf(o)
+        if (oleTarget && ctx.oleMathByRid?.has(oleTarget.rId)) return true
         const rId = /<v:imagedata[^>]*r:id="([^"]+)"/.exec(o)?.[1]
         return rId !== undefined && ctx.mediaByRid?.has(rId)
       })
       if (displayable && objects.length > 0)
         return buildTextParagraph(base, xml, ctx, true, el.start)
     }
+    const ole = await oleDisplay(detect, ctx, xml)
     return {
       ...base,
       type: 'passthrough',
-      label: 'Embedded object',
-      previewText: plainText(detect),
-      ...(await oleDisplay(detect, ctx)),
+      label: ole.formulaDisplay ? 'Equation' : 'Embedded object',
+      previewText: ole.formulaDisplay ? ole.formulaDisplay.tokens.join('') : plainText(detect),
+      ...ole,
     }
   }
   if (detect.includes('<w:drawing')) {
@@ -5047,6 +5056,7 @@ function extractRuns(
         res,
         ctx.xmlSpacePreserve,
         ctx.vmlShapeTypes,
+        withImages ? ctx.oleMathByRid : undefined,
       )
       if (run) {
         // only a w:rtl run reads the cs slot, and it does so for all its text
@@ -5285,6 +5295,7 @@ function buildRun(
   res: RunResolve,
   partPreserve?: boolean,
   vmlShapeTypes?: ReadonlyMap<string, Record<string, string>>,
+  oleMathByRid?: ReadonlyMap<string, string>,
 ): Run | null {
   let text = ''
   let sym: (Run['sym'] & { glyph: string }) | null | undefined
@@ -5312,6 +5323,7 @@ function buildRun(
     }
   }
   let image: Run['image']
+  let oleMath: { omml: string; oleXml: string; oleProgId: string } | undefined
   if (mediaByRid) {
     // Word wraps modern drawings in mc:AlternateContent (Choice + VML twin)
     const choice = findChild(findChild(rNode, 'mc:AlternateContent') ?? {}, 'mc:Choice')
@@ -5356,6 +5368,17 @@ function buildRun(
       ].filter((n): n is XNode => n !== undefined)
       for (const pict of picts) {
         const pictXml = serializeXNode(pict)
+        // MathType / Equation Editor OLE embed whose MTEF stream decoded to OMML:
+        // render as native vector math while carrying the original <w:object> for
+        // byte-preserving round-trip on save.
+        if (nameOf(pict) === 'w:object' && oleMathByRid && text === '') {
+          const oleTarget = oleMathTargetOf(pictXml)
+          const omml = oleTarget ? oleMathByRid.get(oleTarget.rId) : undefined
+          if (omml) {
+            oleMath = { omml, oleXml: pictXml, oleProgId: oleTarget!.progId }
+            break
+          }
+        }
         const rId = /<v:imagedata[^>]*r:id="([^"]+)"/.exec(pictXml)?.[1]
         const dataUrl = rId ? mediaByRid.get(rId) : undefined
         if (dataUrl) {
@@ -5396,15 +5419,23 @@ function buildRun(
       }
     }
   }
-  if (text === '' && !image) return null
+  if (text === '' && !image && !oleMath) return null
 
   const rPr = findChild(rNode, 'w:rPr')
-  const run: Run = { text }
+  const run: Run = { text: oleMath ? mathTokens(oleMath.omml).join('') : text }
   // only a run that is nothing but one w:sym stays a symbol run
   if (sym && text === sym.glyph) run.sym = { font: sym.font, char: sym.char }
   if (image) run.image = image
   if (link) run.link = link
   if (rPr) run.rawRPr = serializeXNode(rPr)
+  if (oleMath) {
+    run.math = {
+      omml: oleMath.omml,
+      oleXml: oleMath.oleXml,
+      oleProgId: oleMath.oleProgId,
+      ...(run.rawRPr ? { oleRawRPr: run.rawRPr } : {}),
+    }
+  }
   // the chain-resolved view: rtl selection, inherited hidden text and borders
   // come from here, the direct fields below are what saves
   const eff = effectiveRunOf(res, rPr, run.rawRPr)
@@ -9106,6 +9137,74 @@ async function tableBlipMedia(
   return out
 }
 
+function oleMathTargetOf(frag: string): { rId: string; progId: string } | null {
+  const tag = /<o:OLEObject\b[^>]*>/.exec(frag)?.[0]
+  if (!tag) return null
+  const progId = /\bProgID\s*=\s*["']([^"']+)["']/.exec(tag)?.[1]
+  const rId = /\br:id\s*=\s*["']([^"']+)["']/.exec(tag)?.[1]
+  if (!rId || !isMathTypeProgId(progId)) return null
+  return { rId, progId: progId! }
+}
+
+async function decodeOleMathPart(
+  zip: JSZip,
+  rels: Map<string, RelInfo>,
+  rId: string,
+  sourcePath: string,
+): Promise<string | null> {
+  const rel = rels.get(rId)
+  if (!rel || rel.targetMode === 'External') return null
+  const path = resolveRelationshipTargetPath(sourcePath, rel.target)
+  const file = path ? zip.file(path) : null
+  if (!file) return null
+  const bytes = await file.async('uint8array')
+  return oleBytesToOmml(bytes)
+}
+
+/** pre-decode MathType OLE embeds inside tables (mirrors tableBlipMedia) */
+async function tableOleMath(
+  elements: BodyElement[],
+  documentXml: string,
+  zip: JSZip,
+  rels: Map<string, RelInfo>,
+  sourcePath: string,
+): Promise<Map<string, string>> {
+  const out = new Map<string, string>()
+  const rIds = new Set<string>()
+  for (const el of elements) {
+    if (el.name !== 'w:tbl' && el.name !== 'w:sdt') continue
+    let slice = documentXml.slice(el.start, el.end)
+    if (el.name === 'w:sdt') {
+      const from = slice.indexOf('<w:tbl')
+      if (from === -1) continue
+      slice = slice.slice(from, slice.lastIndexOf('</w:tbl>') + '</w:tbl>'.length)
+    }
+    if (!slice.includes('<o:OLEObject')) continue
+    for (const m of slice.matchAll(/<o:OLEObject\b[^>]*>/g)) {
+      const target = oleMathTargetOf(m[0])
+      if (target) rIds.add(target.rId)
+    }
+  }
+  for (const rId of rIds) {
+    const omml = await decodeOleMathPart(zip, rels, rId, sourcePath)
+    if (omml) out.set(rId, omml)
+  }
+  return out
+}
+
+/** resolve a paragraph's MathType OLE rIds into ctx.oleMathByRid so extractRuns (sync) can build math runs */
+async function resolveOleMath(xml: string, ctx: BuildContext): Promise<void> {
+  if (!xml.includes('<o:OLEObject')) return
+  const map = (ctx.oleMathByRid ??= new Map())
+  const sourcePath = ctx.sourcePath ?? 'word/document.xml'
+  for (const m of xml.matchAll(/<o:OLEObject\b[^>]*>/g)) {
+    const target = oleMathTargetOf(m[0])
+    if (!target || map.has(target.rId)) continue
+    const omml = await decodeOleMathPart(ctx.zip, ctx.rels, target.rId, sourcePath)
+    if (omml) map.set(target.rId, omml)
+  }
+}
+
 /** the SVG a blip names beside its bitmap (Office 2016 svgBlip extension) */
 const SVG_BLIP_RE = /<\w+:svgBlip\b[^>]*r:embed\s*=\s*["']([^"']+)["']/g
 
@@ -9557,15 +9656,71 @@ async function extractDiagramDrawing(
 async function oleDisplay(
   xml: string,
   ctx: BuildContext,
+  fullParaXml = xml,
 ): Promise<
-  Pick<Block, 'imageDataUrl' | 'oleProgId' | 'imageWidthPx' | 'imageHeightPx' | 'imageAlign'>
+  Pick<
+    Block,
+    | 'imageDataUrl'
+    | 'oleProgId'
+    | 'imageWidthPx'
+    | 'imageHeightPx'
+    | 'imageAlign'
+    | 'formulaDisplay'
+    | 'styleId'
+  >
 > {
   const out: Pick<
     Block,
-    'imageDataUrl' | 'oleProgId' | 'imageWidthPx' | 'imageHeightPx' | 'imageAlign'
+    | 'imageDataUrl'
+    | 'oleProgId'
+    | 'imageWidthPx'
+    | 'imageHeightPx'
+    | 'imageAlign'
+    | 'formulaDisplay'
+    | 'styleId'
   > = {}
   const progId = /<o:OLEObject[^>]*ProgID="([^"]+)"/.exec(xml)?.[1]
   if (progId) out.oleProgId = progId
+  // MathType / Equation Editor OLE embed: decode MTEF binary to OMML -> MathML
+  // so it renders as crisp vector math while keeping the original <w:object>
+  // untouched on save. Falls through cleanly to the preview picture on null.
+  const oleTarget = oleMathTargetOf(xml)
+  if (oleTarget) {
+    const omml = await decodeOleMathPart(
+      ctx.zip,
+      ctx.rels,
+      oleTarget.rId,
+      ctx.sourcePath ?? 'word/document.xml',
+    )
+    if (omml) {
+      const tokens = mathTokens(omml)
+      const mathml = ommlToMathML(omml, ctx.mathLimits)
+      if (tokens.length > 0 && mathml) {
+        const latex = ommlToLatex(omml)
+        const pPr = /<w:pPr>[\s\S]*?<\/w:pPr>/.exec(fullParaXml)?.[0] ?? ''
+        const styleId = tagAttr(pPr, 'w:pStyle', 'w:val')
+        const eff = resolveParagraphPropsXml(fullParaXml, resolverOf(ctx))
+        const sz = parseInt(tagAttr(xml, 'w:sz', 'w:val') ?? '', 10)
+        const sizeHalfPoints = Number.isFinite(sz) ? Math.max(1, sz) : mathSizeHalfPoints(omml, eff)
+        const align =
+          eff.align === 'center' || eff.align === 'right' || eff.align === 'left'
+            ? eff.align
+            : 'left'
+        if (styleId) out.styleId = styleId
+        out.formulaDisplay = {
+          tokens,
+          mathml,
+          omml,
+          ...(latex ? { latex } : {}),
+          ...(sizeHalfPoints ? { sizeHalfPoints } : {}),
+          align,
+          oleMathType: true,
+          ...directParaGeometry(eff),
+          ...additiveSpacingOf(resolverOf(ctx)),
+        }
+      }
+    }
+  }
   const path = relPartPath(ctx, /<v:imagedata[^>]*r:id="([^"]+)"/.exec(xml)?.[1])
   const file = path ? ctx.zip.file(path) : null
   if (file && path) {
