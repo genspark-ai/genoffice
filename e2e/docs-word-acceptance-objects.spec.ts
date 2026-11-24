@@ -122,7 +122,8 @@ test('Insert > Table makes a 3 x 3 table that Tab walks and extends; Table Layou
               /w:styleId="GridTable4-Accent1"[\s\S]*?w:type="firstRow"[\s\S]*?w:fill="156082"/.test(
                 await part(docPath, 'word/styles.xml'),
               ),
-            borderColour: /<w:top\b[^>]*w:color="45B0E1"/.test(body),
+            // Word's Apply and Clear Formatting: no lines of the table's own are saved
+            ownLines: /<w:tblBorders>|<w:tcBorders>/.test(body),
             shaded: shaded.map((tc) => /<w:t(?: [^>]*)?>([^<]*)/.exec(tc)?.[1]),
           }
         },
@@ -133,7 +134,7 @@ test('Insert > Table makes a 3 x 3 table that Tab walks and extends; Table Layou
         merged: true,
         columns: 2,
         headerFill: true,
-        borderColour: true,
+        ownLines: false,
         shaded: ['b2'],
       })
   } finally {

@@ -11,7 +11,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { buildDocx } from '../../../packages/docx-engine/tests/helpers/build-docx'
 import { blocksToPmDoc, pmTableToModel, type PmNode } from '../src/renderer/editor/convert'
 import { measureWidthIn } from '../src/renderer/components/TablePropertiesDialog'
-import { applyTableStyle } from '../src/renderer/editor/table-style-apply'
+import { applyTableStyle, restyleTable } from '../src/renderer/editor/table-style-apply'
 import { editorExtensions } from '../src/renderer/editor/extensions'
 import {
   repeatHeaderState,
@@ -36,6 +36,21 @@ const TABLE =
   '<w:tc><w:p><w:r><w:t>B</w:t></w:r></w:p></w:tc></w:tr>' +
   '<w:tr><w:tc><w:p><w:r><w:t>C</w:t></w:r></w:p></w:tc>' +
   '<w:tc><w:p><w:r><w:t>D</w:t></w:r></w:p></w:tc></w:tr></w:tbl>'
+
+const TABLE_WITH_BORDERS = TABLE.replace(
+  '<w:tblLayout w:type="autofit"/>',
+  '<w:tblBorders><w:top w:val="single" w:sz="12" w:space="0" w:color="FF0000"/></w:tblBorders><w:tblLayout w:type="autofit"/>',
+)
+
+/** document position of the cell whose text is `text` */
+function cellPos(editor: Editor, text: string): number {
+  let found = -1
+  editor.state.doc.descendants((node, pos) => {
+    if (found < 0 && /^docTable(Cell|Header)$/.test(node.type.name) && node.textContent === text)
+      found = pos
+  })
+  return found
+}
 
 async function openTable(): Promise<Editor> {
   const parsed = await parseDocx(await buildDocx({ bodyXml: TABLE }))
@@ -196,10 +211,23 @@ describe('editable table properties', () => {
     editor.destroy()
   })
 
-  it("a built-in style gives the cells Word's shading and lines, and Clear takes them off", async () => {
+  it("a built-in style clears the table's own formatting and keeps its look in the style", async () => {
     const editor = await openTable()
-    const infos = await builtInTableStyleInfos()
-    const display = infos.get('GridTable4-Accent1')!.tableDisplay
+    // the table's own formatting first: a yellow cell, a red line, red table borders
+    const red = { style: 'single', szEighths: 12, color: 'FF0000' }
+    editor.view.dispatch(
+      editor.state.tr
+        .setNodeMarkup(0, undefined, {
+          ...editor.state.doc.child(0).attrs,
+          borders: { top: red, bottom: red, left: red, right: red },
+        })
+        .setNodeMarkup(cellPos(editor, 'C'), undefined, {
+          ...editor.state.doc.nodeAt(cellPos(editor, 'C'))!.attrs,
+          fill: 'FFFF00',
+          borders: { bottom: red },
+        }),
+    )
+    const display = (await builtInTableStyleInfos()).get('GridTable4-Accent1')!.tableDisplay
     expect(applyTableStyle('GridTable4-Accent1', display)(editor.state, editor.view.dispatch)).toBe(
       true,
     )
@@ -208,31 +236,57 @@ describe('editable table properties', () => {
       tblStyleId: 'GridTable4-Accent1',
       tblLook: { firstRow: true, bandedRows: true },
       tblLookEdited: true,
+      borders: null,
+      tblBordersCleared: true,
     })
+    // Word's "Apply and Clear Formatting": the cells' own formatting is gone ...
     const header = table.content![0].content![0].attrs!
-    expect(header.fill).toBe(display!.firstRow!.fill)
-    expect(header.borders).toMatchObject({ top: { style: 'single' } })
-    // row 2 is the first band under the header
-    expect(table.content![1].content![0].attrs!.fill).toBe(display!.band1Fill)
+    const banded = table.content![1].content![0].attrs!
+    expect(banded).toMatchObject({ fill: null, borders: null })
+    // ... and the look is the style's, drawn but never saved in the cells
+    expect(header).toMatchObject({ fill: null, styleFill: display!.firstRow!.fill })
+    expect(header.styleBorders).toMatchObject({ top: { style: 'single' } })
+    expect(banded.styleFill).toBe(display!.band1Fill)
+    // drawn: jsdom normalizes the inline color to rgb()
+    expect(editor.view.dom.querySelector('td')!.style.backgroundColor).toBe('rgb(21, 96, 130)')
     const model = pmTableToModel(table)
-    expect(model.tblStyleId).toBe('GridTable4-Accent1')
+    expect(model).toMatchObject({ tblStyleId: 'GridTable4-Accent1', borders: {} })
+    expect(model.rows.flat().every((cell) => !cell.fill && !cell.borders)).toBe(true)
+    const xml = generateTableModelXml(model, TABLE_WITH_BORDERS)
+    expect(xml).toContain('<w:tblStyle w:val="GridTable4-Accent1"/>')
+    expect(xml).not.toContain('<w:tblBorders>')
+    expect(xml).not.toMatch(/<w:shd |<w:tcBorders>/)
 
     expect(applyTableStyle(null, undefined)(editor.state, editor.view.dispatch)).toBe(true)
     table = editor.getJSON().content![0] as unknown as PmNode
     expect(table.attrs!.tblStyleId).toBeNull()
-    expect(table.content![0].content![0].attrs).toMatchObject({ fill: null, borders: null })
+    expect(table.content![0].content![0].attrs).toMatchObject({
+      fill: null,
+      borders: null,
+      styleFill: null,
+      styleBorders: null,
+    })
     editor.destroy()
   })
 
-  it('header-row shading follows the Header Row option', async () => {
+  it("Table Style Options move the style's look and keep the cells' own formatting", async () => {
     const editor = await openTable()
     const display = (await builtInTableStyleInfos()).get('GridTable4-Accent1')!.tableDisplay
     applyTableStyle('GridTable4-Accent1', display)(editor.state, editor.view.dispatch)
+    // a cell shaded after the style was applied
+    editor.view.dispatch(
+      editor.state.tr.setNodeMarkup(cellPos(editor, 'C'), undefined, {
+        ...editor.state.doc.nodeAt(cellPos(editor, 'C'))!.attrs,
+        fill: 'FFFF00',
+      }),
+    )
     setTableLookOption('firstRow', false)(editor.state, editor.view.dispatch)
-    applyTableStyle('GridTable4-Accent1', display)(editor.state, editor.view.dispatch)
+    restyleTable(display)(editor.state, editor.view.dispatch)
     const table = editor.getJSON().content![0] as unknown as PmNode
     // without a header row, row 1 is the first band
-    expect(table.content![0].content![0].attrs!.fill).toBe(display!.band1Fill)
+    expect(table.content![0].content![0].attrs!.styleFill).toBe(display!.band1Fill)
+    // the cell's own shading survives the option change
+    expect(table.content![1].content![0].attrs!.fill).toBe('FFFF00')
     editor.destroy()
   })
 

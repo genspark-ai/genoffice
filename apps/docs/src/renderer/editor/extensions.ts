@@ -2911,6 +2911,11 @@ const tableCellAttrs = {
   rowspan: { default: 1 },
   colwidth: { default: null as number[] | null },
   fill: { default: null as string | null },
+  /** the table style's shading and lines for this cell under the table's w:tblLook
+   *  (display only, never saved: Word writes the style, not the cells). The
+   *  cell's own fill / borders draw over them */
+  styleFill: { default: null as string | null },
+  styleBorders: { default: null as Record<string, unknown> | null },
   color: { default: null as string | null },
   bold: { default: false },
   align: { default: null as string | null },
@@ -3026,10 +3031,13 @@ function tableCellHtml(node: PmNode): Record<string, string> {
   if (node.attrs.colspan > 1) attrs.colspan = String(node.attrs.colspan)
   if (node.attrs.rowspan > 1) attrs.rowspan = String(node.attrs.rowspan)
   if (node.attrs.colwidth) attrs['data-colwidth'] = (node.attrs.colwidth as number[]).join(',')
-  const cellBorders = node.attrs.borders as Record<
-    string,
-    { style: string; szEighths?: number; color?: string }
-  > | null
+  type Line = { style: string; szEighths?: number; color?: string }
+  const ownBorders = node.attrs.borders as Record<string, Line> | null
+  const styleBorders = node.attrs.styleBorders as Record<string, Line> | null
+  // a side of the cell's own wins over the style's
+  const cellBorders =
+    ownBorders || styleBorders ? { ...(styleBorders ?? {}), ...(ownBorders ?? {}) } : null
+  const fill = (node.attrs.fill as string | null) ?? (node.attrs.styleFill as string | null)
   // collapsed line width per vertical side (convert.ts, neighbour-aware): a nil own
   // side still has the neighbour's line inside its box, and the text inset must absorb it
   const collapsedBw = node.attrs.collapsedBw as { l?: number; r?: number } | null
@@ -3070,9 +3078,7 @@ function tableCellHtml(node: PmNode): Record<string, string> {
     // (dark-page.ts). background-color, not the shorthand: jsdom's CSSOM drops a
     // `background` shorthand that shares the attribute with a custom property
     node.attrs.color ? `color:#${node.attrs.color};${dkColor(String(node.attrs.color))}` : '',
-    node.attrs.fill
-      ? `background-color:#${node.attrs.fill};${dkBackground(`#${node.attrs.fill}`)}`
-      : '',
+    fill ? `background-color:#${fill};${dkBackground(`#${fill}`)}` : '',
     node.attrs.align ? `text-align:${node.attrs.align}` : '',
     // a fixed-layout table (w:tblLayout fixed) sets the fallback to normal: Word
     // ignores w:noWrap there and wraps inside the grid column
@@ -3098,7 +3104,7 @@ function tableCellHtml(node: PmNode): Record<string, string> {
   ].filter(Boolean)
   if (styles.length > 0) attrs.style = styles.join(';')
   {
-    const ink = fillInk(node.attrs.fill)
+    const ink = fillInk(fill)
     if (ink) attrs['data-ink'] = ink
   }
   if (node.attrs.hideMark) attrs['data-hide-mark'] = '1'
@@ -3453,6 +3459,8 @@ export const DocTable = Node.create({
       tblStyleId: { default: null as string | null },
       tblLook: { default: null as Record<string, boolean> | null },
       tblLookEdited: { default: false },
+      /** a table style was applied: the table's own w:tblBorders go on save (Word) */
+      tblBordersCleared: { default: false },
       /** SDT shell JSON when the table is a content-control member (chrome hit-testing) */
       sdtShell: { default: null as string | null },
       /** RTL table (tblPr w:bidiVisual): columns right to left */

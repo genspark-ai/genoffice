@@ -126,7 +126,7 @@ import {
   toggleRepeatHeaderRows,
   setTableLookOption,
 } from '../editor/table-properties'
-import { applyTableStyle } from '../editor/table-style-apply'
+import { applyTableStyle, restyleTable } from '../editor/table-style-apply'
 import { textToTableScope } from '../editor/table-convert'
 import { distributeSelectedColumns } from '../editor/table-sizing'
 import { parseRunBorderAttr } from '../editor/run-border'
@@ -2132,9 +2132,10 @@ export const MENU_COMMAND_HANDLERS: Record<ActionCommandId, Handler> = {
     if (!option || (value !== 'true' && value !== 'false')) return
     tableCommand((editor) => {
       if (!setTableLookOption(option, value === 'true')(editor.state, editor.view.dispatch)) return
+      // only the style's look follows the options; the cells' own formatting stays
       const styleId = editor.getAttributes('docTable').tblStyleId as string | null
       const display = styleId ? host.tableStyleDisplay(styleId) : undefined
-      if (display) applyTableStyle(styleId, display)(editor.state, editor.view.dispatch)
+      if (display) restyleTable(display)(editor.state, editor.view.dispatch)
     })(host)
   },
   // Border Painter on or off

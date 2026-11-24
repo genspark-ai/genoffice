@@ -2623,7 +2623,7 @@ function RibbonInner({
                       <IconShading size={28} />
                       <span
                         className="rb-color-bar"
-                        style={{ background: lastShading ? `#${lastShading}` : '#FFFFFF' }}
+                        style={{ background: lastShading ? `#${lastShading}` : 'var(--surface)' }}
                       />
                       <IconCaret />
                     </span>

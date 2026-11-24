@@ -1,4 +1,5 @@
-import type { Command } from '@tiptap/pm/state'
+import type { Node as PmNode } from '@tiptap/pm/model'
+import type { Command, Transaction } from '@tiptap/pm/state'
 import { TableMap, isInTable, selectedRect } from '@tiptap/pm/tables'
 import type {
   CellBorder,
@@ -57,10 +58,56 @@ export function styledCell(
 }
 
 /**
- * Gives the selected table a style, as Word's Table Styles gallery does: the
- * style's shading and lines replace the cells' own, and a table without a
- * w:tblLook gets Word's default one. `display` is the style as read from
- * styles.xml; null clears the style, leaving a table without lines.
+ * The style's look on each cell of a table, under its w:tblLook, as the
+ * display-only styleFill / styleBorders. The cells' own fill and borders are
+ * left as they are: they draw over the style, and only they are saved.
+ */
+function restyleCells(
+  tr: Transaction,
+  table: PmNode,
+  tableStart: number,
+  display: TableStyleDisplay | undefined,
+  look: TableLook,
+  clearOwn: boolean,
+): Transaction {
+  const map = TableMap.get(table)
+  const seen = new Set<number>()
+  for (let row = 0; row < map.height; row++) {
+    for (let col = 0; col < map.width; col++) {
+      const cellPos = map.map[row * map.width + col]
+      if (seen.has(cellPos)) continue
+      seen.add(cellPos)
+      const cell = table.nodeAt(cellPos)
+      if (!cell) continue
+      const area = map.findCell(cellPos)
+      const styled = styledCell(display, look, {
+        row: area.top,
+        rows: map.height,
+        col: area.left,
+        span: area.right - area.left,
+        cols: map.width,
+      })
+      tr = tr.setNodeMarkup(tableStart + cellPos, undefined, {
+        ...cell.attrs,
+        ...(clearOwn ? { fill: null, borders: null } : {}),
+        styleFill: styled.fill,
+        styleBorders: styled.borders,
+      })
+    }
+  }
+  return tr
+}
+
+/**
+ * Gives the selected table a style, as a click in Word's Table Styles gallery
+ * does ("Apply and Clear Formatting"): the table's and its cells' own shading
+ * and lines are removed, and the style alone gives the look. Word then saves
+ * only w:tblStyle and w:tblLook (probe 2026-11-24: red w:tblBorders, a yellow
+ * w:shd and a w:tcBorders were all gone after the style was set), so the look
+ * stays in the style: it is drawn from the display-only styleFill /
+ * styleBorders and never written into the cells. A table without a w:tblLook
+ * gets Word's default one. `display` is the style as read from styles.xml;
+ * null clears the style, leaving a table without lines.
  */
 export function applyTableStyle(
   styleId: string | null,
@@ -68,42 +115,34 @@ export function applyTableStyle(
 ): Command {
   return (state, dispatch) => {
     if (!isInTable(state)) return false
-    const rect = selectedRect(state)
-    const { table, tableStart } = rect
-    const map = TableMap.get(table)
+    const { table, tableStart } = selectedRect(state)
     const look = (table.attrs.tblLook as TableLook | null) ?? DEFAULT_TABLE_LOOK
-    let tr = state.tr
-    const seen = new Set<number>()
-    for (let row = 0; row < map.height; row++) {
-      for (let col = 0; col < map.width; col++) {
-        const cellPos = map.map[row * map.width + col]
-        if (seen.has(cellPos)) continue
-        seen.add(cellPos)
-        const cell = table.nodeAt(cellPos)
-        if (!cell) continue
-        const area = map.findCell(cellPos)
-        const styled = styledCell(styleId ? display : undefined, look, {
-          row: area.top,
-          rows: map.height,
-          col: area.left,
-          span: area.right - area.left,
-          cols: map.width,
-        })
-        tr = tr.setNodeMarkup(tableStart + cellPos, undefined, {
-          ...cell.attrs,
-          fill: styled.fill,
-          borders: styled.borders,
-        })
-      }
-    }
+    let tr = restyleCells(state.tr, table, tableStart, styleId ? display : undefined, look, true)
     tr = tr.setNodeMarkup(tableStart - 1, undefined, {
       ...table.attrs,
       tblStyleId: styleId,
+      // the table's own lines go too: the save drops its w:tblBorders
+      borders: null,
+      tblBordersCleared: true,
       // without a w:tblLook Word applies none of the style's conditional formatting
       tblLook: look,
       tblLookEdited: true,
     })
     dispatch?.(tr)
+    return true
+  }
+}
+
+/**
+ * After a Table Style Options change: the style's look follows the new
+ * w:tblLook, and the cells' own formatting stays untouched.
+ */
+export function restyleTable(display: TableStyleDisplay | undefined): Command {
+  return (state, dispatch) => {
+    if (!isInTable(state)) return false
+    const { table, tableStart } = selectedRect(state)
+    const look = (table.attrs.tblLook as TableLook | null) ?? DEFAULT_TABLE_LOOK
+    dispatch?.(restyleCells(state.tr, table, tableStart, display, look, false))
     return true
   }
 }
