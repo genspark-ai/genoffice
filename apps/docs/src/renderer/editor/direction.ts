@@ -102,16 +102,6 @@ export function setSelectionAlign(
   editor: Editor,
   align: 'left' | 'center' | 'right' | 'justify' | 'distribute',
 ): boolean {
-  // Word: with the whole table selected (its move handle), Left / Center /
-  // Right move the table itself, not the text in its cells
-  const { selection } = editor.state
-  if (
-    selection instanceof NodeSelection &&
-    selection.node.type.name === 'docTable' &&
-    (align === 'left' || align === 'center' || align === 'right')
-  ) {
-    return alignSelectedTable(editor, selection, align)
-  }
   return editor
     .chain()
     .focus()
@@ -136,6 +126,28 @@ export function setSelectionAlign(
       return changed
     })
     .run()
+}
+
+/**
+ * The Home alignment buttons and ⌘L / ⌘E / ⌘R. Word: with the whole table
+ * selected (its move handle), Left / Center / Right move the table itself, not
+ * the text in its cells. Kept to these entry points: the Paragraph dialog
+ * applies its alignment to the paragraphs through setSelectionAlign, and must
+ * leave the table where it is.
+ */
+export function alignSelectionOrTable(
+  editor: Editor,
+  align: 'left' | 'center' | 'right' | 'justify' | 'distribute',
+): boolean {
+  const { selection } = editor.state
+  if (
+    selection instanceof NodeSelection &&
+    selection.node.type.name === 'docTable' &&
+    (align === 'left' || align === 'center' || align === 'right')
+  ) {
+    return alignSelectedTable(editor, selection, align)
+  }
+  return setSelectionAlign(editor, align)
 }
 
 function alignSelectedTable(

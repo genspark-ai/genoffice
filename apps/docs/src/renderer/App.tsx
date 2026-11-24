@@ -679,7 +679,7 @@ import { installSelectionBar } from './editor/selection-bar'
 import { collectHeadings } from './editor/headings'
 import { applyTocPageDisplays, backfillTocPageDom } from './editor/toc-refresh'
 import { renumberSeqFields, unreliableSeqLabelsOf } from './editor/field-results'
-import { setSelectionAlign } from './editor/direction'
+import { alignSelectionOrTable } from './editor/direction'
 import {
   firstListNumId,
   markupShown,
@@ -7535,7 +7535,7 @@ export function App() {
         e.preventDefault()
         // route into a focused textbox sub-editor, like the ribbon does
         const target = getActiveSubEditor() ?? editor
-        setSelectionAlign(target, ALIGN_KEYS[e.key])
+        alignSelectionOrTable(target, ALIGN_KEYS[e.key])
       }
       // Word line-spacing shortcuts ⌘1 / ⌘2 / ⌘5; e.code because shifted-digit
       // layouts (AZERTY) make e.key unreliable
