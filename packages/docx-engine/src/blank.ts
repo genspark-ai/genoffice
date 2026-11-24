@@ -10,8 +10,9 @@ import {
   newDocumentCorePropertiesXml,
 } from './doc-properties'
 import { PPR_CHILD_ORDER } from './generate'
+import { THEME_CONTENT_TYPE, THEME_PART_PATH, THEME_REL_TYPE, buildThemeXml } from './theme'
 import { escapeXmlAttr } from './xml-utils'
-import type { NumberingLevel } from './types'
+import type { NumberingLevel, ThemeColors, ThemeFonts } from './types'
 
 /**
  * Blank document template for "new document" and AI from-scratch generation.
@@ -145,6 +146,29 @@ const TABLE_NORMAL_XML =
   '<w:uiPriority w:val="99"/><w:semiHidden/><w:unhideWhenUsed/><w:tblPr><w:tblInd w:w="0" w:type="dxa"/>' +
   '<w:tblCellMar><w:top w:w="0" w:type="dxa"/><w:left w:w="108" w:type="dxa"/>' +
   '<w:bottom w:w="0" w:type="dxa"/><w:right w:w="108" w:type="dxa"/></w:tblCellMar></w:tblPr></w:style>'
+
+// Word for Mac 16 lays a document without a theme part out in the current
+// Office theme: the colors it caches for a built-in table style's accents are
+// these (probe 2026-11-23, Grid Table 4 Accent 1 -> 156082, Accent 2 -> E97132).
+// New documents carry the theme, so Docs reads the same colors instead of
+// falling back to its older palette.
+export const WORD_THEME_COLORS: Readonly<ThemeColors> = {
+  name: 'Office',
+  dk1: '000000',
+  lt1: 'FFFFFF',
+  dk2: '0E2841',
+  lt2: 'E8E8E8',
+  accent1: '156082',
+  accent2: 'E97132',
+  accent3: '196B24',
+  accent4: '0F9ED5',
+  accent5: 'A02B93',
+  accent6: '4EA72E',
+  hlink: '467886',
+  folHlink: '96607D',
+}
+
+export const WORD_THEME_FONTS: Readonly<ThemeFonts> = { major: 'Aptos Display', minor: 'Aptos' }
 
 const stylesXml = (eastAsiaFont?: string, wordDefaults = false): string =>
   XML_DECL +
@@ -686,7 +710,7 @@ export interface BlankDocxOptions {
   /** docProps/app.xml Template; defaults to Word's "Normal.dotm". */
   template?: string
   /** start like a document Word creates: the current compatibility mode
-   *  (settings.xml) and the Normal Table style. Converters that write their own
+   *  (settings.xml), the Normal Table style and the current Office theme. Converters that write their own
    *  settings part, or keep an older mode, leave it off; defaults to false. */
   wordDefaults?: boolean
   /** drop the Application / AppVersion generator fields from docProps/app.xml
@@ -707,7 +731,8 @@ export async function buildBlankDocx(options?: BlankDocxOptions): Promise<Uint8A
       '<Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/>' +
       '<Override PartName="/word/numbering.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.numbering+xml"/>' +
       (options?.wordDefaults
-        ? '<Override PartName="/word/settings.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.settings+xml"/>'
+        ? '<Override PartName="/word/settings.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.settings+xml"/>' +
+          `<Override PartName="/${THEME_PART_PATH}" ContentType="${THEME_CONTENT_TYPE}"/>`
         : '') +
       `<Override PartName="/${CORE_PROPERTIES_PATH}" ContentType="${CORE_PROPERTIES_CONTENT_TYPE}"/>` +
       `<Override PartName="/${APP_PROPERTIES_PATH}" ContentType="${APP_PROPERTIES_CONTENT_TYPE}"/>` +
@@ -729,7 +754,8 @@ export async function buildBlankDocx(options?: BlankDocxOptions): Promise<Uint8A
       '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>' +
       '<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/numbering" Target="numbering.xml"/>' +
       (options?.wordDefaults
-        ? '<Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/settings" Target="settings.xml"/>'
+        ? '<Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/settings" Target="settings.xml"/>' +
+          `<Relationship Id="rId4" Type="${THEME_REL_TYPE}" Target="theme/theme1.xml"/>`
         : '') +
       '</Relationships>',
   )
@@ -737,7 +763,13 @@ export async function buildBlankDocx(options?: BlankDocxOptions): Promise<Uint8A
   const wordDefaults = options?.wordDefaults === true
   zip.file('word/styles.xml', stylesXml(options?.eastAsiaFont, wordDefaults))
   zip.file('word/numbering.xml', NUMBERING_XML)
-  if (wordDefaults) zip.file('word/settings.xml', SETTINGS_XML)
+  if (wordDefaults) {
+    zip.file('word/settings.xml', SETTINGS_XML)
+    zip.file(
+      THEME_PART_PATH,
+      buildThemeXml({ ...WORD_THEME_FONTS, eastAsia: options?.eastAsiaFont }, WORD_THEME_COLORS),
+    )
+  }
 
   // Word always writes both parts; a document created here carries minimal
   // Word-like ones so later property sets have a home (and DMS tools see the

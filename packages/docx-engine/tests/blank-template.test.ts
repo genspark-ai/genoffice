@@ -331,9 +331,28 @@ describe('a new document starts in the current Word layout mode', () => {
     expect(parsed.compatibilityMode).toBe(15)
   })
 
+  it('carries the current Office theme Word lays a theme-less document out in', async () => {
+    const bytes = await buildBlankDocx({ wordDefaults: true, eastAsiaFont: 'Yu Mincho' })
+    const zip = await JSZip.loadAsync(bytes)
+    const theme = await zip.file('word/theme/theme1.xml')!.async('string')
+    expect(theme).toContain('<a:accent1><a:srgbClr val="156082"/></a:accent1>')
+    expect(theme).toContain('<a:hlink><a:srgbClr val="467886"/></a:hlink>')
+    expect(theme).toContain('<a:minorFont><a:latin typeface="Aptos"/><a:ea typeface="Yu Mincho"/>')
+    expect(await zip.file('[Content_Types].xml')!.async('string')).toContain(
+      'PartName="/word/theme/theme1.xml"',
+    )
+    expect(await zip.file('word/_rels/document.xml.rels')!.async('string')).toContain(
+      'Target="theme/theme1.xml"',
+    )
+    const parsed = await parseDocx(bytes)
+    expect(parsed.themeColors).toMatchObject({ accent1: '156082', accent2: 'E97132' })
+    expect(parsed.themeFonts).toMatchObject({ major: 'Aptos Display', minor: 'Aptos' })
+  })
+
   it("leaves the converters' blank without a settings part or table style", async () => {
     const zip = await JSZip.loadAsync(await buildBlankDocx())
     expect(zip.file('word/settings.xml')).toBeNull()
+    expect(zip.file('word/theme/theme1.xml')).toBeNull()
     expect(await zip.file('[Content_Types].xml')!.async('string')).not.toContain('settings')
     expect(await zip.file('word/styles.xml')!.async('string')).not.toContain('TableNormal')
   })
