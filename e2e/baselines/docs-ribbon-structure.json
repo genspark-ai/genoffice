@@ -1120,6 +1120,19 @@
   ],
   "Zotero": [
     {
+      "group": "Cite",
+      "controls": [
+        {
+          "name": "Quick Cite",
+          "tag": "button"
+        },
+        {
+          "name": "Library",
+          "tag": "button"
+        }
+      ]
+    },
+    {
       "group": "Zotero",
       "controls": [
         {
@@ -1141,6 +1154,11 @@
         {
           "name": "Unlink Citations",
           "tag": "button"
+        },
+        {
+          "name": "Refresh on Open",
+          "tag": "button",
+          "pressed": true
         }
       ]
     }
