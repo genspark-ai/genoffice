@@ -147,7 +147,9 @@ export function buildReviewEntries(
   return ranges.map((rev, index) => ({
     rev,
     index,
-    excerpt: rev.story ? rev.story.text.slice(0, EXCERPT_CHARS) : revisionExcerpt(doc, rev),
+    excerpt: rev.story
+      ? rev.story.text.slice(0, EXCERPT_CHARS)
+      : (rev.preview ?? revisionExcerpt(doc, rev)),
     inkIndex: authorInkIndex(authors, rev.author),
   }))
 }
@@ -180,6 +182,7 @@ const INSERT_KINDS = new Set<RevisionRange['kind']>([
   'rowIns',
   'cellIns',
   'blockIns',
+  'protectedIns',
 ])
 
 /** Word's Reviewing Pane summary lines; a move's two halves count once */
