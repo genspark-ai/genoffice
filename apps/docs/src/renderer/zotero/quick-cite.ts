@@ -8,6 +8,7 @@
  * cluster and number the citations in the document's style.
  */
 import type { Editor } from '@tiptap/core'
+import type { EditorState } from '@tiptap/pm/state'
 import type { ZoteroLocalCiteData, ZoteroLocalErrorCode, ZoteroLocalResult } from '../../shared/ipc'
 
 export const CSL_CITATION_SCHEMA =
@@ -18,6 +19,12 @@ export function documentStyleId(documentData: string): string {
   const id = /<style\b[^>]*\bid="([^"]+)"/.exec(documentData)?.[1] ?? ''
   const short = /\/styles\/([a-z0-9][a-z0-9-]*)$/.exec(id)?.[1]
   return short ?? 'apa'
+}
+
+/** the document's note type (0 in-text, 1 footnotes, 2 endnotes), from its Zotero preferences */
+export function documentNoteType(documentData: string): number {
+  const value = /<pref\b[^>]*\bname="noteType"[^>]*\bvalue="(\d+)"/.exec(documentData)?.[1]
+  return value ? Number(value) : 0
 }
 
 /** the URI Zotero records for an item of a synced user library; none for an unsynced one */
@@ -99,12 +106,62 @@ export function citationInstruction(
   return `ADDIN ZOTERO_ITEM CSL_CITATION ${JSON.stringify(payload)}`
 }
 
+const ZOTERO_FIELD_RE = /ZOTERO_(ITEM|BIBL)/
+
+/** the Zotero field instruction a text node carries, if any */
+function zoteroInstrOf(
+  node:
+    | { marks: readonly { type: { name: string }; attrs: Record<string, unknown> }[] }
+    | null
+    | undefined,
+): string | null {
+  const mark = node?.marks.find(
+    (m) => m.type.name === 'instrField' && ZOTERO_FIELD_RE.test(String(m.attrs.instr ?? '')),
+  )
+  return mark ? String(mark.attrs.instr) : null
+}
+
+/**
+ * Where a new citation goes. A caret or a selection end inside an existing
+ * citation would split it, and Zotero would then print that citation twice:
+ * the new one goes right after it instead, as a separate field. Inside a
+ * bibliography there is no place for one (null).
+ */
+export function zoteroInsertTarget(state: EditorState): { from: number; to: number } | null {
+  const { from, to } = state.selection
+  for (const pos of [to, from]) {
+    const $pos = state.doc.resolve(pos)
+    const before = zoteroInstrOf($pos.nodeBefore)
+    const after = zoteroInstrOf($pos.nodeAfter)
+    // a bibliography holds whole paragraphs of its own: no citation goes in or beside it
+    if (before?.includes('ZOTERO_BIBL') || after?.includes('ZOTERO_BIBL')) return null
+    // a field boundary (one side outside it) is a fine place
+    if (!before || before !== after) continue
+    // the end of this field's run in the paragraph, from the node the position is in
+    const parent = $pos.parent
+    let childStart = $pos.start()
+    let end = childStart
+    for (let i = 0; i < parent.childCount; i++) {
+      const childEnd = childStart + parent.child(i).nodeSize
+      if (i >= $pos.index()) {
+        if (zoteroInstrOf(parent.child(i)) !== before) break
+        end = childEnd
+      }
+      childStart = childEnd
+    }
+    return { from: end, to: end }
+  }
+  return { from, to }
+}
+
 /** puts a citation field of these items at the selection; false when the document cannot hold one */
 export function insertZoteroCitation(editor: Editor, items: ZoteroLocalCiteData[]): boolean {
   if (items.length === 0 || !editor.isEditable) return false
   const { state, view } = editor
   const type = state.schema.marks.instrField
   if (!type) return false
+  const target = zoteroInsertTarget(state)
+  if (!target) return false
   const text =
     clusterText(items.map((item) => plainCitation(item.citation))) || CITATION_PLACEHOLDER
   // no field id yet: the integration assigns one when Zotero next reads the fields
@@ -114,7 +171,7 @@ export function insertZoteroCitation(editor: Editor, items: ZoteroLocalCiteData[
     fieldId: null,
     fieldPart: 'single',
   })
-  view.dispatch(state.tr.replaceSelectionWith(state.schema.text(text, [mark]), false))
+  view.dispatch(state.tr.replaceWith(target.from, target.to, state.schema.text(text, [mark])))
   view.focus()
   return true
 }
@@ -155,11 +212,17 @@ export interface CiteFromZoteroDeps {
   noteFields: boolean
   citeData(keys: string[], style: string): Promise<ZoteroLocalResult<ZoteroLocalCiteData[]>>
   refresh(): Promise<unknown>
+  /** still the document the request started in: one opened meanwhile gets nothing */
+  isCurrent?(): boolean
 }
 
 export type CiteFromZoteroResult =
   | { ok: true; refreshed: boolean }
-  | { ok: false; error: ReturnType<typeof zoteroLocalErrorKey> | 'zoteroCannotInsert' }
+  | {
+      ok: false
+      error:
+        ReturnType<typeof zoteroLocalErrorKey> | 'zoteroCannotInsert' | 'zoteroNoteStyleUnsupported'
+    }
 
 /**
  * Cites these items at the selection. A document Zotero already has preferences
@@ -175,8 +238,12 @@ export async function citeFromZotero(
 ): Promise<CiteFromZoteroResult> {
   if (keys.length === 0) return { ok: true, refreshed: false }
   if (!editor.isEditable) return { ok: false, error: 'zoteroCannotInsert' }
+  // a note style puts citations in footnotes, which Docs cannot hand to Zotero yet
+  if (documentNoteType(deps.documentData) !== 0)
+    return { ok: false, error: 'zoteroNoteStyleUnsupported' }
   const data = await deps.citeData(keys, documentStyleId(deps.documentData))
   if (!data.ok) return { ok: false, error: zoteroLocalErrorKey(data.errorCode) }
+  if (deps.isCurrent && !deps.isCurrent()) return { ok: false, error: 'zoteroCannotInsert' }
   if (!insertZoteroCitation(editor, data.value)) return { ok: false, error: 'zoteroCannotInsert' }
   if (!deps.documentData || deps.noteFields) return { ok: true, refreshed: false }
   try {

@@ -106,6 +106,25 @@ describe('Quick Cite bar', () => {
     expect(container.textContent).toContain(t('zoteroLocalApiOff'))
   })
 
+  it('ignores Enter while the list still answers the previous search', async () => {
+    const { input, onCite, zoteroSearch } = mount()
+    type(input, 'smith')
+    await settle()
+    zoteroSearch.mockReturnValue(new Promise(() => {}))
+    type(input, 'lee 2021')
+    await act(async () => key(input, 'Enter'))
+    expect(onCite).not.toHaveBeenCalled()
+  })
+
+  it('gives the search box back after a citation that could not go in', async () => {
+    const { input } = mount(vi.fn().mockResolvedValue('zoteroConnectionError'))
+    type(input, 'smith')
+    await settle()
+    await act(async () => key(input, 'Enter'))
+    expect(input.disabled).toBe(false)
+    expect(document.activeElement).toBe(input)
+  })
+
   it('closes on Escape without citing', () => {
     const { input, onCite, onClose } = mount()
     key(input, 'Escape')

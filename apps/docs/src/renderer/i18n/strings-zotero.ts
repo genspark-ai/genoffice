@@ -34,6 +34,8 @@ export const zoteroStrings = defineStrings({
     zoteroLocalApiOff:
       '请在 Zotero 设置 ▸ 高级 中开启“允许此计算机上的其他应用程序与 Zotero 通信”，然后重试。',
     zoteroCannotInsert: '此处无法插入引文。',
+    zoteroNoteStyleUnsupported:
+      '此文档使用脚注或尾注引文样式，GenOffice 目前还不能在注释中插入 Zotero 引文。',
   },
   en: {
     zoteroCitation: 'Add/Edit Citation',
@@ -64,10 +66,12 @@ export const zoteroStrings = defineStrings({
     zoteroMyLibrary: 'My Library',
     zoteroQuickCiteHint: 'Enter cites · {mod}-click picks several · Esc closes',
     zoteroCiteTip: 'Click to cite at the cursor',
-    zoteroCitePicked: 'Cite {n} items',
+    zoteroCitePicked: 'Cite Selected ({n})',
     zoteroLocalApiOff:
       'Turn on "Allow other applications on this computer to communicate with Zotero" in Zotero Settings ▸ Advanced, then try again.',
     zoteroCannotInsert: 'A citation cannot be inserted here.',
+    zoteroNoteStyleUnsupported:
+      'This document uses a footnote or endnote citation style. GenOffice cannot put Zotero citations in notes yet.',
   },
   ja: {
     zoteroCitation: '引用を追加/編集',
@@ -103,6 +107,8 @@ export const zoteroStrings = defineStrings({
     zoteroLocalApiOff:
       'Zotero の設定 ▸ 詳細 で「このコンピュータ上の他のアプリケーションが Zotero と通信することを許可」をオンにして、もう一度お試しください。',
     zoteroCannotInsert: 'ここには引用を挿入できません。',
+    zoteroNoteStyleUnsupported:
+      'このドキュメントは脚注または文末脚注の引用スタイルを使っています。GenOffice はまだ注に Zotero の引用を挿入できません。',
   },
   ko: {
     zoteroCitation: '인용 추가/편집',
@@ -137,6 +143,8 @@ export const zoteroStrings = defineStrings({
     zoteroLocalApiOff:
       'Zotero 설정 ▸ 고급에서 "이 컴퓨터의 다른 응용 프로그램이 Zotero와 통신하도록 허용"을 켠 다음 다시 시도하세요.',
     zoteroCannotInsert: '여기에는 인용을 삽입할 수 없습니다.',
+    zoteroNoteStyleUnsupported:
+      '이 문서는 각주 또는 미주 인용 스타일을 사용합니다. GenOffice는 아직 주석에 Zotero 인용을 넣을 수 없습니다.',
   },
   fr: {
     zoteroCitation: 'Ajouter/Modifier une citation',
@@ -176,6 +184,8 @@ export const zoteroStrings = defineStrings({
     zoteroLocalApiOff:
       'Activez « Autoriser les autres applications de cet ordinateur à communiquer avec Zotero » dans Zotero, Paramètres ▸ Avancés, puis réessayez.',
     zoteroCannotInsert: "Impossible d'insérer une citation ici.",
+    zoteroNoteStyleUnsupported:
+      'Ce document utilise un style de citation en notes de bas de page ou de fin. GenOffice ne peut pas encore placer de citations Zotero dans les notes.',
   },
   de: {
     zoteroCitation: 'Zitat hinzufügen/bearbeiten',
@@ -213,6 +223,8 @@ export const zoteroStrings = defineStrings({
     zoteroLocalApiOff:
       'Aktivieren Sie in Zotero unter Einstellungen ▸ Erweitert „Anderen Anwendungen auf diesem Computer erlauben, mit Zotero zu kommunizieren“ und versuchen Sie es erneut.',
     zoteroCannotInsert: 'Hier kann keine Zitation eingefügt werden.',
+    zoteroNoteStyleUnsupported:
+      'Dieses Dokument verwendet einen Zitierstil mit Fuß- oder Endnoten. GenOffice kann Zotero-Zitationen noch nicht in Notizen einfügen.',
   },
   es: {
     zoteroCitation: 'Añadir/Editar cita',
@@ -248,6 +260,8 @@ export const zoteroStrings = defineStrings({
     zoteroLocalApiOff:
       'Activa «Permitir que otras aplicaciones de este equipo se comuniquen con Zotero» en Zotero, Configuración ▸ Avanzado, y vuelve a intentarlo.',
     zoteroCannotInsert: 'No se puede insertar una cita aquí.',
+    zoteroNoteStyleUnsupported:
+      'Este documento usa un estilo de cita con notas al pie o al final. GenOffice aún no puede poner citas de Zotero en notas.',
   },
   th: {
     zoteroCitation: 'เพิ่ม/แก้ไขการอ้างอิง',
@@ -282,6 +296,8 @@ export const zoteroStrings = defineStrings({
     zoteroLocalApiOff:
       'เปิด "อนุญาตให้แอปพลิเคชันอื่นในคอมพิวเตอร์นี้สื่อสารกับ Zotero" ใน Zotero การตั้งค่า ▸ ขั้นสูง แล้วลองอีกครั้ง',
     zoteroCannotInsert: 'ไม่สามารถแทรกการอ้างอิงที่นี่ได้',
+    zoteroNoteStyleUnsupported:
+      'เอกสารนี้ใช้รูปแบบการอ้างอิงแบบเชิงอรรถหรือไว้ท้ายเรื่อง GenOffice ยังไม่สามารถใส่การอ้างอิง Zotero ในหมายเหตุได้',
   },
   id: {
     zoteroCitation: 'Tambah/Edit Kutipan',
@@ -318,6 +334,8 @@ export const zoteroStrings = defineStrings({
     zoteroLocalApiOff:
       'Aktifkan "Izinkan aplikasi lain di komputer ini berkomunikasi dengan Zotero" di Zotero, Pengaturan ▸ Lanjutan, lalu coba lagi.',
     zoteroCannotInsert: 'Sitasi tidak dapat disisipkan di sini.',
+    zoteroNoteStyleUnsupported:
+      'Dokumen ini memakai gaya sitasi catatan kaki atau catatan akhir. GenOffice belum dapat menaruh sitasi Zotero di catatan.',
   },
   ru: {
     zoteroCitation: 'Добавить/изменить цитату',
@@ -354,6 +372,8 @@ export const zoteroStrings = defineStrings({
     zoteroLocalApiOff:
       'Включите «Разрешить другим приложениям на этом компьютере взаимодействовать с Zotero» в Zotero, Настройки ▸ Дополнительно, и повторите попытку.',
     zoteroCannotInsert: 'Здесь нельзя вставить цитату.',
+    zoteroNoteStyleUnsupported:
+      'В этом документе используется стиль цитирования со сносками или концевыми сносками. GenOffice пока не умеет вставлять цитаты Zotero в сноски.',
   },
   ar: {
     zoteroCitation: 'إضافة/تحرير اقتباس',
@@ -387,6 +407,8 @@ export const zoteroStrings = defineStrings({
     zoteroLocalApiOff:
       'شغّل «السماح للتطبيقات الأخرى على هذا الكمبيوتر بالتواصل مع Zotero» في Zotero، الإعدادات ▸ متقدم، ثم حاول مرة أخرى.',
     zoteroCannotInsert: 'لا يمكن إدراج اقتباس هنا.',
+    zoteroNoteStyleUnsupported:
+      'يستخدم هذا المستند نمط اقتباس بالحواشي السفلية أو الختامية. لا يستطيع GenOffice بعد وضع اقتباسات Zotero في الحواشي.',
   },
   pt: {
     zoteroCitation: 'Adicionar/Editar citação',
@@ -423,6 +445,8 @@ export const zoteroStrings = defineStrings({
     zoteroLocalApiOff:
       'Ative "Permitir que outros aplicativos neste computador se comuniquem com o Zotero" no Zotero, Configurações ▸ Avançado, e tente novamente.',
     zoteroCannotInsert: 'Não é possível inserir uma citação aqui.',
+    zoteroNoteStyleUnsupported:
+      'Este documento usa um estilo de citação em notas de rodapé ou de fim. O GenOffice ainda não pode colocar citações do Zotero em notas.',
   },
   it: {
     zoteroCitation: 'Aggiungi/Modifica citazione',
@@ -459,6 +483,8 @@ export const zoteroStrings = defineStrings({
     zoteroLocalApiOff:
       'Attiva "Consenti ad altre applicazioni su questo computer di comunicare con Zotero" in Zotero, Impostazioni ▸ Avanzate, e riprova.',
     zoteroCannotInsert: 'Qui non è possibile inserire una citazione.',
+    zoteroNoteStyleUnsupported:
+      'Questo documento usa uno stile di citazione con note a piè di pagina o di chiusura. GenOffice non può ancora inserire citazioni Zotero nelle note.',
   },
   pl: {
     zoteroCitation: 'Dodaj/edytuj cytowanie',
@@ -493,6 +519,8 @@ export const zoteroStrings = defineStrings({
     zoteroLocalApiOff:
       'Włącz „Zezwalaj innym aplikacjom na tym komputerze na komunikację z Zotero” w Zotero, Ustawienia ▸ Zaawansowane, i spróbuj ponownie.',
     zoteroCannotInsert: 'Nie można tu wstawić cytowania.',
+    zoteroNoteStyleUnsupported:
+      'Ten dokument używa stylu cytowania z przypisami dolnymi lub końcowymi. GenOffice nie potrafi jeszcze wstawiać cytowań Zotero do przypisów.',
   },
   cs: {
     zoteroCitation: 'Přidat/upravit citaci',
@@ -527,6 +555,8 @@ export const zoteroStrings = defineStrings({
     zoteroLocalApiOff:
       'Zapněte „Povolit ostatním aplikacím v tomto počítači komunikovat se Zotero“ v Zotero, Nastavení ▸ Pokročilé, a zkuste to znovu.',
     zoteroCannotInsert: 'Sem nelze vložit citaci.',
+    zoteroNoteStyleUnsupported:
+      'Tento dokument používá citační styl s poznámkami pod čarou nebo vysvětlivkami. GenOffice zatím neumí vkládat citace Zotero do poznámek.',
   },
   nl: {
     zoteroCitation: 'Citatie toevoegen/bewerken',
@@ -564,6 +594,8 @@ export const zoteroStrings = defineStrings({
     zoteroLocalApiOff:
       'Zet "Andere programma\'s op deze computer toestaan met Zotero te communiceren" aan in Zotero, Instellingen ▸ Geavanceerd, en probeer het opnieuw.',
     zoteroCannotInsert: 'Hier kan geen citatie worden ingevoegd.',
+    zoteroNoteStyleUnsupported:
+      'Dit document gebruikt een citeerstijl met voet- of eindnoten. GenOffice kan nog geen Zotero-citaties in notities plaatsen.',
   },
   ms: {
     zoteroCitation: 'Tambah/Edit Petikan',
@@ -600,6 +632,8 @@ export const zoteroStrings = defineStrings({
     zoteroLocalApiOff:
       'Hidupkan "Benarkan aplikasi lain pada komputer ini berkomunikasi dengan Zotero" dalam Zotero, Tetapan ▸ Lanjutan, kemudian cuba lagi.',
     zoteroCannotInsert: 'Petikan tidak boleh disisipkan di sini.',
+    zoteroNoteStyleUnsupported:
+      'Dokumen ini menggunakan gaya petikan nota kaki atau nota akhir. GenOffice belum boleh meletakkan petikan Zotero dalam nota.',
   },
   he: {
     zoteroCitation: 'הוספה/עריכה של ציטוט',
@@ -634,6 +668,8 @@ export const zoteroStrings = defineStrings({
     zoteroLocalApiOff:
       'הפעילו את "אפשר ליישומים אחרים במחשב זה לתקשר עם Zotero" ב-Zotero, הגדרות ▸ מתקדם, ונסו שוב.',
     zoteroCannotInsert: 'לא ניתן להוסיף כאן ציטוט.',
+    zoteroNoteStyleUnsupported:
+      'מסמך זה משתמש בסגנון ציטוט של הערות שוליים או הערות סיום. GenOffice עדיין לא יכול להוסיף ציטוטי Zotero להערות.',
   },
   hi: {
     zoteroCitation: 'उद्धरण जोड़ें/संपादित करें',
@@ -669,6 +705,8 @@ export const zoteroStrings = defineStrings({
     zoteroLocalApiOff:
       'Zotero की सेटिंग्स ▸ उन्नत में "इस कंप्यूटर के अन्य ऐप्लिकेशन को Zotero से संवाद करने दें" चालू करें, फिर दोबारा कोशिश करें।',
     zoteroCannotInsert: 'यहाँ उद्धरण नहीं डाला जा सकता।',
+    zoteroNoteStyleUnsupported:
+      'यह दस्तावेज़ फ़ुटनोट या एंडनोट उद्धरण शैली का उपयोग करता है। GenOffice अभी नोट्स में Zotero उद्धरण नहीं डाल सकता।',
   },
   'zh-TW': {
     zoteroCitation: '新增/編輯引文',
@@ -702,6 +740,8 @@ export const zoteroStrings = defineStrings({
     zoteroLocalApiOff:
       '請在 Zotero 設定 ▸ 進階 中開啟「允許此電腦上的其他應用程式與 Zotero 通訊」，然後再試一次。',
     zoteroCannotInsert: '此處無法插入引文。',
+    zoteroNoteStyleUnsupported:
+      '此文件使用註腳或章節附註引文樣式，GenOffice 目前還無法在附註中插入 Zotero 引文。',
   },
   vi: {
     zoteroCitation: 'Thêm/Sửa trích dẫn',
@@ -737,6 +777,8 @@ export const zoteroStrings = defineStrings({
     zoteroLocalApiOff:
       'Bật "Cho phép các ứng dụng khác trên máy tính này giao tiếp với Zotero" trong Zotero, Cài đặt ▸ Nâng cao, rồi thử lại.',
     zoteroCannotInsert: 'Không thể chèn trích dẫn tại đây.',
+    zoteroNoteStyleUnsupported:
+      'Tài liệu này dùng kiểu trích dẫn chú thích cuối trang hoặc cuối tài liệu. GenOffice chưa thể đặt trích dẫn Zotero vào chú thích.',
   },
   tr: {
     zoteroCitation: 'Alıntı Ekle/Düzenle',
@@ -774,6 +816,8 @@ export const zoteroStrings = defineStrings({
     zoteroLocalApiOff:
       'Zotero Ayarlar ▸ Gelişmiş bölümünde "Bu bilgisayardaki diğer uygulamaların Zotero ile iletişim kurmasına izin ver" seçeneğini açın ve yeniden deneyin.',
     zoteroCannotInsert: 'Buraya alıntı eklenemez.',
+    zoteroNoteStyleUnsupported:
+      'Bu belge dipnot veya son not alıntı stili kullanıyor. GenOffice henüz notlara Zotero alıntısı ekleyemiyor.',
   },
   hu: {
     zoteroCitation: 'Hivatkozás hozzáadása/szerkesztése',
@@ -812,5 +856,7 @@ export const zoteroStrings = defineStrings({
     zoteroLocalApiOff:
       'Kapcsolja be „A számítógép más alkalmazásai kommunikálhatnak a Zoteróval” beállítást a Zotero Beállítások ▸ Speciális lapján, majd próbálja újra.',
     zoteroCannotInsert: 'Ide nem szúrható be hivatkozás.',
+    zoteroNoteStyleUnsupported:
+      'Ez a dokumentum láb- vagy végjegyzetes hivatkozási stílust használ. A GenOffice egyelőre nem tud Zotero-hivatkozást jegyzetbe tenni.',
   },
 })

@@ -162,6 +162,51 @@ describe('inserting a Quick Cite citation', () => {
     expect(
       await controller.handle({ requestId: 'test', command: 'Field_getText', args: [1, ids[0]] }),
     ).toBe('(Smith, 2020; Lee & Park, 2021)')
+    // a Refresh handing the same code back changes nothing
+    const before = ed.state.doc
+    await controller.handle({
+      requestId: 'test',
+      command: 'Field_setCode',
+      args: [1, ids[0], codes[0]],
+    })
+    expect(ed.state.doc).toBe(before)
+  })
+
+  it('puts a new citation after one the caret is inside, never splitting it', () => {
+    const ed = makeEditor('See ')
+    ed.commands.setTextSelection(ed.state.doc.content.size - 1)
+    insertZoteroCitation(ed, [smith])
+    // caret in the middle of "(Smith, 2020)"
+    ed.commands.setTextSelection(1 + 'See (Smi'.length)
+    insertZoteroCitation(ed, [lee])
+    expect(ed.getText()).toBe('See (Smith, 2020)(Lee & Park, 2021)')
+    const fields: string[] = []
+    ed.state.doc.descendants((node) => {
+      const instr = node.marks.find((m) => m.type.name === 'instrField')?.attrs.instr
+      if (node.isText && instr)
+        fields.push(`${node.text}|${instructionPayload(instr).citationItems.length}`)
+    })
+    expect(fields).toEqual(['(Smith, 2020)|1', '(Lee & Park, 2021)|1'])
+  })
+
+  it('refuses to cite inside or beside a bibliography', () => {
+    const ed = makeEditor('x')
+    const bibl = ed.state.schema.marks.instrField.create({
+      instr: 'ADDIN ZOTERO_BIBL {"uncited":[]} CSL_BIBLIOGRAPHY',
+      fieldPart: 'single',
+    })
+    ed.view.dispatch(
+      ed.state.tr.replaceWith(
+        1,
+        ed.state.doc.content.size - 1,
+        ed.state.schema.text('Smith, J. (2020).', [bibl]),
+      ),
+    )
+    ed.commands.setTextSelection(4)
+    expect(insertZoteroCitation(ed, [smith])).toBe(false)
+    ed.commands.setTextSelection(ed.state.doc.content.size - 1)
+    expect(insertZoteroCitation(ed, [smith])).toBe(false)
+    expect(ed.getText()).toBe('Smith, J. (2020).')
   })
 
   it('refuses a read-only document', () => {
@@ -239,6 +284,32 @@ describe('citeFromZotero', () => {
     expect(hasZoteroFields(ed)).toBe(false)
     expect(zoteroLocalErrorKey('unreachable')).toBe('zoteroConnectionError')
     expect(zoteroLocalErrorKey('bad-response')).toBe('zoteroOperationError')
+  })
+
+  it('refuses a note style, whose citations belong in footnotes', async () => {
+    const citeData = vi.fn()
+    const result = await citeFromZotero(makeEditor(), ['ABCD2345'], {
+      documentData:
+        '<data><style id="http://www.zotero.org/styles/chicago-note-bibliography"/><prefs><pref name="noteType" value="1"/></prefs></data>',
+      noteFields: false,
+      citeData,
+      refresh: vi.fn(),
+    })
+    expect(result).toEqual({ ok: false, error: 'zoteroNoteStyleUnsupported' })
+    expect(citeData).not.toHaveBeenCalled()
+  })
+
+  it('puts nothing in a document opened while Zotero answered', async () => {
+    const ed = makeEditor()
+    const result = await citeFromZotero(ed, ['ABCD2345'], {
+      documentData: '',
+      noteFields: false,
+      citeData: vi.fn().mockResolvedValue({ ok: true, value: [smith] }),
+      refresh: vi.fn(),
+      isCurrent: () => false,
+    })
+    expect(result).toEqual({ ok: false, error: 'zoteroCannotInsert' })
+    expect(hasZoteroFields(ed)).toBe(false)
   })
 
   it('does not ask Zotero for a read-only document', async () => {

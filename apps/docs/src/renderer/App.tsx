@@ -1575,7 +1575,9 @@ export function App() {
   const citeZoteroItems = useCallback(async (keys: string[]): Promise<StringKey | null> => {
     const target = editorRef.current
     if (!target) return 'zoteroCannotInsert'
+    const generation = currentDocGeneration()
     const result = await citeFromZotero(target, keys, {
+      isCurrent: () => editorRef.current === target && currentDocGeneration() === generation,
       documentData: zoteroDocumentDataRef.current,
       noteFields: zoteroNoteFieldsRef.current,
       citeData: (wanted, style) => window.desktop.zoteroCiteData(wanted, style),
@@ -3938,6 +3940,8 @@ export function App() {
             new ZoteroDocumentController(activeEditor, {
               get: () => zoteroDocumentDataRef.current,
               set: (value) => {
+                // a Refresh writes the preferences back unchanged: that is not an edit to save
+                if (value === zoteroDocumentDataRef.current) return
                 setZoteroDocumentData(value)
                 setZoteroDocumentDataDirty(true)
               },
@@ -3964,10 +3968,12 @@ export function App() {
     if (!openedParsed || !editor || !zoteroInstalled) return
     const generation = currentDocGeneration()
     if (zoteroRefreshedGenerationRef.current === generation) return
-    zoteroRefreshedGenerationRef.current = generation
     let live = true
     void waitForFullContent().then(() => {
       if (!live || currentDocGeneration() !== generation || editorRef.current !== editor) return
+      // counted only now: a run cut short while the document streamed in leaves it to the next
+      if (zoteroRefreshedGenerationRef.current === generation) return
+      zoteroRefreshedGenerationRef.current = generation
       const run = shouldAutoRefresh({
         enabled: zoteroAutoRefreshRef.current,
         zoteroInstalled: true,

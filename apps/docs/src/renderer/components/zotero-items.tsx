@@ -11,6 +11,8 @@ export interface ZoteroItemsState {
   loading: boolean
   /** the message to show instead of the list */
   error: StringKey | null
+  /** the request these items answer: while a newer one loads they are the previous answer */
+  key: string | null
 }
 
 /**
@@ -23,7 +25,12 @@ export function useZoteroItems(
   load: () => Promise<ZoteroLocalResult<ZoteroLocalItem[]>>,
   delay = ZOTERO_SEARCH_DEBOUNCE_MS,
 ): ZoteroItemsState {
-  const [state, setState] = useState<ZoteroItemsState>({ items: [], loading: false, error: null })
+  const [state, setState] = useState<ZoteroItemsState>({
+    items: [],
+    loading: false,
+    error: null,
+    key: null,
+  })
   useEffect(() => {
     let live = true
     setState((prev) => ({ ...prev, loading: true }))
@@ -31,16 +38,21 @@ export function useZoteroItems(
       load().then(
         (result) => {
           if (!live) return
-          if (result.ok) setState({ items: result.value, loading: false, error: null })
+          if (result.ok) setState({ items: result.value, loading: false, error: null, key })
           else {
             console.error('Zotero local API failed', result.error)
-            setState({ items: [], loading: false, error: zoteroLocalErrorKey(result.errorCode) })
+            setState({
+              items: [],
+              loading: false,
+              error: zoteroLocalErrorKey(result.errorCode),
+              key,
+            })
           }
         },
         (error: unknown) => {
           if (!live) return
           console.error('Zotero local API failed', error)
-          setState({ items: [], loading: false, error: 'zoteroOperationError' })
+          setState({ items: [], loading: false, error: 'zoteroOperationError', key })
         },
       )
     }, delay)

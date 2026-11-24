@@ -26,11 +26,17 @@ export function ZoteroQuickCite({ onCite, onClose }: ZoteroQuickCiteProps) {
   const inputRef = useRef<HTMLInputElement>(null)
   const rootRef = useRef<HTMLDivElement>(null)
   const trimmed = query.trim()
-  const { items, loading, error } = useZoteroItems(trimmed, () =>
-    window.desktop.zoteroSearch(trimmed),
-  )
+  const {
+    items,
+    loading,
+    error,
+    key: answered,
+  } = useZoteroItems(trimmed, () => window.desktop.zoteroSearch(trimmed))
 
-  useEffect(() => inputRef.current?.focus(), [])
+  // back to the search box after a citation that could not go in (the box was disabled meanwhile)
+  useEffect(() => {
+    if (!citing) inputRef.current?.focus()
+  }, [citing])
   useEffect(() => setActive(0), [items])
   // a click elsewhere puts the bar away, as Escape does
   useEffect(() => {
@@ -61,10 +67,7 @@ export function ZoteroQuickCite({ onCite, onClose }: ZoteroQuickCiteProps) {
   }
 
   const onKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
-    if (event.key === 'Escape') {
-      event.preventDefault()
-      onClose()
-    } else if (event.key === 'ArrowDown') {
+    if (event.key === 'ArrowDown') {
       event.preventDefault()
       setActive((i) => Math.min(items.length - 1, i + 1))
     } else if (event.key === 'ArrowUp') {
@@ -72,6 +75,8 @@ export function ZoteroQuickCite({ onCite, onClose }: ZoteroQuickCiteProps) {
       setActive((i) => Math.max(0, i - 1))
     } else if (event.key === 'Enter') {
       event.preventDefault()
+      // the list still shows the previous search: Enter would cite the wrong item
+      if (answered !== trimmed) return
       const item = items[active]
       if ((event.metaKey || event.ctrlKey) && item) togglePick(item)
       else void cite(item)
@@ -95,6 +100,11 @@ export function ZoteroQuickCite({ onCite, onClose }: ZoteroQuickCiteProps) {
       ref={rootRef}
       role="dialog"
       aria-label={t('zoteroQuickCite')}
+      onKeyDown={(event) => {
+        if (event.key !== 'Escape') return
+        event.preventDefault()
+        onClose()
+      }}
     >
       <div className="zotero-quick-cite-bar">
         {picked.map((item) => (
