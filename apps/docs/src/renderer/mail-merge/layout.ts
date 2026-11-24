@@ -44,15 +44,15 @@ export const twipsOfMm = (mm: number): number => Math.round((mm * TWIPS_PER_INCH
 const TWIPS_PER_PX = 15
 
 /**
- * A label sheet has no printed grid: the gridlines are view-only. The save path
- * honours per-cell borders, so every cell writes all four sides as "none" (the
- * table-level default single lines are overridden by the cells).
+ * A label sheet has no printed grid: the gridlines are view-only. Every cell writes all
+ * four sides as "nil": Word lets a cell's "none" fall back to the table-level single
+ * lines, draws them, and the exact rows then no longer fit their sheet.
  */
 const BORDERLESS_CELLS: CellBorders = {
-  top: { style: 'none' },
-  left: { style: 'none' },
-  bottom: { style: 'none' },
-  right: { style: 'none' },
+  top: { style: 'nil' },
+  left: { style: 'nil' },
+  bottom: { style: 'nil' },
+  right: { style: 'nil' },
 }
 
 /** the most columns/rows a custom grid offers: 500 one-pixel columns are not a label stock */

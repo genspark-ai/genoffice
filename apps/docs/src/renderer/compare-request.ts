@@ -3,7 +3,8 @@ import type { CompareGranularity, ParsedDocFull } from '@genoffice/docx-engine'
 
 /** one side of a comparison: the document open in this tab, or a picked file */
 export type CompareSide =
-  { kind: 'current' } | { kind: 'file'; name: string; parsed: ParsedDocFull; author: string }
+  | { kind: 'current' }
+  | { kind: 'file'; name: string; parsed: ParsedDocFull; bytes: Uint8Array; author: string }
 
 export const COMPARE_SETTING_KEYS = [
   'moves',
@@ -30,6 +31,8 @@ export interface CompareRequest {
   revised: CompareSide
   /** the name every difference is labelled with */
   author: string
+  /** combine: the name the original's tracked changes take when they carry none */
+  originalAuthor?: string
   settings: CompareDialogSettings
   granularity: CompareGranularity
   target: CompareTarget
@@ -48,11 +51,10 @@ export const ALL_COMPARE_SETTINGS: CompareDialogSettings = {
   fields: true,
 }
 
-/** written into the open document, only its body text is compared: these need the new-document comparison */
+/** written into the open document, only its body is compared: these need the new-document comparison */
 const NEW_DOCUMENT_ONLY: ReadonlySet<CompareSettingKey> = new Set([
   'moves',
   'comments',
-  'formatting',
   'headersFooters',
   'notes',
   'textBoxes',
@@ -82,3 +84,11 @@ export function effectiveSettings(
   for (const key of COMPARE_SETTING_KEYS) if (!settingAvailable(key, target)) out[key] = false
   return out
 }
+
+/** the original's own changes can be named only when it is read from its file, not edited in place */
+export const originalLabelAvailable = (
+  mode: CompareRequest['mode'],
+  original: CompareSide | null,
+  target: CompareTarget,
+): boolean =>
+  mode === 'combine' && !!original && !(original.kind === 'current' && target === 'original')

@@ -2,6 +2,7 @@ import JSZip from 'jszip'
 import { describe, expect, it } from 'vitest'
 
 import { parseDocx, saveDocx } from '../src/index'
+import type { SaveOptions } from '../src/patch'
 import type { DocProtection } from '../src/types'
 import { buildDocx } from './helpers/build-docx'
 
@@ -20,7 +21,7 @@ async function settingsOf(bytes: Uint8Array): Promise<string> {
 const count = (xml: string, tag: string): number =>
   (xml.match(new RegExp(`<${tag}`, 'g')) ?? []).length
 
-async function saveWithFlags(settingsInner: string, options: Record<string, boolean | number>) {
+async function saveWithFlags(settingsInner: string, options: SaveOptions) {
   const source = await buildDocx({
     bodyXml: BODY,
     extraParts: [
@@ -201,6 +202,34 @@ describe('the default tab stop', () => {
     expect(reopened.compressPunctuation).toBe(true)
   })
 
+  it('writes compressPunctuationAndJapaneseKana and reads the kana half back', async () => {
+    const kana = await saveWithFlags('<w:characterSpacingControl w:val="doNotCompress"/>', {
+      compressPunctuation: true,
+      compressKana: true,
+    })
+    expect(count(kana, 'w:characterSpacingControl')).toBe(1)
+    expect(kana).toContain(
+      '<w:characterSpacingControl w:val="compressPunctuationAndJapaneseKana"/>',
+    )
+    const reopen = async (settings: string) =>
+      parseDocx(
+        await buildDocx({
+          bodyXml: BODY,
+          extraParts: [{ path: 'word/settings.xml', xml: settings, contentType: SETTINGS_TYPE }],
+        }),
+      )
+    const reopened = await reopen(kana)
+    expect(reopened.compressPunctuation).toBe(true)
+    expect(reopened.compressKana).toBe(true)
+    const KANA = '<w:characterSpacingControl w:val="compressPunctuationAndJapaneseKana"/>'
+    const punct = await saveWithFlags(KANA, { compressPunctuation: true, compressKana: false })
+    expect(punct).toContain('<w:characterSpacingControl w:val="compressPunctuation"/>')
+    expect((await reopen(punct)).compressKana).toBeUndefined()
+    // kana without punctuation is not a value Word has
+    const off = await saveWithFlags(KANA, { compressPunctuation: false, compressKana: true })
+    expect(off).toContain('<w:characterSpacingControl w:val="doNotCompress"/>')
+  })
+
   it('writes and removes w:strictFirstAndLastChars, and reads it back', async () => {
     const on = await saveWithFlags('<w:defaultTabStop w:val="720"/><w:compat/>', {
       strictFirstAndLastChars: true,
@@ -218,5 +247,129 @@ describe('the default tab stop', () => {
       strictFirstAndLastChars: false,
     })
     expect(count(off, 'w:strictFirstAndLastChars')).toBe(0)
+  })
+  it('writes the custom kinsoku lists in schema order, reads them back and removes them', async () => {
+    const custom = { lang: 'ja-JP', before: '\u3042>&', after: '\u3044"' }
+    const on = await saveWithFlags(
+      '<w:noLineBreaksBefore w:lang="zh-CN" w:val="x"></w:noLineBreaksBefore><w:compat/>',
+      { kinsokuCustom: custom },
+    )
+    expect(count(on, 'w:noLineBreaksBefore')).toBe(1)
+    expect(on).toContain(
+      '<w:noLineBreaksAfter w:lang="ja-JP" w:val="\u3044&quot;"/>' +
+        '<w:noLineBreaksBefore w:lang="ja-JP" w:val="\u3042&gt;&amp;"/><w:compat/>',
+    )
+    const reopened = await parseDocx(
+      await buildDocx({
+        bodyXml: BODY,
+        extraParts: [{ path: 'word/settings.xml', xml: on, contentType: SETTINGS_TYPE }],
+      }),
+    )
+    expect(reopened.kinsokuCustom).toEqual(custom)
+    const off = await saveWithFlags(
+      '<w:noLineBreaksAfter w:lang="ja-JP" w:val="a"/><w:noLineBreaksBefore w:lang="ja-JP" w:val="b"/>',
+      { kinsokuCustom: null },
+    )
+    expect(count(off, 'w:noLineBreaks')).toBe(0)
+  })
+
+  it('writes the drawing grid in schema order, reads it back and removes what is left out', async () => {
+    const grid = {
+      horizontalSpacing: 360,
+      verticalSpacing: 240,
+      displayHorizontalEvery: 2,
+      displayVerticalEvery: 0,
+      ownOrigin: true,
+      horizontalOrigin: 1800,
+      verticalOrigin: 1440,
+    }
+    const on = await saveWithFlags(
+      '<w:defaultTabStop w:val="720"/><w:drawingGridHorizontalSpacing w:val="110"/>' +
+        '<w:displayHorizontalDrawingGridEvery w:val="2"></w:displayHorizontalDrawingGridEvery>' +
+        '<w:characterSpacingControl w:val="doNotCompress"/><w:compat/>',
+      { drawingGrid: grid },
+    )
+    expect(on).toContain(
+      '<w:defaultTabStop w:val="720"/><w:drawingGridHorizontalSpacing w:val="360"/>' +
+        '<w:drawingGridVerticalSpacing w:val="240"/>' +
+        '<w:displayHorizontalDrawingGridEvery w:val="2"/>' +
+        '<w:displayVerticalDrawingGridEvery w:val="0"/>' +
+        '<w:doNotUseMarginsForDrawingGridOrigin/>' +
+        '<w:drawingGridHorizontalOrigin w:val="1800"/><w:drawingGridVerticalOrigin w:val="1440"/>' +
+        '<w:characterSpacingControl',
+    )
+    const reopened = await parseDocx(
+      await buildDocx({
+        bodyXml: BODY,
+        extraParts: [{ path: 'word/settings.xml', xml: on, contentType: SETTINGS_TYPE }],
+      }),
+    )
+    expect(reopened.drawingGrid).toEqual(grid)
+    const less = await saveWithFlags(
+      on.slice(on.indexOf('<w:defaultTabStop'), on.indexOf('</w:settings>')),
+      {
+        drawingGrid: { verticalSpacing: 156 },
+      },
+    )
+    expect(count(less, 'w:drawingGrid')).toBe(1)
+    expect(count(less, 'w:display')).toBe(0)
+    expect(count(less, 'w:doNotUseMarginsForDrawingGridOrigin')).toBe(0)
+    expect(less).toContain('<w:drawingGridVerticalSpacing w:val="156"/>')
+  })
+
+  it("reads no drawing grid from a file without one, and leaves the file's own alone on a save", async () => {
+    const inner =
+      '<w:drawingGridVerticalSpacing w:val="156"/><w:displayHorizontalDrawingGridEvery w:val="0"/>'
+    const parsed = await parseDocx(await buildDocx({ bodyXml: BODY }))
+    expect(parsed.drawingGrid).toBeUndefined()
+    const saved = await saveWithFlags(inner, { strictFirstAndLastChars: true })
+    expect(saved).toContain(inner)
+  })
+
+  it('reads numeric character references in a custom kinsoku list', async () => {
+    const parsed = await parseDocx(
+      await buildDocx({
+        bodyXml: BODY,
+        extraParts: [
+          {
+            path: 'word/settings.xml',
+            xml: settingsPart('<w:noLineBreaksBefore w:lang="zh-CN" w:val="&#x2019;&gt;"/>'),
+            contentType: SETTINGS_TYPE,
+          },
+        ],
+      }),
+    )
+    expect(parsed.kinsokuCustom).toEqual({ lang: 'zh-CN', before: '\u2019>', after: '' })
+  })
+})
+
+describe('Hide Grammar Errors', () => {
+  it('is read from settings.xml, written where the schema puts it, and taken off again', async () => {
+    const inner =
+      '<w:zoom w:percent="100"/><w:proofState w:spelling="clean"/><w:defaultTabStop w:val="720"/>'
+    const plain = await buildDocx({
+      bodyXml: BODY,
+      extraParts: [
+        { path: 'word/settings.xml', xml: settingsPart(inner), contentType: SETTINGS_TYPE },
+      ],
+    })
+    expect((await parseDocx(plain)).hideGrammaticalErrors).toBeUndefined()
+
+    const on = await saveWithFlags(inner, { hideGrammaticalErrors: true })
+    expect(count(on, 'w:hideGrammaticalErrors')).toBe(1)
+    expect(on.indexOf('<w:hideGrammaticalErrors')).toBeLessThan(on.indexOf('<w:proofState'))
+    expect(on.indexOf('<w:hideGrammaticalErrors')).toBeGreaterThan(on.indexOf('<w:zoom'))
+
+    const hidden = await buildDocx({
+      bodyXml: BODY,
+      extraParts: [{ path: 'word/settings.xml', xml: on, contentType: SETTINGS_TYPE }],
+    })
+    expect((await parseDocx(hidden)).hideGrammaticalErrors).toBe(true)
+
+    const off = await saveWithFlags(
+      on.slice(on.indexOf('>', on.indexOf('<w:settings')) + 1, on.lastIndexOf('</w:settings>')),
+      { hideGrammaticalErrors: false },
+    )
+    expect(count(off, 'w:hideGrammaticalErrors')).toBe(0)
   })
 })

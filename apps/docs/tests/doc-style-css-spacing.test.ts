@@ -8,6 +8,8 @@
 import { describe, expect, it } from 'vitest'
 import type { ParsedDocFull, StyleDisplay, StyleInfo } from '@genoffice/docx-engine'
 import { docStyleCss } from '../src/renderer/doc-style-css'
+import { cssFontFamily } from '../src/renderer/text-layout/font-rules/css-chains'
+import { latinLineFactor } from '../src/renderer/text-layout/font-rules/latin-slot'
 
 ;(globalThis as { CSS?: unknown }).CSS ??= { escape: (s: string) => s }
 
@@ -186,6 +188,21 @@ describe('docStyleCss spacing', () => {
     )
   })
 
+  it('pairs a paragraph that only anchors a drawing with its same-style neighbours', () => {
+    const css = docStyleCss(parsedWith('ListBullet', { contextualSpacing: true }))
+    const s = '[data-style="ListBullet"]'
+    const holder = '.doc-protected[data-line-style="ListBullet"]'
+    const held = `.doc-protected > .doc-anchor-line${s}:not(.ctx-sp-off)`
+    expect(css).toContain(
+      `.doc-page ${s}:has(+ ${holder}):not(.ctx-sp-off) { margin-bottom:0 !important }`,
+    )
+    expect(css).toContain(
+      `.doc-page .doc-protected:has(+ :is(${s}, ${holder})) > .doc-anchor-line${s}:not(.ctx-sp-off) { margin-bottom:0 !important }`,
+    )
+    expect(css).toContain(`.doc-page ${holder} + ${s}:not(.ctx-sp-off) { margin-top:0 !important }`)
+    expect(css).toContain(`.doc-page :is(${s}, ${holder}) + ${held} { margin-top:0 !important }`)
+  })
+
   it('emits direct-ctxSp (.ctx-sp) same-style suppression for styles without style-level ctxSp', () => {
     const css = docStyleCss(parsedWith('SBul', {}))
     expect(css).toContain(
@@ -335,6 +352,22 @@ describe('docStyleCss styles off the Normal chain', () => {
     const rule = /\[data-style="NoSpacing"\] \{ ([^}]*) \}/.exec(css)![1]
     expect(rule).toContain('margin-top:14.0pt')
     expect(rule).toContain('margin-bottom:10.0pt')
+  })
+
+  it('its Latin face is the docDefaults one when Normal names another', () => {
+    const parsed = parsedOff({ sizeHalfPoints: 22 }, { asciiFont: 'Calibri' })
+    parsed.styles.get('Normal')!.display!.fontAscii = 'Times New Roman'
+    const rule = /\[data-style="NoSpacing"\] \{ ([^}]*) \}/.exec(docStyleCss(parsed))![1]
+    expect(rule).toContain(`font-family:${cssFontFamily('Calibri')}`)
+    expect(rule).toContain(`--doc-line-factor-latin:${latinLineFactor('Calibri')}`)
+    // a face of its own, or a Normal without one, leaves the rule as it was
+    const own = parsedOff({ fontAscii: 'Arial' }, { asciiFont: 'Calibri' })
+    own.styles.get('Normal')!.display!.fontAscii = 'Times New Roman'
+    expect(/\[data-style="NoSpacing"\] \{ ([^}]*) \}/.exec(docStyleCss(own))![1]).toContain(
+      `--doc-line-factor-latin:${latinLineFactor('Arial')}`,
+    )
+    const same = docStyleCss(parsedOff({ sizeHalfPoints: 22 }, { asciiFont: 'Calibri' }))
+    expect(/\[data-style="NoSpacing"\] \{ ([^}]*) \}/.exec(same)![1]).not.toContain('font-family')
   })
 
   it('own spacing still wins over docDefaults', () => {

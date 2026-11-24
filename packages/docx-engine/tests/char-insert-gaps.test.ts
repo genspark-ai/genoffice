@@ -248,6 +248,43 @@ describe('the SVG of a picture', () => {
     expect((await partXml(bytes)).match(/svgBlip /g)).toHaveLength(1)
   })
 
+  it('comes with a replacement to a picture that had only a bitmap, whatever its blip holds', async () => {
+    const plain = inlinePictureDrawingXml({ rId: 'rId10', docPrId: 7, widthPx: 96, heightPx: 96 })
+    const blip = '<a:blip r:embed="rId10"/>'
+    expect(plain).toContain(blip)
+    const svgBase64 = Buffer.from(SVG).toString('base64')
+    for (const inside of [
+      blip,
+      '<a:blip r:embed="rId10"><a:alphaModFix amt="50000"/></a:blip>',
+      '<a:blip r:embed="rId10"><a:extLst><a:ext uri="{28A0092B-C50C-407E-A947-70E740481C1C}"/></a:extLst></a:blip>',
+    ]) {
+      const parsed = await parseDocx(
+        await buildDocx({
+          withImage: true,
+          bodyXml: `<w:p><w:r>${plain.replace(blip, inside)}</w:r></w:p>`,
+        }),
+      )
+      const block = parsed.blocks.find((b) => b.type === 'image')!
+      const bytes = await saveDocx(parsed, [
+        {
+          kind: 'xml',
+          xml: block.originalXml!,
+          replaceImage: { base64: TINY_PNG_BASE64, mime: 'image/png', svgBase64 },
+        },
+      ])
+      const xml = await partXml(bytes)
+      expect(xml.match(/svgBlip /g), inside).toHaveLength(1)
+      expect(xml.match(/<a:extLst>/g), inside).toHaveLength(1)
+      // what the blip held stays, before the extension list
+      if (inside.includes('alphaModFix'))
+        expect(xml).toMatch(/<a:alphaModFix amt="50000"\/><a:extLst>/)
+      if (inside.includes('28A0092B'))
+        expect(xml).toContain('{28A0092B-C50C-407E-A947-70E740481C1C}')
+      const again = (await parseDocx(bytes)).blocks.find((b) => b.type === 'image')!
+      expect(again.imageVectorUrl, inside).toBe(`data:image/svg+xml;base64,${svgBase64}`)
+    }
+  })
+
   it('is dropped, as before, when the replacement is a bitmap alone', async () => {
     const parsed = await parseDocx(await withSvg(`<w:p><w:r>${drawing}</w:r></w:p>`))
     const block = parsed.blocks.find((b) => b.type === 'image')!

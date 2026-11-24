@@ -20,7 +20,7 @@ export interface IndexerSources {
   /** files outside the roots that should still be searchable (recents, starred) */
   extraPaths: () => readonly string[]
   /** folders the user excluded from search: roots inside them are skipped and
-   *  the walk prunes them from the trees it does enter (#2844) */
+   *  the walk prunes them from the trees it does enter (genoffice#2844) */
   excludedFolders?: () => readonly string[]
 }
 

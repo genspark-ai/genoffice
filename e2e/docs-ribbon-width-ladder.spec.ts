@@ -7,7 +7,8 @@ import { launchShell, closeAndSaveVideo, waitForPageWithUrl } from './helpers'
 
 /**
  * Word takes each ribbon group down a ladder as the window narrows:
- * full-height buttons, a stack of small captioned controls, icons alone.
+ * full-height buttons, a stack of small captioned controls, icons alone,
+ * one menu button for the group.
  */
 
 const SHOTS = process.env.RIBBON_LADDER_SHOTS
@@ -46,7 +47,7 @@ async function showTab(page: Page, name: string): Promise<void> {
   await expect(page.locator('[data-ribbon-body] button').first()).toBeVisible()
 }
 
-type Form = 'buttons' | 'stack' | 'icons'
+type Form = 'buttons' | 'stack' | 'icons' | 'menu'
 
 /** the form of the stack that holds the control with this caption */
 const formOf = (page: Page, caption: string): Promise<Form> =>
@@ -56,6 +57,7 @@ const formOf = (page: Page, caption: string): Promise<Form> =>
     )
     const stack = label?.closest('.rb-col')
     if (!stack) throw new Error(`no stack holds ${text}`)
+    if (stack.closest('.rb-group-menu')) return 'menu'
     if (stack.classList.contains('rb-col-wide')) return 'buttons'
     return stack.classList.contains('rb-col-tight') ? 'icons' : 'stack'
   }, caption)
@@ -117,12 +119,9 @@ test.describe('Docs ribbon follows the window width', () => {
       for (const width of widths) {
         await resize(width)
         await showTab(page, 'Insert')
-        // narrower than this the groups themselves would have to fold, which they do not yet
-        if (width >= 1100) {
-          await expect
-            .poll(() => overflow(page), { message: `Insert at ${width}` })
-            .toBeLessThanOrEqual(0)
-        }
+        await expect
+          .poll(() => overflow(page), { message: `Insert at ${width}` })
+          .toBeLessThanOrEqual(0)
         ladder.pages.push(await formOf(page, 'Blank Page'))
         ladder.links.push(await formOf(page, 'Bookmark'))
         ladder.text.push(await formOf(page, 'Date & Time'))
@@ -159,7 +158,7 @@ test.describe('Docs ribbon follows the window width', () => {
           JSON.stringify({ widths, ladder, cardCounts }, null, 2),
         )
       // a form never comes back as the window narrows
-      const step = { buttons: 0, stack: 1, icons: 2 }
+      const step = { buttons: 0, stack: 1, icons: 2, menu: 3 }
       for (const forms of Object.values(ladder)) {
         const steps = forms.map((form) => step[form])
         expect(steps).toEqual([...steps].sort((a, b) => a - b))

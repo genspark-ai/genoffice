@@ -21,7 +21,10 @@ test('pressing a photo box opens Picture Format with the photo wrap', async () =
     const box = (await pic.boundingBox())!
     await page.mouse.click(box.x + 40, box.y + box.height - 40)
     await expect(page.locator('.ribbon-tab.active')).toHaveText('Picture Format')
-    await expect(page.locator('.rb-wrap-dd').first()).toContainText('Behind Text')
+    await page.locator('[data-ribbon-body] button[data-tip="Wrap Text"]').click()
+    await expect(page.locator('[data-ribbon-body] [data-rb-panel] button.active')).toHaveText(
+      'Behind Text',
+    )
   } finally {
     await app.close()
   }

@@ -1,5 +1,5 @@
 /**
- * Word's Word Count dialog (Review ▸ Word Count, ⇧⌘G). Read-only counts; the
+ * Word's Word Count dialog (Tools ▸ Word Count). Read-only counts; the
  * numbers are computed in App.tsx where the paginated DOM lives.
  */
 import { useState } from 'react'

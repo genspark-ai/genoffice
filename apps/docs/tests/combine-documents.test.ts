@@ -109,7 +109,13 @@ describe('Combine Documents writes the differences as tracked changes', () => {
         ['fox jumps.', ''],
       ],
     ])
-    expect(summary).toEqual({ insertions: 1, deletions: 0, skipped: 0, related: true })
+    expect(summary).toEqual({
+      insertions: 1,
+      deletions: 0,
+      formatChanges: 0,
+      skipped: 0,
+      related: true,
+    })
     const revisions = collectRevisions(editor.state.doc)
     expect(revisions).toHaveLength(1)
     expect(revisions[0]).toMatchObject({ kind: 'ins', author: AUTHOR, date: DATE })
@@ -196,7 +202,13 @@ describe('Combine Documents writes the differences as tracked changes', () => {
     const originalXml = para('One.') + pending + para('Three.')
     const revisedXml = para('One.') + para('Three.')
     const { editor, summary } = await combine(originalXml, revisedXml)
-    expect(summary).toEqual({ insertions: 0, deletions: 1, skipped: 0, related: true })
+    expect(summary).toEqual({
+      insertions: 0,
+      deletions: 1,
+      formatChanges: 0,
+      skipped: 0,
+      related: true,
+    })
     expect(editor.state.doc.child(1).attrs.blockRevision).toMatchObject({
       kind: 'ins',
       author: 'Ann',
@@ -229,7 +241,13 @@ describe('Combine Documents writes the differences as tracked changes', () => {
   it('identical documents leave the document alone', async () => {
     const xml = para('Same here.') + table([['a', 'b']]) + para('And here.')
     const { editor, summary, before } = await combine(xml, xml)
-    expect(summary).toEqual({ insertions: 0, deletions: 0, skipped: 0, related: true })
+    expect(summary).toEqual({
+      insertions: 0,
+      deletions: 0,
+      formatChanges: 0,
+      skipped: 0,
+      related: true,
+    })
     expect(editor.state.doc).toBe(before)
   })
 
@@ -252,7 +270,7 @@ describe('Combine Documents writes the differences as tracked changes', () => {
     expect(editor.state.doc.eq(before)).toBe(true)
   })
 
-  it('text in the cells of a table with the same shape is compared; a reshaped table is counted, not touched', async () => {
+  it('text in the cells of a table with the same shape is compared; a table with one more column takes the column as inserted cells', async () => {
     const same = await combine(
       para('Intro.') +
         table([
@@ -270,7 +288,13 @@ describe('Combine Documents writes the differences as tracked changes', () => {
       ['three', 'ins'],
       [' pounds', ''],
     ])
-    expect(same.summary).toEqual({ insertions: 1, deletions: 1, skipped: 0, related: true })
+    expect(same.summary).toEqual({
+      insertions: 1,
+      deletions: 1,
+      formatChanges: 0,
+      skipped: 0,
+      related: true,
+    })
 
     const reshaped = await combine(
       para('Intro.') +
@@ -280,13 +304,23 @@ describe('Combine Documents writes the differences as tracked changes', () => {
         ]),
       para('Intro.') +
         table([
-          ['Item', 'Price'],
-          ['Tea', 'two pounds'],
-          ['Milk', 'one pound'],
+          ['Item', 'Price', 'Stock'],
+          ['Tea', 'two pounds', 'plenty'],
         ]),
     )
-    expect(reshaped.summary).toEqual({ insertions: 0, deletions: 0, skipped: 1, related: true })
-    expect(reshaped.editor.state.doc).toBe(reshaped.before)
+    expect(reshaped.summary).toEqual({
+      insertions: 1,
+      deletions: 0,
+      formatChanges: 0,
+      skipped: 0,
+      related: true,
+    })
+    const cells: string[] = []
+    reshaped.editor.state.doc.descendants((node) => {
+      const kind = (node.attrs.cellRevision as { kind?: string } | null)?.kind
+      if (node.type.name === 'docTableCell') cells.push(`${node.textContent}:${kind ?? ''}`)
+    })
+    expect(cells).toEqual(['Item:', 'Price:', 'Stock:ins', 'Tea:', 'two pounds:', 'plenty:ins'])
   })
 
   it('an inserted paragraph keeps its heading level and bold, and drops a style this document lacks', async () => {
@@ -366,7 +400,13 @@ describe('the comparison settings of the dialog switch what is written into the 
     const noCase = await combine(ORIGINAL, REVISED, { ignore: { case: true } })
     expect(kinds(noCase.editor)).not.toHaveLength(0)
     const off = await combine(ORIGINAL, REVISED, { ignore: { case: true, whitespace: true } })
-    expect(off.summary).toEqual({ insertions: 0, deletions: 0, skipped: 0, related: true })
+    expect(off.summary).toEqual({
+      insertions: 0,
+      deletions: 0,
+      formatChanges: 0,
+      skipped: 0,
+      related: true,
+    })
     expect(off.editor.state.doc.eq(off.before)).toBe(true)
   })
 
@@ -398,7 +438,13 @@ describe('the comparison settings of the dialog switch what is written into the 
     const on = await combine(original, revised)
     expect(kinds(on.editor)).toEqual(['del', 'ins'])
     const off = await combine(original, revised, { tables: false })
-    expect(off.summary).toEqual({ insertions: 0, deletions: 0, skipped: 0, related: true })
+    expect(off.summary).toEqual({
+      insertions: 0,
+      deletions: 0,
+      formatChanges: 0,
+      skipped: 0,
+      related: true,
+    })
     expect(off.editor.state.doc.eq(off.before)).toBe(true)
   })
 
@@ -409,7 +455,13 @@ describe('the comparison settings of the dialog switch what is written into the 
       para('Payment is due in thirty days.') + para('This clause goes.') + para('Signed.')
     // the open document is the revised one; the other is the original
     const { editor, summary, parsed } = await combine(revised, original, { openIsRevised: true })
-    expect(summary).toEqual({ insertions: 2, deletions: 2, skipped: 0, related: true })
+    expect(summary).toEqual({
+      insertions: 2,
+      deletions: 2,
+      formatChanges: 0,
+      skipped: 0,
+      related: true,
+    })
     expect(pieces(editor)[0]).toEqual([
       ['Payment is due in ', ''],
       ['sixty', 'ins'],

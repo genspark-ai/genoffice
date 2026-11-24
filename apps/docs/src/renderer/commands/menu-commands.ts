@@ -2,9 +2,15 @@ import { updateLabels } from '../mail-merge/label-sheet'
 import { insertHorizontalLine } from '../editor/horizontal-line'
 import type { Editor } from '@tiptap/core'
 import { clampDropCapLines, setDropCapFont } from '../editor/drop-cap'
-import { replaceSelectedPictureBytes } from '../editor/picture-bytes'
+import { changePictureEditor, replaceSelectedPictureBytes } from '../editor/picture-bytes'
 import { setSelectedGraphicFill } from '../editor/graphics-fill'
-import { insertLibraryIcons, insertPreparedIcons } from '../editor/insert-icons'
+import {
+  insertLibraryIcons,
+  insertPreparedIcons,
+  prepareLibraryIcons,
+  preparedIcon,
+} from '../editor/insert-icons'
+import { selectedShapeSize } from '../editor/shape-size'
 import { applyTextFxPreset } from '../editor/text-fx'
 import { setSelectedBoxDirection, textboxDirectionOf } from '../editor/textbox-direction'
 import {
@@ -30,8 +36,17 @@ import type {
   StyleUpsert,
   ThemeColors,
   ThemeFonts,
+  ThemeFormat,
 } from '@genoffice/docx-engine'
-import { CITATION_STYLES, DEFAULT_LINE_PITCH_TWIPS } from '@genoffice/docx-engine'
+import {
+  CITATION_STYLES,
+  DEFAULT_LINE_PITCH_TWIPS,
+  OFFICE_THEMES,
+  OFFICE_THEME_COLORS,
+  OFFICE_THEME_FONTS,
+  STYLE_SET_IDS,
+  type StyleSetId,
+} from '@genoffice/docx-engine'
 import { WORDART_PRESETS } from '@genoffice/ui'
 import { runUiOps } from '../ai/ops'
 import {
@@ -56,12 +71,16 @@ import type { HfAction } from '../components/ribbon-hf-tab'
 import type { ViewMode } from '../components/ribbon-tabs'
 import type { TableDialogKind } from '../components/TableDialogs'
 import { getActiveSubEditor } from '../editor/active-editor'
+import { wordRangeAtCaret } from '../editor/comments'
+import { applyGrammarSuggestion, ignoreGrammarFinding } from '../editor/grammar-marks'
 import { repeatable, runRecorded } from './repeat'
 import type { EqLayoutKind } from '../editor/eq-layout'
 import { fontSymbolContent, parseFontSymbolPayload } from '../editor/font-symbol'
 import { ALIGN_FRAMES, ALIGN_MODES, alignSelectedObjects } from '../editor/object-align'
 import { groupSelectedObjects, ungroupSelectedObjects } from '../editor/object-group'
-import { nextNoteRefPos, noteRefNear } from '../editor/note-nav'
+import { nextNoteRefPos, noteRefNear, noteRefPos } from '../editor/note-nav'
+import { ignoreSpellingOnce, spellWordAt } from '../editor/spell-menu'
+import { autocorrectLists, setAutocorrectList, upsertEntry } from '../autocorrect-pref'
 import { applyCase, type CaseMode } from '../editor/case-transform'
 import { COVER_PRESETS, insertCoverPage, removeCoverPage } from '../editor/cover-pages'
 import { alignSelectionOrTable, setParagraphDirection } from '../editor/direction'
@@ -72,14 +91,48 @@ import {
   sendToBack,
   setFloatingWrap,
 } from '../editor/floating-z-order'
+import {
+  POSITIONS_H,
+  POSITIONS_V,
+  arrangeEditor,
+  flipSelectedObject,
+  positionSelectedPicture,
+  rotateSelectedObject,
+} from '../editor/arrange-target'
 import { hfHasPageField, hfPageNumberOnly, hfWithoutPageMarks } from '../editor/hf-dom'
 import type { InkTool } from '../editor/ink'
-import { indexOptionsOf } from '../editor/index-tables'
+import { DEFAULT_SPECS, indexOptionsOf } from '../editor/index-tables'
 import { updateTocField } from '../editor/toc-update'
 import { insertCitationField, restyleCitations } from '../editor/source-citations'
 import { stepParagraphIndent } from '../editor/indent'
+import {
+  TEXT_EDITS,
+  deleteWord,
+  editText,
+  focusedEditor,
+  moveCaret,
+  parseCaretMove,
+} from '../editor/caret-keys'
+import { startCopyText } from '../editor/copy-text'
+import { extendModeOn, growSelection, shrinkSelection } from '../editor/extend-selection'
+import { foldOutlineAtCaret, outlineViewKey, showOutlineLevel } from '../editor/outline-view'
+import { foldHeading, isHeadingCollapseAction } from '../editor/heading-collapse'
+import { insertFieldChars } from '../editor/field-chars'
+import { currentBrowseObject, goToPosition, jumpTo, type PageLayout } from '../editor/goto'
+import {
+  cutToSpike,
+  goBack,
+  goToCell,
+  goToField,
+  insertSpike,
+  parseCellMove,
+  setFieldsLocked,
+  shiftOutlineLevel,
+  unlinkFields,
+} from '../editor/word-keys'
+import type { StyleMap } from '../style-gallery'
 import { insertColumnBreak, insertTextWrappingBreak } from '../editor/page-break'
-import { pasteFromClipboard } from '../editor/paste-actions'
+import { pasteFromClipboard, readClipboardPicture } from '../editor/paste-actions'
 import type { RevisionScope } from '../editor/revision-filters'
 import type { BalloonMode, RevisionDisplayMode } from '../editor/revision-view'
 import type { PasteMode } from '../editor/paste-options'
@@ -87,6 +140,7 @@ import { startShapeDrawMode } from '../editor/shape-draw'
 import { fontFamilyMarkAttrs } from '../font-list'
 import { rememberListPreset, type ListPresetKind } from '../list-presets'
 import {
+  fieldTableSites,
   hasIndexEntries,
   indexAtSelection,
   indexColumnsOf,
@@ -98,6 +152,9 @@ import {
   tableSpecOfPayload,
   insertTableOfFigures,
   insertToc,
+  setFieldTablesLocked,
+  unlinkFieldTablesAtSelection,
+  updateHitsLockedTable,
   updateIndex,
   updateTableOfAuthorities,
   updateTableOfFigures,
@@ -123,6 +180,8 @@ import {
   type TablePreset,
 } from '../editor/table-properties'
 import { textToTableScope } from '../editor/table-convert'
+import { showToast } from '../components/toast-bus'
+import { t } from '../i18n/locale'
 import { distributeSelectedColumns, pinRenderedColumnWidths } from '../editor/table-sizing'
 import { parseRunBorderAttr } from '../editor/run-border'
 import {
@@ -183,10 +242,12 @@ export interface CommandHost {
   createListDef(levels: CustomNumberingLevel[]): string | null
   /** the list that follows a named list style; null when the style is unknown or has no levels */
   listStyleNum(styleId: string): { numId: string; kind: 'bullet' | 'ordered' } | null
-  /** `card` is the library card the define dialog starts from and changes */
-  openListDialog(kind: ListDialogKind, card?: number): void
+  /** `card` is the library card the define dialog starts from and changes, `styleId` the list style Modify Style opens on */
+  openListDialog(kind: ListDialogKind, card?: number, styleId?: string): void
   /** a new named list style of the document, then shown picked on the List Styles tab */
   addListStyle(name: string, levels: CustomNumberingLevel[]): void
+  /** new levels, and for a user-made style a new name, where the list style is defined */
+  modifyListStyle(styleId: string, name: string, levels: CustomNumberingLevel[]): void
   /** takes a user-made list style out of the document; paragraphs following it become plain */
   deleteListStyle(styleId: string): void
   /** a paragraph style goes on the paragraphs, a character style toggles on the selection */
@@ -195,8 +256,8 @@ export interface CommandHost {
   applyHeadingLevel(level: 0 | 1 | 2 | 3): void
   /** opens the AI panel and runs the instruction at once */
   aiPreset(instruction: string): void
-  /** walks the misspelled words of the document, Word's Spelling and Grammar dialog */
-  checkSpelling(): void
+  /** Word's Spelling and Grammar dialog; with a grammar finding's id it opens at that finding and checks nothing anew */
+  checkSpelling(grammarAt?: string): void
   /** asks the AI for synonyms of the selected word or short phrase */
   thesaurus(): void
   /** has the AI translate the selection, or the whole document, into the translation language */
@@ -247,7 +308,9 @@ export interface CommandHost {
       | 'altText'
       | 'lineNumbers'
       | 'icons'
+      | 'changePictureIcon'
       | 'paragraphSpacing'
+      | 'saveStyleSet'
       | 'reduceFileSize'
       | 'sizePosition'
       | 'recipients'
@@ -279,6 +342,14 @@ export interface CommandHost {
   openMarkCitation(): void
   /** the Mark Index Entry dialog, on the text selected in the body */
   openMarkIndexEntry(): void
+  /** the Mark Table of Contents Entry dialog, on the text selected in the body */
+  openMarkTocEntry(): void
+  /** selects the next misspelled word and shows its suggestions; says so when there is none */
+  nextMisspelling(): void
+  /** Copy Text's question in the status bar for as long as the mode is on; null takes it away */
+  copyTextPrompt(kind: 'to' | 'from' | null): void
+  /** the Mailings tab with the list of merge fields open; nothing without a recipient list */
+  showMergeFields(): void
   /** asks for a concordance file and marks its entries as index entries */
   autoMarkIndex(): void
   /**
@@ -302,16 +373,21 @@ export interface CommandHost {
   /** the Fit Text dialog, on the text selected in that editor */
   openFitText(target: Editor): void
   /** two lines in one, or horizontal in vertical, on or off for the text selected in that editor */
-  toggleAsianLayout(target: Editor, kind: 'combine' | 'vert'): void
+  /** Two Lines in One… / Horizontal in Vertical…: the dialog for the selected text */
+  openAsianLayout(target: Editor, kind: 'combine' | 'vert'): void
   /** crop or background removal for the picture with this data URL */
   openPictureDialog(kind: PictureDialogKind, dataUrl: string): void
   pickImage(): Promise<{ mime: string; base64: string } | null>
   openFind(tab: 'find' | 'replace' | 'goto'): void
   /** moves to the next or previous match of the search in the Find panel, opening it if closed */
   findStep(dir: 1 | -1): void
+  /** the last pagination pass, which page and section moves read; null before the first one */
+  pageLayout(): PageLayout | null
   showLayoutTab(): void
   /** the mail merge panel, on the kind of output asked for */
   openMailMerge(mode: MergeOutputMode): void
+  /** the file says it is a labels main document (settings.xml w:mailMerge) */
+  labelMainDocument: boolean
   /** a new table brings up its Table Design tab, as in Word */
   showTableDesignTab(): void
   /** adds a table style to the document's styles, written out by the next save */
@@ -324,10 +400,14 @@ export interface CommandHost {
   insertNote(kind: 'footnote' | 'endnote'): void
   /** opens the text of an existing note */
   editNote(kind: 'footnote' | 'endnote', id: string): void
+  /** a footnote becomes an endnote, or the other way round */
+  convertNote(kind: 'footnote' | 'endnote', id: string): void
   /** tells the user the document has no footnotes or endnotes */
   noNotes(): void
   /** the document as parsed, for commands that read its headings and lists */
   blocks: Block[]
+  /** the bytes it was read from, for commands that read its XML again */
+  docBytes?: Uint8Array | null
   /** the sources citations and the bibliography draw on */
   sources: SourceInfo[]
   /** the style citations and the bibliography are written in */
@@ -337,7 +417,7 @@ export interface CommandHost {
   /** page number of each heading in document order; null while the layout cannot say */
   headingPages(): number[] | null
   /** the page each top-level node at these positions starts on; null while there is no layout */
-  pagesOf(positions: number[]): number[] | null
+  pagesOf(positions: number[], edge?: 'top' | 'bottom'): number[] | null
   review: ReviewHost
   design: DesignHost
   view: ViewHost
@@ -371,6 +451,8 @@ export interface CommandHost {
   setSectionStart(type: SectionInfo['startType']): void
   insertSectionBreak(type: SectionBreakType): void
   insertImage(): void
+  /** Edit > Links… */
+  openLinks(): void
   insertPageBreak(): void
   insertBlankPage(): void
   newComment(): void
@@ -385,12 +467,25 @@ export interface CommandHost {
 /** the comment and tracked-change actions App owns */
 export interface ReviewHost {
   toggleSpellcheck(): void
-  /** forgets the words Ignore All set aside, so they are checked again */
+  /** forgets the words Ignore All set aside and the grammar findings Ignore Once set aside, so they are checked again */
   resetIgnoredWords(): void
+  /** draws the grammar marks of the last check, or stops drawing them; the findings are kept */
+  toggleGrammarMarks(): void
   /** the comment thread with this id; without one, the thread at the caret */
   deleteComment(id?: string): void
   resolveComment(id?: string): void
+  reopenComment(id: string): void
   replyToComment(id: string): void
+  /** opens the comment's text for editing in its card */
+  editComment(id: string): void
+  /** the word at `pos` becomes `to`; `marked` says the browser has it underlined and can swap it itself */
+  replaceMisspelling(pos: number | null, word: string, to: string, marked: boolean): void
+  /** the word is left alone everywhere until the document closes */
+  ignoreSpelling(word: string): void
+  /** the word goes into the user's dictionary */
+  learnSpelling(word: string): void
+  /** has the browser look at the text again after its dictionary or the ignored words changed */
+  respell(): void
   deleteAllComments(resolvedOnly: boolean): void
   gotoComment(dir: 1 | -1): void
   toggleComments(): void
@@ -450,17 +545,37 @@ export interface ViewHost {
   arrangeAll(): void
   /** the detached windows return to the tab strip */
   mergeWindows(): void
+  /** the next or previous document window, round the end */
+  switchWindow(dir: 1 | -1): void
+  /** takes the split off; nothing when the window is not split */
+  closePane(): void
 }
 
 /** the document-wide looks App owns */
 export interface DesignHost {
-  setThemeFonts(fonts: ThemeFonts): void
-  setThemeColors(colors: ThemeColors): void
+  /** a theme, a colour scheme or a font scheme: the document takes the parts the pick carries */
+  setTheme(pick: ThemePick): void
   setPageColor(hex: string | null): void
   /** a text watermark; null removes whatever watermark the document has */
   setWatermark(text: string | null): void
   /** the spacing of the document's default paragraph style; space before is none unless given */
   setParagraphSpacing(spacing: { beforeTwips?: number; afterTwips: number; line: number }): void
+  /** the document's styles take the definitions of one of Word's style sets, or of a saved one */
+  applyStyleSet(set: StyleSetId | { custom: string }): void
+  /** the styles go back to what the document had when it was opened */
+  resetStyleSet(): void
+  /** keeps the document's styles as a style set on this computer */
+  saveStyleSet(name: string): void
+  deleteStyleSet(id: string): void
+  /** a theme file of the themes folder, by file name */
+  savedTheme(name: string): ThemePick | undefined
+  /** the theme the document had when it was opened */
+  openedTheme(): ThemePick | undefined
+  /** asks for a theme file, a document or a template and gives the document its theme */
+  browseTheme(): void
+  /** asks where to keep the document's theme as an Office theme file */
+  saveTheme(): void
+  deleteTheme(name: string): void
 }
 
 /** Design > Custom Paragraph Spacing: twips before and after, line spacing as a multiple */
@@ -470,11 +585,16 @@ export interface CustomParagraphSpacing {
   line: number
 }
 
-/** a Themes gallery pick: either half may be left out */
-export interface ThemePayload {
+/** a Themes, Colors or Fonts pick: the parts of the theme it replaces */
+export interface ThemePick {
   fonts?: ThemeFonts
   colors?: ThemeColors
+  format?: ThemeFormat
 }
+
+/** the payload of a saved style set or theme, as opposed to one of Word's by id */
+export const CUSTOM_STYLE_SET = 'custom:'
+export const CUSTOM_THEME = CUSTOM_STYLE_SET
 
 type Handler = (host: CommandHost, payload?: string) => void
 
@@ -496,6 +616,15 @@ function formatTarget(host: CommandHost): Editor | null {
   return getActiveSubEditor() ?? host.editor
 }
 
+/** Update on a table whose field is locked: it stays, and the user is told why */
+const tableIsLocked = (): void => showToast(t('ribbonLinksIsLocked'))
+
+/** the editor a key acts in: the one that has the keyboard, else the one the ribbon would reach */
+function keyTarget(host: CommandHost): Editor | null {
+  if (!host.hasDoc) return null
+  return focusedEditor() ?? getActiveSubEditor() ?? host.editor
+}
+
 const toggleMark =
   (mark: 'bold' | 'italic' | 'underline' | 'strike'): Handler =>
   (host) => {
@@ -513,6 +642,34 @@ const toggleVertAlign =
       .focus()
       .setMark('docTextStyle', { vertAlign: on ? null : kind })
       .run()
+  }
+
+/** a character effect of the Font dialog, switched from its present state */
+const toggleEffect =
+  (next: (attrs: Record<string, unknown>) => Record<string, unknown>): Handler =>
+  (host) => {
+    const target = formatTarget(host)
+    if (!target) return
+    target
+      .chain()
+      .focus()
+      .setMark('docTextStyle', next(target.getAttributes('docTextStyle')))
+      .run()
+  }
+
+// an explicit 'none' keeps a style's capitals from showing through, as the Font dialog writes it
+const toggleCaps = (kind: 'all' | 'small'): Handler =>
+  toggleEffect((attrs) => ({ caps: attrs.caps === kind ? 'none' : kind }))
+
+const toggleUnderlineLine =
+  (line: 'double' | 'words'): Handler =>
+  (host) => {
+    const target = formatTarget(host)
+    if (!target) return
+    const on = target.isActive('underline') && target.getAttributes('underline').line === line
+    const chain = target.chain().focus()
+    if (on) chain.unsetMark('underline').run()
+    else chain.setMark('underline', { line }).run()
   }
 
 const align =
@@ -582,18 +739,20 @@ const CASE_MODES: readonly CaseMode[] = [
 ]
 const PASTE_MODES: readonly PasteMode[] = ['source', 'merge', 'text']
 
+// payload 'on': the list is applied and never taken off, as Word's ApplyListBullet key does
 const toggleList =
   (kind: 'bullet' | 'ordered'): Handler =>
-  (host) => {
+  (host, payload) => {
     const target = formatTarget(host)
     if (!target || !host.editor) return
+    const keep = payload === 'on'
     const chain = () => target.chain().focus()
     if (target !== host.editor) {
       // a text box paragraph is a list item through its listMarker attr; Enter carries it on
       const marker = target.getAttributes('docParagraph').listMarker as
         { kind?: string } | undefined
       if (marker?.kind === kind) {
-        chain().updateAttributes('docParagraph', { listMarker: null }).run()
+        if (!keep) chain().updateAttributes('docParagraph', { listMarker: null }).run()
         return
       }
       const numId = host.listNumId(kind, kind === 'bullet')
@@ -605,7 +764,7 @@ const toggleList =
       return
     }
     if (target.isActive('docListItem', { kind })) {
-      chain().setNode('docParagraph').run()
+      if (!keep) chain().setNode('docParagraph').run()
       return
     }
     chain()
@@ -626,6 +785,7 @@ const LIST_DIALOGS: readonly ListDialogKind[] = [
   'value',
   'indents',
   'style',
+  'styleModify',
 ]
 
 /** what a gallery card sends: the levels to define, and the recents list that remembers the pick */
@@ -897,6 +1057,34 @@ const pageSetup =
   }
 
 /** a Review command: needs an open document, not an editable one */
+const bodyEditable = (host: CommandHost): boolean => host.hasDoc && host.editor?.isEditable === true
+
+interface SpellPick {
+  pos: number | null
+  word: string
+  to?: string
+  marked: boolean
+}
+
+/** payload of the spelling items: the right-clicked word, where it is, and the replacement picked */
+function spellPick(payload: string | undefined): SpellPick | null {
+  try {
+    const raw = JSON.parse(payload ?? '') as Partial<SpellPick>
+    if (typeof raw.word !== 'string' || !raw.word) return null
+    return {
+      pos: typeof raw.pos === 'number' ? raw.pos : null,
+      word: raw.word,
+      to: typeof raw.to === 'string' ? raw.to : undefined,
+      marked: raw.marked === true,
+    }
+  } catch {
+    return null
+  }
+}
+
+const isNoteKind = (kind: string | undefined): kind is 'footnote' | 'endnote' =>
+  kind === 'footnote' || kind === 'endnote'
+
 const reviewing =
   (run: (review: ReviewHost, payload: string | undefined) => void): Handler =>
   (host, payload) => {
@@ -924,11 +1112,14 @@ const designing =
     if (payload !== undefined && formatTarget(host)) run(host.design, payload)
   }
 
-const applyTheme: Handler = designing((design, payload) => {
-  const { fonts, colors } = JSON.parse(payload) as ThemePayload
-  if (fonts) design.setThemeFonts(fonts)
-  if (colors) design.setThemeColors(colors)
-})
+// payload: an id of Word's list for the command, or the values themselves as JSON
+const themePick = (list: (id: string, design: DesignHost) => ThemePick | undefined): Handler =>
+  designing((design, payload) => {
+    const pick = payload.startsWith('{')
+      ? (JSON.parse(payload) as ThemePick)
+      : list(payload, design)
+    if (pick?.fonts || pick?.colors) design.setTheme(pick)
+  })
 
 /** a View command: needs an open document */
 const viewing =
@@ -1166,6 +1357,9 @@ export const MENU_COMMAND_HANDLERS: Record<ActionCommandId, Handler> = {
   'insert-image': (host) => {
     if (host.editor && host.hasDoc) host.insertImage()
   },
+  'edit-links': (host) => {
+    if (host.editor && host.hasDoc) host.openLinks()
+  },
   'insert-page-break': (host) => {
     if (host.editor && host.hasDoc) host.insertPageBreak()
   },
@@ -1302,9 +1496,10 @@ export const MENU_COMMAND_HANDLERS: Record<ActionCommandId, Handler> = {
   'insert-toc': inserting((editor, payload, host) =>
     insertToc(editor, host.blocks, host.headingPages, tableSpecOfPayload(payload), host.pagesOf),
   ),
-  'update-toc': inserting((editor, _, host) =>
-    updateTocField(editor, host.blocks, host.headingPages, undefined, undefined, host.pagesOf),
-  ),
+  'update-toc': inserting((editor, _, host) => {
+    if (updateHitsLockedTable(editor, host.blocks, 'toc')) return tableIsLocked()
+    updateTocField(editor, host.blocks, host.headingPages, undefined, undefined, host.pagesOf)
+  }),
   // payload: the source's tag
   'insert-citation': inserting((editor, tag, host) => {
     const source = host.sources.find((s) => s.tag === tag)
@@ -1321,9 +1516,11 @@ export const MENU_COMMAND_HANDLERS: Record<ActionCommandId, Handler> = {
     host.setCitationStyle(style)
     restyleCitations(editor, host.blocks, host.sources, style)
   }),
+  // payload: a table spec from Index and Tables; without one, the index the selection is in
+  // is rebuilt as it is and a new one takes the dialog's defaults
   'insert-index': inserting((editor, payload, host) => {
-    const spec = tableSpecOfPayload(payload)
-    const before = spec ? tableAtSelection(editor, host.blocks, 'index')?.spec : undefined
+    const before = tableAtSelection(editor, host.blocks, 'index')?.spec
+    const spec = tableSpecOfPayload(payload) ?? before ?? DEFAULT_SPECS.index
     const columns = indexColumnsOf(spec)
     const inColumns = (nth: number) =>
       host.setIndexSection(nth, (section) => inEqualColumns(section, columns), columns > 1)
@@ -1338,20 +1535,23 @@ export const MENU_COMMAND_HANDLERS: Record<ActionCommandId, Handler> = {
     // a new index may not be the document's first, and the caret does not end up in it
     const nth = indexesBefore(editor, host.blocks, editor.state.selection.from)
     if (!insertIndex(editor, host.blocks, host.pagesOf, spec)) return
-    // the ribbon's index (no spec) stays where it is put, as before
-    if (spec && columns > 1) inColumns(nth)
+    if (columns > 1) inColumns(nth)
   }),
   'mark-index-entry': inserting((_, __, host) => host.openMarkIndexEntry()),
   'index-automark': inserting((_, __, host) => host.autoMarkIndex()),
-  'update-index': inserting((editor, _, host) => updateIndex(editor, host.blocks, host.pagesOf)),
+  'update-index': inserting((editor, _, host) => {
+    if (updateHitsLockedTable(editor, host.blocks, 'index')) return tableIsLocked()
+    updateIndex(editor, host.blocks, host.pagesOf)
+  }),
   // payload: the caption label to list, or a table spec; without one, the first label the document uses
   'insert-table-of-figures': inserting((editor, payload, host) => {
     const spec = tableSpecOfPayload(payload)
     insertTableOfFigures(editor, host.blocks, host.pagesOf, spec ? undefined : payload, spec)
   }),
-  'update-table-of-figures': inserting((editor, _, host) =>
-    updateTableOfFigures(editor, host.blocks, host.pagesOf),
-  ),
+  'update-table-of-figures': inserting((editor, _, host) => {
+    if (updateHitsLockedTable(editor, host.blocks, 'figures')) return tableIsLocked()
+    updateTableOfFigures(editor, host.blocks, host.pagesOf)
+  }),
   'insert-file': inserting((_, __, host) => host.insertFile()),
   'insert-icons': inserting((_, __, host) => host.openDialog('icons')),
   // the dialog prepares what it picked, so its icons go in at once
@@ -1376,9 +1576,10 @@ export const MENU_COMMAND_HANDLERS: Record<ActionCommandId, Handler> = {
       tableSpecOfPayload(payload),
     ),
   ),
-  'toa-update': inserting((editor, _, host) =>
-    updateTableOfAuthorities(editor, host.blocks, host.pagesOf, host.citationHeading),
-  ),
+  'toa-update': inserting((editor, _, host) => {
+    if (updateHitsLockedTable(editor, host.blocks, 'authorities')) return tableIsLocked()
+    updateTableOfAuthorities(editor, host.blocks, host.pagesOf, host.citationHeading)
+  }),
   'insert-link': (host) => {
     if (host.editor && host.hasDoc) host.openDialog('link')
   },
@@ -1392,6 +1593,145 @@ export const MENU_COMMAND_HANDLERS: Record<ActionCommandId, Handler> = {
   italic: toggleMark('italic'),
   underline: toggleMark('underline'),
   strikethrough: toggleMark('strike'),
+  'all-caps': toggleCaps('all'),
+  'small-caps': toggleCaps('small'),
+  'double-underline': toggleUnderlineLine('double'),
+  'word-underline': toggleUnderlineLine('words'),
+  'hidden-text': toggleEffect((attrs) => {
+    const hidden = attrs.vanish !== true
+    return { vanish: hidden, vanishOwn: hidden }
+  }),
+  'caret-move': (_, payload) => {
+    const editor = focusedEditor()
+    const move = parseCaretMove(payload ?? '')
+    if (editor && move) moveCaret(editor, move.to, move.extend)
+  },
+  'delete-word': (_, payload) => {
+    const editor = focusedEditor()
+    if (editor?.isEditable && (payload === 'back' || payload === 'forward'))
+      deleteWord(editor, payload === 'back' ? -1 : 1)
+  },
+  'edit-text': (_, payload) => {
+    const editor = focusedEditor()
+    const edit = TEXT_EDITS.find((e) => e === payload)
+    if (editor && edit) editText(editor, edit)
+  },
+  'extend-selection': (host, payload) => {
+    const editor = keyTarget(host)
+    if (!editor) return
+    if (payload === 'shrink') return shrinkSelection(editor)
+    const entering = !extendModeOn(editor)
+    growSelection(editor)
+    if (entering) showToast(t('appExtendSelectionOn'))
+  },
+  'field-lock': (host, payload) => {
+    const editor = keyTarget(host)
+    if (!editor) return
+    setFieldsLocked(editor, payload !== 'unlock')
+    if (editor === host.editor) setFieldTablesLocked(editor, host.blocks, payload !== 'unlock')
+  },
+  'field-unlink': (host) => {
+    const editor = keyTarget(host)
+    if (!editor) return
+    unlinkFields(editor)
+    if (editor === host.editor)
+      void unlinkFieldTablesAtSelection(editor, host.blocks, host.docBytes)
+  },
+  'field-go': (host, payload) => {
+    const editor = keyTarget(host)
+    if (!editor) return
+    const tables =
+      editor === host.editor
+        ? fieldTableSites(editor.state.doc, host.blocks).map((site) => site.range.from)
+        : []
+    goToField(editor, payload === 'prev' ? -1 : 1, tables)
+  },
+  'outline-level': (host, payload) => {
+    const editor = bodyTarget(host)
+    if (editor && (payload === 'promote' || payload === 'demote'))
+      shiftOutlineLevel(
+        editor,
+        payload === 'promote' ? -1 : 1,
+        editor.storage.listNumbering?.styles as StyleMap | undefined,
+      )
+  },
+  'outline-fold': (host, payload) => {
+    const { editor } = host
+    if (!editor || !host.hasDoc || (payload !== 'collapse' && payload !== 'expand')) return
+    // Word's Expand / Collapse keys fold the outline rows in Outline view and the heading's body elsewhere
+    if (outlineViewKey.getState(editor.state)?.active)
+      foldOutlineAtCaret(editor.view, payload === 'collapse', editor.storage.listNumbering?.styles)
+    else foldHeading(editor, payload)
+  },
+  'heading-collapse': (host, payload) => {
+    const { editor } = host
+    if (!editor || !host.hasDoc) return
+    const [action, pos] = (payload ?? '').split('@')
+    if (isHeadingCollapseAction(action)) foldHeading(editor, action, pos ? Number(pos) : undefined)
+  },
+  'table-cell-go': (host, payload) => {
+    const editor = keyTarget(host)
+    const move = parseCellMove(payload ?? '')
+    if (editor && move) goToCell(editor, move.to, move.extend)
+  },
+  spike: (host, payload) => {
+    const editor = keyTarget(host)
+    if (!editor) return
+    if (payload === 'insert') insertSpike(editor)
+    else cutToSpike(editor)
+  },
+  'go-back': (host) => {
+    const editor = keyTarget(host)
+    if (editor) goBack(editor)
+  },
+  // Word's Browse Next / Previous: the last Find or Go To again, pages until there was one
+  browse: (host, payload) => {
+    const editor = bodyTarget(host)
+    if (!editor || (payload !== 'next' && payload !== 'prev')) return
+    const dir = payload === 'next' ? 1 : -1
+    const by = currentBrowseObject()
+    if (by === 'find') return host.findStep(dir)
+    const pos = goToPosition(editor.view, host.pageLayout(), by, dir)
+    if (pos !== null) jumpTo(editor.view, pos)
+  },
+  'section-go': (host, payload) => {
+    const editor = bodyTarget(host)
+    if (!editor || (payload !== 'next' && payload !== 'prev')) return
+    const pos = goToPosition(editor.view, host.pageLayout(), 'section', payload === 'next' ? 1 : -1)
+    if (pos !== null) jumpTo(editor.view, pos)
+  },
+  'window-go': viewing((view, payload) => {
+    if (payload === 'next' || payload === 'prev') view.switchWindow(payload === 'next' ? 1 : -1)
+  }),
+  'close-pane': viewing((view) => view.closePane()),
+  'style-normal': (host) => {
+    if (bodyTarget(host)) host.applyHeadingLevel(0)
+  },
+  'hf-link-previous': (host) => {
+    if (formatTarget(host)) host.headerFooterAction({ type: 'toggleLinkToPrevious' })
+  },
+  'insert-merge-field': (host) => {
+    if (formatTarget(host)) host.showMergeFields()
+  },
+  'mark-toc-entry': inserting((_, __, host) => host.openMarkTocEntry()),
+  'spell-next': (host) => {
+    if (bodyTarget(host)) host.nextMisspelling()
+  },
+  'copy-text': (host) => {
+    const editor = keyTarget(host)
+    if (!editor?.isEditable) return
+    host.copyTextPrompt(startCopyText(editor, () => host.copyTextPrompt(null)))
+  },
+  'outline-show': (host, payload) => {
+    const { editor } = host
+    const level = payload === 'all' ? null : Number(payload)
+    if (editor && host.hasDoc && (level === null || (level >= 1 && level <= 9)))
+      showOutlineLevel(editor.view, level, editor.storage.listNumbering?.styles)
+  },
+  'field-insert-chars': (host) => {
+    const editor = keyTarget(host)
+    if (editor) insertFieldChars(editor)
+  },
   subscript: toggleVertAlign('subscript'),
   superscript: toggleVertAlign('superscript'),
   'indent-decrease': indent(-1),
@@ -1433,6 +1773,27 @@ export const MENU_COMMAND_HANDLERS: Record<ActionCommandId, Handler> = {
     const spacing = PARAGRAPH_SPACINGS.find((s) => s.id === payload)
     if (spacing) design.setParagraphSpacing(spacing)
   }),
+  // payload: one of Word's style sets by id, or a saved one as custom:<id>
+  'design-style-set': designing((design, payload) => {
+    if (payload.startsWith(CUSTOM_STYLE_SET))
+      return design.applyStyleSet({ custom: payload.slice(CUSTOM_STYLE_SET.length) })
+    const set = STYLE_SET_IDS.find((id) => id === payload)
+    if (set) design.applyStyleSet(set)
+  }),
+  'design-style-set-reset': (host) => {
+    if (host.hasDoc && formatTarget(host)) host.design.resetStyleSet()
+  },
+  // payload: the name to keep the document's styles under; without one the dialog asks
+  'design-style-set-save': (host, payload) => {
+    if (!host.hasDoc) return
+    const name = payload?.trim()
+    if (name) host.design.saveStyleSet(name)
+    else host.openDialog('saveStyleSet')
+  },
+  // payload: the saved style set's id
+  'design-style-set-delete': (host, payload) => {
+    if (payload) host.design.deleteStyleSet(payload)
+  },
   'design-custom-paragraph-spacing': (host) => {
     if (host.hasDoc && formatTarget(host)) host.openDialog('paragraphSpacing')
   },
@@ -1587,13 +1948,26 @@ export const MENU_COMMAND_HANDLERS: Record<ActionCommandId, Handler> = {
   'list-dialog': (host, payload) => {
     const [name, card] = (payload ?? '').split('#')
     const kind = LIST_DIALOGS.find((k) => k === name)
-    if (kind && host.hasDoc) host.openListDialog(kind, card ? Number(card) : undefined)
+    if (!kind || !host.hasDoc) return
+    // Modify Style names the list style it opens on
+    if (kind === 'styleModify') host.openListDialog(kind, undefined, card)
+    else host.openListDialog(kind, card ? Number(card) : undefined)
   },
   // payload: JSON { name, levels }
   'list-style-add': (host, payload) => {
     if (!payload || !bodyTarget(host)) return
     const { name, levels } = JSON.parse(payload) as { name: string; levels: CustomNumberingLevel[] }
     host.addListStyle(name, levels)
+  },
+  // payload: JSON { styleId, name, levels }
+  'list-style-modify': (host, payload) => {
+    if (!payload || !bodyTarget(host)) return
+    const { styleId, name, levels } = JSON.parse(payload) as {
+      styleId: string
+      name: string
+      levels: CustomNumberingLevel[]
+    }
+    host.modifyListStyle(styleId, name, levels)
   },
   'list-style-delete': (host, payload) => {
     if (payload && bodyTarget(host)) host.deleteListStyle(payload)
@@ -1604,6 +1978,75 @@ export const MENU_COMMAND_HANDLERS: Record<ActionCommandId, Handler> = {
   'ai-preset': (host, payload) => {
     if (payload && host.hasDoc) host.aiPreset(payload)
   },
+  'synonym-replace': (host, payload) => {
+    const target = formatTarget(host)
+    // a bare caret stands for the word it is in, as on Word's right-click menu
+    const range =
+      target && (target.state.selection.empty ? wordRangeAtCaret(target) : target.state.selection)
+    if (!payload || !target || !range) return
+    const { from, to } = range
+    // insertText carries the marks of the replaced range, so the word keeps its formatting
+    target
+      .chain()
+      .focus()
+      .command(({ tr }) => {
+        tr.insertText(payload, from, to)
+        return true
+      })
+      .run()
+  },
+  // payload: the JSON of { id, text }
+  'grammar-replace': (host, payload) => {
+    if (!payload || !host.hasDoc || !host.editor) return
+    const { id, text } = JSON.parse(payload) as { id: string; text: string }
+    applyGrammarSuggestion(host.editor, id, text)
+  },
+  'grammar-ignore': (host, payload) => {
+    if (payload && host.hasDoc && host.editor) ignoreGrammarFinding(host.editor, payload)
+  },
+  'grammar-dialog': (host, payload) => {
+    if (payload && host.hasDoc) host.checkSpelling(payload)
+  },
+  'spell-replace': (host, payload) => {
+    const pick = spellPick(payload)
+    if (pick?.to && bodyEditable(host))
+      host.review.replaceMisspelling(pick.pos, pick.word, pick.to, pick.marked)
+  },
+  'spell-ignore-once': (host, payload) => {
+    const pick = spellPick(payload)
+    const { editor } = host
+    if (!host.hasDoc || !editor || !pick) return
+    const word = spellWordAt(editor.state.doc, pick.pos ?? -1)
+    if (word?.word !== pick.word) return
+    ignoreSpellingOnce(editor, word)
+    host.review.respell()
+  },
+  'spell-ignore-all': reviewing((review, word) => {
+    if (word) review.ignoreSpelling(word)
+  }),
+  'spell-add-word': reviewing((review, word) => {
+    if (word) review.learnSpelling(word)
+  }),
+  // Word's AutoCorrect submenu: the pair goes into the replace table and the word is corrected
+  'spell-autocorrect': (host, payload) => {
+    const pick = spellPick(payload)
+    if (!pick?.to || !bodyEditable(host)) return
+    setAutocorrectList('replace', upsertEntry(autocorrectLists().replace, pick.word, pick.to))
+    host.review.replaceMisspelling(pick.pos, pick.word, pick.to, pick.marked)
+  },
+  // payload: kind, where to go (the note's text or its mark in the body), id
+  'note-goto': (host, payload) => {
+    const [kind, where, id] = (payload ?? '').split(':')
+    const { editor } = host
+    if (!editor || !host.hasDoc || !isNoteKind(kind) || !id) return
+    if (where === 'text') return host.editNote(kind, id)
+    const pos = noteRefPos(editor.state.doc, kind, id)
+    if (pos !== null) editor.chain().focus().setNodeSelection(pos).scrollIntoView().run()
+  },
+  'note-convert': inserting((_, payload, host) => {
+    const [kind, id] = (payload ?? '').split(':')
+    if (isNoteKind(kind) && id) host.convertNote(kind, id)
+  }),
   'direction-ltr': direction('ltr'),
   'direction-rtl': direction('rtl'),
   'paste-as': (host, payload) => {
@@ -1634,11 +2077,18 @@ export const MENU_COMMAND_HANDLERS: Record<ActionCommandId, Handler> = {
   'align-distributed': align('distribute'),
   'toggle-spellcheck': reviewing((review) => review.toggleSpellcheck()),
   'tools-hide-spelling': reviewing((review) => review.toggleSpellcheck()),
+  'tools-hide-grammar': reviewing((review) => review.toggleGrammarMarks()),
   'tools-reset-ignored': reviewing((review) => review.resetIgnoredWords()),
   'delete-comment': reviewing((review, id) => review.deleteComment(id)),
   'comment-resolve': reviewing((review, id) => review.resolveComment(id)),
   'comment-reply': reviewing((review, id) => {
     if (id) review.replyToComment(id)
+  }),
+  'comment-edit': reviewing((review, id) => {
+    if (id) review.editComment(id)
+  }),
+  'comment-reopen': reviewing((review, id) => {
+    if (id) review.reopenComment(id)
   }),
   'delete-comments': reviewing((review, which) => review.deleteAllComments(which === 'resolved')),
   'comment-previous': reviewing((review) => review.gotoComment(-1)),
@@ -1729,10 +2179,14 @@ export const MENU_COMMAND_HANDLERS: Record<ActionCommandId, Handler> = {
   },
   // the merge panel on one document of every record, Word's Edit Individual Documents
   'mailings-finish-merge': (host) => {
-    if (host.hasDoc) host.openMailMerge('single')
+    if (host.hasDoc) host.openMailMerge(host.labelMainDocument ? 'labels' : 'single')
   },
-  'tools-spelling': (host) => {
-    if (host.hasDoc) host.checkSpelling()
+  // payload: where the check starts (the word a right-click asked about); else the caret
+  'tools-spelling': (host, payload) => {
+    if (!host.hasDoc) return
+    const at = Number(payload)
+    if (payload && Number.isFinite(at)) host.editor?.commands.setTextSelection(at)
+    host.checkSpelling()
   },
   'tools-thesaurus': (host) => {
     if (host.hasDoc) host.thesaurus()
@@ -1755,7 +2209,7 @@ export const MENU_COMMAND_HANDLERS: Record<ActionCommandId, Handler> = {
       host.applyHeadingLevel(level)
   },
   'mailings-start': (host) => {
-    if (host.hasDoc) host.openMailMerge('perRecord')
+    if (host.hasDoc) host.openMailMerge(host.labelMainDocument ? 'labels' : 'perRecord')
   },
   'tools-envelopes': (host) => {
     if (host.hasDoc) host.openMailMerge('envelopes')
@@ -1773,11 +2227,11 @@ export const MENU_COMMAND_HANDLERS: Record<ActionCommandId, Handler> = {
   },
   'format-two-lines-in-one': (host) => {
     const target = formatTarget(host)
-    if (host.hasDoc && target) host.toggleAsianLayout(target, 'combine')
+    if (host.hasDoc && target) host.openAsianLayout(target, 'combine')
   },
   'format-horizontal-in-vertical': (host) => {
     const target = formatTarget(host)
-    if (host.hasDoc && target) host.toggleAsianLayout(target, 'vert')
+    if (host.hasDoc && target) host.openAsianLayout(target, 'vert')
   },
   'format-enclose-characters': (host) => {
     const target = formatTarget(host)
@@ -1813,9 +2267,34 @@ export const MENU_COMMAND_HANDLERS: Record<ActionCommandId, Handler> = {
   'format-document': (host) => {
     if (host.editor && host.hasDoc) host.openDialog('document')
   },
-  'document-theme': applyTheme,
-  'theme-fonts': applyTheme,
-  'theme-colors': applyTheme,
+  // payload: also a theme file of the themes folder as custom:<file name>
+  'document-theme': themePick((id, design) => {
+    if (id.startsWith(CUSTOM_THEME)) return design.savedTheme(id.slice(CUSTOM_THEME.length))
+    const theme = OFFICE_THEMES.find((t) => t.id === id)
+    return theme && { ...theme, format: { name: theme.name, xml: theme.format } }
+  }),
+  'theme-fonts': themePick((id) => {
+    const fonts = OFFICE_THEME_FONTS.find((f) => f.id === id)?.fonts
+    return fonts && { fonts }
+  }),
+  'theme-colors': themePick((id) => {
+    const colors = OFFICE_THEME_COLORS.find((c) => c.id === id)?.colors
+    return colors && { colors }
+  }),
+  'theme-reset': (host) => {
+    const opened = host.hasDoc && formatTarget(host) ? host.design.openedTheme() : undefined
+    if (opened) host.design.setTheme(opened)
+  },
+  'theme-browse': (host) => {
+    if (host.hasDoc && formatTarget(host)) host.design.browseTheme()
+  },
+  'theme-save-current': (host) => {
+    if (host.hasDoc) host.design.saveTheme()
+  },
+  // payload: the theme file's name in the themes folder
+  'theme-custom-delete': (host, payload) => {
+    if (payload) host.design.deleteTheme(payload)
+  },
   'page-color': designing((design, hex) => design.setPageColor(hex === NONE ? null : hex)),
   watermark: designing((design, text) => design.setWatermark(text === NONE ? null : text)),
   // payload: box for the plain box border, none to remove it
@@ -1928,9 +2407,10 @@ export const MENU_COMMAND_HANDLERS: Record<ActionCommandId, Handler> = {
     const type = SECTION_BREAKS.find((k) => k === payload)
     if (type) host.insertSectionBreak(type)
   }),
-  // the picture may sit in a header, footer or text box: the editor that has the focus holds it
+  // the picture may sit in a header, footer or text box, whose editor then holds the selection
   'picture-wrap': inserting((editor, wrap) => {
-    if (wrap) setFloatingWrap(getActiveSubEditor() ?? editor, wrap === NONE ? null : wrap)
+    if (wrap)
+      setFloatingWrap(arrangeEditor(editor, getActiveSubEditor()), wrap === NONE ? null : wrap)
   }),
   // payload: the colour the selected graphic is filled with, or none
   'picture-graphics-fill': inserting((editor, payload) => {
@@ -1966,10 +2446,30 @@ export const MENU_COMMAND_HANDLERS: Record<ActionCommandId, Handler> = {
     else groupSelectedObjects(target)
   }),
   'picture-replace': inserting((editor, _payload, host) => {
-    if (editor.getAttributes('docProtected')?.blockType !== 'image') return
+    // where the picture is, taken now: the focus may be elsewhere once the file is picked
+    const target = changePictureEditor(editor)
+    if (!target) return
     void host.pickImage().then((picked) => {
-      if (picked)
-        return replaceSelectedPictureBytes(editor, `data:${picked.mime};base64,${picked.base64}`)
+      if (picked && !target.isDestroyed)
+        return replaceSelectedPictureBytes(target, `data:${picked.mime};base64,${picked.base64}`)
+    })
+  }),
+  // payload: the library icon that takes the picture's place; without one the icons are shown to pick from
+  'picture-replace-icon': inserting((editor, payload, host) => {
+    const target = changePictureEditor(editor)
+    if (!target) return
+    if (!payload) return host.openDialog('changePictureIcon')
+    void prepareLibraryIcons([payload]).then(() => {
+      const icon = preparedIcon(payload)
+      if (icon && !target.isDestroyed)
+        return replaceSelectedPictureBytes(target, icon.dataUrl, undefined, icon.vectorUrl)
+    })
+  }),
+  'picture-replace-clipboard': inserting((editor) => {
+    const target = changePictureEditor(editor)
+    if (!target) return
+    void readClipboardPicture().then((dataUrl) => {
+      if (dataUrl && !target.isDestroyed) return replaceSelectedPictureBytes(target, dataUrl)
     })
   }),
   // payload: crop or cutout
@@ -1984,54 +2484,28 @@ export const MENU_COMMAND_HANDLERS: Record<ActionCommandId, Handler> = {
       host.openDialog('altText')
   },
   'picture-size-position': inserting((editor, _payload, host) => {
-    if (selectedPictureGeometry(editor)) host.openDialog('sizePosition')
+    if (selectedPictureGeometry(editor) || selectedShapeSize(editor))
+      host.openDialog('sizePosition')
   }),
   'picture-auto-crop': inserting((editor, _payload, host) => {
     void autoCropSelectedPicture(editor).then((cropped) => {
       if (!cropped) host.nothingToCrop()
     })
   }),
-  // payload: degrees to turn the selected picture by, clockwise
+  // payload: degrees to turn the selected picture or shape by, clockwise
   'picture-rotate': inserting((editor, payload) => {
-    const delta = Number(payload)
-    const attrs = editor.getAttributes('docProtected')
-    if (!Number.isFinite(delta) || attrs?.blockType !== 'image') return
-    const turned = ((((Number(attrs.imageRotDeg) || 0) + delta) % 360) + 360) % 360
-    editor
-      .chain()
-      .focus()
-      .updateAttributes('docProtected', { imageRotDeg: turned || null })
-      .run()
+    if (payload) rotateSelectedObject(editor, getActiveSubEditor(), Number(payload))
   }),
   // payload: h or v
   'picture-flip': inserting((editor, axis) => {
-    const attrs = editor.getAttributes('docProtected')
-    if ((axis !== 'h' && axis !== 'v') || attrs?.blockType !== 'image') return
-    const key = axis === 'h' ? 'imageFlipH' : 'imageFlipV'
-    editor
-      .chain()
-      .focus()
-      .updateAttributes('docProtected', { [key]: !attrs[key] })
-      .run()
+    if (axis === 'h' || axis === 'v') flipSelectedObject(editor, getActiveSubEditor(), axis)
   }),
   // payload: horizontal,vertical alignment on the page; the picture wraps away from its side
   'picture-position': inserting((editor, position) => {
     const [h, v] = (position ?? '').split(',')
-    if (!['left', 'center', 'right'].includes(h) || !['top', 'center', 'bottom'].includes(v)) return
-    editor
-      .chain()
-      .focus()
-      .updateAttributes('docProtected', {
-        imageWrap: h === 'right' ? 'square-right' : 'square-left',
-        imagePosH: h,
-        imagePosV: v,
-        // the frame the save writes the pair against, so the page shows the saved place
-        imageRelH: 'margin',
-        imageRelV: 'margin',
-        imageOffsetXEmu: null,
-        imageOffsetYEmu: null,
-      })
-      .run()
+    const posH = POSITIONS_H.find((k) => k === h)
+    const posV = POSITIONS_V.find((k) => k === v)
+    if (posH && posV) positionSelectedPicture(editor, getActiveSubEditor(), posH, posV)
   }),
   find: (host) => {
     if (host.hasDoc) host.openFind('find')
@@ -2157,11 +2631,18 @@ const repeatEditors = (host: Pick<CommandHost, 'editor'>): (Editor | null)[] => 
 export const canRepeatCommand = (host: Pick<CommandHost, 'editor'>): boolean =>
   repeatable(repeatEditors(host)) !== null
 
+/** the browser reports a click's selection a moment after the click: a command sent in between reads it here */
+function readPendingSelection(editor: Editor | null | undefined): void {
+  if (!editor || editor.isDestroyed || !editor.isInitialized) return
+  ;(editor.view as unknown as { domObserver?: { flush(): void } }).domObserver?.flush()
+}
+
 export function runMenuCommand(
   host: CommandHost,
   command: ActionCommandId,
   payload?: string,
 ): void {
+  repeatEditors(host).forEach(readPendingSelection)
   runRecorded(
     () => repeatEditors(host),
     command,

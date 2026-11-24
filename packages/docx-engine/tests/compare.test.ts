@@ -242,10 +242,21 @@ describe('document comparison (pictures, pending changes, ids)', () => {
     expect(xml).toMatch(/<w:del\b[^>]*>[\s\S]*?<w:delText[^>]*>one<\/w:delText>/)
   })
 
-  it('names a deleted picture of the original instead of carrying its media reference', async () => {
+  it('carries a deleted picture of the original as a deleted drawing with its own media part', async () => {
     const pictureP = `<w:p>${INLINE_PICTURE}</w:p>`
     const { xml, summary } = await compareWithPictures(UNCHANGED_P + pictureP, UNCHANGED_P)
     expect(summary.deletedParagraphs).toBe(1)
+    expect(xml).toMatch(/<w:del\b[^>]*><w:r><w:drawing>[\s\S]*?r:embed="rId\d+"/)
+    expect(xml).not.toContain('aidocs-new-pic')
+    expect(xml).not.toContain('[picture]')
+  })
+
+  it('names a deleted picture that points at more than its bitmap', async () => {
+    const linked = INLINE_PICTURE.replace(
+      '<pic:cNvPr id="0" name="Picture 2"/>',
+      '<pic:cNvPr id="0" name="Picture 2"><a:hlinkClick r:id="rId10"/></pic:cNvPr>',
+    )
+    const { xml } = await compareWithPictures(UNCHANGED_P + `<w:p>${linked}</w:p>`, UNCHANGED_P)
     expect(xml).not.toContain('r:embed')
     expect(xml).toContain('[picture]')
   })

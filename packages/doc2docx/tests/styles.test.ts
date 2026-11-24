@@ -547,7 +547,7 @@ describe('converted styles: the stylesheet becomes .docx styles', () => {
 
 describe('mapped template styles answer the template toggles explicitly', () => {
   it('a plain-heading document stays plain when its Heading 1 rides the bold template style', async () => {
-    // the merrick case: the source's heading 1 carries no bold CHPX, so on
+    // the source's heading 1 carries no bold CHPX, so on
     // main the runs render plain; with the paragraph carrying pStyle Heading1
     // (the template's chain is bold), a silent run property would leak — the
     // resolved runs state the off instead

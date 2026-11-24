@@ -36,3 +36,13 @@ export const SEG_BREAKABLE_RE = /\s|[\u2E80-\u9FFF\uAC00-\uD7AF\uF900-\uFAFF\uFF
 /** halfwidth kana / hangul / symbols: East Asian face, single-byte for the balanced
  *  character grid (Word probe 2026-10-22) */
 export const HALFWIDTH_FORM_RE = /[\uff61-\uffdc\uffe8-\uffee]/u
+
+/** Latin face a run's own w:rFonts gives its text: an East Asian-only
+ *  declaration leaves non-CJK text in the inherited face (null) */
+export function runOwnLatinFace(
+  slots: { fontAscii?: string | null; font?: string | null; eastAsiaFont?: string | null },
+  text: string,
+): string | null {
+  const eaOnly = !!slots.font && slots.font === slots.eastAsiaFont && !textHasCjk(text)
+  return slots.fontAscii ?? (eaOnly ? null : slots.font) ?? null
+}

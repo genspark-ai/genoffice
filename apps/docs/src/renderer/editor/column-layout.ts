@@ -73,6 +73,8 @@ export interface ColumnBlockSpec {
   charSpaceSbPt?: number
   /** owning section's snapToChars cell pitch (pt) in docs whose sections disagree on it */
   charCellPt?: number
+  /** owning section's w:adjustRightInd share (pt) in docs whose sections disagree on it */
+  rightIndentPt?: number
   /** translate; dy < 0 pulls content up over vacated column space */
   dx: number
   dy: number
@@ -113,7 +115,10 @@ const PATCH_PROPS = [
   '--doc-char-space',
   '--doc-char-space-sb',
   '--doc-char-snap',
+  '--doc-rind-sect',
   '--vert-mb',
+  '--vert-tbl-h',
+  '--vert-inset',
 ]
 
 const PATCH_CLASSES = [
@@ -126,6 +131,8 @@ const PATCH_CLASSES = [
   'doc-vert-tbRl',
   'doc-vert-tbRlV',
   'doc-vert-btLr',
+  'doc-vert-table',
+  'doc-vert-inset',
   'doc-sect-page-start',
 ]
 
@@ -140,6 +147,7 @@ function specClass(spec: ColumnBlockSpec, leading = true): string {
     (spec.gridPitchPt !== undefined ||
       spec.charSpacePt !== undefined ||
       spec.charCellPt !== undefined ||
+      spec.rightIndentPt !== undefined ||
       spec.marginTopPx !== undefined ||
       spec.sectionPageStart) &&
     spec.widthPx === undefined &&
@@ -151,9 +159,11 @@ function specClass(spec: ColumnBlockSpec, leading = true): string {
   if (spec.gridPitchPt === 0) cls += ' doc-grid-nosnap'
   if (spec.charSpacePt !== undefined) cls += ' doc-charspace-block'
   if (leading && spec.sectionPageStart) cls += ' doc-sect-page-start'
-  if (spec.vertical) {
+  if (spec.vertical?.table) cls += ' doc-vert-table'
+  else if (spec.vertical) {
     cls += ` doc-vert-block doc-vert-${spec.vertical.mode}`
     if (leading && spec.vertical.firstOnPage) cls += ' doc-vert-first'
+    if (spec.vertical.insetPx) cls += ' doc-vert-inset'
   }
   return cls
 }
@@ -195,9 +205,12 @@ export function setColumnLayout(
       (spec.charCellPt !== undefined
         ? `--doc-char-snap:${charCellSpacingCss(spec.charCellPt)};`
         : '') +
+      (spec.rightIndentPt !== undefined ? `--doc-rind-sect:${round2(spec.rightIndentPt)}pt;` : '') +
       (spec.pageDx ? `--page-cx:${round2(spec.pageDx)}px;` : '') +
       (spec.mirrorDx ? `--mirror-ind-dx:${round2(spec.mirrorDx)}px;` : '') +
       (spec.vertical ? `--vert-mb:${round2(spec.vertical.marginBottomPx)}px;` : '') +
+      (spec.vertical?.table ? `--vert-tbl-h:${round2(spec.vertical.table.heightPx)}px;` : '') +
+      (spec.vertical?.insetPx ? `--vert-inset:${round2(spec.vertical.insetPx)}px;` : '') +
       `--col-dx:${round2(spec.dx)}px;--col-dy:${round2(spec.dy)}px`
     const cls = specClass(spec)
     styleOf.set(spec.el, { style, cls })

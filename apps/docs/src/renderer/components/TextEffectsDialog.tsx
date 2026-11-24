@@ -1,16 +1,22 @@
 import { useState, type CSSProperties } from 'react'
+import type { TextFill } from '@genoffice/docx-engine'
 import {
   FX_COLORS,
   GLOW_SIZES_PT,
+  GRADIENT_SPREADS,
   OUTLINE_WIDTHS_PT,
   REFLECTION_PRESETS,
   SHADOW_PRESETS,
   TEXT_FX_PRESETS,
   glowOf,
+  gradientFillOf,
+  gradientSpreadOf,
   sameTextFx,
   textFxDecls,
+  type GradientSpread,
   type TextFx,
 } from '../editor/text-fx'
+import { declStyle } from '../editor/text-effects'
 import { useI18n, type StringKey } from '../i18n/locale'
 import { useModalKeys } from './modal-keys'
 
@@ -26,21 +32,23 @@ const REFLECTION_LABELS: Record<(typeof REFLECTION_PRESETS)[number]['id'], Strin
   full: 'ribbonTfxReflectFull',
 }
 
-/** CSS declarations ("name:value") as a React style object */
-export function styleOf(decls: string[]): CSSProperties {
-  const style: Record<string, string> = {}
-  for (const decl of decls) {
-    const at = decl.indexOf(':')
-    const name = decl.slice(0, at).replace(/^-webkit-/, 'Webkit-')
-    style[name.replace(/-([a-z])/g, (_, c: string) => c.toUpperCase())] = decl.slice(at + 1)
-  }
-  return style
+const GRADIENT_LABELS: Record<GradientSpread, StringKey> = {
+  down: 'ribbonTfxGradientDown',
+  right: 'ribbonTfxGradientRight',
+  diagonal: 'ribbonTfxGradientDiagonal',
+  center: 'ribbonTfxGradientCenter',
 }
+
+const AUTO_BASE = '000000'
+
+/** CSS declarations ("name:value") as a React style object */
+export const styleOf = (decls: string[]): CSSProperties => declStyle(decls)
 
 /** Word's Format > Text Effects: presets, a fill, an outline, a shadow, a reflection and a glow on the selected text */
 export function TextEffectsDialog({
   fx,
   color,
+  shown,
   onApply,
   onClose,
 }: {
@@ -48,14 +56,36 @@ export function TextEffectsDialog({
   fx: TextFx
   /** the colour it is filled with now, hex without '#'; null for the automatic colour */
   color: string | null
-  /** `color` is the fill that was picked, alone or with a preset */
-  onApply: (fx: TextFx, color?: string) => void
+  /** the fill it shows where that is more than a colour: a gradient, a transparent colour */
+  shown: TextFill | null
+  /** `color` is the fill that was picked, alone or with a preset; `fill` a gradient put on (null: taken off) */
+  onApply: (fx: TextFx, color?: string, fill?: TextFill | null) => void
   onClose: () => void
 }) {
   const { t } = useI18n()
   const keys = useModalKeys(onClose)
   const [next, setNextFx] = useState<TextFx>(fx)
   const [fill, setFill] = useState(color)
+  const opened = shown?.kind === 'gradient' ? shown : null
+  const [gradient, setGradient] = useState<TextFill | null>(opened)
+  const spread = gradientSpreadOf(gradient)
+  const gradientChanged = JSON.stringify(gradient) !== JSON.stringify(opened)
+  // Word's Text Fill > Transparency: how much of a solid fill lets the page through
+  const openedTransparency =
+    shown?.kind === 'solid' ? Math.round((1 - (shown.alpha ?? 1)) * 100) : 0
+  const [transparency, setTransparency] = useState(openedTransparency)
+  const seeThrough: TextFill | null =
+    !gradient && transparency > 0
+      ? { kind: 'solid', color: fill ?? AUTO_BASE, alpha: (100 - transparency) / 100 }
+      : null
+  const seeThroughChanged =
+    !gradient &&
+    (transparency !== openedTransparency || (transparency > 0 && (fill !== color || !!opened)))
+  const pickFill = (hex: string) => {
+    setFill(hex)
+    // one of our gradients follows the colour; any other gives way to it
+    setGradient(spread ? gradientFillOf(hex, spread) : null)
+  }
   const [preset, setPreset] = useState<(typeof TEXT_FX_PRESETS)[number] | null>(null)
   const setNext = (value: TextFx) => {
     setPreset(null)
@@ -111,7 +141,13 @@ export function TextEffectsDialog({
         onSubmit={(e) => {
           e.preventDefault()
           onClose()
-          if (picked || !sameTextFx(next, fx)) onApply(next, picked)
+          if (picked || gradientChanged || seeThroughChanged || !sameTextFx(next, fx))
+            onApply(
+              next,
+              // a see-through fill lies over a colour: the automatic colour becomes the one it was drawn in
+              picked ?? (seeThrough && !fill ? AUTO_BASE : undefined),
+              seeThroughChanged ? seeThrough : gradientChanged ? gradient : undefined,
+            )
         }}
       >
         <h2>{t('ribbonTextEffects')}</h2>
@@ -130,6 +166,8 @@ export function TextEffectsDialog({
                 onClick={() => {
                   setNextFx(item.fx)
                   setFill(item.color)
+                  setGradient(null)
+                  setTransparency(0)
                   setPreset(item)
                 }}
               >
@@ -146,10 +184,54 @@ export function TextEffectsDialog({
             fill,
             (hex) => {
               setPreset(null)
-              setFill(hex)
+              pickFill(hex)
             },
             // a colour from the file that the palette does not hold is offered beside it
             color && !FX_COLORS.some((hex) => hex === color) ? [color, ...FX_COLORS] : FX_COLORS,
+          )}
+          <div className="text-fx-choices" role="radiogroup" aria-label={t('ribbonTfxGradient')}>
+            <span className="text-fx-label">{t('ribbonTfxGradient')}</span>
+            {choice(!gradient, t('ribbonNone'), () => setGradient(null), 'none')}
+            {GRADIENT_SPREADS.map((item) =>
+              choice(
+                spread === item,
+                t(GRADIENT_LABELS[item]),
+                () => {
+                  setPreset(null)
+                  setFill(fill ?? AUTO_BASE)
+                  setGradient(gradientFillOf(fill ?? AUTO_BASE, item))
+                },
+                item,
+              ),
+            )}
+          </div>
+          {!gradient && (
+            <div className="text-fx-choices text-fx-transparency">
+              <span className="text-fx-label">{t('ribbonWatermarkTransparency')}</span>
+              <input
+                type="range"
+                min={0}
+                max={100}
+                value={transparency}
+                onChange={(e) => setTransparency(Number(e.target.value))}
+                aria-label={t('ribbonWatermarkTransparency')}
+              />
+              <input
+                type="number"
+                className="wm-pct"
+                name="fillTransparency"
+                min={0}
+                max={100}
+                value={transparency}
+                onChange={(e) =>
+                  setTransparency(
+                    Math.max(0, Math.min(100, Math.round(Number(e.target.value)) || 0)),
+                  )
+                }
+                aria-label={t('ribbonWatermarkTransparency')}
+              />
+              <span className="text-fx-label">%</span>
+            </div>
           )}
         </fieldset>
         <fieldset className="text-fx-group" data-fx="outline">
@@ -215,8 +297,15 @@ export function TextEffectsDialog({
         <div className="text-fx-preview" aria-label={t('ribbonPbPreview')}>
           <span
             style={{
-              ...styleOf(textFxDecls(next)),
               ...(fill ? { color: `#${fill}` } : {}),
+              ...styleOf(
+                textFxDecls(
+                  next,
+                  gradient ??
+                    seeThrough ??
+                    (fill === color && shown?.kind === 'none' ? shown : null),
+                ),
+              ),
             }}
           >
             AaBbCc

@@ -127,7 +127,7 @@ describe('sideLine mapping', () => {
     expect(sideLine('insideV', 'bottom', edge, LINE)).toBeUndefined()
   })
   it('none clears every side, all paints every side', () => {
-    expect(sideLine('none', 'right', edge, LINE)).toEqual({ style: 'none' })
+    expect(sideLine('none', 'right', edge, LINE)).toEqual({ style: 'nil' })
     expect(sideLine('all', 'right', edge, LINE)).toBe(LINE)
   })
 })
@@ -169,19 +169,19 @@ describe('setSelectionBorders', () => {
     expect(bordersAt(editor, 1, 1)).toBeNull()
   })
 
-  it('No Border writes explicit none sides and drops table-level inside lines', () => {
+  it('No Border writes nil sides, which Word does not fill from the table, and drops table-level inside lines', () => {
     const inside = { style: 'single', szEighths: 4 }
     const editor = createEditor({ borders: { top: inside, insideH: inside, insideV: inside } })
     caretIn(editor, 0, 0)
     expect(run(editor, 'none')).toBe(true)
     expect(bordersAt(editor, 1, 1)).toEqual({
-      top: { style: 'none' },
-      bottom: { style: 'none' },
-      left: { style: 'none' },
-      right: { style: 'none' },
+      top: { style: 'nil' },
+      bottom: { style: 'nil' },
+      left: { style: 'nil' },
+      right: { style: 'nil' },
       // No Border clears the diagonals too, like Word's
-      tl2br: { style: 'none' },
-      tr2bl: { style: 'none' },
+      tl2br: { style: 'nil' },
+      tr2bl: { style: 'nil' },
     })
     expect(editor.state.doc.child(1).attrs.borders).toEqual({ top: inside })
   })

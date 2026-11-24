@@ -1,10 +1,15 @@
 import type { Editor } from '@tiptap/core'
 import type { EditorState } from '@tiptap/pm/state'
+import type { CombineBrackets } from '@genoffice/docx-engine'
 
 /** the text mark's `eaLayout` value: the run's w:eastAsianLayout, and how wide two lines in one sit */
 export interface EaLayoutAttr {
   combine?: true
+  /** what encloses the two lines */
+  brackets?: CombineBrackets
   vert?: true
+  /** Word's Fit in line: kept for the file, Word draws the run the same with and without it */
+  vertCompress?: true
   /** groups the runs of one two-lines-in-one region */
   id?: number
   /** half the length of the combined text, in em of its half-size font: the width of its two lines */
@@ -37,7 +42,7 @@ export function fitTextDecls(twips: number): string[] {
   ]
 }
 
-/** CSS of an East Asian layout: two half-size lines in the space of one, or upright in vertical text */
+/** CSS of two lines in one: two half-size lines in the space of one */
 export function eaLayoutDecls(ea: EaLayoutAttr, sizeHalfPoints: number | null): string[] {
   if (ea.combine) {
     return [
@@ -52,7 +57,15 @@ export function eaLayoutDecls(ea: EaLayoutAttr, sizeHalfPoints: number | null): 
       'text-align:start',
     ]
   }
-  return ea.vert ? ['text-combine-upright:all'] : []
+  // horizontal in vertical is drawn by the stylesheet ([data-ea-vert]): it depends on the line's direction
+  return []
+}
+
+export const COMBINE_BRACKET_PAIRS: Record<CombineBrackets, [string, string]> = {
+  round: ['(', ')'],
+  square: ['[', ']'],
+  angle: ['<', '>'],
+  curly: ['{', '}'],
 }
 
 /** the selection is one stretch of text inside one paragraph: what a layout is put on */
@@ -63,20 +76,32 @@ export function textStretch(state: EditorState): { from: number; to: number; tex
   return text ? { from, to, text } : null
 }
 
+export type EaLayoutChoice =
+  { kind: 'combine'; brackets: CombineBrackets | null } | { kind: 'vert'; fit: boolean }
+
+/** the layout the selected text has, as its dialog shows it */
+export const eaLayoutOf = (editor: Editor): EaLayoutAttr | null =>
+  parseEaLayoutAttr(editor.getAttributes('docTextStyle').eaLayout)
+
 /**
- * Turns two lines in one, or horizontal in vertical, on for the selected text,
- * or off when the selection already has it. The two exclude each other. False
- * when there is no stretch of text selected.
+ * Puts two lines in one, or horizontal in vertical, on the selected text; null
+ * takes the layout off. The two exclude each other. False when there is no
+ * stretch of text selected.
  */
-export function toggleEaLayout(editor: Editor, kind: 'combine' | 'vert'): boolean {
+export function setEaLayout(editor: Editor, choice: EaLayoutChoice | null): boolean {
   const stretch = textStretch(editor.state)
   if (!stretch) return false
-  const current = parseEaLayoutAttr(editor.getAttributes('docTextStyle').eaLayout)
-  const next: EaLayoutAttr = current?.[kind]
+  const id = eaLayoutOf(editor)?.id ?? newRegionId()
+  const next: EaLayoutAttr = !choice
     ? {}
-    : kind === 'combine'
-      ? { combine: true, id: newRegionId(), w: twoLinesWidthEm(stretch.text) }
-      : { vert: true, id: newRegionId() }
+    : choice.kind === 'combine'
+      ? {
+          combine: true,
+          ...(choice.brackets ? { brackets: choice.brackets } : {}),
+          id,
+          w: twoLinesWidthEm(stretch.text),
+        }
+      : { vert: true, ...(choice.fit ? { vertCompress: true as const } : {}), id }
   return editor
     .chain()
     .focus()

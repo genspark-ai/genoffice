@@ -2203,7 +2203,7 @@ function registerPdfIpc(): void {
     const entry = entries?.get(certId)
     if (!entry) return
     releaseCertEntry(entry)
-    // The renderer releases when its dialog closes (#2927): the id stops
+    // The renderer releases when its dialog closes (genoffice#2927): the id stops
     // resolving, so inspect and sign cannot start from it again
     entries!.delete(certId)
     if (entries!.size === 0) certEntriesByWc.delete(e.sender.id)

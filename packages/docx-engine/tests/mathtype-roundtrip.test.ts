@@ -1,6 +1,7 @@
 import JSZip from 'jszip'
 import { describe, expect, it } from 'vitest'
 import {
+  compareDocuments,
   latexToOmml,
   mathParagraphXml,
   ommlToLatex,
@@ -271,5 +272,24 @@ describe('MathType OLE decoding and round-trip', () => {
     expect(decompiled).toContain('\\mathbf{w}')
     expect(decompiled).toContain('\\mathcal{K}')
     expect(ommlToMathML(`<m:oMath>${latexToOmml(decompiled!)}</m:oMath>`)).toBe(mathml)
+  })
+
+  it('names an equation object of the original in a comparison instead of carrying its relationships', async () => {
+    const text = (s: string) => `<w:r><w:t xml:space="preserve">${s}</w:t></w:r>`
+    const original = await parseDocx(
+      await buildMathTypeDocx(
+        `<w:p>${text('Some words here ')}<w:r>${OBJECT_XML}</w:r>${text(' and more words')}</w:p>` +
+          `<w:p>${text('Gone with ')}<w:r>${OBJECT_XML}</w:r></w:p>`,
+      ),
+    )
+    const revised = await parseDocx(
+      await buildDocx({ bodyXml: `<w:p>${text('Some words here  and more words')}</w:p>` }),
+    )
+    const { bytes } = await compareDocuments(original, revised)
+    const zip = await JSZip.loadAsync(bytes)
+    const xml = await zip.file('word/document.xml')!.async('string')
+    expect(xml).not.toContain('<w:object')
+    expect(xml).not.toMatch(/r:id="rId3[01]"/)
+    expect(xml.match(/<w:delText[^>]*>\[picture\]<\/w:delText>/g)).toHaveLength(2)
   })
 })

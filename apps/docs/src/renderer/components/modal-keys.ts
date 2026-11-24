@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useLayoutEffect, useRef } from 'react'
 import type { KeyboardEvent as ReactKeyboardEvent } from 'react'
 
 /**
@@ -19,7 +19,8 @@ export function useModalKeys(onClose: () => void) {
   }, [])
 
   // Clicking a canvas/img inside the modal blurs to body, where the React handler never sees Esc.
-  useEffect(() => {
+  // A layout effect: Esc pressed as the dialog appears, before it has the focus, closes it too.
+  useLayoutEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape' || !focusOutsideModal(ref.current)) return
       e.preventDefault()

@@ -202,3 +202,89 @@ describe('applyTrackedChangesXml move pairs', () => {
     expect(texts(out.xml)).toEqual(['MOVEDkeep', ''])
   })
 })
+
+describe('rejecting cells that came in with Shift cells down', () => {
+  const BY = 'w:author="Ann" w:date="2026-11-24T00:00:00Z"'
+  const cell = (text: string, inserted = false, extra = '') =>
+    `<w:tc><w:tcPr><w:tcW w:w="2000" w:type="dxa"/>${extra}${inserted ? `<w:cellIns w:id="${text.length + 40}" ${BY}/>` : ''}</w:tcPr><w:p>${text ? `<w:r><w:t>${text}</w:t></w:r>` : ''}</w:p></w:tc>`
+  const table = (rows: string[][]) =>
+    `<w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="2000"/><w:gridCol w:w="2000"/></w:tblGrid>${rows.map((row) => `<w:tr>${row.join('')}</w:tr>`).join('')}</w:tbl>`
+  const texts = (xml: string) =>
+    [...xml.matchAll(/<w:tr>[\s\S]*?<\/w:tr>/g)].map((row) =>
+      [...row[0].matchAll(/<w:tc>[\s\S]*?<\/w:tc>/g)].map((c) =>
+        [...c[0].matchAll(/<w:t>([^<]*)<\/w:t>/g)].map((t) => t[1]).join(''),
+      ),
+    )
+  // A1 / A2 pushed down by one inserted cell: the row added at the bottom holds A2 and an inserted cell
+  const shifted = table([
+    [cell('', true), cell('B1')],
+    [cell('A1'), cell('B2')],
+    [cell('A2'), cell('', true)],
+  ])
+
+  it('moves the column back up and drops the row the insertion added', () => {
+    const out = applyTrackedChangesXml(shifted, 'reject')
+    expect(out.remaining).toBe(0)
+    expect(out.applied).toBe(2)
+    expect(texts(out.xml)).toEqual([
+      ['A1', 'B1'],
+      ['A2', 'B2'],
+    ])
+  })
+
+  it('accepting keeps the cells where they are', () => {
+    const out = applyTrackedChangesXml(shifted, 'accept')
+    expect(out.remaining).toBe(0)
+    expect(texts(out.xml)).toEqual([
+      ['', 'B1'],
+      ['A1', 'B2'],
+      ['A2', ''],
+    ])
+  })
+
+  it('two cells down a column that is two rows longer, a tracked change inside a moved cell resolved with it', () => {
+    const moved = cell('A1').replace(
+      '<w:r><w:t>A1</w:t></w:r>',
+      '<w:r><w:t>A1</w:t></w:r><w:ins w:id="90" w:author="Ann"><w:r><w:t>!</w:t></w:r></w:ins>',
+    )
+    const xml = table([
+      [cell('', true), cell('B1')],
+      [cell('', true), cell('B2')],
+      [moved, cell('', true)],
+      [cell('A2'), cell('', true)],
+    ])
+    const out = applyTrackedChangesXml(xml, 'reject')
+    expect(out.remaining).toBe(0)
+    expect(texts(out.xml)).toEqual([
+      ['A1', 'B1'],
+      ['A2', 'B2'],
+    ])
+  })
+
+  it('a cell that came in to the right, a merged table and a partial reject take the plain meaning: the cell leaves its row', () => {
+    const right = table([
+      [cell('A1'), cell('B1')],
+      [cell('', true), cell('A2'), cell('B2')],
+    ])
+    expect(texts(applyTrackedChangesXml(right, 'reject').xml)).toEqual([
+      ['A1', 'B1'],
+      ['A2', 'B2'],
+    ])
+    const merged = table([
+      [cell('', true), cell('B1', false, '<w:vMerge w:val="restart"/>')],
+      [cell('A1'), cell('', false, '<w:vMerge/>')],
+      [cell('A2'), cell('', true)],
+    ])
+    expect(texts(applyTrackedChangesXml(merged, 'reject').xml)).toEqual([
+      ['B1'],
+      ['A1', ''],
+      ['A2'],
+    ])
+    const two = shifted.replace('w:author="Ann"', 'w:author="Bob"')
+    expect(texts(applyTrackedChangesXml(two, 'reject', { author: 'Ann' }).xml)).toEqual([
+      ['', 'B1'],
+      ['A1', 'B2'],
+      ['A2'],
+    ])
+  })
+})

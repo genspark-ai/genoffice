@@ -1,0 +1,14 @@
+{
+  "family": "MS PMincho JA GO",
+  "source": {
+    "kind": "probe",
+    "date": "2026-11-20",
+    "probe": "advances from Word msmincho.ttc (MS PMincho hmtx) confirmed by a Word PDF: kana proportional glyph by glyph (0.50-0.98em), 0.664em ideographic space/comma/period, half-width brackets; carried by the bundled GenOffice PMincho Kana JP face"
+  },
+  "faces": [
+    {
+      "src": "url('./GenOfficePMinchoKanaJP-Regular.woff2') format('woff2')",
+      "unicodeRange": "U+3000-3002, U+3008-3011, U+3014-3015, U+3041-3049, U+304B-3058, U+305D-3063, U+3066-306B, U+306E-306F, U+307B-307E, U+3081-3083, U+3085-3096, U+309B-309E, U+30A1-30C6, U+30C8-30D7, U+30DB-30FB, U+30FD-30FE, U+FF08-FF09, U+FF0C, U+FF0E, U+FF1A-FF1B, U+FF3B, U+FF3D-FF3E, U+FF40, U+FF5B, U+FF5D, U+FF5F-FF60"
+    }
+  ]
+}

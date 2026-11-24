@@ -117,7 +117,7 @@ describe('entries whose feature is not built', () => {
     const find = edit.findIndex(
       (node) => typeof node === 'object' && 'submenu' in node && node.submenu === 'menuFindMenu',
     )
-    expect(edit.slice(find + 1, find + 3)).toEqual(['---', 'edit-select-data'])
+    expect(edit.slice(find + 1, find + 5)).toEqual(['---', 'edit-links', '---', 'edit-select-data'])
   })
 
   it('the ribbon and the context menu offer no planned command', () => {

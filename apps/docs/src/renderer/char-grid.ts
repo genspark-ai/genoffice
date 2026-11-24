@@ -39,6 +39,19 @@ export const charSpaceForPitch = (basePt: number, pitchPt: number): number =>
 export const charsPerLine = (textWidthPt: number, pitchPt: number): number =>
   Math.max(1, Math.floor(textWidthPt / pitchPt + 1e-6))
 
+/**
+ * What a paragraph with w:adjustRightInd on adds to its right indent in a
+ * document below compatibilityMode 15: the part of the column that a whole
+ * number of cells leaves over (Word probes 2026-11-22). Word 2013 documents
+ * lay out as if the setting were off.
+ */
+export function gridRightIndentPt(columnWidthPt: number, pitchPt: number): number {
+  if (!(columnWidthPt > 0) || !(pitchPt > 0)) return 0
+  const rest = columnWidthPt - Math.floor(columnWidthPt / pitchPt + 1e-6) * pitchPt
+  // a hair less, so the last whole cell still fits once widths are rounded to pixels
+  return rest >= 0.05 ? (Math.floor(rest * 100) - 2) / 100 : 0
+}
+
 /** cells narrower than this share of the base size are not offered */
 const MIN_PITCH_RATIO = 10 / 11
 

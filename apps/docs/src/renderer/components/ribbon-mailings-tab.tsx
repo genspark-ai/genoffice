@@ -21,6 +21,7 @@ import {
   IconFinishMerge,
 } from './icons'
 import { RbCommand, useCommandGreyed, useRunCommand } from './ribbon-command'
+import { RbGroupMenu } from './ribbon-group-menu'
 import { BIG, type SetDropdown, toggleDropdown } from './ribbon-tabs'
 import type { MergeRange } from '../mail-merge/range'
 
@@ -115,7 +116,10 @@ export function MailingsTab({
 
   return (
     <>
-      <div className="ribbon-group">
+      <div className="ribbon-group" data-menu="2">
+        <RbGroupMenu name={t('ribbonGroupMailingsCreate')}>
+          <IconEnvelope size={BIG} />
+        </RbGroupMenu>
         <div className="ribbon-group-items">
           <RbCommand cmd="tools-envelopes" look="big">
             <IconEnvelope size={BIG} />
@@ -186,6 +190,7 @@ export function MailingsTab({
           <div className="rb-split-wrap">
             <button
               className="rb-big"
+              data-icon="1"
               disabled={rulesOff}
               data-tip={t('ribbonRules')}
               onClick={() => toggleDropdown(setDropdown, 'rules')}
@@ -224,7 +229,7 @@ export function MailingsTab({
               </div>
             )}
           </div>
-          <RbCommand cmd="mailings-update-labels" look="big">
+          <RbCommand cmd="mailings-update-labels" look="big" iconAt={1}>
             <IconLabels size={BIG} />
           </RbCommand>
         </div>

@@ -12,6 +12,7 @@ import { MAX_CSV_EXPORT_CHARS } from '../shared/ipc-channels'
 import { settleFormulas } from './formula-settle'
 import { formulaViewSheets } from './formula-view'
 import { t } from './i18n/locale'
+import { withCanonicalNumbers } from './number-separators'
 import { DATE_1904_OFFSET, isCalendarDatePattern, patternType } from './numfmt-fix'
 import { showToast } from './toast-bus'
 import type { LazyWorkbookState, UniverRuntime } from './univer-state'
@@ -92,7 +93,8 @@ export function csvFromDisplayRows(
 export function withoutFormulaView<T>(sheets: Set<string>, sheetId: string, read: () => T): T {
   const hadFormulaView = sheets.delete(sheetId)
   try {
-    return read()
+    // the written file keeps canonical numbers whatever the region shows
+    return withCanonicalNumbers(read)
   } finally {
     if (hadFormulaView) sheets.add(sheetId)
   }

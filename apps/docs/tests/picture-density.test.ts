@@ -125,6 +125,32 @@ describe('the density a picture file states', () => {
   })
 })
 
+/** a BMP header: the file header, then a DIB header of `dib` bytes with pels per metre in an info header */
+function bmp(dib: number, xPpm = 0, yPpm = 0): Uint8Array {
+  const bytes = new Uint8Array(14 + Math.max(dib, 12))
+  const view = new DataView(bytes.buffer)
+  bytes.set(chars('BM'))
+  view.setUint32(14, dib, true)
+  if (dib >= 40) {
+    view.setInt32(38, xPpm, true)
+    view.setInt32(42, yPpm, true)
+  }
+  return bytes
+}
+
+describe('the density a BMP states', () => {
+  it('is the pels per metre of its info header', () => {
+    expect(pictureDensityOf(bmp(40, 11811, 11811))).toEqual({ xDpi: 300, yDpi: 300 })
+    expect(pictureDensityOf(bmp(124, 2835, 5669))).toEqual({ xDpi: 72, yDpi: 144 })
+  })
+
+  it('is none when the header leaves it at zero, is the old core header, or is cut off', () => {
+    expect(pictureDensityOf(bmp(40))).toBeNull()
+    expect(pictureDensityOf(bmp(12))).toBeNull()
+    expect(pictureDensityOf(bmp(40, 11811, 11811).subarray(0, 40))).toBeNull()
+  })
+})
+
 describe('the original size of a picture', () => {
   it('is its pixels at the stated density, in CSS px', () => {
     expect(originalPictureSize({ width: 600, height: 300 }, { xDpi: 300, yDpi: 300 })).toEqual({

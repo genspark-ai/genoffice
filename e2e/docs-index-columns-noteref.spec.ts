@@ -39,7 +39,7 @@ const CONTENT_TYPES =
 const FOOTNOTES_TYPE =
   '<Override PartName="/word/footnotes.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footnotes+xml"/>'
 
-async function docx(body: string, footnotes: string[] = []): Promise<Buffer> {
+async function docx(body: string, footnotes: string[] = [], sectPr = SECT_PR): Promise<Buffer> {
   const zip = new JSZip()
   zip.file(
     '[Content_Types].xml',
@@ -77,7 +77,7 @@ async function docx(body: string, footnotes: string[] = []): Promise<Buffer> {
     )
   zip.file(
     'word/document.xml',
-    `<?xml version="1.0" encoding="UTF-8"?><w:document ${NS}><w:body>${body}${SECT_PR}</w:body></w:document>`,
+    `<?xml version="1.0" encoding="UTF-8"?><w:document ${NS}><w:body>${body}${sectPr}</w:body></w:document>`,
   )
   return zip.generateAsync({ type: 'nodebuffer' })
 }
@@ -190,7 +190,7 @@ test('an index with columns sits in a continuous section of its own with that ma
     await caretIn(page, 'Index goes here')
     await openIndexTab(false)
     await expect(columns).toBeEnabled()
-    await expect(columns).toHaveValue('1')
+    await expect(columns).toHaveValue('2')
     await columns.fill('2')
     await page.screenshot({ path: test.info().outputPath('index-columns-dialog.png') })
     await dialog.locator('button.primary').click()
@@ -294,6 +294,56 @@ test('an index with columns sits in a continuous section of its own with that ma
   }
 })
 
+test('a document whose body has no section properties gets the index section and keeps it', async () => {
+  test.setTimeout(300_000)
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), 'genoffice-e2e-index-columns-bare-')))
+  const docPath = join(dir, 'bare.docx')
+  writeFileSync(
+    docPath,
+    await docx(
+      para('Orchard notes') +
+        TERMS.map((term) => para(`about ${term.toLowerCase()}`, xe(term))).join('') +
+        para('Index goes here') +
+        para('After the index'),
+      [],
+      '',
+    ),
+  )
+  expect(await sections(docPath)).toEqual([])
+  let session = await openDoc(docPath)
+  try {
+    const { app, page } = session
+    const dialog = page.locator('.index-tables-dialog')
+    await caretIn(page, 'Index goes here')
+    await clickMenu(app, ['Insert', 'Index and Tables…'])
+    await dialog.getByRole('tab', { name: 'Index', exact: true }).click()
+    await dialog.locator('[data-it="columns"]').fill('2')
+    await dialog.locator('button.primary').click()
+    await expect(dialog).toBeHidden()
+    await expect
+      .poll(() => sections(docPath), { timeout: 30_000 })
+      .toEqual(['1', '2 continuous', '1 continuous'])
+    await expect(page.locator('.doc-page .doc-protected-field-text').first()).toBeVisible({
+      timeout: 30_000,
+    })
+    await expect.poll(() => indexColumns(page, TERMS), { timeout: 30_000 }).toBe(2)
+
+    // reopened, the text after the index is still on the index's page
+    await closeAndSaveVideo(session.launched, VIDEO_DIR)
+    session = await openDoc(docPath)
+    await expect.poll(() => indexColumns(session.page, TERMS), { timeout: 30_000 }).toBe(2)
+    const pageOf = (text: string) =>
+      session.page.evaluate((text) => {
+        const pages = Array.from(document.querySelectorAll('main.editor-scroll .doc-page'))
+        return pages.findIndex((el) => (el.textContent ?? '').includes(text))
+      }, text)
+    expect(await pageOf('After the index')).toBe(await pageOf('Orchard notes'))
+  } finally {
+    await closeAndSaveVideo(session.launched, VIDEO_DIR)
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
 test('an index that shares its section is rebuilt in place when it gets columns', async () => {
   test.setTimeout(300_000)
   const dir = realpathSync(mkdtempSync(join(tmpdir(), 'genoffice-e2e-index-columns-rewrap-')))
@@ -314,7 +364,7 @@ test('an index that shares its section is rebuilt in place when it gets columns'
     await caretIn(page, 'Index goes here')
     await clickMenu(app, ['Insert', 'Index and Tables…'])
     await dialog.getByRole('tab', { name: 'Index', exact: true }).click()
-    await expect(columns).toHaveValue('1')
+    await columns.fill('1')
     await dialog.locator('button.primary').click()
     await expect(dialog).toBeHidden()
     const lines = page.locator('.doc-page .doc-toc-line')
@@ -508,8 +558,7 @@ test('a cross-reference to a footnote is a NOTEREF field on a bookmark around th
     const marks = () => page.locator('.doc-page sup.doc-note-ref').allTextContents()
 
     await openCrossRef()
-    // numbered items need the list numbers cached, which is still not there: not offered
-    await expect(crossRef.locator('option[value="numbered"]')).toHaveCount(0)
+    await expect(crossRef.locator('option[value="numbered"]')).toHaveCount(1)
     await expect(crossRef.locator('option[value="footnote"]')).not.toHaveAttribute('disabled', '')
     await expect(crossRef.locator('option[value="endnote"]')).not.toHaveAttribute('disabled', '')
     await refType.selectOption('endnote')
@@ -545,7 +594,7 @@ test('a cross-reference to a footnote is a NOTEREF field on a bookmark around th
     await crossRef.locator('.bookmark-row').nth(1).click()
     await crossRef.locator('input[name="ref-hyperlink"]').uncheck()
     await crossRef.locator('button[name="insert"]').click()
-    await expect(fields()).toHaveText(['2', 'above', '2'])
+    await expect(fields()).toHaveText(['2', '2 above', '2'])
     // the formatted number is raised as a reference mark is; the plain one is not
     const raised = (nth: number) =>
       fields()
@@ -572,7 +621,7 @@ test('a cross-reference to a footnote is a NOTEREF field on a bookmark around th
     await page.keyboard.press('ControlOrMeta+Enter')
     await expect(prompt).toBeHidden()
     await expect.poll(marks).toEqual(['1', '2', '3'])
-    await expect(fields()).toHaveText(['3', 'above', '3'])
+    await expect(fields()).toHaveText(['3', '3 above', '3'])
 
     // a reference inserted as a hyperlink goes to the note's mark on Cmd / Ctrl + click
     const target = page.locator('.doc-page sup.doc-note-ref').nth(2)
@@ -622,6 +671,13 @@ test('a cross-reference to a footnote is a NOTEREF field on a bookmark around th
       ),
     )
 
+    // as Word computes it: the number, a space and the word
+    expect(xml).toMatch(
+      new RegExp(
+        `NOTEREF ${name} \\\\p \\\\h </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r>(?:<w:rPr>.*?</w:rPr>)?<w:t[^>]*>3 above</w:t>`,
+      ),
+    )
+
     // read again from the file: the fields show, the bookmark is found and reused
     await closeAndSaveVideo(session.launched, VIDEO_DIR)
     session = await openDoc(docPath)
@@ -629,7 +685,7 @@ test('a cross-reference to a footnote is a NOTEREF field on a bookmark around th
     const again = page.locator('.crossref-dialog')
     await expect(page.locator('.doc-page [data-instr-field^="NOTEREF"]')).toHaveText([
       '3',
-      'above',
+      '3 above',
       '3',
     ])
     await caretIn(page, 'Closing words')

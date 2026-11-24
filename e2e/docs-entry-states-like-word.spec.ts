@@ -81,6 +81,35 @@ const selectionKind = (page: Page) =>
     return selection.empty ? 'caret' : selection.toJSON().type
   })
 
+/** the text of the paragraph the selection starts in */
+const selectionParagraph = (page: Page) =>
+  page.evaluate(
+    () =>
+      (
+        window as never as {
+          __aidocs: {
+            editor: { state: { selection: { $from: { parent: { textContent: string } } } } }
+          }
+        }
+      ).__aidocs.editor.state.selection.$from.parent.textContent,
+  )
+
+/** settles once the selection has moved after the next right-button press: the editor has followed the browser by then */
+const selectionMovedByRightPress = (page: Page) =>
+  page.evaluate(
+    () =>
+      new Promise<void>((resolve) => {
+        document.addEventListener(
+          'mousedown',
+          (event) => {
+            if (event.button !== 2) return
+            document.addEventListener('selectionchange', () => resolve(), { once: true })
+          },
+          { capture: true },
+        )
+      }),
+  )
+
 const cell = (page: Page, index: number) => page.locator('.doc-page .doc-table td').nth(index)
 const plain = (page: Page) =>
   page.locator('.doc-page p', { hasText: 'Plain paragraph here' }).first()
@@ -300,6 +329,40 @@ test('a right-click inside selected cells keeps them, so Merge Cells, Cut and Co
       menu.locator('.ctx-item', { has: page.locator('.ctx-label', { hasText: label }) }).first()
     for (const label of [/^Cut$/, /^Copy$/, /^Merge Cells$/])
       await expect(item(label)).toBeEnabled()
+    // Word's menu on a selected row: the items for the block of cells, the comment items after the table
+    const outline = await menu.evaluate((el) =>
+      [...el.children].map((row) =>
+        row.classList.contains('ctx-sep')
+          ? '---'
+          : ((row.matches('.ctx-item')
+              ? row
+              : row.querySelector(':scope > .ctx-item')
+            )?.querySelector('.ctx-label')?.textContent ?? ''),
+      ),
+    )
+    expect(outline.filter((label) => label !== 'Hide the selection from AI')).toEqual([
+      'Cut',
+      'Copy',
+      'Paste',
+      '---',
+      'Insert',
+      'Delete Rows',
+      'Merge Cells',
+      'Distribute Rows Evenly',
+      'Distribute Columns Evenly',
+      '---',
+      'Borders and Shading…',
+      'Text Direction…',
+      'Cell Alignment',
+      'Table Properties…',
+      '---',
+      'Reply To Comment',
+      'Delete Comment',
+      'Resolve Comment',
+      '---',
+      '---',
+      'New Comment',
+    ])
     await page.screenshot({ path: test.info().outputPath('cells-context-menu.png') })
     await item(/^Merge Cells$/).click()
     await expect(page.locator('.doc-page .doc-table tr').first().locator('td')).toHaveCount(1)
@@ -312,9 +375,12 @@ test('a right-click inside selected cells keeps them, so Merge Cells, Cut and Co
     await cell(page, 1).click()
     await cell(page, 2).click({ modifiers: ['Shift'] })
     await expect.poll(() => selectionKind(page)).toBe('cell')
+    // past the end of the line: on macOS the browser's own selection there starts in the table below
+    const moved = selectionMovedByRightPress(page)
     await plain(page).click({ button: 'right', position: { x: 200, y: 8 } })
     await menu.waitFor({ timeout: 15_000 })
-    expect(await selectionKind(page)).not.toBe('cell')
+    await moved
+    expect(await selectionParagraph(page)).toBe('Plain paragraph here')
     await expect(item(/^Merge Cells$/)).toHaveCount(0)
   } finally {
     await session.close()

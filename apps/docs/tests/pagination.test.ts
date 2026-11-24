@@ -6360,6 +6360,73 @@ describe('vertical-text sections (sectPr w:textDirection)', () => {
     expect(specs[2].vertical!.marginBottomPx).toBeCloseTo(180 - 150 - L, 3)
   })
 
+  it('a table stays upright: it hangs at the flow position, takes no room, and the blocks beside it start past it', () => {
+    const table = document.createElement('table')
+    table.className = 'doc-table'
+    const [before, beside, past] = Array.from({ length: 3 }, () => document.createElement('p'))
+    // measured with the table already out of the flow: the next block starts where it does
+    const blocks: BlockBox[] = [
+      { ...lineBlock(0, [40]), section: 0, el: before },
+      { ...lineBlock(50, [30]), section: 0, el: table },
+      { ...lineBlock(50, [100]), section: 0, el: beside },
+      { ...lineBlock(260, [20]), section: 0, el: past },
+    ]
+    const secs = [vert()]
+    const geoms = sectionGeoms(secs)
+    const W = geoms[0].contentHeight
+    const L = geoms[0].contentWidth!
+    const specs = verticalTextSpecs(
+      blocks,
+      [{ start: 0, end: 280, section: 0 }],
+      secs,
+      geoms,
+      () => ({
+        widthPx: 200,
+        leftPx: -7,
+      }),
+    )
+    const [, t, p1, p2] = specs
+    // no line length for the table: it keeps its own width
+    expect(t.widthPx).toBeUndefined()
+    // right edge at the flow position (W - 50), top at the line start
+    expect(t.dx).toBeCloseTo(W - 50 - 200 + 7, 3)
+    expect(t.dy).toBe(-50)
+    expect(t.vertical).toMatchObject({ table: { heightPx: 30 }, marginBottomPx: -30 })
+    expect(t.vertical!.insetPx).toBeUndefined()
+    // the paragraph that starts within the table's 200px begins its lines 30px in
+    expect(p1.vertical!.insetPx).toBe(30)
+    expect(p1.dx).toBeCloseTo(W - 50 - 100, 3)
+    expect(p1.vertical!.marginBottomPx).toBeCloseTo(210 - L, 3)
+    // 260 is past 50 + 200: full-length lines again
+    expect(p2.vertical!.insetPx).toBeUndefined()
+    expect(specs[0].vertical!.insetPx).toBeUndefined()
+  })
+
+  it('a second table beside the first hangs below it, and text beside both starts below both', () => {
+    const [t1, t2] = Array.from({ length: 2 }, () => {
+      const t = document.createElement('table')
+      t.className = 'doc-table'
+      return t
+    })
+    const p = document.createElement('p')
+    const blocks: BlockBox[] = [
+      { ...lineBlock(0, [30]), section: 0, el: t1 },
+      { ...lineBlock(0, [45]), section: 0, el: t2 },
+      { ...lineBlock(0, [20]), section: 0, el: p },
+    ]
+    const secs = [vert()]
+    const specs = verticalTextSpecs(
+      blocks,
+      [{ start: 0, end: 20, section: 0 }],
+      secs,
+      sectionGeoms(secs),
+      () => ({ widthPx: 150, leftPx: 0 }),
+    )
+    expect(specs[0].dy).toBe(0)
+    expect(specs[1].dy).toBe(30)
+    expect(specs[2].vertical!.insetPx).toBe(75)
+  })
+
   it('measured inline extras win over the live margins when trimming the line length', () => {
     const el = document.createElement('p')
     el.style.marginLeft = '30px'
@@ -6449,6 +6516,24 @@ describe('vertical-text sections (sectPr w:textDirection)', () => {
       /^\.pv-page\[data-pv-page="1"\] \.pv-content > \[data-idx="2"\]\{visibility:visible;--pv-vdx:/,
     )
     expect(rules).toHaveLength(5)
+  })
+
+  it('verticalPageCss shows an upright table on the page it starts on only, at its canvas place', () => {
+    const table = document.createElement('table')
+    table.dataset.idx = '0'
+    table.classList.add('doc-vert-table')
+    // its 40px of height reach past the page end at 100
+    const blocks: BlockBox[] = [{ ...lineBlock(80, [40]), section: 0, el: table }]
+    const slices: PageSlice[] = [
+      { start: 0, end: 100, section: 0 },
+      { start: 100, end: 200, section: 0 },
+    ]
+    const secs = [vert()]
+    const rules = verticalPageCss(blocks, slices, secs, sectionGeoms(secs)).split('\n')
+    expect(rules).toContain(
+      '.pv-page[data-pv-page="0"] .pv-content > [data-idx="0"]{visibility:visible;}',
+    )
+    expect(rules.filter((r) => r.includes('[data-idx="0"]'))).toHaveLength(1)
   })
 })
 

@@ -262,7 +262,7 @@ export async function blankDocument(options?: {
 }
 
 export async function saveDocument(doc: OpenDocument): Promise<Uint8Array> {
-  // caption numbers are saved as results
+  // caption numbers are saved as results; page fields wait for Word, there being no layout here
   doc.mods.fieldResults.settleFieldResults(doc.editor, doc.parsed.blocks)
   const plan = doc.mods.convert.pmDocToSavePlan(doc.editor.getJSON() as never, doc.parsed.blocks)
   const { side } = doc

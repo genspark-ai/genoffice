@@ -250,7 +250,7 @@ test.describe('docs selection bar and format painter', () => {
       await clickWord('beta')
       await editor.keyboard.press(mac ? 'Meta+Shift+c' : 'Control+Shift+c')
       await clickWord('seven')
-      await editor.keyboard.press(mac ? 'Meta+Shift+v' : 'Control+Alt+Shift+v')
+      await editor.keyboard.press(mac ? 'Meta+Alt+v' : 'Control+Alt+Shift+v')
       await expect.poll(() => boldText(editor)).toEqual(['one ', 'beta', 'six seven', 'eight '])
     } finally {
       await closeAndSaveVideo(launched, 'docs-format-painter')

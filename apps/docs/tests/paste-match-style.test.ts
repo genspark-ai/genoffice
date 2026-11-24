@@ -1,6 +1,6 @@
 /**
  * Paste and Match Style (⌥⇧⌘V, Ctrl+Shift+V elsewhere) pastes the clipboard's
- * text literally (#2856): the menu click arms a one-shot plain-paste flag in
+ * text literally (genoffice#2856): the menu click arms a one-shot plain-paste flag in
  * the renderer and the editor's paste lanes consume it instead of running the
  * Markdown conversion that a plain Ctrl+V of Markdown-looking text still gets.
  * The editor here carries the App paste lanes this fix touches, trimmed to
@@ -21,7 +21,7 @@ import {
 import { pasteTextSlice } from '../src/renderer/editor/paste-text'
 import { markdownPasteHtml } from '../src/renderer/editor/markdown-paste'
 
-const MD_TEXT = '# 标题\n\n- 一\n- 二'
+const MD_TEXT = '# \u6807\u9898\n\n- \u4e00\n- \u4e8c'
 
 /** the App editorProps paste lanes this fix touches (cleanPastedHtml is a
  *  no-op on Markdown output, which has no loose-list <p>s to unwrap). The
@@ -106,7 +106,7 @@ const hasNode = (editor: Editor, type: string) => {
   return found
 }
 
-describe('paste and match style pastes literally (#2856)', () => {
+describe('paste and match style pastes literally (genoffice#2856)', () => {
   it('inserts Markdown-looking clipboard text as literal characters', () => {
     const editor = makeEditor()
     caretAtEnd(editor)
@@ -114,7 +114,7 @@ describe('paste and match style pastes literally (#2856)', () => {
     expect(handlePaste(editor.view, pasteEvent('', MD_TEXT))).toBe(true)
     // the whole payload lands as text: the heading line merges into the host
     // paragraph, the list markers stay characters, nothing parses as structure
-    expect(editor.state.doc.textContent).toBe('host# 标题- 一- 二')
+    expect(editor.state.doc.textContent).toBe('host# \u6807\u9898- \u4e00- \u4e8c')
     expect(blockTypes(editor)).toEqual(['docParagraph', 'docParagraph', 'docParagraph'])
     editor.destroy()
   })

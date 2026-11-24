@@ -486,6 +486,8 @@ export function verticalPageCss(
       const idx = b.el.dataset.idx
       if (idx === undefined) continue
       const sel = `${page} .pv-content > [data-idx="${idx}"]`
+      // an upright table is whole on the page it starts on and keeps its canvas place there
+      if (b.el.classList.contains('doc-vert-table') && b.top < slice.start - 0.5) continue
       if (!b.el.classList.contains('doc-vert-block')) {
         rules.push(`${sel}{visibility:visible;}`)
         continue

@@ -3,10 +3,17 @@
  * tick and the crash-recovery push. Only persisted state counts — transient UI
  * state (AI highlights, selection, view modes) must never appear here.
  */
-import type { DefaultFonts, HeaderFooter, SectionInfo, StyleUpsert } from '@genoffice/docx-engine'
+import type {
+  DefaultFonts,
+  HeaderFooter,
+  KinsokuCustom,
+  SectionInfo,
+  StyleUpsert,
+} from '@genoffice/docx-engine'
 
 import { EMPTY_PENDING_NUMBERING } from './doc-state'
 import type { PendingNumbering } from './doc-state'
+import type { SpacingControl } from './editor/cjk-punct-shrink'
 import { fontsToWrite, type FontConversions } from './editor/font-conversion-history'
 
 export async function runGuardedDocumentAction(
@@ -58,6 +65,7 @@ export interface DocDirtyState {
   titlePgDirty: boolean
   evenOddHfDirty: boolean
   mirrorMarginsDirty: boolean
+  hideGrammarDirty: boolean
   autoHyphenationDirty: boolean
   /** hyphenation rules set in this session; null when untouched */
   hyphenationEdit: object | null
@@ -67,9 +75,12 @@ export interface DocDirtyState {
   gutterAtTopEdit: boolean | null
   /** Convert Permanently: null when no conversion was made or written in this session */
   fontConversions: FontConversions | null
-  compressPunctEdit: boolean | null
+  spacingControlEdit: SpacingControl | null
   trackMovesEdit: boolean | null
   strictKinsokuEdit: boolean | null
+  kinsokuCustomEdit: KinsokuCustom | false | null
+  /** a drawing grid set in this session; null when untouched */
+  drawingGridEdit: object | null
   /** equation defaults set in this session; null when untouched */
   mathPrEdit: object | null
   /** footnote / endnote properties set in this session; null when untouched */
@@ -79,6 +90,7 @@ export interface DocDirtyState {
   inksDirty: boolean
   notesDirty: boolean
   sourcesDirty: boolean
+  docKeysDirty: boolean
   zoteroDocumentDataDirty: boolean
   themeFontsDirty: boolean
   themeColorsDirty: boolean
@@ -108,14 +120,17 @@ export function isDocDirty(s: DocDirtyState): boolean {
     s.titlePgDirty ||
     s.evenOddHfDirty ||
     s.mirrorMarginsDirty ||
+    s.hideGrammarDirty ||
     s.autoHyphenationDirty ||
     s.hyphenationEdit != null ||
     s.defaultTabStopEdit != null ||
     s.gutterAtTopEdit != null ||
     fontsToWrite(s.fontConversions) ||
-    s.compressPunctEdit != null ||
+    s.spacingControlEdit != null ||
     s.trackMovesEdit != null ||
     s.strictKinsokuEdit != null ||
+    s.kinsokuCustomEdit != null ||
+    s.drawingGridEdit != null ||
     s.mathPrEdit != null ||
     s.notePropsEdit != null ||
     s.trackRevisionsDirty ||
@@ -123,6 +138,7 @@ export function isDocDirty(s: DocDirtyState): boolean {
     s.inksDirty ||
     s.notesDirty ||
     s.sourcesDirty ||
+    s.docKeysDirty ||
     s.zoteroDocumentDataDirty ||
     s.themeFontsDirty ||
     s.themeColorsDirty ||

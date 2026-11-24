@@ -24,6 +24,20 @@ describe('docStyleCss character formatting from styles.xml', () => {
     )
   })
 
+  it('empties the glyphs of an outlined style, except in a run with a text colour of its own', () => {
+    const display: StyleDisplay = {
+      textOutline: { color: '4472C4', widthPt: 0.75 },
+      textFill: { kind: 'none' },
+    }
+    const css = docStyleCss(parsedWith({ styleId: 'Heading2', display }))
+    expect(css).toMatch(/\[data-style="Heading2"\] \{[^}]*-webkit-text-fill-color:transparent/)
+    // the text colour's dark-page twin marks such a run; shading or a highlight alone does not
+    expect(css).toContain(
+      '[data-style="Heading2"] [style*="--dk-c:"] { -webkit-text-fill-color:currentColor }',
+    )
+    expect(css).not.toContain('[style*="color:#"]')
+  })
+
   it('paints character-style shading and flips auto ink on a dark fill', () => {
     const css = docStyleCss(
       parsedWith({ styleId: 'ChangeType', type: 'character', display: { shading: '000000' } }),

@@ -112,6 +112,7 @@ export const HTML_RULES = [
   '- Use <pre> for code samples (monospace font + shading, line breaks preserved); use <blockquote> for quotations (indent + left bar)',
   '- Use <formula>LaTeX</formula> for math (produces native Word equations): as a top-level block it becomes its own centered paragraph; placed inside <p>/<li>/<h*> text it is an inline formula flowing with the text, e.g. <p>From <formula>E = mc^2</formula> we know…</p>; supports the common subset of \\frac \\sqrt super/subscripts \\sum \\int \\lim matrix environments Greek letters etc., the align environment is not supported; invalid LaTeX fails the whole call — fix and retry',
   '- Do not include <html>/<body>, markdown code fences, or explanatory text',
+  '- Layout CSS is not read (style / class attributes, <div> wrappers, flex, grid, float, columns): text flowing in columns comes from set_page_setup columns, and a table is the only way to put items side by side',
   "- <sel>…</sel> appears only in the context to mark the user's selection; it is not a tag you may write",
   '- <img src="doc:B.I"> in read_blocks output is picture I of block B. To keep a picture when you replace its block, copy that exact tag into the new HTML where the picture should sit; a replaced range whose pictures you leave out loses them (the tool result says so). Any other <img> is ignored — new pictures go through insert_picture',
   '- <span style="color:#RRGGBB;font-size:Npt"> appears only in read_blocks output, on runs whose color or size differs from the rest of the block (color:auto / font-size:default = back to the block\'s normal style); it is read-only — writing <span> has no effect, change colors and sizes with the apply_ops formatting commands',
@@ -161,7 +162,7 @@ export const AGENT_SYSTEM_PROMPT = [
   "- Dates follow the user's locale; never change text outside the placeholders.",
   '',
   '# Fields, footnotes & endnotes',
-  '- insertField writes real Word fields (SEQ caption numbers, DATE/TIME, REF/PAGEREF to a bookmark, MERGEFIELD, PAGE/NUMPAGES, AUTHOR…). Caption numbers get their real value when the document is saved. Results the editor cannot compute (page numbers, document properties, a REF with a position switch) are placeholders marked for Word to recompute when the file opens; mention that when you report. TOC → insertToc, never insertField.',
+  '- insertField writes real Word fields (SEQ caption numbers, DATE/TIME, REF/PAGEREF to a bookmark, MERGEFIELD, PAGE/NUMPAGES, AUTHOR…). Caption numbers get their real value when the document is saved, and page numbers (PAGE, NUMPAGES, PAGEREF) when it is saved from the page view. Results the editor cannot compute at all (document properties, a REF with a position switch) are placeholders marked for Word to recompute when the file opens; mention that when you report. TOC → insertToc, never insertField.',
   '- insert_footnote / insert_endnote put a superscript reference mark into a block (after afterText, else at its end) and store the note text; read_notes lists notes with ids and anchored blocks; edit_note changes the text of one in place (findReplace inside the note, id kept); delete_note removes one with its mark. Notes are not document blocks — never reach them via block indexes or rewrite a block just to change its note.',
   '',
   '# Headers & footers',
@@ -1304,6 +1305,10 @@ export function countInlineImages(editor: Editor, start: number, end: number): n
   return n
 }
 
+const CONTAINER_TAGS = new Set(['div', 'section', 'article', 'main', 'header', 'footer', 'aside'])
+const BLOCK_CHILD =
+  ':is(div, section, article, main, header, footer, aside, p, h1, h2, h3, h4, h5, h6, ul, ol, table, pre, blockquote)'
+
 export function parseHtmlFragment(raw: string, numIds: NumIds): PmNode[] {
   let text = raw.trim()
   const fence = /```(?:html)?\s*([\s\S]*?)```/.exec(text)
@@ -1332,7 +1337,7 @@ export function parseHtmlFragment(raw: string, numIds: NumIds): PmNode[] {
       throw new Error(`Cannot parse the LaTeX in <formula> (${reason}): ${latex}`, { cause: e })
     }
   }
-  parsed.body.childNodes.forEach((child) => {
+  const visit = (child: Node): void => {
     if (child.nodeType === Node.TEXT_NODE) {
       const t = (child.textContent ?? '').trim()
       if (t) out.push(blockNode('docParagraph', {}, [{ type: 'text', text: t }]))
@@ -1357,6 +1362,27 @@ export function parseHtmlFragment(raw: string, numIds: NumIds): PmNode[] {
       if (node) out.push(node)
     } else if (tag === 'formula') {
       pushFormula(el)
+    } else if (CONTAINER_TAGS.has(tag) && el.querySelector(':scope > ' + BLOCK_CHILD)) {
+      // a wrapper around blocks is layout markup: keep its blocks, not one merged paragraph
+      let run: Node[] = []
+      const flushRun = () => {
+        const holder = parsed.createElement('p')
+        holder.append(...run.map((n) => n.cloneNode(true)))
+        run = []
+        const inline = parseInline(holder, [])
+        if (inline.some((n) => n.type !== 'text' || n.text?.trim()))
+          out.push(blockNode('docParagraph', {}, inline))
+      }
+      el.childNodes.forEach((node) => {
+        const block =
+          node.nodeType === Node.ELEMENT_NODE &&
+          ((node as Element).matches(BLOCK_CHILD) ||
+            (node as Element).tagName.toLowerCase() === 'formula')
+        if (!block) return void run.push(node)
+        flushRun()
+        visit(node)
+      })
+      flushRun()
     } else if (tag === 'p' || tag === 'div') {
       const inline = parseInline(el, [])
       if (inline.length > 0) out.push(blockNode('docParagraph', {}, inline))
@@ -1365,7 +1391,8 @@ export function parseHtmlFragment(raw: string, numIds: NumIds): PmNode[] {
       const t = (el.textContent ?? '').trim()
       if (t) out.push(blockNode('docParagraph', {}, [{ type: 'text', text: t }]))
     }
-  })
+  }
+  parsed.body.childNodes.forEach(visit)
   return out
 }
 

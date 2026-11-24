@@ -1,14 +1,20 @@
-import { useState } from 'react'
+import { useEffect, useState, type KeyboardEvent, type MouseEvent } from 'react'
 import {
+  OFFICE_THEMES,
+  OFFICE_THEME_COLORS,
+  OFFICE_THEME_FONTS,
   type HfImage,
   type PictureWatermarkSpec,
   type SectionSettings,
+  type StyleSetId,
   type ThemeColors,
   type ThemeFonts,
 } from '@genoffice/docx-engine'
 import { useI18n, type StringKey } from '../i18n/locale'
 import type { ActionCommandId } from '../../shared/commands'
-import { NONE, type ThemePayload } from '../commands/menu-commands'
+import { CUSTOM_STYLE_SET, CUSTOM_THEME, NONE } from '../commands/menu-commands'
+import type { SavedTheme } from '../saved-themes'
+import { cssFontFamily } from '../text-layout/font-rules'
 import { RbCommand, useRunCommand } from './ribbon-command'
 import {
   IconCaret,
@@ -27,6 +33,46 @@ import { BIG, TabProps, toggleDropdown } from './ribbon-tabs'
 import { PARAGRAPH_SPACINGS, type ParagraphSpacing } from '../commands/paragraph-spacing'
 import { RibbonColorPalette } from './ribbon-color-palette'
 import { PageBorderDialog, type PageBorderScope } from './PageBorderDialog'
+import { styleLabel } from '../style-gallery'
+import {
+  styleSetLineCss,
+  styleSetPreviews,
+  type StyleSetPreview,
+  type StyleSetSource,
+} from '../style-set-previews'
+
+const STYLE_SET_NAMES: Record<StyleSetId, StringKey> = {
+  distinctive: 'ribbonStyleSetDistinctive',
+  elegant: 'ribbonStyleSetElegant',
+  fancy: 'ribbonStyleSetFancy',
+  formal: 'ribbonStyleSetFormal',
+  manuscript: 'ribbonStyleSetManuscript',
+  modern: 'ribbonStyleSetModern',
+  newsprint: 'ribbonStyleSetNewsprint',
+  perspective: 'ribbonStyleSetPerspective',
+  simple: 'ribbonStyleSetSimple',
+  thatch: 'ribbonStyleSetThatch',
+  traditional: 'ribbonStyleSetTraditional',
+  word2010: 'ribbonStyleSetWord2010',
+}
+
+/** the cards of the style set gallery: the document as it stands, then Word's sets on its theme */
+function useStyleSetPreviews(source: StyleSetSource | null): StyleSetPreview[] {
+  const [previews, setPreviews] = useState<StyleSetPreview[]>([])
+  useEffect(() => {
+    if (!source) return setPreviews([])
+    let cancelled = false
+    styleSetPreviews(source)
+      .then((next) => {
+        if (!cancelled) setPreviews(next)
+      })
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [source])
+  return previews
+}
 
 /** Word-like theme presets: font pair + color scheme applied together */
 const SPACING_LABELS: Record<ParagraphSpacing['id'], StringKey> = {
@@ -38,173 +84,58 @@ const SPACING_LABELS: Record<ParagraphSpacing['id'], StringKey> = {
   double: 'ribbonPsDouble',
 }
 
-const THEME_PRESETS: Array<{ nameKey: StringKey; fonts: ThemeFonts; colors: ThemeColors }> = [
-  {
-    nameKey: 'ribbonThemeOffice',
-    fonts: { major: 'Calibri Light', minor: 'Calibri', eastAsia: '等线' },
-    colors: {
-      name: 'Office',
-      dk2: '44546A',
-      lt2: 'E7E6E6',
-      accent1: '4472C4',
-      accent2: 'ED7D31',
-      accent3: 'A5A5A5',
-      accent4: 'FFC000',
-      accent5: '5B9BD5',
-      accent6: '70AD47',
-    },
-  },
-  {
-    nameKey: 'ribbonThemeFacet',
-    fonts: { major: 'Trebuchet MS', minor: 'Trebuchet MS', eastAsia: '微软雅黑' },
-    colors: {
-      name: 'Facet',
-      dk2: '3E3D2D',
-      lt2: 'E1DFDD',
-      accent1: '90C226',
-      accent2: '54A021',
-      accent3: 'E6B91E',
-      accent4: 'E76618',
-      accent5: 'C42F1A',
-      accent6: '918655',
-    },
-  },
-  {
-    nameKey: 'ribbonThemeIon',
-    fonts: { major: 'Century Gothic', minor: 'Century Gothic', eastAsia: '黑体' },
-    colors: {
-      name: 'Ion',
-      dk2: '1B587C',
-      lt2: 'E8ECEE',
-      accent1: '4E8542',
-      accent2: '604878',
-      accent3: 'C19859',
-      accent4: 'CA7B4F',
-      accent5: '415D6B',
-      accent6: '8EA5AF',
-    },
-  },
-  {
-    nameKey: 'ribbonThemeRetrospect',
-    fonts: { major: 'Calibri Light', minor: 'Calibri', eastAsia: '仿宋' },
-    colors: {
-      name: 'Retrospect',
-      dk2: '637052',
-      lt2: 'CCDDEA',
-      accent1: 'E48312',
-      accent2: 'BD582C',
-      accent3: '865640',
-      accent4: '9B8357',
-      accent5: 'C2BC80',
-      accent6: '94A088',
-    },
-  },
-]
+const ACCENTS = ['accent1', 'accent2', 'accent3', 'accent4', 'accent5', 'accent6'] as const
+const SWATCHES = ['dk2', 'lt2', ...ACCENTS] as const
 
-const THEME_FONT_PRESETS: Array<{ nameKey: StringKey; fonts: ThemeFonts }> = [
-  {
-    nameKey: 'ribbonThemeFontOffice',
-    fonts: { major: 'Calibri Light', minor: 'Calibri', eastAsia: '等线' },
-  },
-  { nameKey: 'ribbonThemeFontSongti', fonts: { major: '黑体', minor: '宋体', eastAsia: '宋体' } },
-  {
-    nameKey: 'ribbonThemeFontYahei',
-    fonts: { major: '微软雅黑', minor: '微软雅黑', eastAsia: '微软雅黑' },
-  },
-  { nameKey: 'ribbonThemeFontKaiti', fonts: { major: '楷体', minor: '楷体', eastAsia: '楷体' } },
-  {
-    nameKey: 'ribbonThemeFontTimes',
-    fonts: { major: 'Times New Roman', minor: 'Times New Roman', eastAsia: '宋体' },
-  },
-  { nameKey: 'ribbonThemeFontArial', fonts: { major: 'Arial', minor: 'Arial', eastAsia: '黑体' } },
-]
+/** a scheme's colours side by side; they are the document's, not the app's */
+function ColorStrip({
+  colors,
+  slots,
+}: {
+  colors: ThemeColors
+  slots: readonly (keyof ThemeColors)[]
+}) {
+  return (
+    <span className="theme-strip">
+      {slots.map((slot) => (
+        <span key={slot} style={{ background: `#${colors[slot]}` }} />
+      ))}
+    </span>
+  )
+}
 
-const THEME_COLOR_PRESETS: Array<{ nameKey: StringKey; colors: ThemeColors }> = [
-  {
-    nameKey: 'ribbonThemeOffice',
-    colors: {
-      name: 'Office',
-      dk2: '44546A',
-      lt2: 'E7E6E6',
-      accent1: '4472C4',
-      accent2: 'ED7D31',
-      accent3: 'A5A5A5',
-      accent4: 'FFC000',
-      accent5: '5B9BD5',
-      accent6: '70AD47',
-    },
-  },
-  {
-    nameKey: 'ribbonPaletteGrayscale',
-    colors: {
-      name: 'Grayscale',
-      dk2: '3F3F3F',
-      lt2: 'B3B3B3',
-      accent1: '5B5B5B',
-      accent2: '8C8C8C',
-      accent3: 'A6A6A6',
-      accent4: '737373',
-      accent5: '404040',
-      accent6: 'D9D9D9',
-    },
-  },
-  {
-    nameKey: 'ribbonColorBlue',
-    colors: {
-      name: 'Blue',
-      dk2: '17406D',
-      lt2: 'DBEFF9',
-      accent1: '0F6FC6',
-      accent2: '009DD9',
-      accent3: '0BD0D9',
-      accent4: '10CF9B',
-      accent5: '7CCA62',
-      accent6: 'A5C249',
-    },
-  },
-  {
-    nameKey: 'ribbonColorGreen',
-    colors: {
-      name: 'Green',
-      dk2: '455F51',
-      lt2: 'E3DED1',
-      accent1: '549E39',
-      accent2: '8AB833',
-      accent3: 'C0CF3A',
-      accent4: '029676',
-      accent5: '4AB5C4',
-      accent6: '0989B1',
-    },
-  },
-  {
-    nameKey: 'ribbonColorOrange',
-    colors: {
-      name: 'Orange',
-      dk2: '637052',
-      lt2: 'CCDDEA',
-      accent1: 'E48312',
-      accent2: 'BD582C',
-      accent3: '865640',
-      accent4: '9B8357',
-      accent5: 'C2BC80',
-      accent6: '94A088',
-    },
-  },
-  {
-    nameKey: 'ribbonPaletteRedViolet',
-    colors: {
-      name: 'Red Violet',
-      dk2: '5F5F5F',
-      lt2: 'FFFDF7',
-      accent1: 'A83D4C',
-      accent2: 'D2554B',
-      accent3: 'E1734C',
-      accent4: '8D3B4B',
-      accent5: '54387F',
-      accent6: '7A99AC',
-    },
-  },
-]
+/** arrow keys walk a gallery's cards the way they sit on screen, across its sections */
+function galleryKeys(e: KeyboardEvent<HTMLElement>) {
+  if (!['ArrowRight', 'ArrowLeft', 'ArrowDown', 'ArrowUp'].includes(e.key)) return
+  const cards = [
+    ...e.currentTarget.querySelectorAll<HTMLElement>(
+      '.theme-card, .style-set-card, .theme-list > button, .theme-foot > button',
+    ),
+  ]
+  const at = cards.indexOf(document.activeElement as HTMLElement)
+  if (at < 0) return
+  let next: HTMLElement | undefined
+  if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
+    next = cards[at + (e.key === 'ArrowRight' ? 1 : -1)]
+  } else {
+    const box = (card: HTMLElement) => card.getBoundingClientRect()
+    const here = box(cards[at]!)
+    const down = e.key === 'ArrowDown'
+    const beyond = cards.filter((c) => (down ? box(c).top > here.top : box(c).top < here.top))
+    // the nearest row that way, and in it the card most nearly above or below this one
+    const row = beyond.reduce<number | null>(
+      (best, c) =>
+        best === null || (down ? box(c).top < best : box(c).top > best) ? box(c).top : best,
+      null,
+    )
+    next = beyond
+      .filter((c) => box(c).top === row)
+      .sort((a, b) => Math.abs(box(a).left - here.left) - Math.abs(box(b).left - here.left))[0]
+  }
+  if (!next) return
+  e.preventDefault()
+  next.focus()
+}
 
 /** the preset texts of the Watermark gallery; other languages also get the two English ones */
 export const WATERMARK_KEYS: StringKey[] = [
@@ -230,6 +161,9 @@ interface DesignTabProps extends TabProps {
   /** the saved document's watermark shape, for reopening the dialog on it */
   watermarkDocImage: HfImage | null
   themeFonts: ThemeFonts | null
+  themeColors: ThemeColors | null
+  styleSetSource: StyleSetSource | null
+  savedThemes: readonly SavedTheme[]
 }
 
 export function DesignTab({
@@ -244,6 +178,9 @@ export function DesignTab({
   watermarkPicture,
   watermarkDocImage,
   themeFonts,
+  themeColors,
+  styleSetSource,
+  savedThemes,
 }: DesignTabProps) {
   const { t, lang } = useI18n()
   const [pageBorderDialog, setPageBorderDialog] = useState(false)
@@ -267,11 +204,84 @@ export function DesignTab({
     runCommand(id, payload)
     setDropdown(() => null)
   }
-  const pickTheme = (id: 'document-theme' | 'theme-fonts' | 'theme-colors', theme: ThemePayload) =>
-    pick(id, JSON.stringify(theme))
+  const onFonts = (fonts: ThemeFonts) =>
+    themeFonts?.minor === fonts.minor && themeFonts?.major === fonts.major
+  const onColors = (colors: ThemeColors) =>
+    !!themeColors && SWATCHES.every((k) => themeColors[k]?.toUpperCase() === colors[k])
+  const styleSets = useStyleSetPreviews(hasDoc ? styleSetSource : null)
+  const [setMenu, setSetMenu] = useState<{ id: string; x: number; y: number } | null>(null)
+  const [themeMenu, setThemeMenu] = useState<{ file: string; x: number; y: number } | null>(null)
+  const themeCard = (
+    theme: { name: string; fonts: ThemeFonts; colors: ThemeColors },
+    testId: string,
+    payload: string,
+    file?: string,
+  ) => {
+    const active = onFonts(theme.fonts) && onColors(theme.colors)
+    return (
+      <button
+        key={payload}
+        className={`theme-card${active ? ' active' : ''}`}
+        data-testid={testId}
+        aria-pressed={active}
+        onClick={() => pick('document-theme', payload)}
+        // command-exempt: opens the card's own right-click menu
+        onContextMenu={(e) => {
+          if (!file) return
+          e.preventDefault()
+          setThemeMenu({ file, x: e.clientX, y: e.clientY })
+        }}
+      >
+        <span
+          className="theme-thumb"
+          style={{ background: `#${theme.colors.lt1}`, color: `#${theme.colors.dk2}` }}
+        >
+          <span style={{ fontFamily: cssFontFamily(theme.fonts.major) }}>A</span>
+          <span style={{ fontFamily: cssFontFamily(theme.fonts.minor) }}>a</span>
+          <ColorStrip colors={theme.colors} slots={ACCENTS} />
+        </span>
+        <span className="theme-name">{theme.name}</span>
+      </button>
+    )
+  }
+  const styleSetCard = (p: StyleSetPreview) => {
+    const key = p.custom ? `${CUSTOM_STYLE_SET}${p.custom.id}` : (p.id ?? 'current')
+    const name = p.custom?.name ?? t(p.id ? STYLE_SET_NAMES[p.id] : 'ribbonStyleSetThisDoc')
+    const line = (info: StyleSetPreview['title'], builtIn: string) => (
+      <span style={styleSetLineCss(info ?? p.body, p.docDefaults)}>
+        {styleLabel(info ?? { name: builtIn }, t)}
+      </span>
+    )
+    // command-exempt: opens the card's own right-click menu
+    const menu = (e: MouseEvent) => {
+      if (!p.custom) return
+      e.preventDefault()
+      setSetMenu({ id: p.custom.id, x: e.clientX, y: e.clientY })
+    }
+    return (
+      <button
+        key={key}
+        className={`style-set-card${key === 'current' ? ' active' : ''}`}
+        data-testid={`style-set-${p.custom ? `custom-${p.custom.name}` : key}`}
+        data-tip={name}
+        aria-label={name}
+        onClick={() => key !== 'current' && pick('design-style-set', key)}
+        onContextMenu={menu}
+      >
+        <span className="style-set-page" style={{ background: '#fff', color: '#000' }}>
+          {line(p.title, 'Title')}
+          {line(p.heading, 'heading 1')}
+          <span style={styleSetLineCss(p.body, p.docDefaults)}>{t('ribbonStyleSetSample')}</span>
+        </span>
+      </button>
+    )
+  }
+  const customCards = styleSets.filter((p) => p.custom).map(styleSetCard)
+  const builtInCards = styleSets.filter((p) => p.id).map(styleSetCard)
+  const currentCard = styleSets.filter((p) => !p.id && !p.custom).map(styleSetCard)
   return (
     <>
-      <div className="ribbon-group">
+      <div className="ribbon-group style-set-group">
         <div className="ribbon-group-items">
           <div className="rb-split-wrap">
             <button
@@ -287,27 +297,125 @@ export function DesignTab({
               <span>{t('ribbonThemes')}</span>
             </button>
             {dropdown === 'theme' && (
-              <div data-rb-panel="" className="layout-menu">
-                {THEME_PRESETS.map((p) => (
-                  <button
-                    key={p.nameKey}
-                    onClick={() =>
-                      pickTheme('document-theme', { fonts: p.fonts, colors: p.colors })
-                    }
-                  >
-                    <span className="theme-accent-row">
-                      {['accent1', 'accent2', 'accent3', 'accent4'].map((k) => (
-                        <span
-                          key={k}
-                          className="theme-accent-dot"
-                          style={{ background: `#${p.colors[k as 'accent1']}` }}
-                        />
-                      ))}
-                    </span>
-                    {t(p.nameKey)}
+              <div
+                data-rb-panel=""
+                className="theme-gallery"
+                role="group"
+                aria-label={t('ribbonThemes')}
+                onKeyDown={galleryKeys}
+              >
+                {savedThemes.length > 0 && (
+                  <>
+                    <div className="layout-menu-head">{t('ribbonStyleSetCustom')}</div>
+                    <div className="theme-grid">
+                      {savedThemes.map((saved) =>
+                        themeCard(
+                          { ...saved.theme, name: saved.name },
+                          `theme-custom-${saved.name}`,
+                          `${CUSTOM_THEME}${saved.file}`,
+                          saved.file,
+                        ),
+                      )}
+                    </div>
+                    <div className="layout-menu-head">Office</div>
+                  </>
+                )}
+                <div className="theme-grid">
+                  {OFFICE_THEMES.map((theme) => themeCard(theme, `theme-${theme.id}`, theme.id))}
+                </div>
+                <div className="rb-menu-sep" />
+                <div className="style-set-foot theme-foot">
+                  <button data-testid="theme-reset" onClick={() => pick('theme-reset')}>
+                    {t('ribbonThemeReset')}
                   </button>
-                ))}
+                  <button data-testid="theme-browse" onClick={() => pick('theme-browse')}>
+                    {t('ribbonThemeBrowse')}
+                  </button>
+                  <button data-testid="theme-save" onClick={() => pick('theme-save-current')}>
+                    {t('ribbonThemeSave')}
+                  </button>
+                </div>
               </div>
+            )}
+            {themeMenu && (
+              <>
+                {/* command-exempt: closes the card's own right-click menu */}
+                <div className="style-set-ctx-backdrop" onMouseDown={() => setThemeMenu(null)} />
+                <div className="style-set-ctx" style={{ left: themeMenu.x, top: themeMenu.y }}>
+                  <button
+                    data-testid="theme-delete"
+                    onClick={() => {
+                      runCommand('theme-custom-delete', themeMenu.file)
+                      setThemeMenu(null)
+                    }}
+                  >
+                    {t('appNavDelete')}
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+          <div className="rb-split-wrap style-set-wrap">
+            <div className="style-set-strip">
+              {currentCard}
+              {customCards}
+              {builtInCards}
+            </div>
+            <button
+              className="rb-styles-more"
+              disabled={!hasDoc}
+              data-testid="style-set-more"
+              data-tip={t('ribbonStyleSets')}
+              aria-label={t('ribbonStyleSets')}
+              onClick={() => toggleDropdown(setDropdown, 'stylesets')}
+            >
+              <IconCaret />
+            </button>
+            {dropdown === 'stylesets' && (
+              <div data-rb-panel="" className="style-set-menu" onKeyDown={galleryKeys}>
+                <div className="layout-menu-head">{t('ribbonStyleSetThisDoc')}</div>
+                <div className="style-set-grid">{currentCard}</div>
+                {customCards.length > 0 && (
+                  <>
+                    <div className="layout-menu-head">{t('ribbonStyleSetCustom')}</div>
+                    <div className="style-set-grid">{customCards}</div>
+                  </>
+                )}
+                <div className="layout-menu-head">{t('ribbonStyleSetBuiltIn')}</div>
+                <div className="style-set-grid">{builtInCards}</div>
+                <div className="rb-menu-sep" />
+                <div className="style-set-foot">
+                  <button
+                    data-testid="style-set-reset"
+                    onClick={() => pick('design-style-set-reset')}
+                  >
+                    {t('ribbonStyleSetReset')}
+                  </button>
+                  <button
+                    data-testid="style-set-save"
+                    onClick={() => pick('design-style-set-save')}
+                  >
+                    {t('ribbonStyleSetSave')}
+                  </button>
+                </div>
+              </div>
+            )}
+            {setMenu && (
+              <>
+                {/* command-exempt: closes the card's own right-click menu */}
+                <div className="style-set-ctx-backdrop" onMouseDown={() => setSetMenu(null)} />
+                <div className="style-set-ctx" style={{ left: setMenu.x, top: setMenu.y }}>
+                  <button
+                    data-testid="style-set-delete"
+                    onClick={() => {
+                      runCommand('design-style-set-delete', setMenu.id)
+                      setSetMenu(null)
+                    }}
+                  >
+                    {t('appNavDelete')}
+                  </button>
+                </div>
+              </>
             )}
           </div>
           <div className="rb-split-wrap">
@@ -324,22 +432,16 @@ export function DesignTab({
               <span>{t('ribbonColors')}</span>
             </button>
             {dropdown === 'themecolors' && (
-              <div data-rb-panel="" className="layout-menu">
-                {THEME_COLOR_PRESETS.map((p) => (
+              <div data-rb-panel="" className="layout-menu theme-list" onKeyDown={galleryKeys}>
+                {OFFICE_THEME_COLORS.map((scheme) => (
                   <button
-                    key={p.nameKey}
-                    onClick={() => pickTheme('theme-colors', { colors: p.colors })}
+                    key={scheme.id}
+                    className={onColors(scheme.colors) ? 'active' : ''}
+                    data-testid={`theme-colors-${scheme.id}`}
+                    onClick={() => pick('theme-colors', scheme.id)}
                   >
-                    <span className="theme-accent-row">
-                      {['accent1', 'accent2', 'accent3', 'accent4'].map((k) => (
-                        <span
-                          key={k}
-                          className="theme-accent-dot"
-                          style={{ background: `#${p.colors[k as 'accent1']}` }}
-                        />
-                      ))}
-                    </span>
-                    {t(p.nameKey)}
+                    <ColorStrip colors={scheme.colors} slots={SWATCHES} />
+                    {scheme.name}
                   </button>
                 ))}
               </div>
@@ -359,18 +461,24 @@ export function DesignTab({
               <span>{t('ribbonFonts')}</span>
             </button>
             {dropdown === 'themefonts' && (
-              <div data-rb-panel="" className="layout-menu">
-                {THEME_FONT_PRESETS.map((p) => (
+              <div data-rb-panel="" className="layout-menu theme-list" onKeyDown={galleryKeys}>
+                {OFFICE_THEME_FONTS.map((scheme) => (
                   <button
-                    key={p.nameKey}
-                    className={
-                      themeFonts?.minor === p.fonts.minor && themeFonts?.major === p.fonts.major
-                        ? 'active'
-                        : ''
-                    }
-                    onClick={() => pickTheme('theme-fonts', { fonts: p.fonts })}
+                    key={scheme.id}
+                    className={onFonts(scheme.fonts) ? 'active' : ''}
+                    data-testid={`theme-fonts-${scheme.id}`}
+                    onClick={() => pick('theme-fonts', scheme.id)}
                   >
-                    {t(p.nameKey)}
+                    <span className="theme-font-sample">
+                      <span style={{ fontFamily: cssFontFamily(scheme.fonts.major) }}>A</span>
+                      <span style={{ fontFamily: cssFontFamily(scheme.fonts.minor) }}>a</span>
+                    </span>
+                    <span className="theme-font-names">
+                      {scheme.name}
+                      <span>
+                        {scheme.fonts.major} / {scheme.fonts.minor}
+                      </span>
+                    </span>
                   </button>
                 ))}
               </div>

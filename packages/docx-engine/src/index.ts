@@ -62,7 +62,18 @@ export {
   type MediaReductionPlan,
   type MediaReductionTarget,
   type RasterInfo,
+  type RasterMime,
 } from './media-reduce'
+export { tiffToDataUrlAsync } from './tiff'
+export {
+  KCM_ALT,
+  KCM_COMMAND,
+  KCM_CONTROL,
+  KCM_SHIFT,
+  readKeymaps,
+  writeKeymaps,
+  type KeymapEntry,
+} from './key-customizations'
 export { setAltChunkHtmlConverter, type AltChunkHtmlConverter } from './alt-chunk'
 export { tocLevelOf } from './parse-fields'
 export {
@@ -100,6 +111,8 @@ export {
   type PropertyValue,
 } from './doc-properties'
 export {
+  pairRangeBookmarks,
+  retargetImageBlip,
   saveDocx,
   findChartWorkbookPath,
   missingHeadingLevels,
@@ -127,9 +140,23 @@ export {
   rewriteSeqResultsXml,
   unreliableSeqLabels,
   SeqCounter,
+  NUMBERING_FIELD,
+  STYLEREF_NOT_FOUND,
+  numberingEventsOfXml,
+  parseStyleRefInstruction,
+  styleRefResult,
+  type NumberingEvent,
+  type StyleRefInstruction,
+  type StyleRefSurroundings,
+  type StyledParagraph,
   type SeqInstruction,
   type XmlSeqField,
 } from './seq-fields'
+export {
+  captionNumberingOfXml,
+  setCaptionNumberingXml,
+  type CaptionNumbering,
+} from './caption-numbering'
 export {
   TABLE_HEADER_FILL,
   applyImageWrap,
@@ -228,6 +255,7 @@ export {
   type DrawingGroup,
   type GroupMember,
   type SplitGroupParagraph,
+  type GroupCorner,
   type UngroupedMember,
 } from './group-drawings'
 export {
@@ -290,6 +318,7 @@ export {
 export {
   DEFAULT_SECTION,
   applySectionSettings,
+  defaultSectPrXml,
   DEFAULT_LINE_PITCH_TWIPS,
   applyPageNumType,
   applySectionStartType,
@@ -330,11 +359,17 @@ export {
   upsertStyleXml,
 } from './style-upsert'
 export {
+  customStyleSetUpserts,
   listStylesXml,
   readDocxStylesXml,
+  STYLE_SET_IDS,
   styleCopyUpserts,
+  styleRestoreUpserts,
+  styleSetUpserts,
+  styleSetXmlOf,
   writeDocxStyles,
   type OrganizerStyle,
+  type StyleSetId,
 } from './style-organizer'
 export {
   INK_NAME_PREFIX,
@@ -358,7 +393,23 @@ export {
   type CitationStyleId,
 } from './sources'
 export { parseZoteroDocumentDataXml, patchZoteroDocumentDataXml } from './zotero-doc-props'
-export { readThemeColors, readThemeFonts } from './theme'
+export {
+  DEFAULT_THEME_COLORS,
+  editedThemeXml,
+  readThemeColors,
+  readThemeFonts,
+  resolveThemeColor,
+  type ThemeFormat,
+} from './theme'
+export { OFFICE_THEMES, OFFICE_THEME_COLORS, OFFICE_THEME_FONTS } from './office-themes-data'
+export {
+  buildThmx,
+  readDocxThemeXml,
+  readThemeFileXml,
+  themeOfXml,
+  themeXmlOf,
+  type ThemeFileTheme,
+} from './theme-file'
 export {
   DEFAULT_SPIN_COUNT,
   MAX_SPIN_COUNT,
@@ -381,15 +432,27 @@ export {
   SEGOE_UI_SYMBOL_RE,
   computeListMarkerInfos,
   computeListMarkers,
+  computeListNumberSites,
   computeListValues,
   customEnumItems,
   formatNumber,
   markerTabAdvance,
+  paragraphNumberText,
   type ListItemRef,
   type ListMarkerInfo,
+  type ListNumberSite,
+  type ParagraphNumberContext,
 } from './list-markers'
+export { fieldNumberText, isFieldNumberFormat } from './field-number-format'
+export { docxWithBody, unlinkFieldsXml } from './unlink-fields'
 
-export { previewFontSettings } from './font-settings'
+export {
+  previewFontSettings,
+  previewTheme,
+  readDocxThemeFormat,
+  themedDocxBytes,
+  type ThemeEdit,
+} from './font-settings'
 export {
   replaceFontsInDocx,
   replaceFontsXml,
@@ -443,6 +506,7 @@ export {
   type CompareSummary,
   type TextCompareIgnore,
 } from './compare'
+export { labelUnattributedRevisions, labelUnattributedRevisionsXml } from './revision-label'
 export { keepsHangulKanaSingle } from './parse-block-passes'
 export {
   charClass,
@@ -463,6 +527,37 @@ export {
   templateThumbnail,
   withTemplateThumbnail,
 } from './template'
-export { carriableBlockXml, docxRootNamespaces } from './carry-block'
+export { carriableBlockXml, carriableSectionBreakXml, docxRootNamespaces } from './carry-block'
 export { docxBookmarkNames, docxBookmarkRange, type BookmarkRange } from './bookmark-range'
+export { docxAutoTextBody, docxAutoTextEntries, type GlossaryAutoText } from './glossary-autotext'
 export { buildChartexPartXml } from './chartex-build'
+export {
+  REL_SIZE_FROM_H,
+  REL_SIZE_FROM_V,
+  drawingRelSizeOf,
+  relSizeBaseTwips,
+  relSizeTwips,
+  type DrawingRelSize,
+  type RelSize,
+  type RelSizeFrom,
+} from './relative-size'
+export {
+  LINK_FIELD_RE,
+  blockLinkFields,
+  breakBlockLinkField,
+  editBlockLinkField,
+  includeTextInstruction,
+  isWordDocumentLink,
+  LINK_SOURCE_PREFIX,
+  linkResultIsPlain,
+  parseLinkInstruction,
+  wordLinkInstruction,
+  pendingPictureLink,
+  pictureLinkToken,
+  withLinkAutomatic,
+  withLinkSource,
+  withPictureLink,
+  type BlockLinkField,
+  type LinkFieldInfo,
+  type LinkFieldKind,
+} from './link-fields'

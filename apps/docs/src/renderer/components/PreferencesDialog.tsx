@@ -1,13 +1,23 @@
-/** Word ▸ Preferences ▸ General: measurement units (the only setting so far). */
+/** Word ▸ Preferences: measurement units (General) and the style area width (View). */
 import { useI18n } from '../i18n/locale'
-import { MEASUREMENT_UNITS, setMeasurementUnit, isMeasurementUnit } from '../units'
-import { UNIT_NAME_KEYS, useMeasurementUnit } from '../use-measurement'
+import { setStyleAreaTwips, STYLE_AREA_MAX_TWIPS } from '../style-area'
+import {
+  MEASUREMENT_UNITS,
+  UNIT_STEP,
+  UNIT_SUFFIX,
+  fromUnit,
+  isMeasurementUnit,
+  setMeasurementUnit,
+  toUnit,
+} from '../units'
+import { UNIT_NAME_KEYS, useMeasurementUnit, useStyleAreaTwips } from '../use-measurement'
 import { useModalKeys } from './modal-keys'
 
 export function PreferencesDialog({ onClose }: { onClose: () => void }) {
   const { t } = useI18n()
   const modalKeys = useModalKeys(onClose)
   const unit = useMeasurementUnit()
+  const styleArea = useStyleAreaTwips()
 
   return (
     <div
@@ -33,6 +43,25 @@ export function PreferencesDialog({ onClose }: { onClose: () => void }) {
               </option>
             ))}
           </select>
+        </label>
+        <label className="fld prefs-field">
+          <span>{t('appPrefsStyleArea')}</span>
+          <span className="prefs-length">
+            <input
+              type="number"
+              className="len-input"
+              min={0}
+              max={toUnit(STYLE_AREA_MAX_TWIPS, unit)}
+              step={UNIT_STEP[unit]}
+              value={toUnit(styleArea, unit)}
+              aria-label={t('appPrefsStyleArea')}
+              onChange={(e) => {
+                const value = Number(e.target.value)
+                if (Number.isFinite(value)) setStyleAreaTwips(fromUnit(value, unit))
+              }}
+            />
+            <span className="para-unit">{UNIT_SUFFIX[unit]}</span>
+          </span>
         </label>
         <div className="modal-actions">
           <button className="btn-primary" onClick={onClose}>

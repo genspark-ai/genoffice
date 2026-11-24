@@ -26,6 +26,6 @@ describe('commentBalloonLabel', () => {
 
   it('keeps the translated prefix verbatim', () => {
     const comment: Identity = { author: 'Alex' }
-    expect(commentBalloonLabel(comment, 1, '批注')).toBe('批注 [A1]: ')
+    expect(commentBalloonLabel(comment, 1, '\u6279\u6ce8')).toBe('\u6279\u6ce8 [A1]: ')
   })
 })

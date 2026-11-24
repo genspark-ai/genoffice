@@ -63,6 +63,7 @@ test('text effects are set from the dialog, shown, saved and read back', async (
       'None',
       'None',
       'None',
+      'None',
     ])
     await pick('outline', /^1\.5 pt$/)
     await dialog.locator('[data-fx="outline"] .text-fx-swatch[aria-label="#FF0000"]').click()

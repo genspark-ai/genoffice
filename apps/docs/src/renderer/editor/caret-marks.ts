@@ -73,6 +73,7 @@ export const PARA_FORMAT_ATTRS = [
   'contextualSpacing',
   'suppressAutoHyphens',
   'mirrorIndents',
+  'adjustRightInd',
   'bidi',
   'autoSpace',
   'wordWrap',

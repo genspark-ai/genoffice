@@ -35,123 +35,235 @@ Word'ün tam bir menü çubuğu vardır; bu yüzden aşağıdaki dosya ve biçim
 
 ### Dosya
 
-| Eylem          | macOS | Windows / Linux |
-| -------------- | ----- | --------------- |
-| Yeni           | ⌘N    | Ctrl+N          |
-| Yeni Pencere   | ⇧⌘N   | Ctrl+Shift+N    |
-| Aç…            | ⌘O    | Ctrl+O          |
-| Kaydet         | ⌘S    | Ctrl+S          |
-| Farklı Kaydet… | ⇧⌘S   | Ctrl+Shift+S    |
-| Yazdır         | ⌘P    | Ctrl+P          |
-| Kapat (sekme)  | ⌘W    | Ctrl+W          |
+| Eylem          | macOS   | Windows / Linux |
+| -------------- | ------- | --------------- |
+| Yeni           | ⌘N / ⌃N | Ctrl+N          |
+| Yeni Pencere   | —       | Ctrl+Shift+N    |
+| Aç…            | ⌘O      | Ctrl+O          |
+| Kaydet         | ⌘S / ⌃S | Ctrl+S          |
+| Farklı Kaydet… | ⇧⌘S     | Ctrl+Shift+S    |
+| Yazdır         | ⌘P / ⌃P | Ctrl+P          |
+| Kapat (sekme)  | ⌘W      | Ctrl+W          |
+| Şablondan Yeni | ⇧⌘P     | —               |
 
 ⌘P tarayıcının yazdırması değildir. Word önce bir baskı önizlemesi yerleştirir, böylece basılan bir yaprak tam olarak ekrandaki bir sayfadır, sonra kendi yazdırma iletişim kutusunu açar.
 
 ### Düzenle
 
-| Eylem                     | macOS | Windows / Linux |
-| ------------------------- | ----- | --------------- |
-| Geri Al                   | ⌘Z    | Ctrl+Z          |
-| Yinele                    | ⇧⌘Z   | Ctrl+Shift+Z    |
-| Kes                       | ⌘X    | Ctrl+X          |
-| Kopyala                   | ⌘C    | Ctrl+C          |
-| Yapıştır                  | ⌘V    | Ctrl+V          |
-| Düz Metin Olarak Yapıştır | ⌥⇧⌘V  | Ctrl+Shift+V    |
-| Tümünü Seç                | ⌘A    | Ctrl+A          |
-| Bul                       | ⌘F    | Ctrl+F          |
-| Değiştir                  | ⌃H    | Ctrl+H          |
-| Git                       | ⌥⌘G   | Ctrl+G          |
-| Klavye Kısayolları        | ⌘/    | Ctrl+/          |
+| Eylem                     | macOS           | Windows / Linux |
+| ------------------------- | --------------- | --------------- |
+| Geri Al                   | ⌘Z / ⌃Z         | Ctrl+Z          |
+| Yinele                    | ⇧⌘Z             | Ctrl+Shift+Z    |
+| Kes                       | ⌘X / ⌃X / F2    | Ctrl+X          |
+| Kopyala                   | ⌘C / ⌃C / F3    | Ctrl+C          |
+| Yapıştır                  | ⌘V / ⌃V / F4    | Ctrl+V          |
+| Düz Metin Olarak Yapıştır | ⌥⇧⌘V            | Ctrl+Shift+V    |
+| Tümünü Seç                | ⌘A / ⌃A         | Ctrl+A          |
+| Bul                       | ⌘F / ⌃F         | Ctrl+F          |
+| Değiştir                  | ⇧⌘H / ⌃H        | Ctrl+H          |
+| Git                       | ⌥⌘G / F5        | Ctrl+G          |
+| Klavye Kısayolları        | ⌘/              | Ctrl+/          |
+| Yinele veya Tekrarla      | ⌘Y / ⌃Y / ⌥⏎    | Ctrl+Y          |
+| Yalnızca Metni Koru       | ⇧⌘V             | —               |
+| Özel Yapıştır             | ⌃⌘V             | —               |
+| Sonrakini Bul             | ⌘G / ⇧F4 / ⇧⌘F4 | —               |
+| Öncekini Bul              | ⇧⌘G             | —               |
+| Çizimi Aç/Kapat           | ⌃⌘Z             | —               |
+| Satırları Sil             | ⌃⌘X             | —               |
+| Üste Ekle                 | ⌃⌘I             | —               |
+| Önceki Sözcüğü Sil        | ⌥⌫ / ⌘⌫         | —               |
+| Sonraki Sözcüğü Sil       | ⌥⌦ / ⌘⌦         | —               |
+| Spike'a Kes               | ⌘F3             | —               |
+| Spike İçeriğini Ekle      | ⇧⌘F3            | —               |
+| İçeriği Temizle           | Clear           | —               |
+| Metni Kopyala             | ⇧F2             | —               |
 
-Değiştir her iki platformda da Ctrl+H'dir, çünkü ⌘H macOS'te pencereyi gizler ve Word'e asla ulaşmaz. Git, Word'ün kendi ayrımını izler: Mac'te ⌥⌘G, böylece ⇧⌘G Sözcük Sayısı için boş kalır.
+Değiştir her iki platformda da Ctrl+H'dir, çünkü ⌘H macOS'te pencereyi gizler ve Word'e asla ulaşmaz. Git, Word'ün kendi ayrımını izler: Mac'te ⌥⌘G; orada ⌘G ve ⇧⌘G, Sonrakini Bul ve Öncekini Bul'dur.
+
+### Gezinme ve Seçim
+
+| Eylem                                 | macOS                  | Windows / Linux |
+| ------------------------------------- | ---------------------- | --------------- |
+| Satır Başı                            | ⌘← / Home / ⌃↑         | —               |
+| Satır Sonu                            | ⌘→ / End / ⌃↓          | —               |
+| Önceki Paragraf                       | ⌘↑ / ⌥↑                | —               |
+| Sonraki Paragraf                      | ⌘↓ / ⌥↓                | —               |
+| Belge Başı                            | ⌘Home / ⌥Home          | —               |
+| Belge Sonu                            | ⌘End / ⌥End            | —               |
+| Satır Başına Kadar Seç                | ⇧⌘← / ⇧Home            | —               |
+| Satır Sonuna Kadar Seç                | ⇧⌘→ / ⇧End             | —               |
+| Önceki Paragrafa Kadar Seç            | ⇧⌘↑ / ⌥⇧↑              | —               |
+| Sonraki Paragrafa Kadar Seç           | ⇧⌘↓ / ⌥⇧↓              | —               |
+| Belge Başına Kadar Seç                | ⇧⌘Home                 | —               |
+| Belge Sonuna Kadar Seç                | ⇧⌘End                  | —               |
+| Bir Ekran Yukarı                      | PageUp                 | —               |
+| Bir Ekran Aşağı                       | PageDown               | —               |
+| Bir Ekran Yukarı Seç                  | ⇧PageUp                | —               |
+| Bir Ekran Aşağı Seç                   | ⇧PageDown              | —               |
+| Pencere Başı                          | ⌥⌘PageUp               | —               |
+| Pencere Sonu                          | ⌥⌘PageDown             | —               |
+| Pencere Başına Kadar Seç              | ⌥⇧⌘PageUp              | —               |
+| Pencere Sonuna Kadar Seç              | ⌥⇧⌘PageDown            | —               |
+| Öncekine Gözat (Sayfa, Bul veya Git)  | ⌘PageUp                | —               |
+| Sonrakine Gözat (Sayfa, Bul veya Git) | ⌘PageDown              | —               |
+| Önceki Bölüm                          | ⌥PageUp                | —               |
+| Sonraki Bölüm                         | ⌥PageDown              | —               |
+| Seçimi Genişlet                       | F8                     | —               |
+| Seçimi Daralt                         | ⇧F8                    | —               |
+| Önceki Düzenlemeye Dön                | ⇧F5 / ⌥⌘Z              | —               |
+| Satırdaki İlk Hücre                   | ⌃Home / ⌥⇧Home         | —               |
+| Satırdaki Son Hücre                   | ⌃End / ⌥⇧End           | —               |
+| Sütundaki İlk Hücre                   | ⌃PageUp / ⌥⇧PageUp     | —               |
+| Sütundaki Son Hücre                   | ⌃PageDown / ⌥⇧PageDown | —               |
+| Tabloyu Seç                           | ⌥Clear                 | —               |
 
 ### Metin Biçimlendirme
 
-| Eylem                                                        | macOS    | Windows / Linux       |
-| ------------------------------------------------------------ | -------- | --------------------- |
-| Kalın                                                        | ⌘B       | Ctrl+B                |
-| İtalik                                                       | ⌘I       | Ctrl+I                |
-| Altı Çizili                                                  | ⌘U       | Ctrl+U                |
-| Yazı Tipi… (iletişim kutusu)                                 | ⌘D       | Ctrl+D                |
-| Yazı Tipi Boyutunu Büyüt                                     | ⇧⌘.      | Ctrl+Shift+.          |
-| Yazı Tipi Boyutunu Küçült                                    | ⇧⌘,      | Ctrl+Shift+,          |
-| Yazı Tipi Boyutunu 1 pt Büyüt                                | ⌘]       | Ctrl+]                |
-| Yazı Tipi Boyutunu 1 pt Küçült                               | ⌘[       | Ctrl+[                |
-| Üst Simge                                                    | ⇧⌘= / ⌘. | Ctrl+Shift+= / Ctrl+. |
-| Alt Simge                                                    | ⌘,       | Ctrl+,                |
-| Büyük/Küçük Harf Değiştir                                    | ⇧F3      | Shift+F3              |
-| Biçimlendirmeyi Kopyala (metin seçiliyken)                   | ⇧⌘C      | Ctrl+Shift+C          |
-| Biçimlendirmeyi Yapıştır (Biçimlendirmeyi Kopyala'dan sonra) | ⇧⌘V      | Ctrl+Alt+Shift+V      |
-| Tüm Biçimlendirmeyi Temizle                                  | ⌃␣       | Ctrl+Space            |
+| Eylem                                                        | macOS               | Windows / Linux       |
+| ------------------------------------------------------------ | ------------------- | --------------------- |
+| Kalın                                                        | ⌘B / ⇧⌘B / ⌃B / ⌃⇧B | Ctrl+B                |
+| İtalik                                                       | ⌘I / ⇧⌘I / ⌃I / ⌃⇧I | Ctrl+I                |
+| Altı Çizili                                                  | ⌘U / ⇧⌘U / ⌃U / ⌃⇧U | Ctrl+U                |
+| Yazı Tipi… (iletişim kutusu)                                 | ⌘D                  | Ctrl+D                |
+| Yazı Tipi Boyutunu Büyüt                                     | ⇧⌘.                 | Ctrl+Shift+.          |
+| Yazı Tipi Boyutunu Küçült                                    | ⇧⌘,                 | Ctrl+Shift+,          |
+| Yazı Tipi Boyutunu 1 pt Büyüt                                | ⌘]                  | Ctrl+]                |
+| Yazı Tipi Boyutunu 1 pt Küçült                               | ⌘[                  | Ctrl+[                |
+| Üst Simge                                                    | ⇧⌘=                 | Ctrl+Shift+= / Ctrl+. |
+| Alt Simge                                                    | ⇧⌘-                 | Ctrl+,                |
+| Büyük/Küçük Harf Değiştir                                    | ⇧F3                 | Shift+F3              |
+| Biçimlendirmeyi Kopyala (metin seçiliyken)                   | ⌥⌘C / ⇧⌘C           | Ctrl+Shift+C          |
+| Biçimlendirmeyi Yapıştır (Biçimlendirmeyi Kopyala'dan sonra) | ⌥⌘V                 | Ctrl+Alt+Shift+V      |
+| Tüm Biçimlendirmeyi Temizle                                  | ⌃␣                  | Ctrl+Space            |
+| Çift altı çizili                                             | ⇧⌘D                 | —                     |
+| Yalnızca Sözcüklerin Altını Çiz                              | ⇧⌘W                 | —                     |
+| Üstü Çizili                                                  | ⇧⌘X                 | —                     |
+| Tümü büyük harf                                              | ⇧⌘A                 | —                     |
+| Küçük büyük harf                                             | ⇧⌘K                 | —                     |
+| Gizli                                                        | ⌃⇧H                 | —                     |
 
-İki biçim boyacısı bileşimi, Windows tuşunun düz bir yeniden adlandırma olmadığı tek yerdir: Biçimlendirmeyi Yapıştır Alt taşır, çünkü Ctrl+Shift+V orada zaten yapıştırır ve stili eşleştirir.
+Biçimlendirmeyi kopyalama ve yapıştırma her platformda Word'ü izler: Mac'te ⌥⌘C / ⌥⌘V, orada ⇧⌘V yalnızca metni yapıştırır; Windows ve Linux'ta biçimlendirme yapıştırma Alt taşır, çünkü Ctrl+Shift+V orada zaten yapıştırıp stili eşleştirir.
 
 ### Paragraf Biçimlendirme
 
-| Eylem                                           | macOS | Windows / Linux |
-| ----------------------------------------------- | ----- | --------------- |
-| Sola Hizala                                     | ⌘L    | Ctrl+L          |
-| Ortala                                          | ⌘E    | Ctrl+E          |
-| Sağa Hizala                                     | ⌘R    | Ctrl+R          |
-| İki Yana Yasla                                  | ⌘J    | Ctrl+J          |
-| Satır Aralığı 1,0                               | ⌘1    | Ctrl+1          |
-| Satır Aralığı 1,5                               | ⌘5    | Ctrl+5          |
-| Satır Aralığı 2,0                               | ⌘2    | Ctrl+2          |
-| Girintiyi Artır                                 | ⌃M    | Ctrl+M          |
-| Girintiyi Azalt                                 | ⌃⇧M   | Ctrl+Shift+M    |
-| Asılı Girinti                                   | ⌘T    | Ctrl+T          |
-| Asılı Girintiyi Kaldır                          | ⇧⌘T   | Ctrl+Shift+T    |
-| Paragraf Biçimlendirmesini Temizle              | ⌃Q    | Ctrl+Q          |
-| Normal (stil)                                   | ⌥⌘0   | Ctrl+Alt+0      |
-| Başlık 1 (stil)                                 | ⌥⌘1   | Ctrl+Alt+1      |
-| Başlık 2 (stil)                                 | ⌥⌘2   | Ctrl+Alt+2      |
-| Başlık 3 (stil)                                 | ⌥⌘3   | Ctrl+Alt+3      |
-| Paragraf… (iletişim kutusu)                     | ⌥⌘M   | Ctrl+Alt+M      |
-| Paragrafı Yukarı Taşı                           | ⌥⇧↑   | Alt+Shift+↑     |
-| Paragrafı Aşağı Taşı                            | ⌥⇧↓   | Alt+Shift+↓     |
-| Liste Öğesini Alt Düzeye İndir (öğenin başında) | Tab   | Tab             |
-| Liste Öğesini Üst Düzeye Çıkar (öğenin başında) | ⇧Tab  | Shift+Tab       |
+| Eylem                                           | macOS               | Windows / Linux |
+| ----------------------------------------------- | ------------------- | --------------- |
+| Sola Hizala                                     | ⌘L                  | Ctrl+L          |
+| Ortala                                          | ⌘E                  | Ctrl+E          |
+| Sağa Hizala                                     | ⌘R                  | Ctrl+R          |
+| İki Yana Yasla                                  | ⌘J                  | Ctrl+J          |
+| Satır Aralığı 1,0                               | ⌘1                  | Ctrl+1          |
+| Satır Aralığı 1,5                               | ⌘5                  | Ctrl+5          |
+| Satır Aralığı 2,0                               | ⌘2                  | Ctrl+2          |
+| Girintiyi Artır                                 | ⌃⇧M / ⌃M            | Ctrl+M          |
+| Girintiyi Azalt                                 | ⇧⌘M                 | Ctrl+Shift+M    |
+| Asılı Girinti                                   | ⌘T                  | Ctrl+T          |
+| Asılı Girintiyi Kaldır                          | ⇧⌘T                 | Ctrl+Shift+T    |
+| Paragraf Biçimlendirmesini Temizle              | ⌥⌘Q / ⌃Q            | Ctrl+Q          |
+| Normal (stil)                                   | ⇧⌘N / ⌥⌘0 / ⌥⇧Clear | Ctrl+Alt+0      |
+| Başlık 1 (stil)                                 | ⌥⌘1                 | Ctrl+Alt+1      |
+| Başlık 2 (stil)                                 | ⌥⌘2                 | Ctrl+Alt+2      |
+| Başlık 3 (stil)                                 | ⌥⌘3                 | Ctrl+Alt+3      |
+| Paragraf… (iletişim kutusu)                     | ⌥⌘M                 | Ctrl+Alt+M      |
+| Paragrafı Yukarı Taşı                           | ⌃⇧↑                 | Alt+Shift+↑     |
+| Paragrafı Aşağı Taşı                            | ⌃⇧↓                 | Alt+Shift+↓     |
+| Başlık Düzeyini Yükselt                         | ⌃⇧←                 | —               |
+| Başlık Düzeyini Düşür                           | ⌃⇧→                 | —               |
+| Başlığı Genişlet (Anahat Görünümü)              | ⌃⇧= / ⌃⇧Num+        | —               |
+| Başlığı Daralt (Anahat Görünümü)                | ⌃⇧- / ⌃⇧Num-        | —               |
+| Gösterilecek Anahat Düzeyi 1                    | ⌃⇧1                 | —               |
+| Gösterilecek Anahat Düzeyi 2                    | ⌃⇧2                 | —               |
+| Gösterilecek Anahat Düzeyi 3                    | ⌃⇧3                 | —               |
+| Gösterilecek Anahat Düzeyi 4                    | ⌃⇧4                 | —               |
+| Gösterilecek Anahat Düzeyi 5                    | ⌃⇧5                 | —               |
+| Gösterilecek Anahat Düzeyi 6                    | ⌃⇧6                 | —               |
+| Gösterilecek Anahat Düzeyi 7                    | ⌃⇧7                 | —               |
+| Gösterilecek Anahat Düzeyi 8                    | ⌃⇧8                 | —               |
+| Gösterilecek Anahat Düzeyi 9                    | ⌃⇧9                 | —               |
+| Tüm Başlıkları Göster (Anahat Görünümü)         | ⌃⇧A                 | —               |
+| Liste Öğesini Alt Düzeye İndir (öğenin başında) | Tab                 | Tab             |
+| Liste Öğesini Üst Düzeye Çıkar (öğenin başında) | ⇧Tab                | Shift+Tab       |
+| Madde İşaretleri                                | ⇧⌘L                 | —               |
 
-Girinti, asılı girinti ve Paragraf Biçimlendirmesini Temizle her iki platformda da yalnızca Ctrl iledir: ⌘M pencereyi simge durumuna küçültür ve ⌘Q çıkar; dolayısıyla bir Command bileşimi çıkarken sessiz bir düzenleme olurdu. Tab, liste düzeyini yalnızca imleç bir öğenin başındayken ya da seçim birden çok öğeyi kapsarken değiştirir; metnin içinde bir sekme karakteri ekler ve ⇧Tab her zaman üst düzeye çıkarır.
+Girintiyi artırma ve azaltma her platformda Word'ü izler: Mac'te ⌃⇧M / ⇧⌘M, Windows ve Linux'ta Ctrl+M / Ctrl+Shift+M; tek başına ⌘M pencereyi simge durumuna küçültür ve ⌘Q çıkar. Tab, liste düzeyini yalnızca imleç bir öğenin başındayken ya da seçim birden çok öğeyi kapsarken değiştirir; metnin içinde bir sekme karakteri ekler ve ⇧Tab her zaman üst düzeye çıkarır.
 
 ### Ekle
 
-| Eylem                | macOS | Windows / Linux  |
-| -------------------- | ----- | ---------------- |
-| Sayfa Sonu           | ⌘⏎    | Ctrl+Enter       |
-| Sütun Sonu           | ⇧⌘⏎   | Ctrl+Shift+Enter |
-| Satır Sonu           | ⇧⏎    | Shift+Enter      |
-| Bağlantı…            | ⌘K    | Ctrl+K           |
-| Yeni Yorum           | ⌥⌘A   | Ctrl+Alt+A       |
-| Dipnot Ekle          | ⌥⌘F   | Ctrl+Alt+F       |
-| Son Not Ekle         | ⌥⌘E   | Ctrl+Alt+D       |
-| Tarih (alan)         | ⌥⇧D   | Alt+Shift+D      |
-| Saat (alan)          | ⌥⇧T   | Alt+Shift+T      |
-| Bölünemez Boşluk     | ⇧⌘␣   | Ctrl+Shift+Space |
-| Bölünemez Kısa Çizgi | ⇧⌘-   | Ctrl+Shift+-     |
+| Eylem                                  | macOS       | Windows / Linux  |
+| -------------------------------------- | ----------- | ---------------- |
+| Sayfa Sonu                             | ⌘⏎          | Ctrl+Enter       |
+| Sütun Sonu                             | ⇧⌘⏎         | Ctrl+Shift+Enter |
+| Satır Sonu                             | ⇧⏎          | Shift+Enter      |
+| Bağlantı…                              | ⌘K          | Ctrl+K           |
+| Yeni Yorum                             | ⌥⌘A         | Ctrl+Alt+A       |
+| Dipnot Ekle                            | ⌥⌘F         | Ctrl+Alt+F       |
+| Son Not Ekle                           | ⌥⌘E         | Ctrl+Alt+D       |
+| Tarih (alan)                           | ⌃⇧D / ⌥⇧D   | Alt+Shift+D      |
+| Saat (alan)                            | ⌃⇧T / ⌥⇧T   | Alt+Shift+T      |
+| Bölünemez Boşluk                       | ⌃⇧␣ / ⇧⌘␣   | Ctrl+Shift+Space |
+| Bölünemez Kısa Çizgi                   | ⌥⇧⌘-        | Ctrl+Shift+-     |
+| Sayfa numarası (geçerli sayfa)         | ⌃⇧P         | —                |
+| Alan Ayraçları Ekle                    | ⌘F9         | —                |
+| Öncekine Bağla                         | ⌃⇧R         | —                |
+| Birleştirme Alanı Ekle                 | ⌃⇧F         | —                |
+| İçindekiler Tablosu Girdisini İşaretle | ⌥⇧⌘O        | —                |
+| Bölüm Sonu (Sonraki Sayfa)             | ⌘⌤          | —                |
+| Kısa tire                              | ⌘Num-       | —                |
+| Uzun tire                              | ⌥⌘Num-      | —                |
+| Denklem                                | ⌃=          | —                |
+| Yer İşareti                            | ⇧⌘F5        | —                |
+| Yeni Otomatik Metin Oluştur            | ⌥F3         | —                |
+| Dizin Girdisi İşaretle                 | ⌥⇧⌘X        | —                |
+| Alıntıyı İşaretle                      | ⌥⇧⌘I        | —                |
+| İsteğe bağlı kısa çizgi                | ⌥⌘-         | —                |
+| Tablo Hücresinde Sekme Karakteri       | ⌃Tab / ⌥Tab | —                |
 
 Son Not Ekle gerçek bir platform ayrımıdır, yeniden adlandırma değil: Word Mac'te ⌥⌘E kullanır, çünkü orada ⌥⌘D Dock'a aittir.
 
 ### Gözden Geçir ve Araçlar
 
-| Eylem                   | macOS | Windows / Linux |
-| ----------------------- | ----- | --------------- |
-| Değişiklikleri İzle     | ⇧⌘E   | Ctrl+Shift+E    |
-| Sözcük Sayısı           | ⇧⌘G   | Ctrl+Shift+G    |
-| Düzelti                 | F7    | F7              |
-| Alanı Güncelle          | F9    | F9              |
-| Alan Kodlarını Aç/Kapat | ⌥F9   | Alt+F9          |
+| Eylem                         | macOS      | Windows / Linux |
+| ----------------------------- | ---------- | --------------- |
+| Değişiklikleri İzle           | ⇧⌘E        | Ctrl+Shift+E    |
+| Sözcük Sayısı                 | —          | Ctrl+Shift+G    |
+| Düzelti                       | —          | F7              |
+| Alanı Güncelle                | F9 / ⌥⇧⌘U  | F9              |
+| Alan Kodlarını Aç/Kapat       | ⌥F9        | Alt+F9          |
+| Eş Anlamlılar                 | ⌃⌥⌘R / ⇧F7 | —               |
+| Yazım ve Dil Bilgisi          | ⌥⌘L / F7   | Ctrl+Alt+L      |
+| Sonraki Yazım Hatası          | ⌥F7        | —               |
+| Çevir                         | ⌃⌥⌘T       | —               |
+| Seçili Alanın Kodunu Aç/Kapat | ⇧F9        | —               |
+| Alanları Kilitle              | ⌘F11 / ⌘3  | —               |
+| Alanların Kilidini Aç         | ⇧⌘F11 / ⌘4 | —               |
+| Alanların Bağlantısını Kaldır | ⇧⌘F9 / ⌘6  | —               |
+| Sonraki Alan                  | F11        | —               |
+| Önceki Alan                   | ⇧F11       | —               |
+| Alıcı Listesini Düzenle       | ⌃⇧E        | —               |
+| Bitir ve Birleştir            | ⌃⇧N        | —               |
 
-F7 AI düzeltisini çalıştırır ve F9 alanları günceller; ikisi de yüklü bir belge ister. Bir düzenleme kısıtlaması Değişiklikleri İzle'yi açtığında artık geri kapatılamaz.
+F7, Mac'te Word'deki gibi Yazım ve Dil Bilgisi'ni açar, Windows ve Linux'ta AI düzeltisini çalıştırır; F9 alanları günceller. Bir düzenleme kısıtlaması Değişiklikleri İzle'yi açtığında artık geri kapatılamaz.
 
 ### Görünüm
 
-| Eylem                                   | macOS | Windows / Linux |
-| --------------------------------------- | ----- | --------------- |
-| Yakınlaştır                             | ⌘=    | Ctrl+=          |
-| Uzaklaştır                              | ⌘-    | Ctrl+-          |
-| %100'e yakınlaştır                      | ⌘0    | Ctrl+0          |
-| Biçimlendirme işaretlerini göster/gizle | ⌘8    | Ctrl+Shift+8    |
+| Eylem                                   | macOS       | Windows / Linux |
+| --------------------------------------- | ----------- | --------------- |
+| Yakınlaştır                             | ⌘=          | Ctrl+=          |
+| Uzaklaştır                              | ⌘-          | Ctrl+-          |
+| %100'e yakınlaştır                      | ⌘0          | Ctrl+0          |
+| Biçimlendirme işaretlerini göster/gizle | ⌘8          | Ctrl+Shift+8    |
+| Sayfa Düzeni                            | ⌥⌘P         | —               |
+| Ana Hat                                 | ⌥⌘O         | —               |
+| Taslak                                  | ⌥⌘N         | —               |
+| Böl                                     | ⌥⌘S         | —               |
+| Bölmeyi Kaldır                          | ⌃⇧C         | —               |
+| Sonraki Pencere                         | ⌘F6 / ⌥F6   | —               |
+| Önceki Pencere                          | ⇧⌘F6 / ⌥⇧F6 | —               |
+| Stiller Bölmesi                         | ⌥⇧⌘S        | —               |
+| Odak                                    | ⌃⇧⌘F        | —               |
+| Şerit                                   | ⌥⌘R         | —               |
+| Nesneyi Biçimlendir                     | ⇧⌘1         | —               |
+| Seçim Bölmesi                           | ⌥⌘U         | —               |
 
 Biçimlendirme işaretleri bileşimi Word'ün kendi ayrımını izler: ⌘8 karşısında Ctrl+Shift+8. Word yakınlaştırmayı yalnızca yukarıdaki üç menü bileşimiyle alır — ⌘+ burada hiçbir şey yapmaz.
 

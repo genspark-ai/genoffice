@@ -170,6 +170,58 @@ export async function docxWith(body: string): Promise<Buffer> {
 
 export const para = (t: string) => `<w:p><w:r><w:t>${t}</w:t></w:r></w:p>`
 
+const PART_TYPE = 'application/vnd.openxmlformats-officedocument.wordprocessingml'
+const PART_REL = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships'
+const W_ONLY = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"'
+
+/**
+ * Puts `word/<name>.xml` in the package with its content type and relationship: Word does
+ * not read a settings or styles part that the document does not point to.
+ */
+export async function withWordPart(
+  docx: Buffer,
+  name: 'settings' | 'styles',
+  xml: string,
+): Promise<Buffer> {
+  const zip = await JSZip.loadAsync(docx)
+  zip.file(`word/${name}.xml`, xml)
+  const patch = async (path: string, has: string, close: string, add: string) => {
+    const part =
+      (await zip.file(path)?.async('string')) ??
+      `<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="${PART_REL.replace('officeDocument', 'package')}">${close}`
+    if (!part.includes(has)) zip.file(path, part.replace(close, add + close))
+  }
+  await patch(
+    '[Content_Types].xml',
+    `/word/${name}.xml`,
+    '</Types>',
+    `<Override PartName="/word/${name}.xml" ContentType="${PART_TYPE}.${name}+xml"/>`,
+  )
+  await patch(
+    'word/_rels/document.xml.rels',
+    `Target="${name}.xml"`,
+    '</Relationships>',
+    `<Relationship Id="rIdPart${name}" Type="${PART_REL}/${name}" Target="${name}.xml"/>`,
+  )
+  return zip.generateAsync({ type: 'nodebuffer' })
+}
+
+/**
+ * Document defaults that declare a language (Word hyphenates only text that has one), with
+ * the look a package without a styles part has: Aptos 12pt, 8pt after, 1.15 lines.
+ */
+export const stylesWithLanguage = (lang = 'en-US') =>
+  `<?xml version="1.0" encoding="UTF-8"?><w:styles ${W_ONLY}><w:docDefaults><w:rPrDefault><w:rPr>` +
+  `<w:rFonts w:ascii="Aptos" w:hAnsi="Aptos"/><w:sz w:val="24"/><w:lang w:val="${lang}"/></w:rPr></w:rPrDefault>` +
+  '<w:pPrDefault><w:pPr><w:spacing w:after="160" w:line="276" w:lineRule="auto"/></w:pPr></w:pPrDefault></w:docDefaults>' +
+  '<w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/><w:qFormat/></w:style></w:styles>'
+
+export const withLanguage = (docx: Buffer, lang = 'en-US') =>
+  withWordPart(docx, 'styles', stylesWithLanguage(lang))
+
+export const settingsXml = (settings: string) =>
+  `<?xml version="1.0" encoding="UTF-8"?><w:settings ${W_ONLY}>${settings}</w:settings>`
+
 export type Rect = { left: number; top: number; width: number; height: number }
 
 export const rects = (page: Page, selector: string): Promise<Rect[]> =>
@@ -184,6 +236,10 @@ export const rects = (page: Page, selector: string): Promise<Rect[]> =>
 
 export const boxRects = (page: Page): Promise<Rect[]> => rects(page, '.doc-page .doc-textbox')
 
+/**
+ * File > Save, run from the menu. A save shortcut pressed right after a click can land before
+ * the editor has the focus, and then nothing is saved; the menu item does not depend on focus.
+ */
 export const saveFromMenu = (app: ElectronApplication) =>
   app.evaluate(({ Menu }) => {
     const file = Menu.getApplicationMenu()?.items.find((item) => item.label === 'File')

@@ -3,7 +3,7 @@
  * scheme — an A4 sheet is 841.92pt tall, so its last device row is only
  * partly covered by the page box, and a transparent canvas let Chromium's
  * dark-scheme color show through as a 1px dark strip along the bottom of
- * every page when the app theme was dark (#2837).
+ * every page when the app theme was dark (genoffice#2837).
  */
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'

@@ -1,6 +1,6 @@
 import { Extension } from '@tiptap/core'
 import { Plugin, PluginKey, type EditorState } from '@tiptap/pm/state'
-import { Decoration, DecorationSet } from '@tiptap/pm/view'
+import { Decoration, DecorationSet, type EditorView } from '@tiptap/pm/view'
 import type { Node as ProseMirrorNode } from '@tiptap/pm/model'
 import { collectHeadings, type HeadingRef, type HeadingStyles } from './headings'
 import { collectStructuralHeadings, structuralHeadingClass } from './structural-headings'
@@ -53,6 +53,8 @@ interface OutlineViewMeta {
   active?: boolean
   /** heading key to flip in the collapsed set */
   toggle?: string
+  /** the collapsed set as a whole (Show Level) */
+  collapsed?: readonly string[]
 }
 
 /** heading indices whose ancestor rows are folded away by a collapsed heading */
@@ -142,6 +144,57 @@ function buildOutlineDecorations(
   return DecorationSet.create(doc, decos)
 }
 
+/** Word's Collapse / Expand in Outline view, on the heading the caret is in or under */
+export function foldOutlineAtCaret(
+  view: EditorView,
+  collapse: boolean,
+  styles?: HeadingStyles,
+): boolean {
+  const plugin = outlineViewKey.getState(view.state)
+  if (!plugin?.active) return false
+  const { refs: headings } = outlineHeadings(view.state.doc, styles)
+  const $head = view.state.selection.$head
+  const index = headingAtPos(headings, $head.depth ? $head.before(1) : $head.pos)
+  if (index < 0) return false
+  const key = headingKey(headings[index])
+  if (plugin.collapsed.has(key) === collapse || !outlineHasChildren(headings, index)) return false
+  view.dispatch(view.state.tr.setMeta(outlineViewKey, { toggle: key } satisfies OutlineViewMeta))
+  return true
+}
+
+/**
+ * The headings to fold so that Outline view shows levels 1 to `level`: every
+ * heading of that level with something under it, and a higher one whose
+ * subtree holds nothing but deeper levels.
+ */
+export function foldsForLevel(
+  headings: ReadonlyArray<Pick<HeadingRef, 'level' | 'text'>>,
+  level: number,
+): string[] {
+  const keys: string[] = []
+  headings.forEach((ref, index) => {
+    if (ref.level > level || !outlineHasChildren(headings, index)) return
+    let end = index + 1
+    while (end < headings.length && headings[end].level > ref.level) end++
+    const under = headings.slice(index + 1, end)
+    if (ref.level === level || under.every((h) => h.level > level)) keys.push(headingKey(ref))
+  })
+  return keys
+}
+
+/** Word's Show Level 1-9 and Show All Headings (`null`) in Outline view */
+export function showOutlineLevel(
+  view: EditorView,
+  level: number | null,
+  styles?: HeadingStyles,
+): boolean {
+  if (!outlineViewKey.getState(view.state)?.active) return false
+  const { refs } = outlineHeadings(view.state.doc, styles)
+  const collapsed = level === null ? [] : foldsForLevel(refs, level)
+  view.dispatch(view.state.tr.setMeta(outlineViewKey, { collapsed } satisfies OutlineViewMeta))
+  return true
+}
+
 export const OutlineViewExtension = Extension.create({
   name: 'docsOutlineView',
 
@@ -178,6 +231,7 @@ export const OutlineViewExtension = Extension.create({
               if (collapsed.has(meta.toggle)) collapsed.delete(meta.toggle)
               else collapsed.add(meta.toggle)
             }
+            if (meta?.collapsed) collapsed = new Set(meta.collapsed)
             if (meta?.active != null && meta.active !== active) {
               active = meta.active
               if (!active) collapsed = new Set()

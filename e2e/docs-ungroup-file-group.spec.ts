@@ -375,7 +375,9 @@ test('a group the text flows above and below stays a group: its band cannot be k
     // the text after the group starts below it
     expect(lines[2]).toBeGreaterThan(grouped[2][1] + grouped[2][3] - 30)
     await boxes.nth(1).click()
-    await ungroup(page)
+    // nothing here can be grouped or taken apart: the button is greyed out
+    await page.locator('.ribbon-tab', { hasText: /^Layout$/ }).click()
+    await expect(page.locator('.rb-big', { hasText: /^Group$/ })).toBeDisabled()
     await expect(page.locator(BOXES)).toHaveCount(3)
     await expect(page.locator(NODES)).toHaveCount(1)
     expect(near(await onPaper(page), grouped, 1)).toBe(true)

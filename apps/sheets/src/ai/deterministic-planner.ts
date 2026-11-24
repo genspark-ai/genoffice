@@ -12,7 +12,11 @@ export function planPrompt(
   options: { readonly revision: number; readonly sheetId: string },
 ): WorkbookCommandBatch {
   const transactionId = `local-${crypto.randomUUID()}`
-  const normalized = prompt.trim()
+  // the hint quotes its examples, and they get pasted back with the quotes on
+  const normalized = prompt
+    .trim()
+    .replace(/^["'\u201c\u2018]([^"'\u201c\u201d\u2018\u2019]*)["'\u201d\u2019]$/, '$1')
+    .trim()
   const setMatch = /^set\s+([a-z]{1,3}[1-9][0-9]{0,6})\s+to\s+(.+)$/i.exec(normalized)
   if (setMatch) {
     const address = setMatch[1]
@@ -77,6 +81,15 @@ export function planPrompt(
   }
 
   throw new UnsupportedPromptError()
+}
+
+export function isOfflinePrompt(prompt: string): boolean {
+  try {
+    planPrompt(prompt, { revision: 0, sheetId: '' })
+    return true
+  } catch {
+    return false
+  }
 }
 
 function parseScalar(rawValue: string): string | number | boolean | null {

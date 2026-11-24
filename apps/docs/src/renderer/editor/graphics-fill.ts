@@ -216,6 +216,7 @@ export async function setSelectedGraphicFill(main: Editor, hex: string | null): 
       : {
           imageDataUrl: dataUrl,
           imageVector: vector,
+          imageLink: null,
           ...(attrs.docxIndex != null
             ? { imageReplace: { base64, mime: 'image/png' } }
             : { genImage: { ...attrs.genImage, base64, mime: 'image/png' } }),

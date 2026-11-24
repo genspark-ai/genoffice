@@ -250,6 +250,37 @@ export function pagePaperEdges(cuts: readonly PageCut[], firstMarginTop: number)
   return out
 }
 
+/**
+ * Index of the page drawn at a canvas Y (px at zoom 1 from the canvas top). Null between two
+ * sheets, and where a page turn has no gap of its own to tell the pages on either side apart.
+ */
+export function pageAtCanvasY(
+  cuts: readonly PageCut[],
+  firstMarginTop: number,
+  y: number,
+): number | null {
+  let from = 0
+  let to = cuts.length
+  for (const edge of pagePaperEdges(cuts, firstMarginTop)) {
+    // a turn drawn without a band (a row cut cell by cell, a float's own gap) has no Y of its
+    // own: the pages on either side of it stay undecided
+    if (edge.gap.kind === 'cut' || edge.gap.floatGap) continue
+    if (y >= edge.top) from = edge.page
+    else {
+      if (y >= edge.prevBottom) return null
+      to = edge.page
+      break
+    }
+  }
+  let found: number | null = null
+  for (let i = from; i < to; i++) {
+    if (cuts[i].blank) continue
+    if (found !== null) return null
+    found = i
+  }
+  return found
+}
+
 /** The blocks that open a page behind a block-kind gap widget, with the page
  *  index: the wrap-obstacle pass clears its rectangles in front of them (a
  *  page turn inside a table or a paragraph has no top-level widget and resets
@@ -370,6 +401,8 @@ export function headingPagesOf(
   blocks: readonly BlockBox[],
   cuts: readonly PageCut[],
   headings: ReadonlyArray<HTMLElement | null>,
+  /** `bottom`: the page each block ends on instead of the one it starts on */
+  edge: 'top' | 'bottom' = 'top',
 ): { pages: number[]; misses: number } {
   const byEl = new Map<HTMLElement, BlockBox>()
   const byIdx = new Map<string, BlockBox>()
@@ -389,7 +422,8 @@ export function headingPagesOf(
       misses++
       return cuts[0].pageNo
     }
-    const i = pageOfY(cuts as PageCut[], block.top)
+    const y = edge === 'bottom' ? block.top + Math.max(block.height - 1, 0) : block.top
+    const i = pageOfY(cuts as PageCut[], y)
     return cuts[Math.min(Math.max(i, 0), cuts.length - 1)].pageNo
   })
   return { pages, misses }

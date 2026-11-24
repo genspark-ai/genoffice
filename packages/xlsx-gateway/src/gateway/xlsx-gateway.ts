@@ -19,7 +19,12 @@ import type {
   WorkbookVisualEdit,
 } from '../shared/edit-schemas'
 import { spillsDynamicArray, withFutureFunctionMarkers } from './future-functions'
-import { decodeXlsxEscapes, decodeXmlText, encodeXlsxEscapes } from './xlsx-escapes'
+import {
+  decodeXlsxEscapes,
+  decodeXmlText,
+  encodeXlsxEscapes,
+  isTrueBooleanCell,
+} from './xlsx-escapes'
 import { MINIMAL_STYLESHEET_XML } from './xlsx-default-styles'
 import {
   applyWorkbookLinkBreak,
@@ -73,6 +78,7 @@ import {
 import { normalizeOoxmlPartPrefix } from './xlsx-namespace'
 import { resolvedStyleEntries } from './xlsx-style-entries'
 import { escapeRegExp } from './xlsx-sheets'
+import { cloneSheetParts, renameTablesInWorksheet } from './xlsx-sheet-clone'
 import type { SheetAllocation, SheetEditPlan, SheetElement } from './xlsx-sheets'
 import {
   addWorksheetOverride,
@@ -92,7 +98,6 @@ import {
   parseSheetElements,
   partPathForRels,
   pivotCacheReadsFromSheet,
-  prepareClonedSheetRels,
   removePartOverride,
   removeRelationshipById,
   tableDisplayName,
@@ -705,7 +710,7 @@ function cellText(
   if (rawValue === undefined) return ''
   if (type === 's') return sharedStrings[Number(rawValue)] ?? ''
   if (type === 'str') return decodeCellText(rawValue)
-  if (type === 'b') return rawValue === '1' ? 'TRUE' : 'FALSE'
+  if (type === 'b') return isTrueBooleanCell(rawValue) ? 'TRUE' : 'FALSE'
   // a number keeps the file's own spelling, except that a date-formatted
   // cell reads as a date, not as the serial the file holds
   const text = decodeCellText(rawValue)
@@ -1235,17 +1240,17 @@ export async function planCellEditsToXlsx(
     }
     assertNoSheetScopedDefinedNames(await pkg.readText('xl/workbook.xml'), sourceSheetName)
     let cloneXml = sanitizeClonedWorksheetXml(await pkg.readText(sourcePath))
-    const sourceRelsPath = sourcePath.replace(/^(xl\/worksheets\/)([^/]+)$/, '$1_rels/$2.rels')
-    if (await pkg.has(sourceRelsPath)) {
-      const rels = prepareClonedSheetRels(await pkg.readText(sourceRelsPath), sourceSheetName)
-      if (rels.droppedPrinterSettings) cloneXml = stripPageSetupRelIds(cloneXml)
-      if (rels.relsXml !== null) {
-        pkg.add(
-          addition.path.replace(/^(xl\/worksheets\/)([^/]+)$/, '$1_rels/$2.rels'),
-          rels.relsXml,
-        )
-      }
-    }
+    const parts = await cloneSheetParts(
+      pkg,
+      sourcePath,
+      addition.path,
+      sourceSheetName,
+      addition.name,
+      touchedEntries,
+    )
+    if (parts.droppedPrinterSettings) cloneXml = stripPageSetupRelIds(cloneXml)
+    cloneXml = renameTablesInWorksheet(cloneXml, parts.tableNames)
+    if (parts.relsXml !== null) pkg.add(relsPathFor(addition.path), parts.relsXml)
     pkg.add(addition.path, cloneXml)
   }
 
@@ -2688,7 +2693,8 @@ function readHeaderCellText(
     const text = sharedStrings[Number(rawValue)] ?? ''
     return text === '' ? { kind: 'blank' } : { kind: 'text', text, plain: true }
   }
-  if (type === 'b') return { kind: 'text', text: rawValue === '1' ? 'TRUE' : 'FALSE', plain: false }
+  if (type === 'b')
+    return { kind: 'text', text: isTrueBooleanCell(rawValue) ? 'TRUE' : 'FALSE', plain: false }
   const text = type === 'str' ? decodeCellText(rawValue) : decodeXmlText(rawValue)
   if (text === '') return { kind: 'blank' }
   return { kind: 'text', text, plain: type === 'str' }
@@ -3521,7 +3527,7 @@ function parseCell(worksheetXml: string, address: string): CellState {
   }
   const rawValue = /<v(?:\s[^>]*)?>([\s\S]*?)<\/v>/.exec(body)?.[1]
   if (rawValue === undefined) return { value: null }
-  if (type === 'b') return { value: rawValue === '1' }
+  if (type === 'b') return { value: isTrueBooleanCell(rawValue) }
   const numericValue = Number(rawValue)
   if (!Number.isFinite(numericValue))
     throw new Error(`Cell ${address} has an unsupported numeric value.`)
@@ -3560,7 +3566,7 @@ function parseWorksheetCells(
       const index = Number(rawValue)
       cells[address] = { value: sharedStrings[index] ?? '' }
     } else if (type === 'b') {
-      cells[address] = { value: rawValue === '1' }
+      cells[address] = { value: isTrueBooleanCell(rawValue) }
     } else if (type === 'str') {
       cells[address] = { value: decodeCellText(rawValue) }
     } else {

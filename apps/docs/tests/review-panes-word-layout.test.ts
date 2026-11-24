@@ -7,7 +7,10 @@ import { ReviewingPane } from '../src/renderer/components/ReviewingPane'
 import { loadLeftPane, saveLeftPane } from '../src/renderer/components/pane-width'
 import { commentsView, iconClickTarget } from '../src/renderer/components/comments-mode'
 import { summarizeRevisions, type ReviewEntry } from '../src/renderer/editor/revision-filters'
-import { syncMarginAnnotations } from '../src/renderer/editor/margin-annotations'
+import {
+  startMarginCommentEdit,
+  syncMarginAnnotations,
+} from '../src/renderer/editor/margin-annotations'
 import type { RevisionRange } from '../src/renderer/editor/revisions'
 import { balloonKindOf } from '../src/renderer/editor/revision-view'
 
@@ -34,6 +37,8 @@ const MIXED: RevisionRange[] = [
   rev('rPrChange', 17),
   rev('cellIns', 21, { author: 'Ben' }),
 ]
+
+;(globalThis as { CSS?: unknown }).CSS ??= { escape: (s: string) => s }
 
 describe('Reviewing Pane summary (Word lines)', () => {
   it('counts insertions, deletions, moves (a pair once) and formatting', () => {
@@ -198,6 +203,31 @@ describe('margin comment cards vs the Comments panel', () => {
     again.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
     expect(calls).toEqual(['reply:7:half done'])
     expect(again.value).toBe('')
+    app.remove()
+  })
+
+  it('Edit Comment asked from a menu opens the card editor, also when the card is drawn later, and what was typed survives a rebuild', () => {
+    // the card is not drawn yet: comments are hidden
+    const { app, wrap, pm, comments, handlers, calls } = build({})
+    expect(wrap.querySelector('.comment-bubble')).toBeNull()
+    startMarginCommentEdit('7')
+    app.setAttribute('data-comment-cards', '')
+    syncMarginAnnotations(wrap, pm, comments, 1, [], undefined, handlers)
+    const first = wrap.querySelector<HTMLTextAreaElement>('.comment-entry textarea')!
+    expect(first.value).toBe('hello')
+    first.value = 'hello again'
+    // a later rebuild keeps the box and its text, and does not ask again once it is closed
+    syncMarginAnnotations(wrap, pm, comments, 1, [], undefined, handlers)
+    const kept = wrap.querySelector<HTMLTextAreaElement>('.comment-entry textarea')!
+    expect(kept).not.toBe(first)
+    expect(kept.value).toBe('hello again')
+    wrap.querySelector<HTMLButtonElement>('.comment-compose-actions .primary')!.click()
+    expect(calls).toEqual(['edit:7:hello again'])
+    syncMarginAnnotations(wrap, pm, comments, 1, [], undefined, handlers)
+    expect(wrap.querySelector('.comment-entry textarea')).toBeNull()
+    // a card that is already there opens at once
+    startMarginCommentEdit('7')
+    expect(wrap.querySelector('.comment-entry textarea')).not.toBeNull()
     app.remove()
   })
 

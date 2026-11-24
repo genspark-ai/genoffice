@@ -14,7 +14,6 @@ import type { AutoTextEntry } from '../editor/auto-text'
 import { defaultPasteMode, setDefaultPasteMode, type PasteMode } from '../editor/paste-options'
 import { useI18n, type StringKey } from '../i18n/locale'
 import { useModalKeys } from './modal-keys'
-import { Unavailable } from './Unavailable'
 
 const PASTE_MODES: Array<[PasteMode, StringKey]> = [
   ['source', 'appPasteKeepSource'],
@@ -36,7 +35,10 @@ export interface AutoCorrectSelection {
 }
 
 export interface AutoCorrectAutoText {
+  /** the entries kept on this computer, then the ones the open document carries */
   entries: AutoTextEntry[]
+  /** the open document's name, when it carries entries of its own */
+  documentName: string | null
   /** the start of the selection, or '' when nothing is selected to keep */
   suggestedName: string
   onAdd: (name: string) => void
@@ -335,8 +337,13 @@ function AutoTextTab({
 }) {
   const { t } = useI18n()
   const [name, setName] = useState(autoText.suggestedName)
+  const [lookIn, setLookIn] = useState<'all' | 'normal' | 'document'>('all')
   const typed = name.trim()
-  const entry = autoText.entries.find((e) => e.name === typed)
+  const place = autoText.documentName === null ? 'all' : lookIn
+  const entries = autoText.entries.filter(
+    (e) => place === 'all' || (place === 'document') === (e.from === 'document'),
+  )
+  const entry = entries.find((e) => e.name === typed)
   return (
     <>
       {switchRow}
@@ -353,9 +360,9 @@ function AutoTextTab({
           </label>
         </div>
         <div className="ac-table" role="listbox" aria-label={t('appAcAutoTextEntries')}>
-          {autoText.entries.map((e) => (
+          {entries.map((e) => (
             <button
-              key={e.name}
+              key={`${e.from ?? ''}:${e.name}`}
               type="button"
               role="option"
               aria-selected={e.name === typed}
@@ -375,21 +382,27 @@ function AutoTextTab({
           >
             {t('ribbonAdd')}
           </button>
-          <button type="button" disabled={!entry} onClick={() => autoText.onDelete(typed)}>
+          <button
+            type="button"
+            disabled={!entry || entry.from === 'document'}
+            onClick={() => autoText.onDelete(typed)}
+          >
             {t('ribbonGroupDelete')}
           </button>
           <button type="button" disabled={!entry} onClick={() => entry && autoText.onInsert(entry)}>
             {t('appInsert')}
           </button>
         </div>
-        <Unavailable id="autocorrect.autotext-look-in">
-          <label className="ac-look-in">
-            {t('appAcLookIn')}
-            <select disabled>
-              <option>{t('appAcAllTemplates')}</option>
-            </select>
-          </label>
-        </Unavailable>
+        <label className="ac-look-in">
+          {t('appAcLookIn')}
+          <select value={place} onChange={(e) => setLookIn(e.target.value as typeof lookIn)}>
+            <option value="all">{t('appAcAllTemplates')}</option>
+            <option value="normal">{t('appAcNormalTemplate')}</option>
+            {autoText.documentName !== null && (
+              <option value="document">{autoText.documentName}</option>
+            )}
+          </select>
+        </label>
         <h3 className="protect-section-title">{t('ribbonPbPreview')}</h3>
         <p className="fld-hint ac-preview">{entry?.text.slice(0, 240)}</p>
       </div>
@@ -447,16 +460,6 @@ export function AutoCorrectDialog({
       {t(label)}
     </label>
   )
-  /** a rule Word lists and this app has nothing to switch for */
-  const off = (id: string, label: StringKey) => (
-    <Unavailable id={id}>
-      <label className="protect-check">
-        <input type="checkbox" checked={false} disabled readOnly />
-        <span className="ctl" aria-hidden="true" />
-        {t(label)}
-      </label>
-    </Unavailable>
-  )
   const heading = (label: StringKey) => <h3 className="protect-section-title">{t(label)}</h3>
 
   return (
@@ -508,7 +511,7 @@ export function AutoCorrectDialog({
               disabled={!prefs.enabled || !prefs.replaceText}
               onChange={(next) => setList('replace', next)}
             />
-            {off('autocorrect.spelling-suggestions', 'appAcSpellSuggest')}
+            {check('spellSuggest', 'appAcSpellSuggest')}
             <p className="fld-hint">{t('appAcUndoHint')}</p>
             {heading('appAcPasteHeading')}
             <p className="modal-desc">{t('appAcPasteFromOther')}</p>
@@ -551,7 +554,7 @@ export function AutoCorrectDialog({
             {check('borderLines', 'appAcBorderLines')}
             {check('headingStyles', 'appAcHeadingStyles')}
             {check('tables', 'ribbonGroupTables')}
-            {off('autocorrect.date-style', 'appAcDateStyle')}
+            {check('dateStyle', 'appAcDateStyle')}
             {check('indentSpaces', 'appAcIndentSpaces')}
             {heading('appAcAutoHeading')}
             {check('asianSpaces', 'appAcAsianSpaces')}
@@ -563,7 +566,7 @@ export function AutoCorrectDialog({
             {check('smartQuotes', 'appAcSmartQuotes')}
             {check('dashes', 'appAcDashes')}
             {heading('appAcAutoHeading')}
-            {off('autocorrect.define-styles', 'appAcDefineStyles')}
+            {check('defineStyles', 'appAcDefineStyles')}
             {check('tabIndents', 'appAcTabIndents')}
             {check('listStart', 'appAcListStart')}
             {check('closingPhrase', 'appAcClosingPhrase')}

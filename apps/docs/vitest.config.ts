@@ -27,6 +27,9 @@ export default defineConfig({
       '@genoffice/electron-utils/safe-external-url': local(
         '../../packages/electron-utils/src/safe-external-url.ts',
       ),
+      '@genoffice/electron-utils/program-files': local(
+        '../../packages/electron-utils/src/program-files.ts',
+      ),
       '@genoffice/electron-utils/print-cups': local(
         '../../packages/electron-utils/src/print-cups.ts',
       ),
@@ -64,6 +67,7 @@ export default defineConfig({
       local('../../packages/docx-engine/tests/setup-equality.ts'),
       // every package a test saves must read back as strict XML
       local('../../packages/docx-engine/tests/setup-strict-xml.ts'),
+      local('./tests/setup-dom.ts'),
     ],
     environment: 'jsdom',
     testTimeout: 20000,

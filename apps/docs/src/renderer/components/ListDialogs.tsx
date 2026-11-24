@@ -15,9 +15,11 @@ import {
   numberPresetLevels,
   previewLevelText,
 } from '../list-presets'
+import { nineListLevels } from '../list-styles'
 
-/** `style` is the multilevel dialog naming a new list style */
-export type ListDialogKind = 'bullet' | 'number' | 'multi' | 'value' | 'indents' | 'style'
+/** `style` is the multilevel dialog naming a new list style, `styleModify` the same dialog on an existing one */
+export type ListDialogKind =
+  'bullet' | 'number' | 'multi' | 'value' | 'indents' | 'style' | 'styleModify'
 
 type Suff = NonNullable<CustomNumberingLevel['suff']>
 type Jc = NonNullable<CustomNumberingLevel['lvlJc']>
@@ -607,6 +609,7 @@ export function DefineMultilevelDialog({
   initial,
   styles,
   takenStyleNames,
+  modify,
   onApply,
   onClose,
 }: {
@@ -615,18 +618,23 @@ export function DefineMultilevelDialog({
   styles: StyleInfo[]
   /** given, the dialog defines a named list style: it asks for a name these lower-cased ones rule out */
   takenStyleNames?: string[]
+  /** given, the dialog is Modify Style on that list style; one of Word's own keeps its name */
+  modify?: { name: string; builtIn: boolean }
   onApply: (levels: CustomNumberingLevel[], styleName: string) => void
   onClose: () => void
 }) {
   const { t } = useI18n()
   const naming = takenStyleNames !== undefined
-  const [styleName, setStyleName] = useState('')
+  const [styleName, setStyleName] = useState(modify?.name ?? '')
   const wantedName = styleName.trim()
   const [levels, setLevels] = useState<CustomNumberingLevel[]>(
-    initial && initial.length > 0 ? padLevels(initial) : MULTILEVEL_LIBRARY[1],
+    initial && initial.length > 0 ? nineListLevels(initial) : MULTILEVEL_LIBRARY[1],
   )
   const [active, setActive] = useState(0)
-  const [legal, setLegal] = useState(levels.some((l) => l.isLgl))
+  // null until the box is touched: each level then keeps its own w:isLgl
+  const [legal, setLegal] = useState<boolean | null>(null)
+  const legalized = (l: CustomNumberingLevel): CustomNumberingLevel =>
+    legal === null ? l : { ...l, isLgl: legal || undefined }
   const update = (i: number, patch: Partial<CustomNumberingLevel>) =>
     setLevels((ls) => ls.map((l, k) => (k === i ? { ...l, ...patch } : l)))
   const level = levels[active]
@@ -644,14 +652,16 @@ export function DefineMultilevelDialog({
     { value: '0', label: t('ribbonRestartNever') },
     ...Array.from({ length: active }, (_, i) => ({ value: String(i + 1), label: String(i + 1) })),
   ]
-  const apply = () =>
-    onApply(
-      levels.map((l) => (legal ? { ...l, isLgl: true } : { ...l, isLgl: undefined })),
-      wantedName,
-    )
+  const apply = () => onApply(levels.map(legalized), wantedName)
   return (
     <Modal
-      title={t(naming ? 'ribbonStyleDialogNew' : 'ribbonDefineNewList')}
+      title={t(
+        modify
+          ? 'ribbonStyleDialogModify'
+          : naming
+            ? 'ribbonStyleDialogNew'
+            : 'ribbonDefineNewList',
+      )}
       className="list-define-modal"
       onClose={onClose}
       onOk={apply}
@@ -663,6 +673,7 @@ export function DefineMultilevelDialog({
           <input
             name="list-style-name"
             value={styleName}
+            disabled={modify?.builtIn}
             aria-label={t('ribbonStyleDialogName')}
             onChange={(e) => setStyleName(e.target.value)}
           />
@@ -682,10 +693,7 @@ export function DefineMultilevelDialog({
             >
               <span className="list-define-level-no">{i + 1}</span>
               <span className="list-define-level-text">
-                {previewLevelText(
-                  levels.map((x) => (legal ? { ...x, isLgl: true } : x)),
-                  i,
-                )}
+                {previewLevelText(levels.map(legalized), i)}
               </span>
             </button>
           ))}
@@ -802,23 +810,15 @@ export function DefineMultilevelDialog({
           </div>
           <MarkerFontFields level={level} onChange={(p) => update(active, p)} />
           <label className="font-check">
-            <input type="checkbox" checked={legal} onChange={(e) => setLegal(e.target.checked)} />
+            <input
+              type="checkbox"
+              checked={legal ?? levels.some((l) => l.isLgl)}
+              onChange={(e) => setLegal(e.target.checked)}
+            />
             <span>{t('ribbonLegalStyleNumbering')}</span>
           </label>
         </div>
       </div>
     </Modal>
   )
-}
-
-function padLevels(levels: CustomNumberingLevel[]): CustomNumberingLevel[] {
-  const out = [...levels]
-  while (out.length < 9)
-    out.push({
-      numFmt: 'decimal',
-      lvlText: `%${out.length + 1}.`,
-      indentLeft: 720 * (out.length + 1),
-      hanging: 360,
-    })
-  return out.slice(0, 9)
 }

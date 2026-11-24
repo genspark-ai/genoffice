@@ -259,6 +259,37 @@ describe('empty paragraph line size', () => {
     expect(doc.blocks[2].format?.markSizeHalfPoints).toBeUndefined()
   })
 
+  it("records the colour and highlight a list item's paragraph mark declares itself", async () => {
+    const numberingXml =
+      '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\r\n' +
+      '<w:numbering xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">' +
+      '<w:abstractNum w:abstractNumId="0"><w:lvl w:ilvl="0"><w:start w:val="1"/>' +
+      '<w:numFmt w:val="decimal"/><w:lvlText w:val="%1."/></w:lvl></w:abstractNum>' +
+      '<w:num w:numId="1"><w:abstractNumId w:val="0"/></w:num></w:numbering>'
+    const stylesXml =
+      '<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">' +
+      '<w:style w:type="paragraph" w:styleId="Clause"><w:name w:val="Clause"/>' +
+      '<w:rPr><w:color w:val="0F4761"/></w:rPr></w:style></w:styles>'
+    const item = (mark: string) =>
+      '<w:p><w:pPr><w:pStyle w:val="Clause"/><w:numPr><w:ilvl w:val="0"/><w:numId w:val="1"/></w:numPr>' +
+      `${mark}</w:pPr><w:r><w:t>text</w:t></w:r></w:p>`
+    const bodyXml =
+      item('<w:rPr><w:color w:val="auto"/><w:highlight w:val="yellow"/></w:rPr>') +
+      item('<w:rPr><w:color w:val="C00000"/><w:highlight w:val="none"/></w:rPr>') +
+      // the style colour is not the mark's own: the renderer's cascade carries it
+      item('') +
+      '<w:p><w:pPr><w:rPr><w:color w:val="auto"/><w:highlight w:val="yellow"/></w:rPr></w:pPr>' +
+      '<w:r><w:t>plain</w:t></w:r></w:p>'
+    const doc = await parseDocx(await buildDocx({ bodyXml, numberingXml, stylesXml }))
+    expect(doc.blocks[0].format?.markColor).toBe('auto')
+    expect(doc.blocks[0].format?.markHighlight).toBe('yellow')
+    expect(doc.blocks[1].format?.markColor).toBe('C00000')
+    expect(doc.blocks[1].format?.markHighlight).toBeUndefined()
+    expect(doc.blocks[2].format?.markColor).toBeUndefined()
+    expect(doc.blocks[3].format?.markColor).toBeUndefined()
+    expect(doc.blocks[3].format?.markHighlight).toBeUndefined()
+  })
+
   // Word probe 2026-09-11: a space-only paragraph lays out like an empty one,
   // sized by the paragraph mark; the space run's own size never counts
   it('a space-only paragraph takes the mark rPr only, never the space run', async () => {

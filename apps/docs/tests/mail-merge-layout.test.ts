@@ -142,10 +142,10 @@ describe('labelSheetDoc', () => {
     expect(cells.length).toBeGreaterThan(0)
     for (const cell of cells) {
       expect(cell.attrs?.borders).toMatchObject({
-        top: { style: 'none' },
-        left: { style: 'none' },
-        bottom: { style: 'none' },
-        right: { style: 'none' },
+        top: { style: 'nil' },
+        left: { style: 'nil' },
+        bottom: { style: 'nil' },
+        right: { style: 'nil' },
       })
     }
   })
@@ -161,7 +161,7 @@ describe('labelSheetDoc', () => {
     expect(rows[1]!.attrs?.heightRule).toBe('exact')
     expect(rows[1]!.content).toHaveLength(1)
     expect(rows[1]!.content![0]!.attrs?.colspan).toBe(5)
-    expect(rows[1]!.content![0]!.attrs?.borders).toMatchObject({ top: { style: 'none' } })
+    expect(rows[1]!.content![0]!.attrs?.borders).toMatchObject({ top: { style: 'nil' } })
   })
 
   it('a single record still gets a full first row', () => {

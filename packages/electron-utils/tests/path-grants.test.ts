@@ -44,7 +44,7 @@ describe('createPathGrants', () => {
 })
 
 describe('isBesideDocument', () => {
-  const dir = '/Users/someone/notes'
+  const dir = '/srv/shared/notes'
   it('accepts siblings, the document itself and subdirectory notes', () => {
     expect(isBesideDocument(join(dir, 'a.md'), join(dir, 'b.md'))).toBe(true)
     expect(isBesideDocument(join(dir, 'a.md'), join(dir, 'sub', 'note.md'))).toBe(true)

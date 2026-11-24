@@ -15,15 +15,21 @@ import {
   decideCjkHang,
   decideCjkHangUnderCompression,
   decideCjkShrinks,
+  decideKanaShrink,
   forbidsLineEnd,
   forbidsLineStart,
   shrinkTargets,
   isCompressible,
+  isCompressibleKana,
   measuresAlignment,
+  setSpacingControl,
+  spacingControlOf,
   shrinkStyle,
   spacingHost,
   usesEastAsianRules,
+  type CjkPunctShrinkStorage,
   type HangLineChars,
+  type KanaLineChars,
   type ShrinkLineChars,
 } from '../src/renderer/editor/cjk-punct-shrink'
 
@@ -378,5 +384,197 @@ describe('native fullwidth-closer trimming', () => {
     expect(roots).toEqual(
       expect.arrayContaining(['.doc-page', '.pv-content', '.page-hf', '.doc-textbox-editor']),
     )
+  })
+})
+
+/**
+ * Word truth (probes 2026-11-18 and 2026-11-22, compressPunctuationAndJapaneseKana,
+ * w:jc="both", 12pt in a 468pt column unless said): the numbers are the
+ * advances Word's PDF shows; ours add the half-pixel overshoot that makes
+ * Chromium take the run up.
+ */
+describe('decideKanaShrink', () => {
+  const EPS = 0.5
+  const STOP = { width: 24, kanaWidth: 12, kanaCount: 1, openerCredit: 0, stopWidth: 12 }
+  const ITER = { ...STOP, stopWidth: 0 }
+  const ONE = { width: 12, kanaWidth: 12, kanaCount: 1, openerCredit: 0, stopWidth: 0 }
+  /** `kana` kana among 38 characters, the 39th and the mark after it on the next line */
+  function line(kana: number, over: Partial<KanaLineChars> = {}): KanaLineChars {
+    return {
+      natural: 456,
+      avail: 468,
+      chars: 38,
+      kanaWidth: 12 * kana,
+      kanaCount: kana,
+      punctCredit: 0,
+      chain: STOP,
+      hangs: true,
+      ...over,
+    }
+  }
+  const kanaOnly = (need: number, count: number, halfStop = false) => ({
+    perKana: (need + EPS) / count,
+    halfStop,
+    punct: 0,
+  })
+
+  it('brings a stop inside when the kana can give its whole advance (16 kana: 11.25pt each)', () => {
+    expect(decideKanaShrink(line(15))).toEqual(kanaOnly(12, 16))
+    expect(decideKanaShrink(line(38))).toEqual(kanaOnly(12, 39))
+  })
+
+  it('sets the stop half width when they can give half of it (8 to 15 kana)', () => {
+    expect(decideKanaShrink(line(14))).toEqual(kanaOnly(6, 15, true))
+    expect(decideKanaShrink(line(7))).toEqual(kanaOnly(6, 8, true))
+  })
+
+  it('leaves the stop to hang below that (7 kana)', () => {
+    expect(decideKanaShrink(line(6))).toBeNull()
+    expect(decideKanaShrink(line(0))).toBeNull()
+  })
+
+  it('takes a mark that cannot hang up whole or not at all (16 kana yes, 15 no)', () => {
+    expect(decideKanaShrink(line(15, { chain: ITER }))).toEqual(kanaOnly(12, 16))
+    expect(decideKanaShrink(line(14, { chain: ITER }))).toBeNull()
+  })
+
+  it('caps the total at a sixteenth of the kana advances', () => {
+    // 39 kana + two iteration marks: 24pt of 29.25 (11.385pt each); three marks need 36
+    const two = { ...ITER, width: 36 }
+    expect(decideKanaShrink(line(38, { chain: two }))?.perKana).toBeCloseTo((24 + EPS) / 39, 5)
+    expect(decideKanaShrink(line(38, { chain: { ...ITER, width: 48 } }))).toBeNull()
+    // an ASCII bracket is 6pt wide: 39 kana at 11.85pt
+    const paren = { ...ITER, width: 18 }
+    expect(decideKanaShrink(line(38, { chain: paren }))?.perKana).toBeCloseTo((6 + EPS) / 39, 5)
+  })
+
+  it('with w:overflowPunct off the stop is half width or stays down', () => {
+    expect(decideKanaShrink(line(38, { hangs: false }))).toEqual(kanaOnly(6, 39, true))
+    expect(decideKanaShrink(line(9, { hangs: false }))?.halfStop).toBe(true)
+    expect(decideKanaShrink(line(3, { hangs: false }))).toBeNull()
+  })
+
+  it('measures the cap on the grid advance (13pt pitch: 8 kana at 12.19pt)', () => {
+    const grid = { width: 26, kanaWidth: 13, kanaCount: 1, openerCredit: 0, stopWidth: 13 }
+    const on = (kana: number) =>
+      line(kana, { natural: 455, chars: 35, kanaWidth: 13 * kana, chain: grid })
+    expect(decideKanaShrink(on(7))?.perKana).toBeCloseTo((6.5 + EPS) / 8, 5)
+    expect(decideKanaShrink(on(6))).toBeNull()
+  })
+
+  it('an opening bracket taken up gives its blank half first (18 kana at 11.67pt)', () => {
+    const opener = { width: 24, kanaWidth: 0, kanaCount: 0, openerCredit: 6, stopWidth: 0 }
+    expect(decideKanaShrink(line(18, { chain: opener }))?.perKana).toBeCloseTo((6 + EPS) / 18, 5)
+  })
+
+  it('a bracket that fits once its blank half is gone comes up without any kana giving (10.5pt)', () => {
+    // 43 characters, 16.5pt left over; bracket + kana need 21, the bracket gives 5.25
+    const run = { width: 21, kanaWidth: 10.5, kanaCount: 1, openerCredit: 5.25, stopWidth: 0 }
+    const on = (kana: number) =>
+      line(kana, { natural: 451.5, chars: 43, kanaWidth: 10.5 * kana, chain: run })
+    expect(decideKanaShrink(on(43))).toEqual({ perKana: 0, halfStop: false, punct: 0 })
+    // kanji only, and the character behind the bracket a kanji too: nothing has to carry an overshoot
+    const kanji = { ...run, kanaWidth: 0, kanaCount: 0 }
+    expect(decideKanaShrink({ ...on(0), chain: kanji })).toEqual({
+      perKana: 0,
+      halfStop: false,
+      punct: 0,
+    })
+    // a run that fits as it is was never pushed down: nothing to do
+    expect(
+      decideKanaShrink({ ...on(43), chain: { ...run, openerCredit: 0, width: 15 } }),
+    ).toBeNull()
+  })
+
+  it('takes the next kana up when the line would stretch enough otherwise (50 kana, 1-11pt left over)', () => {
+    const left = (pt: number, kana = 38) => line(kana, { avail: 456 + pt, chain: ONE })
+    // 39 kana: from 3pt left over (11.78pt each), not with 2
+    expect(decideKanaShrink(left(3))).toEqual(kanaOnly(9, 39))
+    expect(decideKanaShrink(left(11))).toEqual(kanaOnly(1, 39))
+    expect(decideKanaShrink(left(2))).toBeNull()
+    expect(decideKanaShrink(left(1))).toBeNull()
+    // 20 kanji + 19 kana: from 4pt left over (11.60pt each), not with 3
+    expect(decideKanaShrink(left(4, 18))).toEqual(kanaOnly(8, 19))
+    expect(decideKanaShrink(left(3, 18))).toBeNull()
+    // 9pt left over: the cap alone decides (4 kana at 11.25pt, 3 cannot)
+    expect(decideKanaShrink(left(9, 3))).toEqual(kanaOnly(3, 4))
+    expect(decideKanaShrink(left(9, 2))).toBeNull()
+  })
+
+  it('a line filled to the margin takes nothing up (50 kana at 12pt, 39 to the line)', () => {
+    expect(decideKanaShrink(line(39, { natural: 468, chars: 39, chain: ONE }))).toBeNull()
+    expect(decideKanaShrink(line(39, { natural: 468, chars: 39, chain: STOP }))).toBeNull()
+  })
+
+  it('10.5pt, 6pt left over after 44: the 45th kana comes up (10.4pt), not after 44 kanji', () => {
+    const one = { ...ONE, width: 10.5, kanaWidth: 10.5 }
+    const d = decideKanaShrink(line(44, { natural: 462, chars: 44, kanaWidth: 462, chain: one }))
+    expect(d?.perKana).toBeCloseTo((4.5 + EPS) / 45, 5)
+    expect(
+      decideKanaShrink(line(0, { natural: 462, chars: 44, kanaWidth: 0, chain: one })),
+    ).toBeNull()
+    // 0.75pt left over behind a bracket: the next kana stays down
+    const tight = line(44, { natural: 467.25, chars: 45, kanaWidth: 462, chain: one })
+    expect(decideKanaShrink(tight)).toBeNull()
+  })
+
+  it('closing punctuation gives half its advance first, the kana the rest (one comma + 8 kana)', () => {
+    const comma = { punctCredit: 6, chain: ITER }
+    expect(decideKanaShrink(line(7, comma))).toEqual({
+      perKana: (6 + EPS) / 8,
+      halfStop: false,
+      punct: 1,
+    })
+    expect(decideKanaShrink(line(5, comma))).toBeNull()
+    // two marks behind one comma and 24 kana: 6 + 18 (11.25pt each)
+    expect(
+      decideKanaShrink(line(23, { punctCredit: 6, chain: { ...ITER, width: 36 } }))?.perKana,
+    ).toBeCloseTo((18 + EPS) / 24, 5)
+    // two commas cover the mark on their own: the kana only carry the overshoot
+    expect(decideKanaShrink(line(4, { punctCredit: 12, chain: ITER }))).toEqual({
+      perKana: EPS / 5,
+      halfStop: false,
+      punct: 1,
+    })
+    expect(decideKanaShrink(line(38, { punctCredit: 12, chain: { ...ITER, width: 18 } }))).toEqual({
+      perKana: EPS / 39,
+      halfStop: false,
+      punct: 0.5,
+    })
+  })
+
+  it('a line that holds more than fits is not for this rule: the caller sets the run aside first', () => {
+    expect(decideKanaShrink(line(38, { natural: 480 }))).toBeNull()
+  })
+})
+
+describe('the kana class', () => {
+  it('is hiragana, katakana and the fullwidth digits and letters', () => {
+    for (const ch of '\u3041\u3042\u3083\u3093\u30a1\u30a2\u30f4\u30f5\u30f6\uff10\uff19\uff21\uff5a')
+      expect(isCompressibleKana(ch), ch.codePointAt(0)!.toString(16)).toBe(true)
+  })
+
+  it('leaves out kanji, marks, halfwidth kana and symbols', () => {
+    for (const ch of '\u56fd\u30fc\u3005\u309d\u30fb\u3094\u30f7\u30a0\uff71\uff03\uffe5\u2460\uac00\u3001\u3002A1')
+      expect(isCompressibleKana(ch), ch.codePointAt(0)!.toString(16)).toBe(false)
+  })
+})
+
+describe('characterSpacingControl', () => {
+  it('maps the parsed setting to the three radio values', () => {
+    expect(spacingControlOf(null)).toBe('none')
+    expect(spacingControlOf({})).toBe('none')
+    expect(spacingControlOf({ compressPunctuation: true })).toBe('punct')
+    expect(spacingControlOf({ compressPunctuation: true, compressKana: true })).toBe('kana')
+  })
+
+  it('kana is on only for the kana value; the other two set what they always did', () => {
+    const storage = { enabled: false, hangPunct: false, kana: false } as CjkPunctShrinkStorage
+    setSpacingControl(storage, 'kana')
+    expect(storage).toMatchObject({ enabled: true, hangPunct: false, kana: true })
+    setSpacingControl(storage, 'punct')
+    expect(storage).toMatchObject({ enabled: true, hangPunct: false, kana: false })
+    setSpacingControl(storage, 'none')
+    expect(storage).toMatchObject({ enabled: false, hangPunct: true, kana: false })
   })
 })

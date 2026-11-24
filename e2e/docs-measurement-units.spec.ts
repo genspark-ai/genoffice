@@ -65,11 +65,35 @@ test.describe('docs measurement unit preference', () => {
         undefined,
         { timeout: 30_000 },
       )
+      // Word keeps Preferences… under the application menu on ⌘, and has none on Tools
       const openPreferences = () =>
-        app.evaluate(({ webContents }) => {
-          for (const wc of webContents.getAllWebContents())
-            if (wc.getURL().includes('://docs/')) wc.send('menu:command', 'preferences')
+        app.evaluate(({ Menu }) => {
+          type Item = Electron.MenuItem
+          const find = (items: Item[]): Item | undefined => {
+            for (const item of items) {
+              if (item.accelerator === 'CmdOrCtrl+,') return item
+              const below = item.submenu && find(item.submenu.items)
+              if (below) return below
+            }
+            return undefined
+          }
+          const top = Menu.getApplicationMenu()?.items ?? []
+          const item = find(top)
+          item?.click()
+          const tools = top.find((m) => m.label === 'Tools')?.submenu?.items ?? []
+          return {
+            label: item?.label,
+            onTools: tools.some((m) => m.label === item?.label),
+          }
         })
+      expect(await openPreferences()).toEqual({
+        label: 'Preferences…',
+        onTools: process.platform !== 'darwin',
+      })
+      await page
+        .getByRole('dialog', { name: 'Preferences' })
+        .getByRole('button', { name: 'Close' })
+        .click()
       const pickUnit = async (unit: string) => {
         await openPreferences()
         const dialog = page.getByRole('dialog', { name: 'Preferences' })

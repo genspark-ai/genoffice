@@ -12,7 +12,6 @@ import { NO_LIST_STYLE_ID, listStylePreview, type ListStyleEntry } from '../list
 import type { ListNumberingMode } from '../numbering-actions'
 import type { ListDialogKind } from './ListDialogs'
 import { useModalKeys } from './modal-keys'
-import { Unavailable } from './Unavailable'
 
 /** the three libraries, one per tab, with the dialog that customizes each */
 export const LIST_TABS: Array<{
@@ -76,6 +75,7 @@ export function BulletsNumberingDialog({
   initialStyleId,
   onApplyListStyle,
   onAddListStyle,
+  onModifyListStyle,
   onDeleteListStyle,
   numbering,
   onNumbering,
@@ -91,6 +91,8 @@ export function BulletsNumberingDialog({
   onApplyListStyle: (styleId: string) => void
   /** opens the dialog that names and defines a new list style, in this one's place */
   onAddListStyle: () => void
+  /** opens Modify Style on the list style, in this one's place */
+  onModifyListStyle: (styleId: string) => void
   onDeleteListStyle: (styleId: string) => void
   /** how the caret's numbered item counts now; null when it is not in a numbered list */
   numbering: { mode: ListNumberingMode; canContinue: boolean } | null
@@ -210,11 +212,18 @@ export function BulletsNumberingDialog({
               >
                 −
               </button>
-              <Unavailable id="list-styles.modify">
-                <button type="button" disabled>
-                  {t('ribbonStyleModify')}
-                </button>
-              </Unavailable>
+              <button
+                type="button"
+                name="list-style-modify"
+                disabled={!style || style.styleId === NO_LIST_STYLE_ID || style.numberless}
+                onClick={() => {
+                  if (!style) return
+                  onClose()
+                  onModifyListStyle(style.styleId)
+                }}
+              >
+                {t('ribbonStyleModify')}
+              </button>
             </div>
             <label className="bn-styles-show">
               {t('ribbonGroupShow')}

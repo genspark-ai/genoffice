@@ -1,5 +1,6 @@
 import type { Editor } from '@tiptap/core'
 import type {
+  TextFill,
   TextFxOwn,
   TextGlow,
   TextOutline,
@@ -8,11 +9,14 @@ import type {
 } from '@genoffice/docx-engine'
 import {
   glowAndShadowDecl,
+  liveTextFill,
   parseFxOwnAttr,
   parseGlowAttr,
   parseReflectionAttr,
   parseTextShadowAttr,
   reflectionDecl,
+  textFillAttr,
+  textFillDecls,
 } from './text-effects'
 import { parseTextOutlineAttr, textOutlineDecl } from './text-outline'
 
@@ -76,6 +80,50 @@ export const REFLECTION_PRESETS = [
   { id: 'full', reflection: reflectionOf(0.5, 0.9) },
 ] as const
 
+/** how a gradient fill spreads: Word's light variations of the text colour */
+export const GRADIENT_SPREADS = ['down', 'right', 'diagonal', 'center'] as const
+export type GradientSpread = (typeof GRADIENT_SPREADS)[number]
+
+const SPREAD_ANGLE: Record<Exclude<GradientSpread, 'center'>, number> = {
+  right: 0,
+  diagonal: 45,
+  down: 90,
+}
+
+const LIGHT_SHARE = 0.6
+
+/** the colour mixed towards white */
+function tint(hex: string, share: number): string {
+  const n = parseInt(hex, 16)
+  const mix = (c: number) => Math.round(c + (255 - c) * share)
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255]
+    .map((c) => mix(c).toString(16).padStart(2, '0'))
+    .join('')
+    .toUpperCase()
+}
+
+/** a gradient from a light tint of the colour to the colour */
+export function gradientFillOf(color: string, spread: GradientSpread): TextFill {
+  const stops = [
+    { pos: 0, color: tint(color, LIGHT_SHARE) },
+    { pos: 1, color: color.toUpperCase() },
+  ]
+  return spread === 'center'
+    ? { kind: 'gradient', stops, angleDeg: 0, path: 'circle' }
+    : { kind: 'gradient', stops, angleDeg: SPREAD_ANGLE[spread] }
+}
+
+/** the spread a fill was made with by `gradientFillOf`; null for any other fill */
+export function gradientSpreadOf(fill: TextFill | null): GradientSpread | null {
+  if (fill?.kind !== 'gradient' || fill.stops.length !== 2) return null
+  const base = fill.stops[1].color
+  return (
+    GRADIENT_SPREADS.find(
+      (spread) => JSON.stringify(gradientFillOf(base, spread)) === JSON.stringify(fill),
+    ) ?? null
+  )
+}
+
 const NO_FX: TextFx = { outline: null, shadow: null, glow: null, reflection: null }
 
 /** ready-made looks: a text colour with the effects that go with it */
@@ -124,17 +172,24 @@ export function textFillOf(editor: Editor): string | null {
   return /^[0-9A-F]{6}$/.test(hex) ? hex : null
 }
 
+/** the fill of the text at the selection where it is more than a colour: a gradient, a transparent colour, no fill */
+export function textFillShownOf(editor: Editor): TextFill | null {
+  const attrs = editor.getAttributes('docTextStyle')
+  return liveTextFill(attrs.textFill, attrs.color) ?? null
+}
+
 export const sameTextFx = (a: TextFx, b: TextFx): boolean =>
   JSON.stringify([a.outline, a.shadow, a.glow, a.reflection]) ===
   JSON.stringify([b.outline, b.shadow, b.glow, b.reflection])
 
-/** CSS declarations that draw the effects, for the dialog's preview */
-export function textFxDecls(fx: TextFx): string[] {
+/** CSS declarations that draw the effects and the fill, for the dialog's preview */
+export function textFxDecls(fx: TextFx, fill?: TextFill | null): string[] {
   const shadows = glowAndShadowDecl(fx.glow ?? undefined, fx.shadow ?? undefined)
   return [
     ...(fx.outline ? [textOutlineDecl(fx.outline)] : []),
     ...(shadows ? [shadows] : []),
     ...(fx.reflection ? [reflectionDecl(fx.reflection)] : []),
+    ...(fill ? textFillDecls(fill).filter((decl) => !decl.startsWith('--dk-')) : []),
   ]
 }
 
@@ -142,16 +197,31 @@ export function textFxDecls(fx: TextFx): string[] {
  * Puts the effects on the selected text. All are written as the text's own:
  * one that is off is cleared on it, whatever its style says. `color` (hex
  * without '#') is a solid text fill: the text's colour, saved as Word saves
- * one. Without it the text keeps the fill it has.
+ * one. Without it the text keeps the fill it has. `fill` is a gradient over
+ * that colour; null takes a gradient off.
  */
-export function applyTextFx(editor: Editor, fx: TextFx, color?: string): boolean {
-  const fill = color ?? parseFxOwnAttr(editor.getAttributes('docTextStyle').fxOwn)?.fill
+export function applyTextFx(
+  editor: Editor,
+  fx: TextFx,
+  color?: string,
+  fill?: TextFill | null,
+): boolean {
+  const was = parseFxOwnAttr(editor.getAttributes('docTextStyle').fxOwn)
+  const base = color ?? textFillOf(editor) ?? undefined
+  // a colour picked alone replaces a gradient, as in Word
+  const gradient = fill !== undefined ? fill : color ? null : undefined
+  const solid = color ?? (gradient !== undefined ? base : undefined) ?? was?.fill
   const own: TextFxOwn = {
     outline: fx.outline,
     shadow: fx.shadow,
     glow: fx.glow,
     reflection: fx.reflection,
-    ...(fill !== undefined ? { fill } : {}),
+    ...(solid !== undefined ? { fill: solid } : {}),
+    ...(gradient !== undefined
+      ? { textFill: gradient }
+      : was?.textFill !== undefined
+        ? { textFill: was.textFill }
+        : {}),
   }
   return editor
     .chain()
@@ -163,6 +233,9 @@ export function applyTextFx(editor: Editor, fx: TextFx, color?: string): boolean
       textReflection: fx.reflection ? JSON.stringify(fx.reflection) : null,
       fxOwn: JSON.stringify(own),
       ...(color ? { color } : {}),
+      ...(gradient !== undefined
+        ? { textFill: gradient ? textFillAttr(gradient, base ?? null) : null }
+        : {}),
     })
     .run()
 }

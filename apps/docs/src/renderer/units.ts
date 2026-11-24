@@ -59,7 +59,7 @@ const notify = (): void => {
   globalThis.dispatchEvent?.(new Event(CHANGE_EVENT))
 }
 
-/** pick the unit (null = follow the system region); app-wide when the shell is there */
+/** pick the unit (null = follow the UI language); app-wide when the shell is there */
 export function setMeasurementUnit(unit: MeasurementUnit | null): void {
   if (appWideSetter) {
     // the shell writes it and broadcasts the result back to every editor
@@ -93,7 +93,7 @@ export interface AppWideMeasurementSource {
 /**
  * Follow the shell's app-wide unit from now on. A unit picked in Docs before
  * the setting moved to the shell is carried over once, when the shell still
- * follows the system region, and then forgotten locally.
+ * follows the UI language, and then forgotten locally.
  */
 export function connectAppWideMeasurementUnit(source: AppWideMeasurementSource): () => void {
   const apply = (state: unknown): void => {

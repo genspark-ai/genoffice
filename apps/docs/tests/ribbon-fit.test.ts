@@ -2,13 +2,13 @@ import { describe, expect, it } from 'vitest'
 import { fitSteps } from '../src/renderer/components/ribbon-fit'
 
 describe('fitSteps', () => {
-  const stack = (name: string, data: { wide?: string; collapse?: string } = {}) => {
+  const stack = (name: string, data: Record<string, string> = {}) => {
     const el = document.createElement('div')
     el.id = name
     Object.assign(el.dataset, data)
     return el
   }
-  const names = (stacks: HTMLElement[]) => fitSteps(stacks).map((s) => `${s.stack.id}>${s.to}`)
+  const names = (stacks: HTMLElement[]) => fitSteps(stacks).map((s) => `${s.el.id}>${s.to}`)
 
   it('takes the ranked stacks first, then the rest from the right', () => {
     const stacks = [
@@ -40,5 +40,33 @@ describe('fitSteps', () => {
       'proofing>stack',
       'proofing>icons',
     ])
+  })
+
+  it('a group becomes a menu where its rank puts it, after the unranked stacks unless ranked below them', () => {
+    const els = [
+      stack('pages', { wide: '2', menu: '4' }),
+      stack('links', { wide: '1' }),
+      stack('linksGroup', { menu: '3' }),
+      stack('tracking'),
+      stack('protect', { menu: '1001' }),
+    ]
+    expect(names(els)).toEqual([
+      'links>stack',
+      'linksGroup>menu',
+      'pages>menu',
+      'tracking>icons',
+      'links>icons',
+      'protect>menu',
+    ])
+  })
+
+  it('a big button goes to its icon and a control leaves the ribbon at their ranks', () => {
+    const els = [
+      stack('pane', { drop: '1001' }),
+      stack('paragraph', { menu: '1002' }),
+      stack('rotate', { icon: '1' }),
+      stack('hyphenation', { collapse: '2' }),
+    ]
+    expect(names(els)).toEqual(['rotate>icon', 'hyphenation>icons', 'pane>gone', 'paragraph>menu'])
   })
 })

@@ -175,6 +175,24 @@ describe('anchored connectors', () => {
     expect(box!.lineDiag).toBe(true)
   })
 
+  it('a line with no horizontal extent is a vertical stroke in a band', async () => {
+    const doc = await parseDocx(
+      await buildDocx({
+        bodyXml: anchorParagraph(wsp({ prst: 'line', cx: 0, cy: 952500 }), {
+          extCx: 0,
+          extCy: 952500,
+        }),
+      }),
+    )
+    const box = doc.blocks[0].textboxes?.[0]
+    expect(box).toBeTruthy()
+    expect(box!.prst).toBe('line')
+    expect(box!.lineVert).toBe(true)
+    expect(box!.lineDiag).toBeUndefined()
+    expect(box!.widthPx).toBe(12)
+    expect(box!.heightPx).toBe(100)
+  })
+
   it('a shallow flipped connector still renders as a line box', async () => {
     const doc = await parseDocx(
       await buildDocx({

@@ -2,7 +2,17 @@ import type { Editor } from '@tiptap/core'
 import type { Node as PMNode } from '@tiptap/pm/model'
 import type { Transaction } from '@tiptap/pm/state'
 import { Step, StepResult } from '@tiptap/pm/transform'
-import type { NoteProps, SectionInfo, SectionSettings } from '@genoffice/docx-engine'
+import type {
+  KinsokuCustom,
+  NoteProps,
+  PageNumberChapter,
+  PictureWatermarkSpec,
+  SectionInfo,
+  SectionSettings,
+  Watermark,
+  WatermarkSpec,
+} from '@genoffice/docx-engine'
+import type { SpacingControl } from './cjk-punct-shrink'
 import type { HyphenationSettings } from './hyphenation'
 import { TRACK_IGNORE } from './revisions'
 
@@ -29,6 +39,47 @@ export interface PageSetupState {
   sectionNotes: NotePropsByKind[]
   autoHyphenation: boolean
   hyphenation: HyphenationSettings
+  pageColor: string | null
+  watermark: WatermarkState
+  typography: Typography
+}
+
+export interface WatermarkState {
+  text: string | null
+  style: Omit<WatermarkSpec, 'text'> | null
+  picture: PictureWatermarkSpec | null
+  /** false: the watermark is the file's own, which the save leaves alone */
+  dirty: boolean
+}
+
+export interface WatermarkSide {
+  state: WatermarkState
+  /** the reading of the file `state` was held on */
+  parsed?: object
+  /** the file's own watermark said in full, for when a save has since written another */
+  stated?: Promise<Watermark | null>
+}
+
+/** a watermark the save is to write (null: none) */
+export function watermarkStateOf(spec: Watermark | null): WatermarkState {
+  const wm = typeof spec === 'string' ? { text: spec } : spec
+  if (wm && 'image' in wm) return { text: null, style: null, picture: wm, dirty: true }
+  if (!wm) return { text: null, style: null, picture: null, dirty: true }
+  const { text, ...style } = wm
+  return { text, style: Object.keys(style).length > 0 ? style : null, picture: null, dirty: true }
+}
+
+/** the document-wide East Asian line rules in effect */
+export interface Typography {
+  spacingControl: SpacingControl
+  strictKinsoku: boolean
+  kinsokuCustom: KinsokuCustom | null
+}
+
+export interface PageNumberPatch {
+  fmt?: string
+  start?: number
+  chapter: PageNumberChapter | null
 }
 
 type SettingsPatch = Partial<SectionSettings>
@@ -36,6 +87,8 @@ type SettingsPatch = Partial<SectionSettings>
 export interface SectionPatch {
   settings?: SettingsPatch
   startType?: SectionInfo['startType']
+  titlePg?: boolean
+  pgNum?: PageNumberPatch
   /** a section behind an unsaved break: the sectPr its break paragraph holds */
   sectPrXml?: string
 }
@@ -52,6 +105,9 @@ export interface PageSetupPatch {
   notes?: Partial<NotePropsByKind>
   autoHyphenation?: boolean
   hyphenation?: Partial<HyphenationSettings>
+  pageColor?: string | null
+  watermark?: WatermarkSide
+  typography?: Partial<Typography>
 }
 
 const same = (a: unknown, b: unknown): boolean => a === b || JSON.stringify(a) === JSON.stringify(b)
@@ -83,6 +139,7 @@ const SCALARS = [
   'titlePg',
   'evenOddHf',
   'autoHyphenation',
+  'pageColor',
 ] as const
 
 const NOTE_KINDS = ['footnote', 'endnote'] as const
@@ -122,6 +179,12 @@ function stateSectionNotes(
   }
 }
 
+const pgNumOf = (s: SectionInfo): PageNumberPatch => ({
+  ...(s.pageNumberFmt !== undefined ? { fmt: s.pageNumberFmt } : {}),
+  ...(s.pageNumberStart !== undefined ? { start: s.pageNumberStart } : {}),
+  chapter: s.pageNumberChapter ?? null,
+})
+
 /**
  * What undoing and redoing a change put back; null when nothing changed, or
  * when sections were added or removed (their settings follow the break
@@ -141,21 +204,29 @@ export function pageSetupChange(
       stateSectionNotes(diff[0], diff[1], before.sectionNotes.at(-1), after.sectionNotes.at(-1))
     }
   }
-  before.sections.forEach((was, i) => {
+  before.sections.forEach((prev, i) => {
     const now = after.sections[i]!
     const u: SectionPatch = {}
     const r: SectionPatch = {}
-    const diff = was.settings === now.settings ? null : settingsDiff(was.settings, now.settings)
+    const diff = prev.settings === now.settings ? null : settingsDiff(prev.settings, now.settings)
     if (diff) {
       ;[u.settings, r.settings] = diff
       stateSectionNotes(diff[0], diff[1], before.sectionNotes[i], after.sectionNotes[i])
     }
-    if (was.startType !== now.startType) {
-      u.startType = was.startType
+    if (prev.startType !== now.startType) {
+      u.startType = prev.startType
       r.startType = now.startType
     }
-    if (was.pendingBreak && now.pendingBreak && was.sectPrXml !== now.sectPrXml) {
-      u.sectPrXml = was.sectPrXml
+    if (prev.titlePg !== now.titlePg) {
+      u.titlePg = prev.titlePg
+      r.titlePg = now.titlePg
+    }
+    if (!same(pgNumOf(prev), pgNumOf(now))) {
+      u.pgNum = pgNumOf(prev)
+      r.pgNum = pgNumOf(now)
+    }
+    if (prev.pendingBreak && now.pendingBreak && prev.sectPrXml !== now.sectPrXml) {
+      u.sectPrXml = prev.sectPrXml
       r.sectPrXml = now.sectPrXml
     }
     if (Object.keys(u).length === 0) return
@@ -178,6 +249,15 @@ export function pageSetupChange(
     undo.hyphenation = { ...undo.hyphenation, [key]: before.hyphenation[key] }
     redo.hyphenation = { ...redo.hyphenation, [key]: after.hyphenation[key] }
   }
+  if (!same(before.watermark, after.watermark)) {
+    undo.watermark = { state: before.watermark }
+    redo.watermark = { state: after.watermark }
+  }
+  for (const key of ['spacingControl', 'strictKinsoku', 'kinsokuCustom'] as const) {
+    if (same(before.typography[key], after.typography[key])) continue
+    undo.typography = { ...undo.typography, [key]: before.typography[key] }
+    redo.typography = { ...redo.typography, [key]: after.typography[key] }
+  }
   return Object.keys(undo).length > 0 ? { undo, redo } : null
 }
 
@@ -192,6 +272,12 @@ export function patchSections(sections: SectionInfo[], patch: PageSetupPatch): S
       ...s,
       ...(p.settings && { settings: { ...s.settings, ...p.settings } }),
       ...(p.startType && { startType: p.startType }),
+      ...(p.titlePg !== undefined && { titlePg: p.titlePg }),
+      ...(p.pgNum && {
+        pageNumberFmt: p.pgNum.fmt,
+        pageNumberStart: p.pgNum.start,
+        pageNumberChapter: p.pgNum.chapter ?? undefined,
+      }),
       ...(p.sectPrXml !== undefined && s.pendingBreak && { sectPrXml: p.sectPrXml }),
     }
   })

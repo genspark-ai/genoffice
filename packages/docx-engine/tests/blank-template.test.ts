@@ -65,6 +65,12 @@ describe('blank document paper size follows the OS region like Word', () => {
 })
 
 describe('blank document template (new-document / AI generation base)', () => {
+  it('declares the language it is given: Word hyphenates no text that has none', async () => {
+    expect((await parseDocx(await buildBlankDocx())).docDefaults?.lang).toBeUndefined()
+    const doc = await parseDocx(await buildBlankDocx({ lang: 'en-US' }))
+    expect(doc.docDefaults?.lang).toBe('en-US')
+  })
+
   it('parses to a single empty paragraph with standard heading styles available', async () => {
     const bytes = await buildBlankDocx()
     const doc = await parseDocx(bytes)

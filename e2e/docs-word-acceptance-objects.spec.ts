@@ -224,6 +224,7 @@ async function squarePictureDragged(s: Session, text: string) {
   await pickFile(app, pictureFile)
   await ribbonTab(page, 'Insert')
   await ribbon(page, 'Pictures').click()
+  await page.locator('.insert-picture-options-dialog button[type="submit"]').click()
   const picture = page.locator('.doc-page img[src^="data:image/png"]')
   await expect(picture).toHaveCount(1)
   await picture.click()
@@ -245,6 +246,8 @@ async function squarePictureDragged(s: Session, text: string) {
   }
   await saveFromMenu(app)
   await expect.poll(anchor, { timeout: 30_000 }).toEqual({ wrapped: true, x: 'left', y: 0 })
+  // the save ends by drawing the page again from the file: a picture measured before that is gone
+  await expect(page.locator('.status-msg')).toContainText('Saved')
 
   const at = (await picture.boundingBox())!
   const [x, y] = [at.x + at.width / 2, at.y + at.height / 2]

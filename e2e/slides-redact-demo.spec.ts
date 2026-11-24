@@ -5,6 +5,7 @@ import { join, resolve } from 'node:path'
 import { createRequire } from 'node:module'
 import JSZip from 'jszip'
 import type { SlidesApi } from '../apps/slides/src/shared/ipc'
+import { holdEvaluations } from './helpers'
 
 declare global {
   interface Window {
@@ -117,6 +118,7 @@ test('a reader can withhold a picture from the model without losing it', async (
     ],
     env: { ...env, GENOFFICE_USER_DATA: join(dir, 'user-data'), GENOFFICE_LANG: 'en' },
   })
+  holdEvaluations(app)
   try {
     const page = await app.firstWindow()
     await expect(page.locator('.stage-wrap canvas').first()).toBeVisible({ timeout: 30_000 })

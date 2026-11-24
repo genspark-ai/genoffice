@@ -117,8 +117,13 @@ const THAI_RE =
   /^th |sarabun|angsana|cordia|browallia|eucrosia|freesia|iris ?upc|jasmine|kodchiang|lily ?upc|dillenia|\bupc$|thai/
 /** M365 cloud Arabic faces Word downloads and lays out with real metrics */
 const ARABIC_CLOUD_RE = /dubai|simplified arabic|traditional arabic|sakkal majalla|aldhabi|andalus/
-/** Word drops a style word or the MT tag and lays out the base family (probe 2026-10-22: Arial Bold, Courier New Regular, Arial MT) */
-const STYLE_SUFFIX_RE = / (?:regular|bold|italic|bold italic|mt)$/
+/**
+ * Word drops a style word and lays out the base family (probes 2026-10-22,
+ * 2026-11-20: Arial Bold, Courier New Regular, Montserrat Regular). The MT tag
+ * only drops from Arial MT: Georgia MT, Century Gothic MT and Abadi MT take
+ * the Calibri / Cambria fallback although the base family lays out itself
+ */
+const STYLE_SUFFIX_RE = /(?: (?:regular|bold|italic|bold italic)|(?<=^arial) mt)$/
 
 export interface SubstitutionRule {
   id: string

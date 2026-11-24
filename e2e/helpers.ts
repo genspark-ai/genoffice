@@ -96,9 +96,45 @@ export async function launchShell(options: LaunchOptions): Promise<LaunchedApp> 
             size: { width: 1280, height: 800 },
           },
   })
+  holdEvaluations(app)
   const page = await app.firstWindow()
   await waitForDocumentReady(app, page)
   return { app, page, userDataDir }
+}
+
+interface Held {
+  source: string
+  arg: unknown
+}
+
+/**
+ * The main process's inspector keeps the promise an evaluation resolves to
+ * only weakly. A callback that returns a plain value gets one nobody else
+ * holds, so a collection before the main process next runs its microtasks
+ * (the call can land inside JavaScript that is still running) fails it with
+ * "Resulting promise was garbage collected". Every `app.evaluate` therefore
+ * returns a promise the main process holds until it has been read, settled
+ * from a task of its own so that nothing runs between settling and reading.
+ */
+export function holdEvaluations(app: ElectronApplication): void {
+  const evaluate = app.evaluate.bind(app) as (fn: unknown, arg?: unknown) => Promise<unknown>
+  const held = (electron: unknown, { source, arg }: Held): Promise<unknown> => {
+    const scope = globalThis as { __e2eHeldResults?: Set<Promise<unknown>> }
+    const pending = (scope.__e2eHeldResults ??= new Set())
+    const value: unknown = globalThis.eval(`(${source})`)(electron, arg)
+    const result = new Promise<unknown>((resolve, reject) => {
+      const later = (settle: (v: unknown) => void) => (v: unknown) => setImmediate(() => settle(v))
+      Promise.resolve(value).then(later(resolve), later(reject))
+    })
+    pending.add(result)
+    const release = (): unknown => setTimeout(() => pending.delete(result), 0)
+    result.then(release, release)
+    return result
+  }
+  app.evaluate = ((fn: unknown, arg?: unknown) =>
+    typeof fn === 'function'
+      ? evaluate(held, { source: String(fn), arg })
+      : evaluate(fn, arg)) as typeof app.evaluate
 }
 
 /**

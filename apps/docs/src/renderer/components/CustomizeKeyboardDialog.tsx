@@ -1,7 +1,8 @@
 /**
  * Tools ▸ Customize Keyboard…, laid out as Word's: pick a command, press a
- * chord, Assign. Assignments are kept per machine (there is no Normal
- * template here), which is all "Save changes in" offers.
+ * chord, Assign. "Save changes in" is this machine (there is no Normal
+ * template here) or the open document, which then carries the keys in its
+ * Customizations part for the commands Word has a name for.
  */
 import { useEffect, useState } from 'react'
 import type { KeyboardEvent as ReactKeyboardEvent } from 'react'
@@ -14,7 +15,21 @@ import { fontSizeOptions } from '../font-sizes'
 import { useI18n } from '../i18n/locale'
 import { styleLabel } from '../style-gallery'
 import { useSystemFontFamilies } from '../system-fonts'
-import { saveKeyOverrides, useKeyOverrides } from '../key-layer'
+import {
+  assignDocKey,
+  chordToKcm,
+  fciNameOf,
+  layerDocKeys,
+  removeDocKey,
+  resetDocKeys,
+} from '../doc-keymaps'
+import {
+  documentKeysEditable,
+  saveDocumentKeys,
+  saveKeyOverrides,
+  useDocumentKeys,
+  useMachineKeyOverrides,
+} from '../key-layer'
 import {
   IS_MAC,
   assignChord,
@@ -44,15 +59,24 @@ interface ValueOption {
 
 export function CustomizeKeyboardDialog({
   styles,
+  documentName,
   onClose,
 }: {
   /** the styles of the open document, by style id */
   styles: ReadonlyMap<string, StyleInfo>
+  /** the open document, when its keys can be changed; null leaves only this computer */
+  documentName: string | null
   onClose: () => void
 }) {
   const { t, lang } = useI18n()
   const modalKeys = useModalKeys(onClose)
-  const overrides = useKeyOverrides()
+  const machine = useMachineKeyOverrides()
+  const docKeys = useDocumentKeys()
+  const canSaveInDocument = documentName !== null && documentKeysEditable()
+  const [saveIn, setSaveIn] = useState<'machine' | 'document'>('machine')
+  const inDocument = saveIn === 'document' && canSaveInDocument
+  // each target shows the keys as its own changes leave them: the document's sit over the machine's
+  const overrides = inDocument ? layerDocKeys(machine, docKeys) : machine
   const [catalog, setCatalog] = useState<MenuCatalogEntry[]>([])
   const [category, setCategory] = useState(ALL)
   const [query, setQuery] = useState('')
@@ -134,18 +158,27 @@ export function CustomizeKeyboardDialog({
     id
 
   const owner = pressed ? chordOwner(overrides, pressed) : null
-  const assignable = !!pressed && isAssignableChord(pressed) && owner?.kind !== 'fixed'
-  const pressedNote = !pressed
-    ? ''
-    : !isAssignableChord(pressed)
-      ? t('appCkNeedsModifier', { key: IS_MAC ? '⌘' : 'Ctrl' })
-      : !owner
-        ? t('appCkUnassigned')
-        : owner.kind === 'binding'
-          ? t('appCkAssignedTo', { name: nameOf(owner.id) })
-          : owner.row
-            ? t('appCkFixed', { name: t(owner.row.labelKey) + (owner.row.labelSuffix ?? '') })
-            : t('appCkReserved')
+  // a document holds keys only for commands Word names, on keys a key code spells
+  const storable = !inDocument || (!!command && !!fciNameOf(command.id))
+  const assignable =
+    !!pressed &&
+    isAssignableChord(pressed) &&
+    owner?.kind !== 'fixed' &&
+    storable &&
+    (!inDocument || chordToKcm(pressed) !== null)
+  const pressedNote = !storable
+    ? t('appCkNotInDocument')
+    : !pressed
+      ? ''
+      : !isAssignableChord(pressed)
+        ? t('appCkNeedsModifier', { key: IS_MAC ? '⌘' : 'Ctrl' })
+        : !owner
+          ? t('appCkUnassigned')
+          : owner.kind === 'binding'
+            ? t('appCkAssignedTo', { name: nameOf(owner.id) })
+            : owner.row
+              ? t('appCkFixed', { name: t(owner.row.labelKey) + (owner.row.labelSuffix ?? '') })
+              : t('appCkReserved')
 
   const pick = (id: string) => {
     setSelected(id)
@@ -166,14 +199,24 @@ export function CustomizeKeyboardDialog({
   }
   const assign = () => {
     if (!command || !pressed) return
-    const next = assignChord(overrides, command.id, pressed)
-    if (!next) return
-    saveKeyOverrides(next)
+    if (inDocument) {
+      const next = assignDocKey(machine, docKeys, command.id, pressed)
+      if (!next) return
+      saveDocumentKeys(next)
+    } else {
+      const next = assignChord(overrides, command.id, pressed)
+      if (!next) return
+      saveKeyOverrides(next)
+    }
     setPressed(null)
   }
   const remove = () => {
     if (!command || !currentKey) return
-    saveKeyOverrides(removeChord(overrides, command.id, currentKey))
+    if (inDocument) {
+      const next = removeDocKey(machine, docKeys, command.id, currentKey)
+      if (!next) return
+      saveDocumentKeys(next)
+    } else saveKeyOverrides(removeChord(overrides, command.id, currentKey))
     setCurrentKey(null)
   }
 
@@ -316,8 +359,16 @@ export function CustomizeKeyboardDialog({
         </div>
         <label className="ck-save-in">
           {t('appCkSaveIn')}
-          <select aria-label={t('appCkSaveIn')} value="machine" onChange={() => undefined}>
+          <select
+            aria-label={t('appCkSaveIn')}
+            value={inDocument ? 'document' : 'machine'}
+            onChange={(e) => {
+              setSaveIn(e.target.value === 'document' ? 'document' : 'machine')
+              setCurrentKey(null)
+            }}
+          >
             <option value="machine">{t('appCkThisComputer')}</option>
+            {canSaveInDocument && <option value="document">{documentName}</option>}
           </select>
         </label>
         {confirmReset ? (
@@ -331,7 +382,8 @@ export function CustomizeKeyboardDialog({
                 type="button"
                 className="btn-primary"
                 onClick={() => {
-                  saveKeyOverrides({})
+                  if (inDocument) saveDocumentKeys(resetDocKeys(docKeys))
+                  else saveKeyOverrides({})
                   setCurrentKey(null)
                   setConfirmReset(false)
                 }}

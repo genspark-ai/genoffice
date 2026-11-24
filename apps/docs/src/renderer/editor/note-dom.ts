@@ -12,6 +12,12 @@ import {
   type NoteStyleOpts,
 } from '../line-metrics'
 import { cssFontFamily } from '../text-layout/font-rules'
+import {
+  noteColumnWidth,
+  noteColumnsClass,
+  noteColumnsStyle,
+  type NoteColumns,
+} from '../note-columns'
 import { fromNoteRuns, toStyleRecord } from './para-layout-spec'
 import {
   STATIC_HYPH_CLASS,
@@ -159,6 +165,7 @@ export function makeGapNotesEl(
   heightPx: number,
   lineHeightPx: number,
   onEdit: (id: string) => void,
+  cols: NoteColumns | null = null,
 ): HTMLElement {
   const wrap = document.createElement('div')
   wrap.className = 'page-gap-notes'
@@ -173,13 +180,23 @@ export function makeGapNotesEl(
   // same line height as the reservation model; min-height keeps rows at the
   // reserved size while letting long entries overflow instead of clipping
   wrap.style.lineHeight = `${lineHeightPx}px`
+  // in columns the rows sit in a box of the area's height, under the separator
+  const host = cols ? document.createElement('div') : wrap
+  if (cols) {
+    host.className = noteColumnsClass(cols)
+    // the separator is no wider than the first column
+    wrap.style.setProperty('--note-col-w', `${noteColumnWidth(widthPx, cols)}px`)
+    Object.assign(host.style, noteColumnsStyle(items, cols))
+    wrap.appendChild(host)
+  }
   for (const it of items) {
     const row = document.createElement('div')
     const box = noteRowBox(it)
     row.className = ['page-gap-note', ...box.classes].join(' ')
     row.title = t('appDblclickEditFootnote')
     row.dataset.noteId = it.id
-    row.style.minHeight = `${it.height}px`
+    row.dataset.noteRow = 'footnote'
+    if (!cols) row.style.minHeight = `${it.height}px`
     // per-note resolved style: the entry's line boxes must match its reservation
     for (const [k, v] of Object.entries(box.style)) {
       if (k.startsWith('--')) row.style.setProperty(k, v)
@@ -187,7 +204,7 @@ export function makeGapNotesEl(
     }
     appendNoteRuns(row, it, 'footnote')
     row.addEventListener('dblclick', () => onEdit(it.id))
-    wrap.appendChild(row)
+    host.appendChild(row)
   }
   return wrap
 }

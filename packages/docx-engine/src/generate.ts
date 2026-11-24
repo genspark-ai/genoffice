@@ -1,4 +1,5 @@
 import { sdtCheckboxGlyphs, sdtCheckboxIsChecked, syncSdtCheckbox } from './checkbox-control'
+import { setDrawingRelSize, setVmlRelSize, type RelSize } from './relative-size'
 import type {
   CellMargins,
   CharIndents,
@@ -6,10 +7,12 @@ import type {
   GeneratedBlock,
   ImageWrap,
   ParaFormat,
+  PageNumberChapter,
   ParaFrame,
   PropChangeInfo,
   RevisionInfo,
   Run,
+  TextFill,
   TextGlow,
   TextOutline,
   TextReflection,
@@ -19,13 +22,14 @@ import type {
   TableCell,
   TableModel,
 } from './types'
+import { CHAPTER_SEPARATORS, COMBINE_BRACKETS } from './types'
 import { escapeXmlAttr, escapeXmlText } from './xml-utils'
 import {
   injectIntoParagraph,
   paragraphPermMarkers,
   restoreParagraphPermMarkers,
 } from './perm-ranges'
-import { MERGE_RULE_INSTR_RE, NO_FIELD_RESULT } from './parse-props'
+import { MERGE_RULE_INSTR_RE, NO_FIELD_RESULT, ruleBookmarkName } from './parse-props'
 import { resolvePropChangeXml } from './revision-xml'
 
 export interface GenerateContext {
@@ -305,6 +309,8 @@ export interface ShapeDrawingLocation {
   shapeId?: string
   /** fallback ordinal among box drawings (generated shapes have no id) */
   boxIndex: number
+  /** the shape's own drawing (TextboxDisplay.drawingIndex): reaches a shape without an id or text */
+  drawingIndex?: number
 }
 
 function shapeDrawingSegment(
@@ -320,6 +326,12 @@ function shapeDrawingSegment(
         )?.[1] === location.shapeId,
     )
     return found ?? null
+  }
+  if (location.drawingIndex !== undefined) {
+    const own = xmlSegments(paragraphXml, 'w:drawing', 0, paragraphXml.length)[
+      location.drawingIndex
+    ]
+    if (own) return own
   }
   return boxDrawingSegments(paragraphXml)[location.boxIndex] ?? null
 }
@@ -1210,6 +1222,33 @@ function isBoxDrawing(drawingXml: string): boolean {
 export interface TextboxSizePatch {
   wPx?: number | null
   hPx?: number | null
+  /** the width as a share of the page; null makes a relative width absolute; undefined follows wPx */
+  relW?: RelSize | null
+  relH?: RelSize | null
+  /** the box's own drawing (TextboxDisplay.drawingIndex); without it the box is the nth box drawing */
+  drawingIndex?: number
+}
+
+/**
+ * The patch each top-level drawing takes. An entry that names its drawing goes
+ * there, text or not; the others keep the box-drawing ordinal they always had.
+ */
+function patchesByDrawing<T extends { drawingIndex?: number }>(
+  paragraphXml: string,
+  drawings: ReadonlyArray<{ start: number; end: number }>,
+  patches: ReadonlyArray<T | null | undefined>,
+): Array<T | null | undefined> {
+  const named = new Map<number, T>()
+  for (const patch of patches)
+    if (patch?.drawingIndex !== undefined) named.set(patch.drawingIndex, patch)
+  let boxIndex = -1
+  return drawings.map((drawing, index) => {
+    const isBox = isBoxDrawing(paragraphXml.slice(drawing.start, drawing.end))
+    if (isBox) boxIndex++
+    if (named.has(index)) return named.get(index)
+    const ordinal = isBox ? patches[boxIndex] : null
+    return ordinal?.drawingIndex === undefined ? ordinal : null
+  })
 }
 
 /** Resize fixed DrawingML textboxes/shapes while preserving anchors and styling. */
@@ -1217,19 +1256,24 @@ export function patchTextboxSizes(
   paragraphXml: string,
   sizes: ReadonlyArray<TextboxSizePatch | null | undefined>,
 ): string {
-  if (sizes.every((size) => size == null || (size.wPx == null && size.hPx == null)))
-    return paragraphXml
+  const idle = (size: TextboxSizePatch | null | undefined) =>
+    size == null ||
+    (size.wPx == null && size.hPx == null && size.relW === undefined && size.relH === undefined)
+  if (sizes.every(idle)) return paragraphXml
   const drawings = xmlSegments(paragraphXml, 'w:drawing', 0, paragraphXml.length)
   let out = ''
   let cursor = 0
-  let boxIndex = -1
-  for (const drawing of drawings) {
+  const targets = patchesByDrawing(paragraphXml, drawings, sizes)
+  for (const [index, drawing] of drawings.entries()) {
     const drawingXml = paragraphXml.slice(drawing.start, drawing.end)
-    if (!isBoxDrawing(drawingXml)) continue
-    boxIndex++
-    const size = sizes[boxIndex]
-    if (!size || (size.wPx == null && size.hPx == null)) continue
+    const size = targets[index]
+    if (!size || idle(size)) continue
     let resized = drawingXml
+    // a side dragged to a new size is no longer a share of the page
+    const relW = size.relW !== undefined ? size.relW : size.wPx != null ? null : undefined
+    const relH = size.relH !== undefined ? size.relH : size.hPx != null ? null : undefined
+    if (relW !== undefined) resized = setDrawingRelSize(resized, 'H', relW)
+    if (relH !== undefined) resized = setDrawingRelSize(resized, 'V', relH)
     if (size.wPx != null) {
       const cx = Math.max(1, Math.round(size.wPx * EMU_PER_PX))
       resized = setShapeExt(resized.replace(/(<wp:extent\b[^>]*\bcx=")\d+(")/, `$1${cx}$2`), {
@@ -1260,6 +1304,16 @@ export function patchTextboxSizes(
     const size = sizes[fallbackIndex]
     if (!size) return fallback
     let next = fallback
+    for (const [axis, rel, px] of [
+      ['H', size.relW, size.wPx],
+      ['V', size.relH, size.hPx],
+    ] as const) {
+      const to = rel !== undefined ? rel : px != null ? null : undefined
+      if (to === undefined || (!to && !/mso-(?:width|height)-percent/.test(next))) continue
+      next = next.replace(/\bstyle="([^"]*)"/, (_m, style: string) => {
+        return `style="${setVmlRelSize(style, axis, to)}"`
+      })
+    }
     if (size.hPx != null) {
       next = next.replace(
         /(style="[^"]*\bheight:)\s*[\d.]+(pt|px)/,
@@ -1292,10 +1346,15 @@ export interface ShapeStylePatch {
   borderHex?: string | null
   /** rotation in degrees clockwise; null or 0 clears a:xfrm@rot; undefined = keep */
   rotDeg?: number | null
+  /** turn a:xfrm@flipH / @flipV over from what the drawing says now */
+  toggleFlipH?: boolean
+  toggleFlipV?: boolean
   /** outline width in CSS px (a:ln@w = px * 9525 EMU); null clears the attribute; undefined = keep */
   borderWidthPx?: number | null
   /** wps:bodyPr@vert; null is horizontal (the attribute goes); undefined = keep */
   vert?: TextboxVert | null
+  /** the box's own drawing (TextboxDisplay.drawingIndex); without it the box is the nth box drawing */
+  drawingIndex?: number
 }
 
 function patchBodyVert(drawingXml: string, vert: TextboxVert | null): string {
@@ -1322,7 +1381,7 @@ function patchShapeRotation(spPr: string, rotDeg: number | null): string {
   const xfrm = /<a:xfrm\b[^>]*>/.exec(spPr)
   if (!xfrm) {
     if (emu === 0) return spPr
-    return spPr.replace(/^(<wps:spPr\b[^>]*>)/, `$1<a:xfrm rot="${emu}"/>`)
+    return spPr.replace(/^(<(?:wps|pic):spPr\b[^>]*>)/, `$1<a:xfrm rot="${emu}"/>`)
   }
   const tag =
     emu === 0
@@ -1331,6 +1390,21 @@ function patchShapeRotation(spPr: string, rotDeg: number | null): string {
         ? xfrm[0].replace(/\brot="[^"]*"/, `rot="${emu}"`)
         : xfrm[0].replace(/^<a:xfrm\b/, `<a:xfrm rot="${emu}"`)
   return spPr.replace(xfrm[0], tag)
+}
+
+/** Turn a:xfrm@flipH / @flipV over on a wps:spPr or pic:spPr slice; an unflipped shape carries no attribute. */
+function toggleShapeFlips(spPr: string, flipH: boolean, flipV: boolean): string {
+  let out = spPr
+  if (!/<a:xfrm\b/.test(out)) out = out.replace(/^(<(?:wps|pic):spPr\b[^>]*>)/, '$1<a:xfrm/>')
+  const xfrm = /<a:xfrm\b[^>]*?(\/?)>/.exec(out)
+  if (!xfrm) return spPr
+  let tag = xfrm[0]
+  for (const name of [...(flipH ? ['flipH'] : []), ...(flipV ? ['flipV'] : [])]) {
+    const on = new RegExp(`\\b${name}="(?:1|true)"`).test(tag)
+    tag = tag.replace(new RegExp(`\\s+${name}="[^"]*"`), '')
+    if (!on) tag = tag.replace(/(\s*\/?>)$/, ` ${name}="1"$1`)
+  }
+  return out.replace(xfrm[0], tag)
 }
 
 /**
@@ -1376,6 +1450,8 @@ export function patchShapeStyles(
         (s.fillHex === undefined &&
           s.borderHex === undefined &&
           s.rotDeg === undefined &&
+          !s.toggleFlipH &&
+          !s.toggleFlipV &&
           s.borderWidthPx === undefined &&
           s.vert === undefined),
     )
@@ -1384,21 +1460,22 @@ export function patchShapeStyles(
   const drawings = xmlSegments(paragraphXml, 'w:drawing', 0, paragraphXml.length)
   let out = ''
   let cursor = 0
-  let boxIndex = -1
-  for (const drawing of drawings) {
+  const targets = patchesByDrawing(paragraphXml, drawings, styles)
+  for (const [index, drawing] of drawings.entries()) {
     let drawingXml = paragraphXml.slice(drawing.start, drawing.end)
-    if (!isBoxDrawing(drawingXml)) continue
-    boxIndex++
-    const style = styles[boxIndex]
+    const style = targets[index]
     if (
       !style ||
       (style.fillHex === undefined &&
         style.borderHex === undefined &&
         style.rotDeg === undefined &&
+        !style.toggleFlipH &&
+        !style.toggleFlipV &&
         style.borderWidthPx === undefined &&
         style.vert === undefined)
     )
       continue
+    const flips = !!style.toggleFlipH || !!style.toggleFlipV
     const spPrMatch = /<wps:spPr>[\s\S]*?<\/wps:spPr>/.exec(drawingXml)
     if (spPrMatch) {
       let spPr = spPrMatch[0]
@@ -1421,8 +1498,17 @@ export function patchShapeStyles(
         }
       }
       if (style.rotDeg !== undefined) spPr = patchShapeRotation(spPr, style.rotDeg)
+      if (flips) spPr = toggleShapeFlips(spPr, !!style.toggleFlipH, !!style.toggleFlipV)
       if (style.borderWidthPx !== undefined) spPr = patchShapeLineWidth(spPr, style.borderWidthPx)
       drawingXml = drawingXml.replace(spPrMatch[0], spPr)
+    }
+    // a picture drawn as a box of its paragraph turns on its own pic:spPr
+    const picSpPr = spPrMatch ? null : /<pic:spPr\b[^>]*>[\s\S]*?<\/pic:spPr>/.exec(drawingXml)
+    if (picSpPr && (style.rotDeg !== undefined || flips)) {
+      let spPr = picSpPr[0]
+      if (style.rotDeg !== undefined) spPr = patchShapeRotation(spPr, style.rotDeg)
+      if (flips) spPr = toggleShapeFlips(spPr, !!style.toggleFlipH, !!style.toggleFlipV)
+      drawingXml = drawingXml.replace(picSpPr[0], spPr)
     }
     if (style.vert !== undefined) drawingXml = patchBodyVert(drawingXml, style.vert)
     out += paragraphXml.slice(cursor, drawing.start) + drawingXml
@@ -1554,6 +1640,7 @@ export const PPR_CHILD_ORDER = [
   'w:outlineLvl',
   'w:divId',
   'w:cnfStyle',
+  'w15:collapsed',
   'w:rPr',
   'w:sectPr',
   'w:pPrChange',
@@ -1734,8 +1821,10 @@ const PPR_FLAG_FIELDS = {
   'w:autoSpaceDE': 'autoSpaceDE',
   'w:autoSpaceDN': 'autoSpaceDN',
   'w:suppressAutoHyphens': 'suppressAutoHyphens',
+  'w:adjustRightInd': 'adjustRightInd',
   'w:snapToGrid': 'snapToGrid',
   'w:mirrorIndents': 'mirrorIndents',
+  'w15:collapsed': 'collapsed',
 } as const
 const PPR_FLAG_TAGS = Object.keys(PPR_FLAG_FIELDS) as Array<keyof typeof PPR_FLAG_FIELDS>
 
@@ -1992,8 +2081,10 @@ function pprGroupUnchanged(
     case 'w:autoSpaceDE':
     case 'w:autoSpaceDN':
     case 'w:suppressAutoHyphens':
+    case 'w:adjustRightInd':
     case 'w:snapToGrid':
-    case 'w:mirrorIndents': {
+    case 'w:mirrorIndents':
+    case 'w15:collapsed': {
       const field = PPR_FLAG_FIELDS[tag]
       const v = f[field]
       // model lost a flag the parsed paragraph had: the user reset it to the style
@@ -2392,7 +2483,14 @@ function revisionPPrChangeXml(changeJson: string): string | null {
     return null
   }
   const old = (change.old ?? {}) as Record<string, unknown>
-  const oldFormat = (old.format && typeof old.format === 'object' ? old.format : old) as ParaFormat
+  const snapshot = (old.format && typeof old.format === 'object' ? old.format : old) as Record<
+    string,
+    unknown
+  >
+  // a property the snapshot holds as null was not set: writing it would record an explicit off
+  const oldFormat = Object.fromEntries(
+    Object.entries(snapshot).filter(([, value]) => value !== null),
+  ) as ParaFormat
   const children: PPrChild[] = []
   if (old.styleId) {
     children.push({
@@ -2714,7 +2812,9 @@ function tableCellXml(
     // discarded every other paragraph property the model carries.
     const styleId = 'styleId' in paragraph ? paragraph.styleId : undefined
     const pStyle = styleId ? `<w:pStyle w:val="${escapeXmlAttr(styleId)}"/>` : ''
-    const pPr = mergePPrFormat(`<w:pPr>${pStyle}${numPr}</w:pPr>`, paragraph)
+    const live = mergePPrFormat(`<w:pPr>${pStyle}${numPr}</w:pPr>`, paragraph)
+    const change = 'pPrChange' in paragraph ? paragraph.pPrChange : undefined
+    const pPr = change ? setPPrChange(live, change) : live
     // the cell's bookmark anchors ride the rebuilt paragraph: a caller writing
     // into an existing document supplies the document's allocator, whose ids
     // never collide with the bookmarks the untouched blocks keep (REF fields
@@ -2884,16 +2984,16 @@ export function restoreTablePermMarkers(originalXml: string, rebuiltXml: string)
     })
   })
 
-  const replacements: Array<{ start: number; end: number; xml: string }> = [
+  const replacements: Array<{ start: number; end: number; xml: string; seq?: number }> = [
     ...[...paraEdits].map(([start, e]) => ({
       start,
       end: e.end,
       xml: injectIntoParagraph(rebuiltXml.slice(start, e.end), e.head, e.tail),
     })),
-    ...inserts.map((i) => ({ start: i.at, end: i.at, xml: i.xml })),
+    ...inserts.map((i, seq) => ({ start: i.at, end: i.at, xml: i.xml, seq })),
   ]
-  // back to front, so earlier offsets stay valid
-  replacements.sort((a, b) => b.start - a.start || b.end - a.end)
+  // back to front, so earlier offsets stay valid; markers sharing an offset keep their order
+  replacements.sort((a, b) => b.start - a.start || b.end - a.end || (b.seq ?? 0) - (a.seq ?? 0))
   let out = rebuiltXml
   for (const rep of replacements) out = out.slice(0, rep.start) + rep.xml + out.slice(rep.end)
   return out
@@ -3173,6 +3273,10 @@ export const NEW_PICTURE_SVG_SUFFIX = '-svg'
 const SVG_BLIP_EXT_URI = '{96DAC541-7B7A-43D3-8B79-37D633B846F1}'
 const SVG_BLIP_NS = 'http://schemas.microsoft.com/office/drawing/2016/SVG/main'
 
+/** the a:ext that names a picture's SVG part beside its bitmap */
+export const svgBlipExt = (svgRId: string): string =>
+  `<a:ext uri="${SVG_BLIP_EXT_URI}"><asvg:svgBlip xmlns:asvg="${SVG_BLIP_NS}" r:embed="${svgRId}"/></a:ext>`
+
 export interface InlinePictureXmlOptions {
   rId: string
   /** relationship of the picture's SVG part, when the bitmap at rId is its fallback */
@@ -3236,8 +3340,7 @@ export function inlinePictureDrawingXml(o: InlinePictureXmlOptions): string {
   const id = String(o.docPrId)
   const name = `Picture ${id}`
   const blip = o.svgRId
-    ? `<a:blip r:embed="${o.rId}"><a:extLst><a:ext uri="${SVG_BLIP_EXT_URI}">` +
-      `<asvg:svgBlip xmlns:asvg="${SVG_BLIP_NS}" r:embed="${o.svgRId}"/></a:ext></a:extLst></a:blip>`
+    ? `<a:blip r:embed="${o.rId}"><a:extLst>${svgBlipExt(o.svgRId)}</a:extLst></a:blip>`
     : `<a:blip r:embed="${o.rId}"/>`
   return (
     '<w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0">' +
@@ -3730,6 +3833,43 @@ export interface CaptionOptions {
   excludeLabel?: boolean
   /** the number is a guess (the label's numbering is not computed here): Word renumbers on open */
   dirty?: boolean
+  /** Word's "Include chapter number": the number of the last heading of that level leads the caption's */
+  chapter?: PageNumberChapter | null
+  /** what the chapter number shows until it is computed */
+  chapterNumber?: string
+}
+
+export interface CaptionNumberRuns {
+  /** the `w:rPr` every run takes, or '' */
+  rPr: string
+  label: string
+  format: SeqNumberFormat
+  chapter?: PageNumberChapter | null
+  chapterResult?: string
+  result: string
+  dirty?: boolean
+}
+
+/** the runs of a caption's number: `{ STYLEREF n \s }` and a separator when it has a chapter, then `{ SEQ label }` */
+export function captionNumberRunsXml(spec: CaptionNumberRuns): string {
+  const run = (inner: string) => `<w:r>${spec.rPr}${inner}</w:r>`
+  const field = (instr: string, result: string) =>
+    run(`<w:fldChar w:fldCharType="begin"${spec.dirty ? ' w:dirty="true"' : ''}/>`) +
+    run(`<w:instrText xml:space="preserve"> ${escapeXmlText(instr)} </w:instrText>`) +
+    run('<w:fldChar w:fldCharType="separate"/>') +
+    run(`<w:t>${escapeXmlText(result)}</w:t>`) +
+    run('<w:fldChar w:fldCharType="end"/>')
+  // a label with a space has to be quoted or SEQ reads its first word as the identifier
+  const id = /\s/.test(spec.label) ? `"${spec.label.replace(/"/g, '')}"` : spec.label
+  const { chapter } = spec
+  if (!chapter) return field(`SEQ ${id} \\* ${spec.format}`, spec.result)
+  const sep = CHAPTER_SEPARATORS[chapter.sep] ?? '-'
+  return (
+    field(`STYLEREF ${chapter.style} \\s`, spec.chapterResult ?? '0') +
+    // Word keeps the two numbers on one line
+    run(sep === '-' ? '<w:noBreakHyphen/>' : `<w:t>${escapeXmlText(sep)}</w:t>`) +
+    field(`SEQ ${id} \\* ${spec.format} \\s ${chapter.style}`, spec.result)
+  )
 }
 
 /**
@@ -3745,18 +3885,18 @@ export function generateCaptionXml(
   const format = options.format ?? 'ARABIC'
   const rPr = '<w:rPr><w:color w:val="44546A"/><w:sz w:val="18"/><w:szCs w:val="18"/></w:rPr>'
   const run = (inner: string) => `<w:r>${rPr}${inner}</w:r>`
-  // a label with a space has to be quoted or SEQ reads its first word as the identifier
-  const id = /\s/.test(label) ? `"${label.replace(/"/g, '')}"` : label
   return (
     '<w:p><w:pPr><w:jc w:val="center"/><w:spacing w:before="80" w:after="200"/></w:pPr>' +
     (options.excludeLabel ? '' : run(`<w:t xml:space="preserve">${escapeXmlText(label)} </w:t>`)) +
-    run(`<w:fldChar w:fldCharType="begin"${options.dirty ? ' w:dirty="true"' : ''}/>`) +
-    run(
-      `<w:instrText xml:space="preserve"> SEQ ${escapeXmlText(id)} \\* ${format} </w:instrText>`,
-    ) +
-    run('<w:fldChar w:fldCharType="separate"/>') +
-    run(`<w:t>${formatSeqNumber(number, format)}</w:t>`) +
-    run('<w:fldChar w:fldCharType="end"/>') +
+    captionNumberRunsXml({
+      rPr,
+      label,
+      format,
+      chapter: options.chapter,
+      chapterResult: options.chapterNumber,
+      result: formatSeqNumber(number, format),
+      dirty: options.dirty,
+    }) +
     (text ? run(`<w:t xml:space="preserve"> ${escapeXmlText(text)}</w:t>`) : '') +
     '</w:p>'
   )
@@ -3851,6 +3991,11 @@ function runsXml(
 
   // a NOTEREF field finds its note through a bookmark on the mark itself, in a link or not
   const fragment = (run: Run, insideLink: boolean): string => {
+    const held =
+      run.fldBookmarkText !== undefined && run.instrField !== undefined
+        ? ruleBookmarkName(run.instrField)
+        : undefined
+    if (held) return ranRuleFieldXml(run, bookmarksXml(bookmarkCtx, [held]), insideLink)
     const onMark = bookmarksXml(bookmarkCtx, run.noteRef?.bookmarks ?? [])
     return onMark.starts + runFragmentXml(run, insideLink) + onMark.ends
   }
@@ -4020,6 +4165,27 @@ function splitGlyphRuns(
   return out
 }
 
+/** a SET or an ASK that has run: the text it gave its bookmark is its result, under the bookmark */
+function ranRuleFieldXml(
+  run: Run,
+  mark: { starts: string; ends: string },
+  insideLink: boolean,
+): string {
+  const text = generateRunXml(
+    { ...run, text: run.fldBookmarkText ?? '', instrField: undefined, fldBookmarkText: undefined },
+    insideLink,
+  )
+  return (
+    '<w:r><w:fldChar w:fldCharType="begin"/></w:r>' +
+    fieldInstructionXml(run.instrField ?? '') +
+    '<w:r><w:fldChar w:fldCharType="separate"/></w:r>' +
+    mark.starts +
+    text +
+    mark.ends +
+    '<w:r><w:fldChar w:fldCharType="end"/></w:r>'
+  )
+}
+
 function runFragmentXml(run: Run, insideLink: boolean): string {
   // atomic inline formula: a MathType OLE equation decoded to OMML keeps its
   // original <w:object> bytes verbatim until the user converts/edits it; a
@@ -4067,10 +4233,13 @@ function runFragmentXml(run: Run, insideLink: boolean): string {
     const name = run.refField.replace(/"/g, '')
     const instr = run.refInstr ?? ` REF ${name} \\h `
     return (
-      `<w:r><w:fldChar w:fldCharType="begin"${run.fldDirty ? ' w:dirty="true"' : ''}/></w:r>` +
+      `<w:r><w:fldChar w:fldCharType="begin"${fieldFlags(run)}/></w:r>` +
       `<w:r><w:instrText xml:space="preserve">${escapeXmlText(instr)}</w:instrText></w:r>` +
       '<w:r><w:fldChar w:fldCharType="separate"/></w:r>' +
-      generateRunXml({ ...run, refField: undefined, fldDirty: undefined }, insideLink) +
+      generateRunXml(
+        { ...run, refField: undefined, fldDirty: undefined, fldLock: undefined },
+        insideLink,
+      ) +
       '<w:r><w:fldChar w:fldCharType="end"/></w:r>'
     )
   }
@@ -4148,15 +4317,28 @@ function runFragmentXml(run: Run, insideLink: boolean): string {
       )
     }
     return (
-      `<w:r><w:fldChar w:fldCharType="begin"${run.fldDirty ? ' w:dirty="true"' : ''}/></w:r>` +
+      `<w:r><w:fldChar w:fldCharType="begin"${fieldFlags(run)}/></w:r>` +
       instrXml +
-      generateRunXml({ ...run, instrField: undefined, fldDirty: undefined }, insideLink) +
+      generateRunXml(
+        { ...run, instrField: undefined, fldDirty: undefined, fldLock: undefined },
+        insideLink,
+      ) +
       endXml
     )
   }
   let xml = run.text === '' ? '' : generateRunXml(run, insideLink)
   const kept = run.taInstr !== undefined ? `TA ${run.taInstr}` : run.tcInstr && `TC ${run.tcInstr}`
-  if (kept) {
+  if (run.linkBegin !== undefined) {
+    xml +=
+      `<w:r><w:fldChar w:fldCharType="begin"${run.fldLock ? ' w:fldLock="true"' : ''}/></w:r>` +
+      `<w:r><w:instrText xml:space="preserve">${escapeXmlText(run.linkBegin)}</w:instrText></w:r>` +
+      '<w:r><w:fldChar w:fldCharType="separate"/></w:r>'
+  } else if (run.linkEnd) {
+    xml += '<w:r><w:fldChar w:fldCharType="end"/></w:r>'
+  } else if (run.rangeMark) {
+    // the id is left empty: the save gives both ends of the range the same one
+    xml += `<w:bookmark${run.rangeMark.end ? 'End' : 'Start'} w:id="" w:name="${escapeXmlAttr(run.rangeMark.name)}"/>`
+  } else if (kept) {
     // a citation or contents entry rides the index entry's slot: its instruction goes back as it was read
     xml +=
       '<w:r><w:fldChar w:fldCharType="begin"/></w:r>' +
@@ -4194,6 +4376,29 @@ function w14ColorXml(color: string, alpha: number | undefined): string {
 
 function w14TextFillXml(color: string): string {
   return `<w14:textFill><w14:solidFill>${w14ColorXml(color, undefined)}</w14:solidFill></w14:textFill>`
+}
+
+/** a w14:textFill as the reader takes it back: w14:alpha is how transparent the colour is */
+function w14TextFillXmlOf(fill: TextFill): string {
+  const color = (hex: string, alpha: number | undefined) => {
+    const val = escapeXmlAttr(hex)
+    return alpha !== undefined && alpha < 1
+      ? `<w14:srgbClr w14:val="${val}"><w14:alpha w14:val="${Math.round((1 - alpha) * 100000)}"/></w14:srgbClr>`
+      : `<w14:srgbClr w14:val="${val}"/>`
+  }
+  if (fill.kind === 'none') return '<w14:textFill><w14:noFill/></w14:textFill>'
+  if (fill.kind === 'solid')
+    return `<w14:textFill><w14:solidFill>${color(fill.color, fill.alpha)}</w14:solidFill></w14:textFill>`
+  const stops = fill.stops
+    .map(
+      (stop) =>
+        `<w14:gs w14:pos="${Math.round(stop.pos * 100000)}">${color(stop.color, stop.alpha)}</w14:gs>`,
+    )
+    .join('')
+  const spread = fill.path
+    ? `<w14:path w14:path="${fill.path}"><w14:fillToRect w14:l="50000" w14:t="50000" w14:r="50000" w14:b="50000"/></w14:path>`
+    : `<w14:lin w14:ang="${Math.round(fill.angleDeg * 60000)}" w14:scaled="0"/>`
+  return `<w14:textFill><w14:gradFill><w14:gsLst>${stops}</w14:gsLst>${spread}</w14:gradFill></w14:textFill>`
 }
 
 /** the literal colour of a raw solid w14:textFill; '' when the fill is solid in a scheme colour */
@@ -4305,6 +4510,7 @@ const RUN_MANAGED_GROUPS: Array<{ key: string; tags: string[] }> = [
   { key: 'caps', tags: ['w:caps', 'w:smallCaps'] },
   { key: 'dstrike', tags: ['w:dstrike'] },
   { key: 'vanish', tags: ['w:vanish'] },
+  { key: 'snapToGrid', tags: ['w:snapToGrid'] },
   { key: 'color', tags: ['w:color'] },
   { key: 'spacing', tags: ['w:spacing'] },
   { key: 'scale', tags: ['w:w'] },
@@ -4539,16 +4745,20 @@ function modelRPrChildren(run: Run, insideLink: boolean): PPrChild[] {
     out.push({ name: 'w:dstrike', xml: onOffXml('w:dstrike', run.dstrike) })
   if (run.vanishOwn !== undefined)
     out.push({ name: 'w:vanish', xml: onOffXml('w:vanish', run.vanishOwn) })
+  if (run.snapToGridOwn !== undefined)
+    out.push({ name: 'w:snapToGrid', xml: onOffXml('w:snapToGrid', run.snapToGridOwn) })
   if (run.bdrOwn !== undefined) out.push({ name: 'w:bdr', xml: runBorderXml(run.bdrOwn) })
   if (run.fitTextTwips)
     out.push({ name: 'w:fitText', xml: `<w:fitText w:val="${Math.round(run.fitTextTwips)}"/>` })
   if (run.eaLayout && (run.eaLayout.combine || run.eaLayout.vert)) {
-    const { combine, vert, id } = run.eaLayout
+    const { combine, brackets, vert, vertCompress, id } = run.eaLayout
     out.push({
       name: 'w:eastAsianLayout',
       xml:
         `<w:eastAsianLayout${id === undefined ? '' : ` w:id="${id}"`}` +
-        `${combine ? ' w:combine="1"' : ''}${vert ? ' w:vert="1"' : ''}/>`,
+        `${combine ? ' w:combine="1"' : ''}` +
+        `${combine && brackets ? ` w:combineBrackets="${brackets}"` : ''}` +
+        `${vert ? ' w:vert="1"' : ''}${vert && vertCompress ? ' w:vertCompress="1"' : ''}/>`,
     })
   }
   if (run.lang && (run.lang.val || run.lang.eastAsia || run.lang.bidi)) {
@@ -4602,7 +4812,9 @@ function modelRPrChildren(run: Run, insideLink: boolean): PPrChild[] {
     out.push({ name: 'w14:reflection', xml: w14ReflectionXml(run.fxOwn.reflection) })
   if (run.fxOwn?.outline)
     out.push({ name: 'w14:textOutline', xml: w14TextOutlineXml(run.fxOwn.outline) })
-  if (run.fxOwn?.fill && run.color)
+  if (run.fxOwn?.textFill)
+    out.push({ name: 'w14:textFill', xml: w14TextFillXmlOf(run.fxOwn.textFill) })
+  else if (run.fxOwn?.fill && run.color)
     out.push({ name: 'w14:textFill', xml: w14TextFillXml(run.color) })
   const otf = run.otf
   if (otf?.ligatures && otf.ligatures !== 'none')
@@ -4703,6 +4915,10 @@ export function mergeRPrModel(rawRPr: string, run: Run, insideLink: boolean): st
       // `vanish` may be style-inherited; only the run's own value is compared
       case 'vanish':
         return run.vanishOwn === undefined || rawOnOff(rawOf('w:vanish')) === run.vanishOwn
+      case 'snapToGrid':
+        return (
+          run.snapToGridOwn === undefined || rawOnOff(rawOf('w:snapToGrid')) === run.snapToGridOwn
+        )
       case 'spacing':
         return rawInt(rawOf('w:spacing')) === run.charSpacingTwips
       case 'scale': {
@@ -4740,8 +4956,7 @@ export function mergeRPrModel(rawRPr: string, run: Run, insideLink: boolean): st
         const raw = rawAttr(rawOf('w:shd'), 'w:fill')
         return (raw && raw !== 'auto' ? raw : undefined) === run.shading
       }
-      // undefined is "not touched": what the file says about these stays, switches the model
-      // does not carry (brackets, compression) included
+      // undefined is "not touched": what the file says about these stays
       case 'fitText':
         return (
           run.fitTextTwips === undefined || (rawInt(rawOf('w:fitText')) || 0) === run.fitTextTwips
@@ -4750,7 +4965,15 @@ export function mergeRPrModel(rawRPr: string, run: Run, insideLink: boolean): st
         if (run.eaLayout === undefined) return true
         const raw = rawOf('w:eastAsianLayout')
         const on = (attr: string) => /^(1|true|on)$/.test(rawAttr(raw, attr) ?? '')
-        return on('w:combine') === !!run.eaLayout.combine && on('w:vert') === !!run.eaLayout.vert
+        const brackets = on('w:combine')
+          ? COMBINE_BRACKETS.find((b) => b === rawAttr(raw, 'w:combineBrackets'))
+          : undefined
+        return (
+          on('w:combine') === !!run.eaLayout.combine &&
+          on('w:vert') === !!run.eaLayout.vert &&
+          brackets === run.eaLayout.brackets &&
+          (on('w:vert') && on('w:vertCompress')) === !!run.eaLayout.vertCompress
+        )
       }
       case 'lang': {
         if (run.lang === undefined) return true
@@ -4826,9 +5049,12 @@ export function mergeRPrModel(rawRPr: string, run: Run, insideLink: boolean): st
         return run.fxOwn?.outline === undefined
       // Word shows the fill, not w:color: a solid fill of the file follows a change of colour
       case 'fxFill': {
-        if (run.fxOwn?.fill !== undefined) return false
-        const rawFill = rawSolidFill(rawOf('w14:textFill'))
-        if (rawFill === undefined || groupEqual('color')) return true
+        if (run.fxOwn?.fill !== undefined || run.fxOwn?.textFill !== undefined) return false
+        const raw = rawOf('w14:textFill')
+        if (raw === undefined || groupEqual('color')) return true
+        // a gradient or an empty fill gives way to a colour picked over it, as in Word
+        const rawFill = rawSolidFill(raw)
+        if (rawFill === undefined) return false
         return rawFill === '' && rawOf('w:color') === undefined
       }
       case 'rPrChange':
@@ -4845,7 +5071,11 @@ export function mergeRPrModel(rawRPr: string, run: Run, insideLink: boolean): st
     if (rawRFonts && (run.font || run.fontAscii)) {
       // edited font slots merge into the original element instead of replacing it
       freshOut.push({ name: 'w:rFonts', xml: mergeRFontsXml(rawRFonts, run) })
-    } else if (g.key === 'fxFill' && run.fxOwn?.fill === undefined) {
+    } else if (
+      g.key === 'fxFill' &&
+      run.fxOwn?.fill === undefined &&
+      run.fxOwn?.textFill === undefined
+    ) {
       if (run.color) freshOut.push({ name: 'w14:textFill', xml: w14TextFillXml(run.color) })
     } else {
       freshOut.push(...freshByGroup.get(g.key)!)
@@ -5385,6 +5615,9 @@ function runRPrXml(run: Run, insideLink: boolean): string {
   const props = modelRPrChildren(run, insideLink).map((c) => c.xml)
   return props.length > 0 ? `<w:rPr>${props.join('')}</w:rPr>` : ''
 }
+
+const fieldFlags = (run: Run): string =>
+  (run.fldDirty ? ' w:dirty="true"' : '') + (run.fldLock ? ' w:fldLock="true"' : '')
 
 function generateRunXml(run: Run, insideLink: boolean): string {
   const rPr = runRPrXml(run, insideLink)

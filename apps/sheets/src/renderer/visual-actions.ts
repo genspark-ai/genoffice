@@ -30,6 +30,7 @@ import {
   removeVisualAdd,
   updateVisualAdd,
 } from './edit-journal'
+import { readNamedChartColumns } from './chart-column-read'
 import { t } from './i18n/locale'
 import { filePivotAtSelection, type PivotActionContext } from './pivot-actions'
 import {
@@ -611,7 +612,11 @@ export async function insertAiChartVisual(
   const workbook = runtime.univerAPI.getActiveWorkbook()
   const target = workbook?.getSheetBySheetId(op.sheetId)
   if (!workbook || !target) throw new Error(`Unknown sheet: ${op.sheetId}`)
-  const values = await readChartGridValues(state, runtime, op.sheetId, op.dataRange)
+  const values = op.columns
+    ? await readNamedChartColumns(parseRange(op.dataRange), op.columns, (range) =>
+        readChartGridValues(state, runtime, op.sheetId, range),
+      )
+    : await readChartGridValues(state, runtime, op.sheetId, op.dataRange)
   const visual: WorkbookVisualObject = buildChartVisual({
     id: `added-chart-${Date.now().toString(36)}-${state.editJournal.visualAdds.length + 1}`,
     sheetId: op.sheetId,

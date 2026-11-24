@@ -90,7 +90,7 @@ const readTab = (page: Page): Promise<RibbonTab> =>
         group.querySelector('.ribbon-group-label, [class*=group-label]')?.textContent?.trim() ?? '',
       controls: [...group.querySelectorAll('button, select, input, [role=button], [role=combobox]')]
         // how many gallery cards fit depends on text metrics, not on structure
-        .filter((el) => shown(el) && !el.matches('.table-style-card, .style-card'))
+        .filter((el) => shown(el) && !el.matches('.table-style-card, .style-card, .style-set-card'))
         .map((el) => ({
           name: nameOf(el),
           tag: el.tagName.toLowerCase(),

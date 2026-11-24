@@ -16,7 +16,11 @@ const IS_MAC = process.platform === 'darwin'
 const MOD = IS_MAC ? 'Meta' : 'Control'
 /** the chords as the dialog and the stored file write them on this platform */
 const MOD_B = IS_MAC ? 'Cmd+B' : 'Ctrl+B'
+// what the Bold menu item shows once Cmd/Ctrl+B is taken from it: the last chord it has left
+const BOLD_LEFT = IS_MAC ? 'Ctrl+Shift+B' : ''
 const shown = (mac: string, other: string) => (IS_MAC ? mac : other)
+/** the chords Word for Mac alone gives a command, which it keeps beside an assigned one */
+const withMac = (mac: string[], rest: string[]) => (IS_MAC ? [...mac, ...rest] : rest)
 
 /** clicks a menu bar item once the renderer has told the menu it is available */
 async function clickMenu(app: ElectronApplication, path: string[]) {
@@ -157,7 +161,7 @@ test('a chord assigned in Customize Keyboard runs its command, shows in the menu
     await expect(press).toHaveValue(shown('⌃⇧Y', 'Ctrl+Shift+Y'))
     await expect(note).toHaveText('[unassigned]')
     await assign.click()
-    await expect(currentKeys).toHaveText([shown('⌃⇧Y', 'Ctrl+Shift+Y')])
+    await expect(currentKeys).toHaveText(withMac(['⇧⌘X'], [shown('⌃⇧Y', 'Ctrl+Shift+Y')]))
 
     // a typing key is refused
     await press.press('Shift+k')
@@ -174,15 +178,15 @@ test('a chord assigned in Customize Keyboard runs its command, shows in the menu
     await assign.click()
     await expect(currentKeys).toHaveText([shown('⌃⇧Y', 'Ctrl+Shift+Y')])
     await pick('strikethrough')
-    await expect(currentKeys).toHaveCount(0)
+    await expect(currentKeys).toHaveText(withMac(['⇧⌘X'], []))
 
     // a built-in chord moves the same way
     await press.press(`${MOD}+b`)
     await expect(note).toHaveText('Currently assigned to: Bold')
     await assign.click()
-    await expect(currentKeys).toHaveText([shown('⌘B', 'Ctrl+B')])
+    await expect(currentKeys).toHaveText(withMac(['⇧⌘X'], [shown('⌘B', 'Ctrl+B')]))
     await pick('bold')
-    await expect(currentKeys).toHaveCount(0)
+    await expect(currentKeys).toHaveText(withMac(['⇧⌘B', '⌃B', '⌃⇧B'], []))
 
     // a menu command with no chord of its own
     await pick('file-properties')
@@ -191,9 +195,9 @@ test('a chord assigned in Customize Keyboard runs its command, shows in the menu
     await assign.click()
 
     await expect.poll(stored).toEqual({
-      strikethrough: [MOD_B],
+      strikethrough: withMac(['Shift+Cmd+X'], [MOD_B]),
       numbering: ['Ctrl+Shift+Y'],
-      bold: [],
+      bold: withMac(['Shift+Cmd+B', 'Ctrl+B', 'Ctrl+Shift+B'], []),
       'file-properties': ['Ctrl+Shift+F7'],
     })
     await dialog.getByRole('button', { name: 'OK' }).click()
@@ -201,7 +205,7 @@ test('a chord assigned in Customize Keyboard runs its command, shows in the menu
 
     // the menu shows the new chords and no longer shows the one that moved away
     expect(await menuAccelerator(app, ['File', 'Properties…'])).toBe('Ctrl+Shift+F7')
-    expect(await menuAccelerator(app, ['Format', 'Bold'])).toBe('')
+    expect(await menuAccelerator(app, ['Format', 'Bold'])).toBe(BOLD_LEFT)
 
     // in the document the moved chord runs its new command, not the old one
     await selectLine(page, 'First line')
@@ -232,12 +236,14 @@ test('a chord assigned in Customize Keyboard runs its command, shows in the menu
     await clickMenu(app, ['Help', 'Keyboard Shortcuts'])
     const panel = page.locator('.modal-shortcuts')
     await expect(panel.locator('.sc-row', { hasText: 'Strikethrough' }).locator('kbd')).toHaveText(
-      shown('⌘B', 'Ctrl+B'),
+      shown('⇧⌘X / ⌘B', 'Ctrl+B'),
     )
     await expect(panel.locator('.sc-row', { hasText: 'Properties' }).locator('kbd')).toHaveText(
       shown('⌃⇧F7', 'Ctrl+Shift+F7'),
     )
-    await expect(panel.locator('.sc-row .sc-label', { hasText: /^Bold$/ })).toHaveCount(0)
+    await expect(panel.locator('.sc-row .sc-label', { hasText: /^Bold$/ })).toHaveCount(
+      IS_MAC ? 1 : 0,
+    )
     await page.keyboard.press('Escape')
     await expect(panel).toBeHidden()
 
@@ -256,7 +262,7 @@ test('a chord assigned in Customize Keyboard runs its command, shows in the menu
 
     // after a restart the assignments are still in the menu and in the document
     await expect.poll(() => menuAccelerator(app, ['File', 'Properties…'])).toBe('Ctrl+Shift+F7')
-    expect(await menuAccelerator(app, ['Format', 'Bold'])).toBe('')
+    expect(await menuAccelerator(app, ['Format', 'Bold'])).toBe(BOLD_LEFT)
     const thirdLine = page.locator('.doc-page p', { hasText: 'Third line' })
     await selectLine(page, 'Third line')
     await page.keyboard.press(`${MOD}+b`)
@@ -287,7 +293,10 @@ test('a chord assigned in Customize Keyboard runs its command, shows in the menu
     await expect.poll(stored).toEqual({})
     await expect(dialog.getByRole('button', { name: 'Reset All…' })).toBeDisabled()
     await dialog.locator('[data-command="bold"]').click()
-    await expect(currentKeys).toHaveText([shown('⌘B', 'Ctrl+B')])
+    await expect(currentKeys).toHaveText([
+      shown('⌘B', 'Ctrl+B'),
+      ...withMac(['⇧⌘B', '⌃B', '⌃⇧B'], []),
+    ])
     await dialog.getByRole('button', { name: 'OK' }).click()
     await expect(dialog).toBeHidden()
 

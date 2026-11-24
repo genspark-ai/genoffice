@@ -8,6 +8,7 @@ import { setSelectionAlign } from '../editor/direction'
 import { effectiveSizeHalfPoints } from '../editor/text-style-resolve'
 import { textHasCjk } from '../line-metrics'
 import { runUiOps } from '../ai/ops'
+import { collapsedByDefaultAt, setCollapsedByDefault } from '../editor/heading-collapse'
 import { useModalKeys } from './modal-keys'
 import { LengthInput } from './LengthInput'
 import { useMeasurement } from '../use-measurement'
@@ -29,7 +30,6 @@ import {
   type LineSpacingState,
 } from './paragraph-line-spacing'
 import { paragraphDefaultProps } from './paragraph-default-props'
-import { Unavailable } from './Unavailable'
 
 const PT_PER_TWIP = 1 / 20
 
@@ -76,12 +76,14 @@ const FLAG_LABELS: Record<FlagKey, StringKey> = {
   keepLines: 'appParaKeepLines',
   suppressLineNumbers: 'appParaSuppressLineNumbers',
 }
-type StyleFlagKey = FlagKey | 'pageBreakBefore' | 'contextualSpacing' | 'suppressAutoHyphens'
+type StyleFlagKey =
+  FlagKey | 'pageBreakBefore' | 'contextualSpacing' | 'suppressAutoHyphens' | 'adjustRightInd'
 const STYLE_FLAG_KEYS = [
   ...FLAG_KEYS,
   'pageBreakBefore',
   'contextualSpacing',
   'suppressAutoHyphens',
+  'adjustRightInd',
 ] as const
 /** flags the style chain is not read for: the checkbox shows the paragraph's own value */
 type OwnFlagKey = 'mirrorIndents' | 'snapToGrid'
@@ -96,7 +98,7 @@ function resolvedFlag(
   if (typeof direct === 'boolean' && (key !== 'pageBreakBefore' || direct)) return direct
   const fromStyle = style?.display?.[key]
   if (typeof fromStyle === 'boolean') return fromStyle
-  return key === 'widowControl'
+  return key === 'widowControl' || key === 'adjustRightInd'
 }
 
 /** outline level shown for the paragraph at the caret (0 = body text); a style-bound
@@ -161,6 +163,10 @@ export function ParagraphDialog({
   const [initialFlags] = useState(flags)
   const initOutline = outlineLevelOf(editor)
   const [outline, setOutline] = useState(initOutline.level)
+  const [initCollapsed] = useState(() => collapsedByDefaultAt(editor))
+  const [collapsed, setCollapsed] = useState(initCollapsed.checked)
+  // Word offers it to paragraphs with an outline level only
+  const canCollapse = initOutline.editable ? outline > 0 : initCollapsed.enabled
   // unset align means "start": visually left in LTR, right in RTL (same as the ribbon)
   const [align, setAlign] = useState<AlignValue>(
     (attrs.align as AlignValue | null) ?? (attrs.bidi === true ? 'right' : 'left'),
@@ -213,6 +219,7 @@ export function ParagraphDialog({
     })
     if (initOutline.editable && outline !== initOutline.level)
       runUiOps(editor, [{ op: 'setOutlineLevel', target: { scope: 'selection' }, level: outline }])
+    if (canCollapse && collapsed !== initCollapsed.checked) setCollapsedByDefault(editor, collapsed)
   }
 
   /** the paragraph's own formatting and what the dialog changed; the rest of the style stays */
@@ -348,6 +355,18 @@ export function ParagraphDialog({
                 />
               </label>
             </div>
+            <div className="para-checks">
+              <label className="font-check">
+                <input
+                  type="checkbox"
+                  name="collapsed"
+                  disabled={!canCollapse}
+                  checked={canCollapse && collapsed}
+                  onChange={(e) => setCollapsed(e.target.checked)}
+                />
+                {t('appParaCollapsedByDefault')}
+              </label>
+            </div>
             <div className="font-dialog-row">
               {line.choice === 'exact' || line.choice === 'atLeast' ? (
                 <label>
@@ -465,18 +484,7 @@ export function ParagraphDialog({
             </div>
             <div className="para-checks para-checks-wide">
               {check('contextualSpacing', t('appParaNoSpaceSameStyle'))}
-              <Unavailable id="paragraph.adjust-right-indent">
-                <label className="font-check">
-                  <input
-                    type="checkbox"
-                    name="adjustRightInd"
-                    checked={attrs.adjustRightInd !== false}
-                    disabled
-                    readOnly
-                  />
-                  {t('appParaAdjustRightInd')}
-                </label>
-              </Unavailable>
+              {check('adjustRightInd', t('appParaAdjustRightInd'))}
               {check('snapToGrid', t('appParaSnapToGrid'))}
             </div>
           </>

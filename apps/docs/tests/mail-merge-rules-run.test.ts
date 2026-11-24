@@ -6,7 +6,13 @@ import { buildDocx } from '../../../packages/docx-engine/tests/helpers/build-doc
 import { editorExtensions } from '../src/renderer/editor/extensions'
 import { blocksToPmDoc, pmDocToSavePlan } from '../src/renderer/editor/convert'
 import type { PmMark, PmNode } from '../src/renderer/editor/convert'
-import { documentText, mergeAllRecords, mergeDocuments } from '../src/renderer/mail-merge/template'
+import {
+  documentText,
+  mergeAllRecords,
+  mergeDocuments,
+  previewDocument,
+  previewFieldTexts,
+} from '../src/renderer/mail-merge/template'
 import {
   askInstruction,
   fillInInstruction,
@@ -192,6 +198,35 @@ describe('rule fields read from a file', () => {
     fld('separate') +
     '<w:r><w:t>«Name»</w:t></w:r>' +
     fld('end')
+
+  it('Preview Results reads one record through the same rules', () => {
+    const template = doc(
+      para(field(skipIfInstruction('City', '=', 'Wilmslow'))),
+      para(
+        merge('Name'),
+        text(' #'),
+        field('MERGEREC'),
+        text(' seq '),
+        field('MERGESEQ'),
+        text(' '),
+        field(fillInInstruction('Who?', 'Clerk', false)),
+      ),
+      para(field('NEXT'), merge('Name')),
+    )
+    expect(documentText(previewDocument(template, PEOPLE, 0))).toBe('Ada #1 seq 1 Clerk\nAlan')
+    // Ada took Alan along, so the next document opens with Grace; the preview of Alan still shows Alan
+    expect(documentText(previewDocument(template, PEOPLE, 1))).toBe('Alan #2 seq 2 Clerk\nGrace')
+    expect(documentText(previewDocument(template, PEOPLE, 2))).toBe('Grace #3 seq 2 Clerk\nEdsger')
+    const instrs = ['MERGEFIELD Name', 'PAGE', 'MERGEREC', 'MERGESEQ', 'NEXTIF «City» = "London"']
+    expect(previewFieldTexts([...instrs, 'MERGEFIELD Name'], PEOPLE, 2)).toEqual([
+      'Grace',
+      null,
+      '3',
+      '2',
+      '',
+      'Edsger',
+    ])
+  })
 
   it('two Next Record fields with nothing between them stay two fields: in the editor, in the merge, in the file', async () => {
     const parsed = await parseDocx(

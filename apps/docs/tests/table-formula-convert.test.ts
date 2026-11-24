@@ -2,6 +2,9 @@
 import { Editor, type JSONContent } from '@tiptap/core'
 import { NodeSelection, TextSelection } from '@tiptap/pm/state'
 import { describe, expect, it } from 'vitest'
+import { parseDocx } from '@genoffice/docx-engine'
+import { buildDocx } from '../../../packages/docx-engine/tests/helpers/build-docx'
+import { blocksToPmDoc } from '../src/renderer/editor/convert'
 import { editorExtensions } from '../src/renderer/editor/extensions'
 import {
   convertTableToText,
@@ -257,6 +260,21 @@ describe('logic, whole rows and columns, bookmarks', () => {
     expect(value('Label+1')).toBe(1)
     expect(value('Missing+1')).toBeNull()
     expect(evaluateFormula('Rate*100', grid, self)).toBeNull()
+  })
+
+  it('reads a name shaped like a cell as a bookmark where the table has no such cell', () => {
+    const named = {
+      bookmark: (name: string) => ({ Q4: 'total 40', B2: '99' })[name] ?? null,
+      table: () => null,
+    }
+    // inside the grid the cell wins
+    expect(evaluateFormula('B2+1', grid, self, named)).toBe(11)
+    expect(evaluateFormula('Q4+1', grid, self, named)).toBe(41)
+    expect(evaluateFormula('SUM(Q4,B2)', grid, self, named)).toBe(50)
+    expect(evaluateFormula('Q4*2', NO_TABLE, { row: -1, col: -1 }, named)).toBe(80)
+    expect(evaluateFormula('B2*2', NO_TABLE, { row: -1, col: -1 }, named)).toBe(198)
+    expect(evaluateFormula('Z9+1', grid, self, named)).toBeNull()
+    expect(evaluateFormula('SUM(Z9)', grid, self, named)).toBeNull()
   })
 
   it('reads the cells of a bookmarked table', () => {
@@ -552,6 +570,50 @@ describe('formulas with bookmarks in a document', () => {
     expect(refreshTableFormulas(tr)).toBe(1)
     editor.view.dispatch(tr)
     expect(linesOf(editor)[4]).toBe('Gross|167')
+  })
+})
+
+describe('a bookmark read from the file', () => {
+  const R = (text: string) => `<w:r><w:t xml:space="preserve">${text}</w:t></w:r>`
+  const body =
+    `<w:p>${R('Price 100, discount ')}<w:bookmarkStart w:id="1" w:name="Discount"/>${R('25')}` +
+    `<w:bookmarkEnd w:id="1"/>${R(' each')}</w:p>` +
+    `<w:p><w:bookmarkStart w:id="2" w:name="Point"/><w:bookmarkEnd w:id="2"/>${R('Rate 8 of 10')}</w:p>` +
+    `<w:p><w:bookmarkStart w:id="3" w:name="Wide"/>${R('7 first')}</w:p>` +
+    `<w:p>${R('9 second')}<w:bookmarkEnd w:id="3"/></w:p><w:p/>`
+
+  async function opened() {
+    const parsed = await parseDocx(await buildDocx({ bodyXml: body }))
+    const editor = new Editor({
+      element: document.createElement('div'),
+      extensions: editorExtensions,
+      content: blocksToPmDoc(parsed.blocks),
+    })
+    return { editor, parsed }
+  }
+
+  it('stands for the text between its start and end, not for its paragraph', async () => {
+    const { editor, parsed } = await opened()
+    const context = bookmarkContext(editor.state.doc, parsed.blocks)
+    expect(context.bookmark('DISCOUNT')).toBe('25')
+    expect(evaluateFormula('Discount*2', NO_TABLE, { row: -1, col: -1 }, context)).toBe(50)
+    // without the file the paragraph's first number is all there is
+    expect(bookmarkContext(editor.state.doc, []).bookmark('DISCOUNT')).toBe(
+      'Price 100, discount 25 each',
+    )
+    // set at a point, or running on into the next paragraph: its paragraph
+    expect(context.bookmark('POINT')).toBe('Rate 8 of 10')
+    expect(context.bookmark('WIDE')).toBe('7 first')
+    editor.destroy()
+  })
+
+  it('falls back to its paragraph once the paragraph no longer reads as the file has it', async () => {
+    const { editor, parsed } = await opened()
+    caretIn(editor, 'Price 100, discount 25 each', 6)
+    editor.commands.insertContent('9')
+    const context = bookmarkContext(editor.state.doc, parsed.blocks)
+    expect(context.bookmark('DISCOUNT')).toBe('Price 9100, discount 25 each')
+    editor.destroy()
   })
 })
 

@@ -44,6 +44,42 @@ export async function readClipboardPayload(): Promise<ClipboardPayload> {
   return payload
 }
 
+// what Change Picture can put in a picture's place: the bitmaps the save writes as they are
+const PICTURE_TYPES = ['image/png', 'image/jpeg', 'image/gif']
+
+async function clipboardPictureBlob(): Promise<Blob | null> {
+  try {
+    for (const item of await navigator.clipboard.read()) {
+      const type = PICTURE_TYPES.find((candidate) => item.types.includes(candidate))
+      if (type) return await item.getType(type)
+    }
+  } catch {
+    /* clipboard unavailable or denied */
+  }
+  return null
+}
+
+export async function clipboardHasPicture(): Promise<boolean> {
+  try {
+    const items = await navigator.clipboard.read()
+    return items.some((item) => PICTURE_TYPES.some((type) => item.types.includes(type)))
+  } catch {
+    return false
+  }
+}
+
+/** the picture on the clipboard as a data URL; null when it holds none */
+export async function readClipboardPicture(): Promise<string | null> {
+  const image = await clipboardPictureBlob()
+  if (!image) return null
+  return new Promise((resolve) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(typeof reader.result === 'string' ? reader.result : null)
+    reader.onerror = () => resolve(null)
+    reader.readAsDataURL(image)
+  })
+}
+
 function clipboardEvent(html: string | null, text: string): ClipboardEvent {
   const data = new DataTransfer()
   if (html) data.setData('text/html', html)
@@ -93,7 +129,7 @@ export function pastePayload(
     if (!html.trim() && !text.trim()) return false
     void clipboardPicture(html, text).then((picture) => {
       if (!picture) return
-      void insertImageFromDataUrl(editor, picture.dataUrl, 'Picture (pasted)', {
+      void insertImageFromDataUrl(editor, picture.dataUrl, 'Picture (pasted)', undefined, {
         width: picture.widthPx,
         height: picture.heightPx,
       })

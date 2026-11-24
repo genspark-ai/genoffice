@@ -12,6 +12,7 @@ import type { Run } from '@genoffice/docx-engine'
 import {
   FontDialog,
   selectionRanges,
+  setRunSnapToGrid,
   setTextStyleWithScale,
   setUnderlineMark,
 } from '../src/renderer/components/FontDialog'
@@ -160,6 +161,73 @@ describe('run <-> mark round trip', () => {
   })
 })
 
+describe('Snap to grid when document grid is defined', () => {
+  const snapBox = (dialog: ReturnType<typeof openDialog>) => {
+    dialog.click('Advanced')
+    return [...dialog.container.querySelectorAll('label')]
+      .find((l) => l.textContent?.startsWith('Snap to grid'))!
+      .querySelector('input')!
+  }
+  const gridOf = (editor: Editor) =>
+    runsOf(editor).map((r) => [r.text, r.offGrid ?? false, r.snapToGridOwn ?? null])
+
+  it('cleared, the selected text leaves the grid and the page marks it', () => {
+    const editor = editorWith([{ text: 'plain ' }, { text: 'bold', bold: true }])
+    selectAll(editor)
+    const dialog = openDialog(editor)
+    const box = snapBox(dialog)
+    expect(box.checked).toBe(true)
+    act(() => box.click())
+    dialog.click('OK')
+    expect(gridOf(editor)).toEqual([
+      ['plain ', true, false],
+      ['bold', true, false],
+    ])
+    expect(runsOf(editor)[1].bold).toBe(true)
+    expect(editor.view.dom.querySelectorAll('span.doc-off-grid')).toHaveLength(2)
+    dialog.close()
+    editor.destroy()
+  })
+
+  it('ticked again, only text that was off the grid is written', () => {
+    const editor = editorWith([
+      { text: 'off', offGrid: true, snapToGridOwn: false },
+      { text: ' styled', offGrid: true, styleId: 'OffChar' },
+      { text: ' on' },
+    ])
+    selectAll(editor)
+    const dialog = openDialog(editor)
+    const box = snapBox(dialog)
+    expect(box.checked).toBe(false)
+    act(() => box.click())
+    dialog.click('OK')
+    expect(gridOf(editor)).toEqual([
+      ['off', false, true],
+      [' styled', false, true],
+      [' on', false, null],
+    ])
+    expect(editor.view.dom.querySelector('span.doc-off-grid')).toBeNull()
+    dialog.close()
+    editor.destroy()
+  })
+
+  it('at a caret the choice goes to the text typed next', () => {
+    const editor = editorWith([{ text: 'ab' }])
+    editor.commands.setTextSelection(2)
+    editor
+      .chain()
+      .command(({ tr }) => setRunSnapToGrid(tr, selectionRanges(editor.state.selection), false))
+      .insertContent('X')
+      .run()
+    expect(gridOf(editor)).toEqual([
+      ['a', false, null],
+      ['X', true, false],
+      ['b', false, null],
+    ])
+    editor.destroy()
+  })
+})
+
 describe('setUnderlineMark', () => {
   it('a colour alone recolours underlined text and underlines nothing else', () => {
     const editor = editorWith([
@@ -254,7 +322,7 @@ describe('the dialog', () => {
     editor.destroy()
   })
 
-  it('shows the selection, removes the emphasis mark and does not offer Snap to grid', () => {
+  it('shows the selection, removes the emphasis mark and leaves Snap to grid as it was', () => {
     const editor = editorWith([
       { text: 'marked', em: 'dot', underline: true, underlineStyle: 'wavyDouble' },
     ])
@@ -272,9 +340,10 @@ describe('the dialog', () => {
     const snap = [...dialog.container.querySelectorAll('label')].find((l) =>
       l.textContent?.startsWith('Snap to grid'),
     )
-    expect(snap).toBeUndefined()
+    expect(snap!.querySelector('input')!.checked).toBe(true)
     dialog.click('OK')
     expect(runsOf(editor)[0]).toMatchObject({ em: 'none', underlineStyle: 'wavyDouble' })
+    expect(runsOf(editor)[0].snapToGridOwn).toBeUndefined()
     dialog.close()
     editor.destroy()
   })

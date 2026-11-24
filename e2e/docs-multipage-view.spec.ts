@@ -58,8 +58,8 @@ test('multiple pages grid follows clicks and the caret, collapses at 100%', asyn
     await editor.screenshot({ path: 'test-results/docs-multipage-view.png' })
 
     // ---- a caret move onto another page turns the live window ----
-    // macOS End only scrolls; ⌘↓ is the document-end caret move there
-    await editor.keyboard.press(MAC ? 'Meta+ArrowDown' : 'Control+End')
+    // the end of the document: ⌘End on the Mac, where ⌘↓ is Word's next paragraph
+    await editor.keyboard.press(MAC ? 'Meta+End' : 'Control+End')
     await expect(editor.locator('.mp-slot[data-page="3"]')).toHaveCount(0, POLL)
     await expect(editor.locator('.mp-slot[data-page="1"]')).toHaveCount(1)
     await expect(editor.locator('.mp-slot[data-page="1"] .mp-page')).toContainText(

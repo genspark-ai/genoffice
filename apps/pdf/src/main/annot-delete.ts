@@ -9,7 +9,12 @@ const SUBTYPE_CODE: Record<AnnotDeleteInput['subtype'], number> = {
   squiggly: 11,
   strikeout: 12,
   note: 1, // FPDF_ANNOT_TEXT (sticky-note comments)
-  polygon: 7, // FPDF_ANNOT_POLYGON
+  line: 4,
+  square: 5,
+  circle: 6,
+  polygon: 7,
+  caret: 14,
+  ink: 15,
 }
 
 /** Match tolerance for the rect fallback (float32 round-trips only; rects travel unchanged) */

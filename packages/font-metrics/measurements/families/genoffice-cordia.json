@@ -18,12 +18,12 @@
     {
       "src": "url('./LiberationSans-Regular.ttf')",
       "sizeAdjust": 64.9,
-      "unicodeRange": "U+0000-0DFF, U+0E80-10FFFF"
+      "unicodeRange": "U+0000-0DFF, U+0E80-F6FF, U+F71B-10FFFF"
     },
     {
       "src": "url('./LiberationSans-Bold.ttf')",
       "sizeAdjust": 64.3,
-      "unicodeRange": "U+0000-0DFF, U+0E80-10FFFF",
+      "unicodeRange": "U+0000-0DFF, U+0E80-F6FF, U+F71B-10FFFF",
       "weight": "bold"
     }
   ]

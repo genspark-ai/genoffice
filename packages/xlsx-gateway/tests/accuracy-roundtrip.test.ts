@@ -419,7 +419,7 @@ describe.skipIf(!RUN)('xlsx round-trip accuracy bench (styled workbook class)', 
     writeFileSync(fixturePath, fixture)
 
     // the app's save: one value edit on Data!B2 and one style-only edit that
-    // turns bold OFF on the probe cell B8 (the #2912-class composition)
+    // turns bold OFF on the probe cell B8 (the genoffice#2912-class composition)
     const saved = await applyCellEditsToXlsx(Buffer.from(fixture), [
       { sheetName: 'Data', row: 1, column: 1, writeValue: true, cell: { value: 5 } },
       {

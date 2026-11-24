@@ -1,0 +1,223 @@
+{
+  "family": "MS PMincho GO",
+  "standsInFor": "MS PMincho",
+  "standInChain": {
+    "tail": "ja-serif",
+    "companions": ["MS PMincho JA GO"]
+  },
+  "source": {
+    "kind": "probe",
+    "date": "2026-11-20",
+    "probe": "advances from Word msmincho.ttc (MS PMincho hmtx) confirmed by a Word PDF: digits 0.5em, proportional serif Latin bucketed per 3% over Liberation Serif, 0.5em symbols from the fixed-pitch face"
+  },
+  "note": "MS PMincho renders real in Word for Mac (Office-private msmincho.ttc).\nBox: overrides divided by each face's size-adjust give every face the real hhea of msmincho.ttc (0.8594 / 0.1406, no line gap).",
+  "faces": [
+    {
+      "src": "url('./LiberationSerif-Regular.ttf') format('truetype')",
+      "sizeAdjust": 60.94,
+      "unicodeRange": "U+005F",
+      "ascentOverride": 141.02,
+      "descentOverride": 23.07,
+      "lineGapOverride": 0
+    },
+    {
+      "src": "url('./LiberationSerif-Regular.ttf') format('truetype')",
+      "sizeAdjust": 63.84,
+      "unicodeRange": "U+00B9",
+      "ascentOverride": 134.62,
+      "descentOverride": 22.02,
+      "lineGapOverride": 0
+    },
+    {
+      "src": "url('./LiberationSerif-Regular.ttf') format('truetype')",
+      "sizeAdjust": 66.22,
+      "unicodeRange": "U+005E, U+00B7-00B8",
+      "ascentOverride": 129.78,
+      "descentOverride": 21.23,
+      "lineGapOverride": 0
+    },
+    {
+      "src": "url('./LiberationSerif-Regular.ttf') format('truetype')",
+      "sizeAdjust": 69.27,
+      "unicodeRange": "U+00BC-00BE",
+      "ascentOverride": 124.07,
+      "descentOverride": 20.3,
+      "lineGapOverride": 0
+    },
+    {
+      "src": "url('./LiberationSerif-Regular.ttf') format('truetype')",
+      "sizeAdjust": 75.68,
+      "unicodeRange": "U+0066, U+00C6",
+      "ascentOverride": 113.56,
+      "descentOverride": 18.58,
+      "lineGapOverride": 0
+    },
+    {
+      "src": "url('./LiberationSerif-Regular.ttf') format('truetype')",
+      "sizeAdjust": 78.87,
+      "unicodeRange": "U+0026, U+0040",
+      "ascentOverride": 108.96,
+      "descentOverride": 17.83,
+      "lineGapOverride": 0
+    },
+    {
+      "src": "url('./LiberationSerif-Regular.ttf') format('truetype')",
+      "sizeAdjust": 79.77,
+      "unicodeRange": "U+00A1",
+      "ascentOverride": 107.73,
+      "descentOverride": 17.63,
+      "lineGapOverride": 0
+    },
+    {
+      "src": "url('./LiberationSerif-Regular.ttf') format('truetype')",
+      "sizeAdjust": 84.17,
+      "unicodeRange": "U+0077, U+00A2, U+00B5",
+      "ascentOverride": 102.1,
+      "descentOverride": 16.7,
+      "lineGapOverride": 0
+    },
+    {
+      "src": "url('./LiberationSerif-Regular.ttf') format('truetype')",
+      "sizeAdjust": 87.29,
+      "unicodeRange": "U+0049, U+0059, U+0069-006A, U+006C, U+00A9, U+00AE, U+00CC-00CE, U+00DE, U+00EC-00ED, U+00F0",
+      "ascentOverride": 98.45,
+      "descentOverride": 16.11,
+      "lineGapOverride": 0
+    },
+    {
+      "src": "url('./LiberationSerif-Regular.ttf') format('truetype')",
+      "sizeAdjust": 90.68,
+      "unicodeRange": "U+0021, U+0028-0029, U+004D, U+0052-0053, U+0058, U+0060, U+006D, U+00D0",
+      "ascentOverride": 94.77,
+      "descentOverride": 15.51,
+      "lineGapOverride": 0
+    },
+    {
+      "src": "url('./LiberationSerif-Regular.ttf') format('truetype')",
+      "sizeAdjust": 92.56,
+      "unicodeRange": "U+0041-0042, U+004B, U+004E, U+0056-0057, U+005A, U+0078, U+007E, U+00B2-00B3, U+00C0-00C5, U+00D1-00D6, U+00D8-00DD, U+00F2-00F6, U+00F8",
+      "ascentOverride": 92.85,
+      "descentOverride": 15.19,
+      "lineGapOverride": 0
+    },
+    {
+      "src": "url('./LiberationSerif-Regular.ttf') format('truetype')",
+      "sizeAdjust": 95.41,
+      "unicodeRange": "U+0044, U+004C, U+0055, U+0067, U+0076, U+0079, U+00C8-00CB, U+00E7, U+00FE",
+      "ascentOverride": 90.07,
+      "descentOverride": 14.74,
+      "lineGapOverride": 0
+    },
+    {
+      "src": "url('./LiberationSerif-Regular.ttf') format('truetype')",
+      "sizeAdjust": 99.72,
+      "unicodeRange": "U+0023-0024, U+002A, U+0030-0039, U+0045, U+0047-0048, U+004A, U+005B, U+005D, U+0062, U+0064, U+0068, U+006B, U+006E-0071, U+0075, U+00A5, U+00C7, U+00E0-00E6, U+00E8-00EB",
+      "ascentOverride": 86.18,
+      "descentOverride": 14.1,
+      "lineGapOverride": 0
+    },
+    {
+      "src": "url('./LiberationSerif-Regular.ttf') format('truetype')",
+      "sizeAdjust": 101.34,
+      "unicodeRange": "U+0050, U+0054, U+0061, U+007A, U+00A4, U+00BF, U+00CF, U+00F1, U+00F9-00FD, U+00FF",
+      "ascentOverride": 84.8,
+      "descentOverride": 13.87,
+      "lineGapOverride": 0
+    },
+    {
+      "src": "url('./LiberationSerif-Regular.ttf') format('truetype')",
+      "sizeAdjust": 105.75,
+      "unicodeRange": "U+0043, U+004F, U+0051, U+0063, U+0065, U+0073",
+      "ascentOverride": 81.27,
+      "descentOverride": 13.3,
+      "lineGapOverride": 0
+    },
+    {
+      "src": "url('./LiberationSerif-Regular.ttf') format('truetype')",
+      "sizeAdjust": 107.86,
+      "unicodeRange": "U+0046, U+007C, U+00EE",
+      "ascentOverride": 79.68,
+      "descentOverride": 13.04,
+      "lineGapOverride": 0
+    },
+    {
+      "src": "url('./LiberationSerif-Regular.ttf') format('truetype')",
+      "sizeAdjust": 109.98,
+      "unicodeRange": "U+003A-003B, U+0072, U+00AB, U+00BB",
+      "ascentOverride": 78.14,
+      "descentOverride": 12.78,
+      "lineGapOverride": 0
+    },
+    {
+      "src": "url('./LiberationSerif-Regular.ttf') format('truetype')",
+      "sizeAdjust": 112.71,
+      "unicodeRange": "U+0022, U+00DF",
+      "ascentOverride": 76.25,
+      "descentOverride": 12.47,
+      "lineGapOverride": 0
+    },
+    {
+      "src": "url('./LiberationSerif-Regular.ttf') format('truetype')",
+      "sizeAdjust": 118.44,
+      "unicodeRange": "U+00AC",
+      "ascentOverride": 72.56,
+      "descentOverride": 11.87,
+      "lineGapOverride": 0
+    },
+    {
+      "src": "url('./LiberationSerif-Regular.ttf') format('truetype')",
+      "sizeAdjust": 119.52,
+      "unicodeRange": "U+00A3, U+00EF",
+      "ascentOverride": 71.9,
+      "descentOverride": 11.76,
+      "lineGapOverride": 0
+    },
+    {
+      "src": "url('./LiberationSerif-Regular.ttf') format('truetype')",
+      "sizeAdjust": 122.19,
+      "unicodeRange": "U+0020, U+002C, U+002E, U+00A0, U+00BA",
+      "ascentOverride": 70.33,
+      "descentOverride": 11.51,
+      "lineGapOverride": 0
+    },
+    {
+      "src": "url('./LiberationSerif-Regular.ttf') format('truetype')",
+      "sizeAdjust": 126.54,
+      "unicodeRange": "U+0074",
+      "ascentOverride": 67.92,
+      "descentOverride": 11.11,
+      "lineGapOverride": 0
+    },
+    {
+      "src": "url('./LiberationSerif-Regular.ttf') format('truetype')",
+      "sizeAdjust": 133.59,
+      "unicodeRange": "U+00AF",
+      "ascentOverride": 64.33,
+      "descentOverride": 10.52,
+      "lineGapOverride": 0
+    },
+    {
+      "src": "url('./LiberationMono-Regular.ttf') format('truetype')",
+      "sizeAdjust": 83.333,
+      "unicodeRange": "U+0025, U+002B, U+002D, U+002F, U+003C-003F, U+005C, U+00A8, U+00B4, U+00B6",
+      "ascentOverride": 103.13,
+      "descentOverride": 16.87,
+      "lineGapOverride": 0
+    },
+    {
+      "src": "url('./NotoSansCJKsc-Regular-subset.woff2') format('woff2')",
+      "unicodeRange": "U+00A7, U+00B1, U+00D7, U+00F7",
+      "ascentOverride": 85.94,
+      "descentOverride": 14.06,
+      "lineGapOverride": 0
+    },
+    {
+      "src": "url('./LiberationMono-Regular.ttf') format('truetype')",
+      "sizeAdjust": 166.667,
+      "unicodeRange": "U+00B0",
+      "ascentOverride": 51.56,
+      "descentOverride": 8.44,
+      "lineGapOverride": 0
+    }
+  ]
+}

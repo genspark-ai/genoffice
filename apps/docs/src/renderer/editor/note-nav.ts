@@ -15,6 +15,18 @@ export function nextNoteRefPos(
   return found
 }
 
+/** where the note's reference mark is in the body; null when the mark lives only in a protected block */
+export function noteRefPos(doc: PmNode, kind: 'footnote' | 'endnote', id: string): number | null {
+  let found: number | null = null
+  doc.descendants((node, pos) => {
+    if (found !== null) return false
+    if (node.type.name !== 'docNoteRef') return true
+    if (node.attrs.kind === kind && String(node.attrs.id) === id) found = pos
+    return false
+  })
+  return found
+}
+
 export interface NoteRef {
   kind: 'footnote' | 'endnote'
   id: string

@@ -28,6 +28,7 @@ describe('Paste as Picture', () => {
       editor,
       'data:image/png;base64,AAAA',
       'Picture (pasted)',
+      undefined,
       { width: 300, height: 80 },
     )
   })

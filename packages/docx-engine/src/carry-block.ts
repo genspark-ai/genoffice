@@ -9,7 +9,7 @@ const RELATIONSHIPS = 'http://schemas.openxmlformats.org/officeDocument/2006/rel
 const XMLNS = /\sxmlns:([A-Za-z_][\w.-]*)="([^"]*)"/g
 /** content that points at another part or story of its document, which does not come along */
 const TIED =
-  /<w:(?:footnoteReference|endnoteReference|commentReference|commentRangeStart|commentRangeEnd|sectPr|altChunk|object)\b/
+  /<w:(?:footnoteReference|endnoteReference|commentReference|commentRangeStart|commentRangeEnd|altChunk|object)\b/
 
 /** prefix -> namespace of the declarations on the root element of word/document.xml */
 export async function docxRootNamespaces(bytes: Uint8Array): Promise<Record<string, string>> {
@@ -27,6 +27,36 @@ export async function docxRootNamespaces(bytes: Uint8Array): Promise<Record<stri
  * document they were made in and are taken off.
  */
 export function carriableBlockXml(xml: string, namespaces: Record<string, string>): string | null {
+  return xml.includes('<w:sectPr') ? null : standalone(xml, namespaces)
+}
+
+/**
+ * A paragraph that only closes a section, as a break another document can hold: the section's
+ * page setup without its headers, footers and printer settings, which are parts of its own
+ * file. Null when it closes no section or still points at a part.
+ */
+export function carriableSectionBreakXml(
+  xml: string,
+  namespaces: Record<string, string>,
+): string | null {
+  if (!/^<w:p[\s>]/.test(xml)) return null
+  const live = xml.replace(/<w:sectPrChange\b[\s\S]*?<\/w:sectPrChange>/g, '')
+  const sectPr = /<w:sectPr\b[^>]*\/>|<w:sectPr\b[\s\S]*?<\/w:sectPr>/.exec(live)?.[0]
+  if (!sectPr) return null
+  // a paragraph with content of its own is not rebuilt from its section alone
+  const content = live
+    .replace(/<w:pPrChange\b[\s\S]*?<\/w:pPrChange>/g, '')
+    .replace(/<w:pPr\b[\s\S]*?<\/w:pPr>/, '')
+    .replace(/<w:(?:bookmarkStart|bookmarkEnd|proofErr)\b[^>]*\/>/g, '')
+  if (!/^<w:p\b[^>]*>\s*<\/w:p>$/.test(content)) return null
+  const own = sectPr.replace(
+    /<w:(?:headerReference|footerReference|printerSettings)\b[^>]*\/>/g,
+    '',
+  )
+  return standalone(`<w:p><w:pPr>${own}</w:pPr></w:p>`, namespaces)
+}
+
+function standalone(xml: string, namespaces: Record<string, string>): string | null {
   if (!/^<w:p[\s>]/.test(xml) || TIED.test(xml)) return null
   const declared = { ...namespaces }
   for (const m of xml.matchAll(XMLNS)) declared[m[1]] = m[2]

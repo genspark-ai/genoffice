@@ -422,7 +422,7 @@ describe('computeListMarkers', () => {
     expect(infos[1]).toEqual({ text: '●', symbolChar: '\uF06C', symbolFont: 'Wingdings' })
     expect(infos[2]).toEqual({ text: '•', symbolChar: '\uF07F', symbolFont: 'Symbol' })
     expect(infos[3]).toEqual({ text: '•' })
-    expect(infos[4]).toEqual({ text: '1.', value: 1 })
+    expect(infos[4]).toEqual({ text: '1.', value: 1, number: '1' })
   })
 
   it('routes only solid round substitute glyphs through the size-adjusted aliases', () => {
@@ -469,6 +469,51 @@ describe('computeListMarkers', () => {
     )
     expect(style).toContain('--li-marker-va: bottom')
     expect(style).toContain('--li-marker-size: 12pt')
+    editor.destroy()
+  })
+
+  it("paints the number with the paragraph mark's own colour and highlight, the level colour first", async () => {
+    const numberingXml =
+      '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\r\n' +
+      '<w:numbering xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">' +
+      '<w:abstractNum w:abstractNumId="0"><w:lvl w:ilvl="0"><w:start w:val="1"/>' +
+      '<w:numFmt w:val="decimal"/><w:lvlText w:val="%1."/></w:lvl></w:abstractNum>' +
+      '<w:abstractNum w:abstractNumId="1"><w:lvl w:ilvl="0"><w:start w:val="1"/>' +
+      '<w:numFmt w:val="decimal"/><w:lvlText w:val="%1)"/>' +
+      '<w:rPr><w:color w:val="00B050"/></w:rPr></w:lvl></w:abstractNum>' +
+      '<w:num w:numId="1"><w:abstractNumId w:val="0"/></w:num>' +
+      '<w:num w:numId="2"><w:abstractNumId w:val="1"/></w:num></w:numbering>'
+    const item = (numId: string, mark: string) =>
+      `<w:p><w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="${numId}"/></w:numPr>${mark}</w:pPr>` +
+      '<w:r><w:t>item</w:t></w:r></w:p>'
+    const parsed = await parseDocx(
+      await buildDocx({
+        bodyXml:
+          item('1', '<w:rPr><w:color w:val="auto"/><w:highlight w:val="yellow"/></w:rPr>') +
+          item('1', '<w:rPr><w:color w:val="C00000"/></w:rPr>') +
+          item('1', '') +
+          item('2', '<w:rPr><w:color w:val="C00000"/></w:rPr>'),
+        numberingXml,
+      }),
+    )
+    const editor = new Editor({
+      element: document.createElement('div'),
+      extensions: editorExtensions,
+    })
+    editor.storage.listNumbering.defs = parsed.numbering
+    editor.commands.setContent(blocksToPmDoc(parsed.blocks) as never)
+    const styles = Array.from(editor.view.dom.querySelectorAll('.doc-li')).map(
+      (el) => el.getAttribute('style') ?? '',
+    )
+    expect(styles[0]).toContain('--li-marker-color: var(--docs-paper-ink)')
+    expect(styles[0]).toContain('--li-marker-bg: #FFFF00')
+    expect(styles[0]).toContain('--dk-li-mbg:')
+    expect(styles[0]).not.toContain('--dk-li-mc')
+    expect(styles[1]).toContain('--li-marker-color: #C00000')
+    expect(styles[1]).toContain('--dk-li-mc:')
+    expect(styles[1]).not.toContain('--li-marker-bg')
+    expect(styles[2]).not.toContain('--li-marker-color')
+    expect(styles[3]).toContain('--li-marker-color: #00B050')
     editor.destroy()
   })
 
@@ -572,6 +617,43 @@ describe('computeListMarkers', () => {
     expect(style).toContain("--li-marker-font: 'Symbol Bullet GO'")
     expect(style).toContain('--li-marker-lh: 0')
     expect(style).not.toContain('--li-marker-va')
+    editor.destroy()
+  })
+
+  // Calibri 12 text whose runs name only an East Asian face, Symbol 12 bullet:
+  // Word pitches the items 15.1-15.4pt (Symbol ascent + Calibri descent)
+  it('lifts a Symbol bullet line by the inherited Latin face when the run names only an East Asian one', async () => {
+    const numberingXml =
+      '<w:numbering xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">' +
+      '<w:abstractNum w:abstractNumId="0"><w:lvl w:ilvl="0"><w:numFmt w:val="bullet"/>' +
+      '<w:lvlText w:val="\uF0B7"/><w:rPr><w:rFonts w:ascii="Symbol" w:hAnsi="Symbol"/></w:rPr>' +
+      '</w:lvl></w:abstractNum><w:num w:numId="1"><w:abstractNumId w:val="0"/></w:num></w:numbering>'
+    const rPr = '<w:rPr><w:rFonts w:eastAsia="Times New Roman"/><w:sz w:val="24"/></w:rPr>'
+    const parsed = await parseDocx(
+      await buildDocx({
+        bodyXml:
+          `<w:p><w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="1"/></w:numPr>${rPr}</w:pPr>` +
+          `<w:r>${rPr}<w:t>item</w:t></w:r>` +
+          '<w:r><w:rPr><w:rFonts w:ascii="Verdana" w:hAnsi="Verdana"/></w:rPr><w:t> more</w:t></w:r></w:p>',
+        numberingXml,
+        stylesXml:
+          '<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">' +
+          '<w:docDefaults><w:rPrDefault><w:rPr><w:rFonts w:ascii="Calibri" w:hAnsi="Calibri"/>' +
+          '<w:sz w:val="22"/></w:rPr></w:rPrDefault></w:docDefaults></w:styles>',
+      }),
+    )
+    const editor = new Editor({
+      element: document.createElement('div'),
+      extensions: editorExtensions,
+    })
+    editor.storage.listNumbering.defs = parsed.numbering
+    editor.storage.listNumbering.styles = parsed.styles
+    editor.storage.listNumbering.docDefaults = parsed.docDefaults
+    editor.commands.setContent(blocksToPmDoc(parsed.blocks) as never)
+    const style = editor.view.dom.querySelector('.doc-li')!.getAttribute('style') ?? ''
+    const linePt = Number(/--li-marker-lh: calc\(([\d.]+)pt/.exec(style)?.[1])
+    expect(linePt).toBeGreaterThan(15.2)
+    expect(linePt).toBeLessThan(15.4)
     editor.destroy()
   })
 

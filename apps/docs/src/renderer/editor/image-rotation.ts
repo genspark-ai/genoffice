@@ -82,6 +82,30 @@ export interface PictureLayer {
   y: number
   w: number
   h: number
+  crop?: { l: number; t: number; r: number; b: number }
+  aspect?: number
+}
+
+/**
+ * A cropped layer as an image of its own: the bitmap inside an SVG whose
+ * viewBox is the kept window (a background cannot clip one layer). The SVG
+ * carries the placed picture's proportions, which print keeps over the
+ * background size.
+ */
+function layerUrl(layer: PictureLayer): string {
+  const { crop } = layer
+  // an SVG image loads nothing but inline data
+  if (!crop || !layer.dataUrl.startsWith('data:')) return layer.dataUrl
+  const h = 1000
+  const w = Math.round(h * (layer.aspect ?? 1) * 100) / 100
+  const fullW = w / (1 - crop.l - crop.r)
+  const fullH = h / (1 - crop.t - crop.b)
+  const n = (v: number) => String(Math.round(v * 100) / 100)
+  const svg =
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${n(w)}" height="${h}" ` +
+    `viewBox="${n(crop.l * fullW)} ${n(crop.t * fullH)} ${n(w)} ${h}" preserveAspectRatio="none">` +
+    `<image href="${layer.dataUrl}" width="${n(fullW)}" height="${n(fullH)}" preserveAspectRatio="none"/></svg>`
+  return `data:image/svg+xml,${encodeURIComponent(svg)}`
 }
 
 /**
@@ -96,7 +120,7 @@ export function pictureLayerDecls(layers: PictureLayer[] | null | undefined): st
   const pct = (v: number) => `${(v * 100).toFixed(2)}%`
   const top = [...layers].reverse()
   return [
-    `background-image:${top.map((l) => `url("${l.dataUrl}")`).join(',')}`,
+    `background-image:${top.map((l) => `url("${layerUrl(l)}")`).join(',')}`,
     `background-size:${top.map((l) => `${pct(l.w)} ${pct(l.h)}`).join(',')}`,
     // percentage positions place against the free space, so solve for the
     // offset that lands the layer's left/top edge at its fraction

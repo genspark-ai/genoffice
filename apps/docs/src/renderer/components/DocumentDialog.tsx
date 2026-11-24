@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { DEFAULT_LINE_PITCH_TWIPS } from '@genoffice/docx-engine'
-import type { DocGrid, SectionSettings } from '@genoffice/docx-engine'
+import type { DocGrid, DrawingGrid, SectionSettings } from '@genoffice/docx-engine'
 import type { SectionScope } from '../commands/menu-commands'
 import type { PageDefault } from '../design-default'
 import { useI18n, type StringKey } from '../i18n/locale'
@@ -17,8 +17,8 @@ import {
   charsPerLine,
   maxCharsPerLine,
 } from '../char-grid'
+import { DrawingGridDialog, type DrawingGridResult } from './DrawingGridDialog'
 import { GridFontDialog, type GridFont } from './GridFontDialog'
-import { Unavailable } from './Unavailable'
 
 export type SectionStart = 'nextPage' | 'continuous' | 'evenPage' | 'oddPage' | 'nextColumn'
 
@@ -200,6 +200,12 @@ interface Props {
   canSuppressEndnotes: boolean
   /** `scope` comes along when Apply to reaches beyond what the dialog acts on by default */
   onApply: (changes: Partial<DocumentDialogValue> & { scope?: SectionScope }) => void
+  /** the document's drawing grid, and this computer's snap and gridline switches */
+  drawingGrid: DrawingGrid | null
+  snapToGrid: boolean
+  showGrid: boolean
+  /** Drawing Grid…'s own OK: applied at once, whatever this dialog ends with */
+  onDrawingGrid: (result: DrawingGridResult) => void
   /** Default…: the dialog's page setup becomes what new blank documents start with */
   onDefault: (page: PageDefault) => void
   onPageSetup: () => void
@@ -225,6 +231,10 @@ export function DocumentDialog({
   gridFont,
   canApplyForward,
   canSuppressEndnotes,
+  drawingGrid,
+  snapToGrid,
+  showGrid,
+  onDrawingGrid,
   onApply,
   onDefault,
   onPageSetup,
@@ -260,6 +270,7 @@ export function DocumentDialog({
   const [charPitchText, setCharPitchText] = useState<string | null>(null)
   const [defaultCharPitch, setDefaultCharPitch] = useState(opened.charSpace === 0)
   const [fontOpen, setFontOpen] = useState(false)
+  const [drawingOpen, setDrawingOpen] = useState(false)
   const columnsValid =
     Number.isInteger(value.columns) && value.columns >= 1 && value.columns <= MAX_COLUMNS
   const tooLarge = !marginsFitPage(
@@ -728,11 +739,9 @@ export function DocumentDialog({
               <button type="button" name="gridSetFont" onClick={() => setFontOpen(true)}>
                 {t('ribbonDocGridSetFont')}
               </button>
-              <Unavailable id="document.drawing-grid">
-                <button type="button" disabled>
-                  {t('ribbonDocGridDrawing')}
-                </button>
-              </Unavailable>
+              <button type="button" name="drawingGrid" onClick={() => setDrawingOpen(true)}>
+                {t('ribbonDocGridDrawing')}
+              </button>
             </div>
           </>
         )}
@@ -768,6 +777,15 @@ export function DocumentDialog({
             setValue((v) => ({ ...v, gridFont: { ...v.gridFont, ...changed } }))
           }
           onClose={() => setFontOpen(false)}
+        />
+      )}
+      {drawingOpen && (
+        <DrawingGridDialog
+          grid={drawingGrid}
+          snap={snapToGrid}
+          show={showGrid}
+          onApply={onDrawingGrid}
+          onClose={() => setDrawingOpen(false)}
         />
       )}
     </div>

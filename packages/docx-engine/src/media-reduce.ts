@@ -10,8 +10,12 @@ import { loadDocxZip } from './zip-load'
 
 const EMU_PER_INCH = 914400
 
+/** the picture formats a host can decode: the last four are stored again as PNG or JPEG */
+export type RasterMime =
+  'image/png' | 'image/jpeg' | 'image/gif' | 'image/bmp' | 'image/webp' | 'image/tiff'
+
 export type MediaKeepReason =
-  /** not PNG or JPEG */
+  /** a metafile, SVG or other format with no pixels to resample */
   | 'format'
   /** shown somewhere whose size cannot be read (tiled fill, VML group, chart, …), or nowhere */
   | 'unmeasured'
@@ -26,7 +30,7 @@ export interface MediaCrop {
 
 export interface MediaReductionTarget {
   partPath: string
-  mime: 'image/png' | 'image/jpeg'
+  mime: RasterMime
   /** pixels the largest use needs of the whole picture at the target resolution; Infinity keeps the stored size */
   widthPx: number
   heightPx: number
@@ -230,11 +234,20 @@ function sharedCrop(need: Need): MediaCrop | undefined {
   return rest.every(same) ? first : undefined
 }
 
-function rasterMime(partPath: string): MediaReductionTarget['mime'] | null {
-  const ext = partPath.split('.').pop()?.toLowerCase()
-  if (ext === 'png') return 'image/png'
-  if (ext === 'jpg' || ext === 'jpeg') return 'image/jpeg'
-  return null
+const RASTER_EXTENSIONS: Record<string, RasterMime> = {
+  png: 'image/png',
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  gif: 'image/gif',
+  bmp: 'image/bmp',
+  dib: 'image/bmp',
+  webp: 'image/webp',
+  tif: 'image/tiff',
+  tiff: 'image/tiff',
+}
+
+function rasterMime(partPath: string): RasterMime | null {
+  return RASTER_EXTENSIONS[partPath.split('.').pop()?.toLowerCase() ?? ''] ?? null
 }
 
 /**
@@ -294,11 +307,14 @@ export async function planMediaReduction(
 }
 
 export interface RasterInfo {
-  mime: 'image/png' | 'image/jpeg'
+  mime: RasterMime
+  /** 0 for a TIFF, whose size is known once it is decoded */
   width: number
   height: number
   /** a canvas round trip keeps what the picture shows: one frame, upright, 1 or 3 colour channels */
   resamplable: boolean
+  /** what the resampled picture is stored as: JPEG only for pixels that were lossy and opaque already */
+  output: 'image/png' | 'image/jpeg'
 }
 
 function pngInfo(bytes: Uint8Array): RasterInfo | null {
@@ -316,6 +332,7 @@ function pngInfo(bytes: Uint8Array): RasterInfo | null {
     width: view.getUint32(16),
     height: view.getUint32(20),
     resamplable: !animated,
+    output: 'image/png',
   }
 }
 
@@ -356,6 +373,7 @@ function jpegInfo(bytes: Uint8Array): RasterInfo | null {
         width: view.getUint16(at + 7),
         height: view.getUint16(at + 5),
         resamplable: orientation === 1 && (channels === 1 || channels === 3),
+        output: 'image/jpeg',
       }
     }
     if (marker === 0xda) return null
@@ -364,12 +382,92 @@ function jpegInfo(bytes: Uint8Array): RasterInfo | null {
   return null
 }
 
+const ascii = (bytes: Uint8Array, at: number, length: number): string =>
+  String.fromCharCode(...bytes.subarray(at, at + length))
+
+/** one frame only: an animation would lose all but its first picture */
+function gifInfo(bytes: Uint8Array): RasterInfo | null {
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
+  const table = (packed: number): number => (packed & 0x80 ? 3 * 2 ** ((packed & 7) + 1) : 0)
+  const subBlocks = (from: number): number => {
+    let at = from
+    while (at < bytes.length && bytes[at] !== 0) at += 1 + bytes[at]
+    return at + 1
+  }
+  let frames = 0
+  let at = 13 + table(bytes[10])
+  while (at < bytes.length && frames < 2) {
+    const block = bytes[at]
+    if (block === 0x2c) {
+      frames++
+      at = subBlocks(at + 10 + table(bytes[at + 9]) + 1)
+    } else if (block === 0x21) at = subBlocks(at + 2)
+    else break
+  }
+  return {
+    mime: 'image/gif',
+    width: view.getUint16(6, true),
+    height: view.getUint16(8, true),
+    resamplable: frames === 1,
+    output: 'image/png',
+  }
+}
+
+function bmpInfo(bytes: Uint8Array): RasterInfo | null {
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
+  const core = view.getUint32(14, true) === 12
+  const width = core ? view.getUint16(18, true) : view.getInt32(18, true)
+  const height = core ? view.getUint16(20, true) : Math.abs(view.getInt32(22, true))
+  return { mime: 'image/bmp', width, height, resamplable: width > 0, output: 'image/png' }
+}
+
+function webpInfo(bytes: Uint8Array): RasterInfo | null {
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
+  const lossy = (at: number): { width: number; height: number } => ({
+    width: view.getUint16(at + 14, true) & 0x3fff,
+    height: view.getUint16(at + 16, true) & 0x3fff,
+  })
+  const lossless = (at: number): { width: number; height: number } => {
+    const bits = view.getUint32(at + 9, true)
+    return { width: (bits & 0x3fff) + 1, height: ((bits >>> 14) & 0x3fff) + 1 }
+  }
+  const info = (
+    size: { width: number; height: number },
+    output: RasterInfo['output'],
+    resamplable = true,
+  ): RasterInfo => ({ mime: 'image/webp', ...size, resamplable, output })
+  const first = ascii(bytes, 12, 4)
+  if (first === 'VP8 ') return info(lossy(12), 'image/jpeg')
+  if (first === 'VP8L') return info(lossless(12), 'image/png')
+  if (first !== 'VP8X') return null
+  const flags = bytes[20]
+  const size = {
+    width: 1 + (view.getUint32(24, true) & 0xffffff),
+    height: 1 + (view.getUint32(27, true) & 0xffffff),
+  }
+  let opaqueLossy = !(flags & 0x10)
+  for (let at = 30; opaqueLossy && at + 8 <= bytes.length;) {
+    const name = ascii(bytes, at, 4)
+    if (name === 'VP8L') opaqueLossy = false
+    if (name === 'VP8 ' || name === 'VP8L') break
+    at += 8 + view.getUint32(at + 4, true) + (view.getUint32(at + 4, true) & 1)
+  }
+  // an animation has many frames, and Exif may turn the picture: neither survives a canvas
+  return info(size, opaqueLossy ? 'image/jpeg' : 'image/png', !(flags & 0x0a))
+}
+
 /** what the bytes themselves say they are: an extension can lie */
 export function rasterInfo(bytes: Uint8Array): RasterInfo | null {
   try {
     if (bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47)
       return pngInfo(bytes)
     if (bytes[0] === 0xff && bytes[1] === 0xd8) return jpegInfo(bytes)
+    const magic = ascii(bytes, 0, 4)
+    if (magic === 'GIF8') return gifInfo(bytes)
+    if (magic.startsWith('BM')) return bmpInfo(bytes)
+    if (magic === 'RIFF' && ascii(bytes, 8, 4) === 'WEBP') return webpInfo(bytes)
+    if (magic === 'II*\0' || magic === 'MM\0*')
+      return { mime: 'image/tiff', width: 0, height: 0, resamplable: true, output: 'image/png' }
   } catch {
     /* truncated header */
   }
@@ -446,15 +544,85 @@ async function dropCrops(zip: JSZip, uncropped: ReadonlySet<string>): Promise<vo
   }
 }
 
+const RELATIONSHIP = /<Relationship\b[^>]*>/g
+const OUTPUT_EXTENSION = { 'image/png': 'png', 'image/jpeg': 'jpeg' } as const
+
 /**
- * The package with the bytes of some parts replaced under the same names.
- * The parts in `uncropped` were cut down to what their crop showed, so the
- * crop comes off the pictures that use them.
+ * Gives each part of `stored` the extension of the format its bytes now are:
+ * the part moves, every relationship to it follows, and the package declares
+ * the extension. Returns old name to new name.
+ */
+async function renameConverted(
+  zip: JSZip,
+  stored: Record<string, keyof typeof OUTPUT_EXTENSION>,
+): Promise<Map<string, string>> {
+  const moved = new Map<string, string>()
+  for (const [name, mime] of Object.entries(stored)) {
+    const entry = zip.file(name)
+    const ext = OUTPUT_EXTENSION[mime]
+    if (!entry || rasterMime(name) === mime) continue
+    const stem = name.replace(/\.[^./]*$/, '')
+    let next = `${stem}.${ext}`
+    for (let n = 2; zip.file(next); n++) next = `${stem}-${n}.${ext}`
+    zip.file(next, await entry.async('uint8array'), { date: entry.date })
+    zip.remove(name)
+    moved.set(name, next)
+  }
+  if (moved.size === 0) return moved
+  for (const relsPath of Object.keys(zip.files)) {
+    const m = /^((?:.*\/)?)_rels\/([^/]+)\.rels$/.exec(relsPath)
+    const rels = m && zip.file(relsPath)
+    if (!m || !rels) continue
+    const xml = await rels.async('string')
+    const next = xml.replace(RELATIONSHIP, (tag) => {
+      const attrs = attrsOfTag(tag)
+      const target = attrs.get('Target')
+      if (!target || attrs.get('TargetMode') === 'External') return tag
+      const to = moved.get(resolveRelationshipTargetPath(`${m[1]}${m[2]}`, target) ?? '')
+      if (!to) return tag
+      const file = to.slice(to.lastIndexOf('/') + 1)
+      return tag.replace(
+        /(\bTarget\s*=\s*["'])([^"']*)/,
+        (_, head: string, old: string) => head + old.replace(/[^/]*$/, file),
+      )
+    })
+    if (next !== xml) zip.file(relsPath, next, { date: rels.date })
+  }
+  const types = zip.file('[Content_Types].xml')
+  if (types) {
+    let xml = await types.async('string')
+    for (const [from, to] of moved) {
+      // an Override names the old part; the Default of the new extension speaks for it now
+      xml = xml.replace(/<Override\b[^>]*>/g, (tag) =>
+        attrsOfTag(tag).get('PartName') === `/${from}` ? '' : tag,
+      )
+      const ext = to.slice(to.lastIndexOf('.') + 1)
+      const declared = [...xml.matchAll(/<Default\b[^>]*>/g)].some(
+        (d) => attrsOfTag(d[0]).get('Extension')?.toLowerCase() === ext,
+      )
+      if (!declared) {
+        xml = xml.replace(
+          /(<Types\b[^>]*>)/,
+          `$1<Default Extension="${ext}" ContentType="image/${ext}"/>`,
+        )
+      }
+    }
+    zip.file(types.name, xml, { date: types.date })
+  }
+  return moved
+}
+
+/**
+ * The package with the bytes of some parts replaced. A part keeps its name
+ * unless `stored` says its bytes are now another format. The parts in
+ * `uncropped` were cut down to what their crop showed, so the crop comes off
+ * the pictures that use them.
  */
 export async function replaceDocxParts(
   bytes: Uint8Array,
   parts: Record<string, Uint8Array>,
   uncropped: Iterable<string> = [],
+  stored: Record<string, 'image/png' | 'image/jpeg'> = {},
 ): Promise<Uint8Array> {
   const zip = await JSZip.loadAsync(bytes)
   for (const [name, data] of Object.entries(parts)) {
@@ -462,7 +630,8 @@ export async function replaceDocxParts(
     if (!entry) throw new Error(`no such part: ${name}`)
     zip.file(name, data, { date: entry.date })
   }
-  const cropless = new Set(uncropped)
+  const moved = await renameConverted(zip, stored)
+  const cropless = new Set([...uncropped].map((name) => moved.get(name) ?? name))
   if (cropless.size > 0) await dropCrops(zip, cropless)
   for (const [name, entry] of Object.entries(zip.files)) if (entry.dir) delete zip.files[name]
   return zip.generateAsync({

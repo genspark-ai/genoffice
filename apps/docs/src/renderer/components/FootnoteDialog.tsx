@@ -6,10 +6,13 @@ import type { NoteKind } from '../note-format'
 import type { NoteConversion } from '../review-actions'
 import { useModalKeys } from './modal-keys'
 import { SymbolDialog } from './SymbolDialog'
-import { Unavailable } from './Unavailable'
 
 export type NoteSettings = Record<NoteKind, NoteProps>
 export type NoteApplyScope = 'document' | 'section'
+/** w15:footnoteColumns of a section: 1-4, or null for as many as the section's text ("Match section layout") */
+export type NoteColumnCount = number | null
+
+const COLUMN_COUNTS = [1, 2, 3, 4]
 
 /** Word's number format list, as it labels them */
 const NUMBER_FORMATS: Array<[string, string]> = [
@@ -111,6 +114,8 @@ function ConvertNotesDialog({
 /** Word's Insert > Footnote…: where notes sit, how they are numbered, and inserting one */
 export function FootnoteDialog({
   settings,
+  columns,
+  columnsFixed,
   multiSection,
   counts,
   onApply,
@@ -120,11 +125,16 @@ export function FootnoteDialog({
 }: {
   /** the numbering in effect in the caret's section, and where the document places notes */
   settings: NoteSettings
+  /** the footnote columns the caret's section states */
+  columns: NoteColumnCount
+  /** the document is laid out as Word 2010 or older: its footnote area is always one column */
+  columnsFixed: boolean
   /** the document has more than one section, so one of them can be numbered on its own */
   multiSection: boolean
   /** notes in the document that Convert can move */
   counts: Record<NoteKind, number>
-  onApply: (next: NoteSettings, scope: NoteApplyScope) => void
+  /** `columns` is left out when the dialog did not change it */
+  onApply: (next: NoteSettings, scope: NoteApplyScope, columns?: NoteColumnCount) => void
   onInsert: (kind: NoteKind, customMark: string) => void
   onConvert: (mode: NoteConversion) => void
   onClose: () => void
@@ -141,6 +151,7 @@ export function FootnoteDialog({
     footnote: String(initial.footnote.numStart),
     endnote: String(initial.endnote.numStart),
   })
+  const [cols, setCols] = useState<NoteColumnCount>(columns)
   const [scope, setScope] = useState<NoteApplyScope>('document')
   const [mark, setMark] = useState('')
   const [picking, setPicking] = useState(false)
@@ -154,7 +165,10 @@ export function FootnoteDialog({
     setStartText((t) => ({ ...t, [kind]: String(draft[kind].numStart) }))
     setKind(next)
   }
-  const changed = !same(draft.footnote, initial.footnote) || !same(draft.endnote, initial.endnote)
+  const changed =
+    !same(draft.footnote, initial.footnote) ||
+    !same(draft.endnote, initial.endnote) ||
+    cols !== columns
   const apply = () => {
     if (!changed) return
     // only what the dialog changed goes out: untouched fields keep whatever the file says
@@ -165,7 +179,11 @@ export function FootnoteDialog({
           .filter((f) => draft[k][f] !== initial[k][f] || settings[k][f] !== undefined)
           .map((f) => [f, draft[k][f]]),
       )
-    onApply({ footnote: delta('footnote'), endnote: delta('endnote') }, scope)
+    onApply(
+      { footnote: delta('footnote'), endnote: delta('endnote') },
+      scope,
+      ...(cols !== columns ? [cols] : []),
+    )
   }
   const applyTo = (next: NoteApplyScope) => {
     setScope(next)
@@ -253,17 +271,28 @@ export function FootnoteDialog({
             </button>
           </div>
         </fieldset>
-        <Unavailable id="footnote.columns">
-          <fieldset>
-            <legend>{t('ribbonFnDlgLayout')}</legend>
-            <div className="tco-grid fn-dlg-grid">
-              <span>{t('ribbonColumns')}</span>
-              <select name="note-columns" aria-label={t('ribbonColumns')} disabled value="match">
-                <option value="match">{t('ribbonFnDlgMatchSection')}</option>
-              </select>
-            </div>
-          </fieldset>
-        </Unavailable>
+        <fieldset>
+          <legend>{t('ribbonFnDlgLayout')}</legend>
+          <div className="tco-grid fn-dlg-grid">
+            <span>{t('ribbonColumns')}</span>
+            <select
+              name="note-columns"
+              aria-label={t('ribbonColumns')}
+              disabled={kind !== 'footnote' || columnsFixed}
+              value={cols ?? 'match'}
+              onChange={(e) =>
+                setCols(e.target.value === 'match' ? null : parseInt(e.target.value, 10))
+              }
+            >
+              <option value="match">{t('ribbonFnDlgMatchSection')}</option>
+              {COLUMN_COUNTS.map((n) => (
+                <option key={n} value={n}>
+                  {n}
+                </option>
+              ))}
+            </select>
+          </div>
+        </fieldset>
         <fieldset>
           <legend>{t('ribbonFnDlgFormat')}</legend>
           <div className="tco-grid fn-dlg-grid">
@@ -317,19 +346,11 @@ export function FootnoteDialog({
             >
               <option value="continuous">{t('ribbonBreakContinuous')}</option>
               <option value="eachSect">{t('ribbonLnRestartSection')}</option>
-              {cur.numRestart === 'eachPage' ? (
-                // always-disabled: the value the file carries, listed so the box can show it
-                <option value="eachPage" disabled>
+              {(kind === 'footnote' || cur.numRestart === 'eachPage') && (
+                // endnotes do not restart on a page: a file's value is listed so the box can show it
+                <option value="eachPage" disabled={kind !== 'footnote'}>
                   {t('ribbonLnRestartPage')}
                 </option>
-              ) : (
-                kind === 'footnote' && (
-                  <Unavailable id="footnote.restart-each-page">
-                    <option value="eachPage" disabled>
-                      {t('ribbonLnRestartPage')}
-                    </option>
-                  </Unavailable>
-                )
               )}
             </select>
           </div>

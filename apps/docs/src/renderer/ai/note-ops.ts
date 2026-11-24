@@ -4,7 +4,7 @@ import type { Transaction } from '@tiptap/pm/state'
 import type { NoteInfo, NoteRun } from '@genoffice/docx-engine'
 import { posAfterText } from './after-text'
 import { refreshNoteRefFields } from '../editor/note-ref-fields'
-import { noteNumbering, type NoteSection } from '../note-format'
+import { assignNoteNumbers, noteNumbering, type NoteSection } from '../note-format'
 import { topBlockSections } from '../editor/section-endnotes'
 
 export type NoteKind = 'footnote' | 'endnote'
@@ -190,36 +190,32 @@ export function noteBlockSections(doc: PmNode, sections: readonly NoteSection[])
 }
 
 /**
- * Rewrite every reference mark of `kind` in `tr` to its document-order number
- * under its section's note properties: a mark shows the section's w:numStart
- * plus the running count, the count starts over where a section says eachSect,
- * custom marks are skipped, and a note referenced twice keeps its first number.
+ * Rewrite every reference mark of `kind` in `tr` to its number under its
+ * section's note properties (assignNoteNumbers); custom marks are skipped.
  * `fmt` rides on the mark: the section's number format, which also redraws it.
  */
 export function renumber(tr: Transaction, kind: NoteKind): void {
-  const { sections, of } = noteNumbering(kind)
+  const { sections, of, pageOf } = noteNumbering(kind)
   const sectionOf = noteBlockSections(tr.doc, sections)
-  const shown = new Map<string, { num: number; fmt: string }>()
-  let count = 0
-  let section = -1
+  const marks: Array<{ pos: number; node: PmNode; id: string; section: number }> = []
   tr.doc.forEach((block, offset, index) => {
-    const here = sectionOf[index] ?? 0
-    if (here !== section) {
-      section = here
-      if (of(here).restart) count = 0
-    }
-    const { start, fmt } = of(here)
+    const section = sectionOf[index] ?? 0
     block.descendants((node, pos) => {
       if (node.type.name !== 'docNoteRef' || node.attrs.kind !== kind) return true
-      if (node.attrs.mark != null) return false
-      const id = String(node.attrs.id)
-      const mark = shown.get(id) ?? { num: start + count++, fmt }
-      shown.set(id, mark)
-      if (node.attrs.num !== mark.num || node.attrs.fmt !== mark.fmt)
-        tr.setNodeMarkup(offset + 1 + pos, undefined, { ...node.attrs, ...mark })
+      if (node.attrs.mark == null)
+        marks.push({ pos: offset + 1 + pos, node, id: String(node.attrs.id), section })
       return false
     })
   })
+  const shown = assignNoteNumbers(
+    marks.map(({ id, section }) => ({ id, section, page: pageOf(id) })),
+    of,
+  )
+  for (const { pos, node, id } of marks) {
+    const mark = shown.get(id)!
+    if (node.attrs.num !== mark.num || node.attrs.fmt !== mark.fmt)
+      tr.setNodeMarkup(pos, undefined, { ...node.attrs, ...mark })
+  }
   refreshNoteRefFields(tr)
 }
 

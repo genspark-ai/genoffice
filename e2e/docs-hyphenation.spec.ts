@@ -9,7 +9,14 @@ import { mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from '
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { launchShell, closeAndSaveVideo, waitForPageWithUrl } from './helpers'
-import { docxWith, para, saveFromMenu } from './docs-objects-fixture'
+import {
+  docxWith,
+  para,
+  saveFromMenu,
+  settingsXml,
+  withLanguage,
+  withWordPart,
+} from './docs-objects-fixture'
 
 const VIDEO_DIR = 'docs-hyphenation'
 // a column under 3 in wide: long words reach the end of most lines
@@ -27,15 +34,15 @@ const LOWER =
 const CAPS =
   'UPPER INTERNATIONALIZATION OF ORGANIZATIONAL RESPONSIBILITIES DEMONSTRATES CHARACTERISTICALLY ' +
   'DISPROPORTIONATE INSTITUTIONAL REPRESENTATION THROUGHOUT INTERCONTINENTAL TELECOMMUNICATION'
-const W_NS = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"'
 
-async function fixture(settings: string, body = para(LOWER) + para(CAPS)): Promise<Buffer> {
-  const zip = await JSZip.loadAsync(await docxWith(body + SECT_PR))
-  zip.file(
-    'word/settings.xml',
-    `<?xml version="1.0" encoding="UTF-8"?><w:settings ${W_NS}>${settings}</w:settings>`,
-  )
-  return zip.generateAsync({ type: 'nodebuffer' })
+/** `lang` null: the document declares no language */
+async function fixture(
+  settings: string,
+  body = para(LOWER) + para(CAPS),
+  lang: string | null = 'en-US',
+): Promise<Buffer> {
+  const docx = await withWordPart(await docxWith(body + SECT_PR), 'settings', settingsXml(settings))
+  return lang ? withLanguage(docx, lang) : docx
 }
 
 async function clickMenu(app: ElectronApplication, path: string[]) {
@@ -277,6 +284,127 @@ test('a document that does not hyphenate carries no break points; the zone is of
   }
 })
 
+test('a document that declares no language is not hyphenated, as in Word; the same text under en-US is', async () => {
+  test.setTimeout(180_000)
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), 'genoffice-e2e-hyphenation-')))
+  const bare = join(dir, 'no-language.docx')
+  const declared = join(dir, 'en-US.docx')
+  writeFileSync(bare, await fixture('<w:autoHyphenation/>', undefined, null))
+  writeFileSync(declared, await fixture('<w:autoHyphenation/>'))
+  let session = await open(bare)
+  try {
+    await expect(session.page.locator('.doc-page p', { hasText: 'lower' })).toBeVisible()
+    expect(await session.page.locator('.doc-page .doc-shy').count()).toBe(0)
+    expect((await hyphenLines(session.page, 'lower'))!.hyphens).toBe(0)
+    // print: the same lines, no hyphen at a line end
+    const pdf = join(dir, 'no-language.pdf')
+    await session.app.evaluate(({ dialog: d, shell }, out) => {
+      d.showSaveDialog = async () => ({ canceled: false, filePath: out })
+      shell.showItemInFolder = () => {}
+    }, pdf)
+    expect(
+      await session.page.evaluate(() =>
+        (window as unknown as { __exportPdf: () => Promise<boolean> }).__exportPdf(),
+      ),
+    ).toBe(true)
+    expect(await pdfLineEndHyphens(pdf)).toBe(0)
+
+    await closeAndSaveVideo(session.launched, VIDEO_DIR)
+    session = await open(declared)
+    await expect
+      .poll(async () => (await hyphenLines(session.page, 'lower'))?.hyphens)
+      .toBeGreaterThan(3)
+  } finally {
+    await closeAndSaveVideo(session.launched, VIDEO_DIR)
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('text that names its own language hyphenates under defaults that name none: a run, its character style, its paragraph style', async () => {
+  test.setTimeout(180_000)
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), 'genoffice-e2e-hyphenation-')))
+  const docPath = join(dir, 'run-language.docx')
+  const W_NS = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"'
+  const styles =
+    `<?xml version="1.0" encoding="UTF-8"?><w:styles ${W_NS}><w:docDefaults><w:rPrDefault><w:rPr>` +
+    '<w:rFonts w:ascii="Aptos" w:hAnsi="Aptos"/><w:sz w:val="24"/></w:rPr></w:rPrDefault></w:docDefaults>' +
+    '<w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/></w:style>' +
+    '<w:style w:type="paragraph" w:styleId="EnPara"><w:name w:val="EnPara"/><w:basedOn w:val="Normal"/><w:rPr><w:lang w:val="en-US"/></w:rPr></w:style>' +
+    '<w:style w:type="paragraph" w:styleId="EnChild"><w:name w:val="EnChild"/><w:basedOn w:val="EnPara"/></w:style>' +
+    '<w:style w:type="character" w:styleId="EnChar"><w:name w:val="EnChar"/><w:rPr><w:lang w:val="en-US"/></w:rPr></w:style></w:styles>'
+  const p = (tag: string, pStyle = '', rPr = '') =>
+    `<w:p>${pStyle ? `<w:pPr><w:pStyle w:val="${pStyle}"/></w:pPr>` : ''}<w:r>${rPr ? `<w:rPr>${rPr}</w:rPr>` : ''}` +
+    `<w:t>${LOWER.replace('lower', tag)}</w:t></w:r></w:p>`
+  const body =
+    p('direct', '', '<w:lang w:val="en-US"/>') +
+    p('plain') +
+    p('character', '', '<w:rStyle w:val="EnChar"/>') +
+    p('paragraph', 'EnPara') +
+    p('inherited', 'EnChild') +
+    p('other', 'EnPara', '<w:lang w:val="zh-CN"/>')
+  writeFileSync(
+    docPath,
+    await withWordPart(
+      await withWordPart(
+        await docxWith(body + SECT_PR),
+        'settings',
+        settingsXml('<w:autoHyphenation/>'),
+      ),
+      'styles',
+      styles,
+    ),
+  )
+  const session = await open(docPath)
+  try {
+    const { app, page } = session
+    for (const tag of ['direct', 'character', 'paragraph', 'inherited'])
+      await expect
+        .poll(async () => (await hyphenLines(page, tag))?.hyphens, { message: tag })
+        .toBeGreaterThan(3)
+    // Word leaves these whole: no language, and a run whose own language has no hyphenation
+    expect((await hyphenLines(page, 'plain'))!.hyphens).toBe(0)
+    expect((await hyphenLines(page, 'other'))!.hyphens).toBe(0)
+
+    // the dialog offers its settings: some of the text can be hyphenated
+    await clickMenu(app, ['Tools', 'Hyphenation…'])
+    const dialog = page.locator('.hyphenation-dialog')
+    await expect(dialog.getByLabel('Automatically hyphenate document')).toBeEnabled()
+    await expect(dialog.getByLabel('Automatically hyphenate document')).toBeChecked()
+    await page.keyboard.press('Escape')
+    await expect(dialog).toBeHidden()
+
+    // an edit and a save keep the languages where they were
+    await page.locator('.doc-page p', { hasText: 'plain' }).click()
+    await page.keyboard.type('zq')
+    await expect(page.locator('.doc-page p', { hasText: 'plain' })).toContainText('zq')
+    await saveFromMenu(app)
+    await expect
+      .poll(async () => await part(docPath, 'word/document.xml'), { timeout: 30_000 })
+      .toContain('zq')
+    const saved = await part(docPath, 'word/document.xml')
+    expect(saved.match(/<w:lang w:val="en-US"\/>/g)).toHaveLength(1)
+    expect(saved).toContain('<w:rStyle w:val="EnChar"/>')
+    expect(await part(docPath, 'word/styles.xml')).not.toMatch(
+      /<w:rPrDefault>(?:(?!<\/w:rPrDefault>).)*<w:lang/s,
+    )
+
+    const pdf = join(dir, 'run-language.pdf')
+    await app.evaluate(({ dialog: d, shell }, out) => {
+      d.showSaveDialog = async () => ({ canceled: false, filePath: out })
+      shell.showItemInFolder = () => {}
+    }, pdf)
+    expect(
+      await page.evaluate(() =>
+        (window as unknown as { __exportPdf: () => Promise<boolean> }).__exportPdf(),
+      ),
+    ).toBe(true)
+    expect(await pdfLineEndHyphens(pdf)).toBeGreaterThan(12)
+  } finally {
+    await closeAndSaveVideo(session.launched, VIDEO_DIR)
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
 test('Manual… asks about each word that could break at a line end and puts an optional hyphen where told', async () => {
   test.setTimeout(180_000)
   const dir = realpathSync(mkdtempSync(join(tmpdir(), 'genoffice-e2e-hyphenation-')))
@@ -301,7 +429,11 @@ test('Manual… asks about each word that could break at a line end and puts an 
     await page.locator('.hyphenation-dialog').getByRole('button', { name: 'Manual…' }).click()
     const manual = page.locator('.manual-hyphenation-dialog')
     const word = manual.locator('.manual-hyphenation-word')
-    const shown = async () => ((await word.textContent()) ?? '').replace(/-/g, '')
+    /** the word asked about, once the dialog has found it */
+    const shown = async () => {
+      await expect(word).toHaveAttribute('aria-busy', 'false')
+      return ((await word.textContent()) ?? '').replace(/-/g, '')
+    }
     await expect(word.locator('.manual-hyphenation-point.active')).toHaveCount(1, {
       timeout: 15_000,
     })
@@ -319,17 +451,23 @@ test('Manual… asks about each word that could break at a line end and puts an 
       }
       return out
     })
-    await manual.getByRole('button', { name: 'Yes' }).click()
+    // pressed twice in a row it is still one answer: the word is gone from the dialog with the first
+    await manual.getByRole('button', { name: 'Yes' }).evaluate(async (yes: HTMLButtonElement) => {
+      yes.click()
+      await Promise.resolve()
+      yes.click()
+    })
     await expect.poll(text).toContain(`${head}\u00ad${first.slice(head.length)}`)
+    expect(await text()).not.toContain('\u00ad\u00ad')
 
     // No: the word stays whole and the run moves on
-    await expect.poll(shown).not.toBe(first)
     const second = await shown()
+    expect(second).not.toBe(first)
     await manual.getByRole('button', { name: 'No' }).click()
-    await expect.poll(shown).not.toBe(second)
 
     // another place in the word, then stop
     const third = await shown()
+    expect(third).not.toBe(second)
     const points = word.locator('.manual-hyphenation-point')
     await points.first().click()
     await expect(points.first()).toHaveClass(/active/)

@@ -39,6 +39,7 @@ import type { BalloonMode, RevisionDisplayMode } from '../editor/revision-view'
 import type { RevisionFilter, RevisionScope } from '../editor/revision-filters'
 import type { ActionCommandId } from '../../shared/commands'
 import { RbCommand, useCommandGreyed, useRunCommand } from './ribbon-command'
+import { RbGroupMenu } from './ribbon-group-menu'
 import { TRANSLATE_LANGS, ribbonLangKey } from './translate-langs'
 import {
   IconAccept,
@@ -154,6 +155,7 @@ const DIRECT_PARA_ATTRS: Record<string, unknown> = {
   contextualSpacing: null,
   suppressAutoHyphens: null,
   mirrorIndents: null,
+  adjustRightInd: null,
   snapToGrid: null,
   keepNext: null,
   keepLines: null,
@@ -440,6 +442,8 @@ export async function insertImageFromDataUrl(
   editor: Editor,
   dataUrl: string,
   label = t('ribbonPicture'),
+  /** Word's Link to File: the file the picture also names, as a file: URL */
+  linkTarget?: string,
   /** the size to draw it at, when its pixels are denser than the page's (a 2× render) */
   displaySize?: { width: number; height: number },
 ): Promise<boolean> {
@@ -457,6 +461,7 @@ export async function insertImageFromDataUrl(
       widthPx: Math.round(natural.width * scale),
       heightPx: Math.round(natural.height * scale),
       label,
+      ...(linkTarget ? { linkTarget } : {}),
     })
     settleCaretAfterPicture(editor)
     return true
@@ -465,13 +470,24 @@ export async function insertImageFromDataUrl(
   }
 }
 
-export async function insertImageViaDialog(editor: Editor): Promise<void> {
+/**
+ * Asks for a picture file, then for the options Word keeps in its picture
+ * panel, and inserts it. With Link to File the picture keeps the file it came
+ * from (Word's Save with Document), in a table cell as in the body.
+ */
+export async function insertImageViaDialog(
+  editor: Editor,
+  askOptions: (fileName: string) => Promise<{ link: boolean } | undefined>,
+): Promise<void> {
   const picked = await window.desktop.pickImage()
   if (!picked) return
+  const options = await askOptions(picked.name)
+  if (!options) return
   await insertImageFromDataUrl(
     editor,
     `data:${picked.mime};base64,${picked.base64}`,
     t('ribbonPictureLabel', { name: picked.name }),
+    options.link ? picked.url : undefined,
   )
 }
 
@@ -991,7 +1007,10 @@ export function ReviewTab({
 
       <div className="ribbon-sep" />
 
-      <div className="ribbon-group">
+      <div className="ribbon-group" data-menu="1004">
+        <RbGroupMenu name={t('ribbonGroupComments')}>
+          <IconComment size={BIG} />
+        </RbGroupMenu>
         <div className="ribbon-group-items">
           <button
             className="rb-big"
@@ -1104,7 +1123,10 @@ export function ReviewTab({
 
       <div className="ribbon-sep" />
 
-      <div className="ribbon-group">
+      <div className="ribbon-group" data-menu="1002">
+        <RbGroupMenu name={t('ribbonGroupTracking')}>
+          <IconTrackChanges size={BIG} />
+        </RbGroupMenu>
         <div className="ribbon-group-items">
           <button
             className={`rb-big ${trackChanges ? 'active' : ''}`}
@@ -1236,7 +1258,10 @@ export function ReviewTab({
 
       <div className="ribbon-sep" />
 
-      <div className="ribbon-group">
+      <div className="ribbon-group" data-menu="1003">
+        <RbGroupMenu name={t('ribbonGroupChanges')}>
+          <IconAccept size={BIG} />
+        </RbGroupMenu>
         <div className="ribbon-group-items">
           <div className="rb-split-wrap">
             <button
@@ -1353,7 +1378,10 @@ export function ReviewTab({
 
       <div className="ribbon-sep" />
 
-      <div className="ribbon-group">
+      <div className="ribbon-group" data-menu="1001">
+        <RbGroupMenu name={t('ribbonGroupProtect')}>
+          <IconLock size={BIG} />
+        </RbGroupMenu>
         <div className="ribbon-group-items">
           <button
             className={`rb-big ${protectActive ? 'active' : ''}`}

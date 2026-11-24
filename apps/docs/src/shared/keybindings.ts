@@ -25,6 +25,11 @@ const NAMED_KEYS = [
   'PageDown',
   'Delete',
   'Backspace',
+  // the keypad's own keys, which Word for Mac binds apart from their twins on the main block
+  'Clear',
+  'NumEnter',
+  'NumPlus',
+  'NumMinus',
 ]
 const KEY = new RegExp(`^(?:[A-Z0-9]|F\\d{1,2}|[-=,./;'\`\\[\\]\\\\]|${NAMED_KEYS.join('|')})$`)
 

@@ -6,13 +6,13 @@ import {
   assertOnlyTouchedEntriesChanged,
 } from '@genoffice/xlsx-gateway/gateway/xlsx-gateway'
 import { relsPathFor, resolveRelTarget } from '@genoffice/xlsx-gateway/gateway/xlsx-drawing-add'
+import { renameTablesInWorksheet } from '@genoffice/xlsx-gateway/gateway/xlsx-sheet-clone'
 import {
   classifyRemovedSheetRels,
   definedNamesUseToken,
   formatSheetQualifier,
   partPathForRels,
   pivotCacheReadsFromSheet,
-  prepareClonedSheetRels,
   renameSheetInFormula,
   renameSheetInPivotCacheSource,
   sanitizeClonedWorksheetXml,
@@ -550,23 +550,183 @@ describe('sheet duplicate save', () => {
     expect(copy).not.toContain('r:id="rId2"')
   })
 
-  it('fails closed on drawings, tables, and sheet-scoped defined names', async () => {
+  const REL = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships'
+  const RELS_OPEN =
+    '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+  const duplicateData = {
+    renames: [],
+    additions: [{ name: 'Data Copy', sourceSheetName: 'Data' }],
+    removals: [],
+    order: ['Data', 'Data Copy', 'Other', 'My Sheet'],
+  }
+
+  async function fixtureWith(
+    files: Record<string, string>,
+    overrides: Record<string, string> = {},
+  ): Promise<Buffer> {
     const zip = await JSZip.loadAsync(await buildSheetsFixture())
+    for (const [path, content] of Object.entries(files)) zip.file(path, content)
+    const types = await zip.file('[Content_Types].xml')!.async('text')
     zip.file(
-      'xl/worksheets/_rels/sheet1.xml.rels',
-      '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
-        '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing" Target="../drawings/drawing1.xml"/>' +
-        '</Relationships>',
+      '[Content_Types].xml',
+      types.replace(
+        '</Types>',
+        Object.entries(overrides)
+          .map(([path, type]) => `<Override PartName="/${path}" ContentType="${type}"/>`)
+          .join('') + '</Types>',
+      ),
     )
-    const withDrawing = await zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' })
-    await expect(
-      applyCellEditsToXlsx(withDrawing, [], [], [], {
-        renames: [],
-        additions: [{ name: 'Data Copy', sourceSheetName: 'Data' }],
-        removals: [],
-        order: ['Data', 'Data Copy', 'Other', 'My Sheet'],
-      }),
-    ).rejects.toThrow('not supported yet')
+    return zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' })
+  }
+
+  it('gives the copy its own comments, their shapes and threads', async () => {
+    const thread = '{11111111-2222-3333-4444-555555555555}'
+    const source = await fixtureWith(
+      {
+        'xl/worksheets/_rels/sheet1.xml.rels':
+          RELS_OPEN +
+          `<Relationship Id="rId1" Type="${REL}/comments" Target="../comments1.xml"/>` +
+          `<Relationship Id="rId2" Type="${REL}/vmlDrawing" Target="../drawings/vmlDrawing1.vml"/>` +
+          '<Relationship Id="rId3" Type="http://schemas.microsoft.com/office/2017/10/relationships/threadedComment" Target="../threadedComments/threadedComment1.xml"/>' +
+          '</Relationships>',
+        'xl/comments1.xml': `<comments><authors><author>tc=${thread}</author></authors><commentList><comment ref="A1" authorId="0"><text><t>note</t></text></comment></commentList></comments>`,
+        'xl/drawings/vmlDrawing1.vml': '<xml><v:shape id="_x0000_s1025"/></xml>',
+        'xl/threadedComments/threadedComment1.xml': `<ThreadedComments><threadedComment ref="A1" id="${thread}"><text>note</text></threadedComment></ThreadedComments>`,
+      },
+      {
+        'xl/comments1.xml':
+          'application/vnd.openxmlformats-officedocument.spreadsheetml.comments+xml',
+        'xl/threadedComments/threadedComment1.xml': 'application/vnd.ms-excel.threadedcomments+xml',
+      },
+    )
+    const mutation = await applyCellEditsToXlsx(source, [], [], [], duplicateData)
+    expect(mutation.addedEntries).toEqual([
+      'xl/comments2.xml',
+      'xl/drawings/vmlDrawing2.vml',
+      'xl/threadedComments/threadedComment2.xml',
+      'xl/worksheets/_rels/sheet4.xml.rels',
+      'xl/worksheets/sheet4.xml',
+    ])
+    expect(() => assertOnlyTouchedEntriesChanged(mutation)).not.toThrow()
+    const rels = await entryText(mutation.buffer, 'xl/worksheets/_rels/sheet4.xml.rels')
+    expect(rels).toContain('Id="rId1" Type="' + REL + '/comments" Target="../comments2.xml"')
+    expect(rels).toContain('Target="../drawings/vmlDrawing2.vml"')
+    expect(rels).toContain('Target="../threadedComments/threadedComment2.xml"')
+    const types = await entryText(mutation.buffer, '[Content_Types].xml')
+    expect(types).toContain('PartName="/xl/comments2.xml"')
+    expect(types).toContain('PartName="/xl/threadedComments/threadedComment2.xml"')
+    // the copy's thread has an id of its own, the same in both of its parts
+    const comments = await entryText(mutation.buffer, 'xl/comments2.xml')
+    const threads = await entryText(mutation.buffer, 'xl/threadedComments/threadedComment2.xml')
+    const copiedId = /id="(\{[^}]+\})"/.exec(threads)?.[1]
+    expect(copiedId).toMatch(/^\{[0-9A-F-]{36}\}$/)
+    expect(copiedId).not.toBe(thread)
+    expect(comments).toContain(`tc=${copiedId}`)
+    expect(await entryText(mutation.buffer, 'xl/comments1.xml')).toContain(`tc=${thread}`)
+  })
+
+  it('gives the copy its own drawing and charts, reading from the copy', async () => {
+    const source = await fixtureWith(
+      {
+        'xl/worksheets/_rels/sheet1.xml.rels':
+          RELS_OPEN +
+          `<Relationship Id="rId1" Type="${REL}/drawing" Target="../drawings/drawing1.xml"/>` +
+          '</Relationships>',
+        'xl/drawings/drawing1.xml':
+          '<xdr:wsDr><c:chart r:id="rId1"/><a:blip r:embed="rId2"/></xdr:wsDr>',
+        'xl/drawings/_rels/drawing1.xml.rels':
+          RELS_OPEN +
+          `<Relationship Id="rId1" Type="${REL}/chart" Target="../charts/chart7.xml"/>` +
+          `<Relationship Id="rId2" Type="${REL}/image" Target="../media/image1.png"/>` +
+          '</Relationships>',
+        'xl/charts/chart7.xml':
+          '<c:chartSpace><c:f>Data!$A$1:$A$2</c:f><c:f>Other!$A$1</c:f><f>Data!$B$1</f></c:chartSpace>',
+        'xl/media/image1.png': 'png',
+      },
+      {
+        'xl/drawings/drawing1.xml': 'application/vnd.openxmlformats-officedocument.drawing+xml',
+        'xl/charts/chart7.xml': 'application/vnd.openxmlformats-officedocument.drawingml.chart+xml',
+      },
+    )
+    const mutation = await applyCellEditsToXlsx(source, [], [], [], duplicateData)
+    expect(mutation.addedEntries).toEqual([
+      'xl/charts/chart2.xml',
+      'xl/drawings/_rels/drawing2.xml.rels',
+      'xl/drawings/drawing2.xml',
+      'xl/worksheets/_rels/sheet4.xml.rels',
+      'xl/worksheets/sheet4.xml',
+    ])
+    expect(() => assertOnlyTouchedEntriesChanged(mutation)).not.toThrow()
+    expect(await entryText(mutation.buffer, 'xl/worksheets/_rels/sheet4.xml.rels')).toContain(
+      'Target="../drawings/drawing2.xml"',
+    )
+    const drawingRels = await entryText(mutation.buffer, 'xl/drawings/_rels/drawing2.xml.rels')
+    expect(drawingRels).toContain('Target="../charts/chart2.xml"')
+    // pictures are shared, not copied
+    expect(drawingRels).toContain('Target="../media/image1.png"')
+    expect(await entryText(mutation.buffer, 'xl/charts/chart2.xml')).toBe(
+      "<c:chartSpace><c:f>'Data Copy'!$A$1:$A$2</c:f><c:f>Other!$A$1</c:f><f>'Data Copy'!$B$1</f></c:chartSpace>",
+    )
+    expect(await entryText(mutation.buffer, 'xl/charts/chart7.xml')).toContain('Data!$A$1:$A$2')
+    const types = await entryText(mutation.buffer, '[Content_Types].xml')
+    expect(types).toContain('PartName="/xl/drawings/drawing2.xml"')
+    expect(types).toContain('PartName="/xl/charts/chart2.xml"')
+  })
+
+  it('gives the copy its own table under a new name and id', async () => {
+    const zip = await JSZip.loadAsync(await buildSheetsFixture())
+    const sheet1 = await zip.file('xl/worksheets/sheet1.xml')!.async('text')
+    const source = await fixtureWith(
+      {
+        'xl/worksheets/sheet1.xml': sheet1
+          .replace("<f>'My Sheet'!A1*2</f>", '<f>SUM(Sales[Amount])+SalesTotal</f>')
+          .replace(
+            '</worksheet>',
+            '<tableParts count="2"><tablePart r:id="rId1"/><tablePart r:id="rId2"/></tableParts></worksheet>',
+          ),
+        'xl/worksheets/_rels/sheet1.xml.rels':
+          RELS_OPEN +
+          `<Relationship Id="rId1" Type="${REL}/table" Target="../tables/table3.xml"/>` +
+          `<Relationship Id="rId2" Type="${REL}/table" Target="../tables/table4.xml"/>` +
+          '</Relationships>',
+        'xl/tables/table3.xml':
+          '<table id="3" name="Sales" displayName="Sales" ref="A1:A2"><tableColumns count="1"><tableColumn id="1" name="Amount"><calculatedColumnFormula>Sales[[#This Row],[Amount]]*Rates[Rate]</calculatedColumnFormula></tableColumn></tableColumns></table>',
+        'xl/tables/table4.xml':
+          '<table id="4" name="Rates" displayName="Rates" ref="C1:C2"><tableColumns count="1"><tableColumn id="1" name="Rate"/></tableColumns></table>',
+      },
+      {
+        'xl/tables/table3.xml':
+          'application/vnd.openxmlformats-officedocument.spreadsheetml.table+xml',
+        'xl/tables/table4.xml':
+          'application/vnd.openxmlformats-officedocument.spreadsheetml.table+xml',
+      },
+    )
+    const mutation = await applyCellEditsToXlsx(source, [], [], [], duplicateData)
+    expect(() => assertOnlyTouchedEntriesChanged(mutation)).not.toThrow()
+    expect(mutation.addedEntries).toContain('xl/tables/table1.xml')
+    const table = await entryText(mutation.buffer, 'xl/tables/table1.xml')
+    expect(table).toContain('<table id="5" name="Sales_2" displayName="Sales_2" ref="A1:A2">')
+    // the sibling table is cloned after this one, and its new name still reaches this formula
+    expect(table).toContain('Sales_2[[#This Row],[Amount]]*Rates_2[Rate]')
+    const copy = await entryText(mutation.buffer, 'xl/worksheets/sheet4.xml')
+    expect(copy).toContain('<f>SUM(Sales_2[Amount])+SalesTotal</f>')
+    expect(copy).toContain('<tablePart r:id="rId1"/><tablePart r:id="rId2"/>')
+    expect(await entryText(mutation.buffer, 'xl/worksheets/sheet1.xml')).toContain(
+      '<f>SUM(Sales[Amount])+SalesTotal</f>',
+    )
+    expect(await entryText(mutation.buffer, 'xl/tables/table3.xml')).toContain('name="Sales"')
+  })
+
+  it('fails closed on parts it cannot copy and on sheet-scoped defined names', async () => {
+    const withControl = await fixtureWith({
+      'xl/worksheets/_rels/sheet1.xml.rels':
+        RELS_OPEN +
+        `<Relationship Id="rId1" Type="${REL}/ctrlProp" Target="../ctrlProps/ctrlProp1.xml"/>` +
+        '</Relationships>',
+    })
+    await expect(applyCellEditsToXlsx(withControl, [], [], [], duplicateData)).rejects.toThrow(
+      'not supported yet',
+    )
 
     // "Other" carries a sheet-scoped Print_Area (localSheetId=1).
     await expect(
@@ -588,21 +748,31 @@ describe('sheet duplicate save', () => {
     expect(
       stripPageSetupRelIds('<pageSetup paperSize="9" r:id="rId3" orientation="portrait"/>'),
     ).toBe('<pageSetup paperSize="9" orientation="portrait"/>')
-    const hyperlinkOnly =
-      '<Relationships><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="https://example.com" TargetMode="External"/></Relationships>'
-    expect(prepareClonedSheetRels(hyperlinkOnly, 'Data')).toEqual({
-      relsXml: hyperlinkOnly,
-      droppedPrinterSettings: false,
-    })
-    const printerOnly =
-      '<Relationships><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/printerSettings" Target="../printerSettings/printerSettings1.bin"/></Relationships>'
-    expect(prepareClonedSheetRels(printerOnly, 'Data')).toEqual({
-      relsXml: null,
-      droppedPrinterSettings: true,
-    })
-    const commentRels =
-      '<Relationships><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/comments" Target="../comments1.xml"/></Relationships>'
-    expect(() => prepareClonedSheetRels(commentRels, 'Data')).toThrow(SheetEditError)
+    const names = new Map([['Sales', 'Sales_2']])
+    expect(
+      renameTablesInWorksheet(
+        '<c><f>SUM(Sales)+Sales[[#Totals],[A]]+SalesTax+Sales!A1+SALES(1)</f></c><formula1>sales[A]</formula1>',
+        names,
+      ),
+    ).toBe(
+      '<c><f>SUM(Sales_2)+Sales_2[[#Totals],[A]]+SalesTax+Sales!A1+SALES(1)</f></c><formula1>Sales_2[A]</formula1>',
+    )
+    const untouched =
+      '<f>IF(A1="Sales","Sales",Sales[[#This Row],[Sales]])+Sales[Sales]+\'Sales\'!A1+LEN(&quot;Sales&quot;)</f>'
+    expect(renameTablesInWorksheet(untouched, names)).toBe(
+      untouched
+        .replace('Sales[[#This', 'Sales_2[[#This')
+        .replace('+Sales[Sales]', '+Sales_2[Sales]'),
+    )
+    expect(
+      renameTablesInWorksheet(
+        '<f>A[x]+B[x]</f>',
+        new Map([
+          ['A', 'B'],
+          ['B', 'B_2'],
+        ]),
+      ),
+    ).toBe('<f>B[x]+B_2[x]</f>')
   })
 })
 

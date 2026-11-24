@@ -156,8 +156,11 @@ export function bookmarkNamesOf(xml: string): {
 } {
   const names: string[] = []
   const hidden: string[] = []
-  // a bookmark on a note mark stays on the mark: the run carries it
-  const onMarks = new Set([...noteMarkBookmarks(xml).values()].flat())
+  // a bookmark on a note mark, or in the result of a SET / ASK, stays there: the run carries it
+  const onMarks = new Set([
+    ...[...noteMarkBookmarks(xml).values()].flat(),
+    ...ranRuleFields(xml).names,
+  ])
   for (const m of xml.matchAll(/<w:bookmarkStart [^>]*w:name=(?:"([^"]+)"|'([^']+)')/g)) {
     const name = decodeEntities(m[1] ?? m[2] ?? '')
     if (onMarks.has(name)) continue
@@ -425,6 +428,14 @@ export function ptabDisplayStops(pNode: XNode): import('./types').TabStop[] {
  */
 /** paragraphs whose only fields are XE / REF stay editable (extractRuns round-trips them) */
 /** Simple instructions foldable into an editable inline-field run (the cached result is the display text) */
+/**
+ * How the two ends of a link field reach the run reader: each end is handed
+ * over as a closed field of its own carrying this instruction, so a result
+ * that runs across paragraphs reads as ordinary content between two markers.
+ * It is never written to a file.
+ */
+export const LINK_MARK_INSTR_RE = /^\s*GENOFFICE\.LINK(BEGIN|END)(?: ([\s\S]*))?$/
+
 export const SIMPLE_INLINE_FIELD_RE =
   /^\s*(DATE|TIME|CREATEDATE|SAVEDATE|NUMPAGES|FILENAME|AUTHOR|PAGEREF|NOTEREF|PAGE)\b/
 
@@ -481,17 +492,53 @@ export const MERGE_RULE_INSTR_RE = /^\s*(?:IF|SKIPIF|NEXTIF)\s[^«]*«[^»]+»/
  * Anything else (a PAGE operand, a field in the result) stays byte-preserved.
  */
 export function mergeIfsFoldable(xml: string): boolean {
+  return scanMergeRules(xml) !== null
+}
+
+/** the SET and ASK fields of a paragraph that Word has run */
+export interface RanRuleFields {
+  /** the bookmarks they hold in their results */
+  names: Set<string>
+  /** which they are among the paragraph's top-level rule fields, counted from 0 */
+  fields: Set<number>
+}
+
+/**
+ * The SET and ASK fields of the paragraph that hold a bookmark in their
+ * result: Word writes the text it gave the bookmark there, under the bookmark
+ * itself. Such a bookmark belongs to its field, not to the paragraph.
+ */
+export function ranRuleFields(xml: string): RanRuleFields {
+  const none = { names: new Set<string>(), fields: new Set<number>() }
+  if (!xml.includes('<w:bookmarkStart') || !/\b(?:SET|ASK)\s/.test(xml)) return none
+  return scanMergeRules(xml) ?? none
+}
+
+/** the bookmark a SET or an ASK instruction names */
+export const ruleBookmarkName = (instr: string): string | undefined =>
+  /^\s*(?:SET|ASK)\s+(?:"([^"]+)"|([^\s"]+))/
+    .exec(instr)
+    ?.slice(1)
+    .find((name) => name)
+
+/** null when a mail-merge rule field of the paragraph cannot fold; else its SET / ASK fields that have run */
+function scanMergeRules(xml: string): RanRuleFields | null {
   interface Frame {
     own: string
     inResult: boolean
     parent: Frame | null
     children: number
     ok: boolean
-    bookmark: boolean
+    /** bookmarks opened inside the field, and whether each sits whole in its result */
+    bookmarks: string[]
+    bookmarksWhole: boolean
+    closed: number
   }
+  const ran: RanRuleFields = { names: new Set(), fields: new Set() }
+  let rules = 0
   const stack: Frame[] = []
   const re =
-    /<w:fldChar\b[^>]*>|<w:fldSimple\b|<w:bookmarkStart\b|<w:instrText\b[^>]*>([\s\S]*?)<\/w:instrText>/g
+    /<w:fldChar\b[^>]*>|<w:fldSimple\b|<w:bookmark(?:Start|End)\b[^>]*>|<w:instrText\b[^>]*>([\s\S]*?)<\/w:instrText>/g
   let m: RegExpExecArray | null
   while ((m = re.exec(xml)) !== null) {
     const top = stack[stack.length - 1]
@@ -504,7 +551,13 @@ export function mergeIfsFoldable(xml: string): boolean {
       continue
     }
     if (m[0].startsWith('<w:bookmarkStart')) {
-      if (top) top.bookmark = true
+      if (!top) continue
+      top.bookmarks.push(decodeEntities(/\bw:name="([^"]*)"/.exec(m[0])?.[1] ?? ''))
+      if (!top.inResult) top.bookmarksWhole = false
+      continue
+    }
+    if (m[0].startsWith('<w:bookmarkEnd')) {
+      if (top) top.closed++
       continue
     }
     const type = /\bw:fldCharType\s*=\s*["'](begin|separate|end)["']/.exec(m[0])?.[1]
@@ -520,7 +573,9 @@ export function mergeIfsFoldable(xml: string): boolean {
         parent: top ?? null,
         children: 0,
         ok: true,
-        bookmark: false,
+        bookmarks: [],
+        bookmarksWhole: true,
+        closed: 0,
       })
     } else if (type === 'separate') {
       if (top) top.inResult = true
@@ -530,14 +585,26 @@ export function mergeIfsFoldable(xml: string): boolean {
       if (frame.parent) {
         if (bareMergeFieldName(frame.own) === null) frame.parent.ok = false
       } else if (/^\s*(?:IF|SKIPIF|NEXTIF)\b/.test(frame.own)) {
-        if (!frame.ok || frame.children === 0 || /[«»]/.test(frame.own)) return false
+        if (!frame.ok || frame.children === 0 || /[«»]/.test(frame.own)) return null
       } else if (MERGE_CONTROL_FIELD_RE.test(frame.own)) {
-        // a SET or an ASK Word has run keeps its bookmark in the result
-        if (frame.children > 0 || frame.bookmark) return false
+        if (frame.children > 0) return null
+        const nth = rules++
+        if (frame.bookmarks.length === 0) continue
+        // a SET or an ASK Word has run keeps its bookmark in the result: only the
+        // one it names, opened and closed there, is the field's own
+        const [name] = frame.bookmarks
+        const own =
+          frame.bookmarks.length === 1 &&
+          frame.closed === 1 &&
+          frame.bookmarksWhole &&
+          name === ruleBookmarkName(frame.own)
+        if (!own) return null
+        ran.names.add(name)
+        ran.fields.add(nth)
       }
     }
   }
-  return true
+  return ran
 }
 
 /** every fldChar closes inside the paragraph: a stray end (the last TOC entry
@@ -651,6 +718,7 @@ export function onlyXeFields(xml: string): boolean {
     return (
       text.trim() === '' ||
       /^\s*(?:XE|TA|TC)[\s"\\]/.test(text) ||
+      LINK_MARK_INSTR_RE.test(text) ||
       /^\s*REF\s/.test(text) ||
       ZOTERO_INLINE_FIELD_RE.test(text) ||
       SIMPLE_INLINE_FIELD_RE.test(text) ||
@@ -1303,11 +1371,53 @@ export function tableLookOf(tblPr: XNode | undefined): NonNullable<TableModel['t
   }
 }
 
-function borderLinesOf(node: XNode | undefined, withInside: true): TableBorders | undefined
+/**
+ * A table colour's theme reference against the live palette. Word's cached hex
+ * stands while it still says the same colour (the resolution here is off by a
+ * rounding step at most), so a document on its own theme reads as it always did.
+ */
+function themedTableHex(
+  resolved: string | null | undefined,
+  cached: string | undefined,
+): string | undefined {
+  if (!resolved) return cached
+  if (!cached || !/^[0-9a-fA-F]{6}$/.test(cached)) return resolved
+  const near = [0, 2, 4].every(
+    (i) =>
+      Math.abs(parseInt(resolved.slice(i, i + 2), 16) - parseInt(cached.slice(i, i + 2), 16)) <= 2,
+  )
+  return near ? cached : resolved
+}
 
-function borderLinesOf(node: XNode | undefined, withInside: false): CellBorders | undefined
+/** shdDisplayFill for table, row and cell shading: a w:themeFill follows the theme */
+export function tableShdFill(
+  shd: XNode | undefined,
+  theme?: ThemeColors | null,
+): string | undefined {
+  const cached = shdDisplayFill(shd)
+  if (!shd || !theme) return cached
+  const a = attrsOf(shd)
+  if (!a['w:themeFill'] && !a['w:themeColor']) return cached
+  return themedTableHex(shdDisplayFill(shd, theme), cached)
+}
 
-function borderLinesOf(node: XNode | undefined, withInside: boolean): TableBorders | undefined {
+function borderLinesOf(
+  node: XNode | undefined,
+  withInside: true,
+  theme?: ThemeColors | null,
+): TableBorders | undefined
+
+function borderLinesOf(
+  node: XNode | undefined,
+  withInside: false,
+  theme?: ThemeColors | null,
+): CellBorders | undefined
+
+function borderLinesOf(
+  node: XNode | undefined,
+  withInside: boolean,
+  theme?: ThemeColors | null,
+): TableBorders | undefined {
   if (!node) return undefined
   const ALIAS: Record<string, keyof TableBorders> = {
     'w:top': 'top',
@@ -1327,10 +1437,18 @@ function borderLinesOf(node: XNode | undefined, withInside: boolean): TableBorde
     if (!child || borders[side]) continue
     const a = attrsOf(child)
     if (!a['w:val']) continue
+    const cached = a['w:color'] ? stripHash(a['w:color']) : undefined
+    const color =
+      theme && a['w:themeColor']
+        ? themedTableHex(
+            resolveThemeColor(a['w:themeColor'], theme, a['w:themeTint'], a['w:themeShade']),
+            cached,
+          )
+        : cached
     borders[side] = {
       style: a['w:val'],
       ...(a['w:sz'] ? { szEighths: Number(a['w:sz']) || undefined } : {}),
-      ...(a['w:color'] ? { color: stripHash(a['w:color']) } : {}),
+      ...(color ? { color } : {}),
     }
   }
   return Object.keys(borders).length > 0 ? borders : undefined
@@ -1451,23 +1569,26 @@ export function mergedBorderLinesOf(
   parent: XNode | undefined,
   tag: string,
   withInside: true,
+  theme?: ThemeColors | null,
 ): TableBorders | undefined
 
 export function mergedBorderLinesOf(
   parent: XNode | undefined,
   tag: string,
   withInside: false,
+  theme?: ThemeColors | null,
 ): CellBorders | undefined
 
 export function mergedBorderLinesOf(
   parent: XNode | undefined,
   tag: string,
   withInside: boolean,
+  theme?: ThemeColors | null,
 ): TableBorders | undefined {
   if (!parent) return undefined
   let merged: TableBorders | undefined
   for (const node of findChildren(parent, tag)) {
-    const b = borderLinesOf(node, withInside as true)
+    const b = borderLinesOf(node, withInside as true, theme)
     if (b) merged = { ...merged, ...b }
   }
   return merged

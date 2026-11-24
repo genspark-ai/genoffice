@@ -34,6 +34,17 @@ const alignRange = rangeSlot()
 
 export const searchPluginKey = new PluginKey<DecorationSet>('docSearch')
 
+const hasKeptHits = (set: DecorationSet | undefined): boolean =>
+  !!set &&
+  set !== DecorationSet.empty &&
+  set.find(undefined, undefined, (spec) => spec.kept === true).length > 0
+
+function dropKeptHits(view: EditorView): boolean {
+  if (hasKeptHits(searchPluginKey.getState(view.state)))
+    view.dispatch(view.state.tr.setMeta(searchPluginKey, { ranges: [], activeIndex: 0 }))
+  return false
+}
+
 /** decorates search hits; FindPanel pushes ranges via setMeta(searchPluginKey) */
 export const SearchHighlightExtension = Extension.create({
   name: 'docSearch',
@@ -50,18 +61,30 @@ export const SearchHighlightExtension = Extension.create({
                 tr.doc,
                 meta.ranges.map((r, i) =>
                   // inline-rules: allow — search highlight
-                  Decoration.inline(r.from, r.to, {
-                    class: i === meta.activeIndex ? 'search-hit search-hit-active' : 'search-hit',
-                  }),
+                  Decoration.inline(
+                    r.from,
+                    r.to,
+                    {
+                      class: i === meta.activeIndex ? 'search-hit search-hit-active' : 'search-hit',
+                    },
+                    { kept: meta.kept === true },
+                  ),
                 ),
               )
             }
+            if (tr.docChanged && hasKeptHits(old)) return DecorationSet.empty
             return old.map(tr.mapping, tr.doc)
           },
         },
         props: {
           decorations(state) {
             return this.getState(state)
+          },
+          handleDOMEvents: {
+            mousedown: (view) => dropKeptHits(view),
+            // a key that belongs to an input method composition must not meet a transaction
+            keydown: (view, event) =>
+              event.isComposing || event.keyCode === 229 ? false : dropKeptHits(view),
           },
         },
       }),
@@ -1038,6 +1061,8 @@ class TabLayoutView {
   }
 }
 
+const IS_MAC = typeof navigator !== 'undefined' && /mac/i.test(navigator.platform)
+
 export const TabStopExtension = Extension.create({
   name: 'tabStops',
   addStorage() {
@@ -1064,9 +1089,17 @@ export const TabStopExtension = Extension.create({
       if (isInTable(this.editor.state)) return false
       return true
     }
+    // Word for Mac's ⌃Tab / ⌥Tab: a tab character where Tab itself moves on (a table cell, a list)
+    const tabCharacter = () => {
+      const { state, view } = this.editor
+      if (!this.editor.isEditable || !state.selection.$from.parent.isTextblock) return false
+      view.dispatch(state.tr.insertText('\t').scrollIntoView())
+      return true
+    }
     return {
       Tab: insertTab,
       'Shift-Tab': swallowShiftTab,
+      ...(IS_MAC ? { 'Ctrl-Tab': tabCharacter, 'Alt-Tab': tabCharacter } : {}),
     }
   },
   addProseMirrorPlugins() {

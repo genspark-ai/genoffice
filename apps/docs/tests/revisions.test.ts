@@ -3,9 +3,9 @@ import JSZip from 'jszip'
 import { Editor } from '@tiptap/core'
 import type { Fragment, Node as ProseNode } from '@tiptap/pm/model'
 import { TextSelection } from '@tiptap/pm/state'
-import { addRowAfter, deleteRow } from '@tiptap/pm/tables'
+import { CellSelection, addRowAfter, deleteRow } from '@tiptap/pm/tables'
 import { editorExtensions } from '../src/renderer/editor/extensions'
-import { parseDocx, saveDocx } from '@genoffice/docx-engine'
+import { applyTrackedChangesXml, parseDocx, saveDocx } from '@genoffice/docx-engine'
 import {
   blocksToPmDoc,
   pmDocToSavePlan,
@@ -19,7 +19,12 @@ import {
   TABLE_XML,
 } from '../../../packages/docx-engine/tests/helpers/build-docx'
 
-import { deleteTableColumn, insertRowsOrColumns } from '../src/renderer/editor/table-ops'
+import {
+  deleteCells,
+  deleteTableColumn,
+  insertCells,
+  insertRowsOrColumns,
+} from '../src/renderer/editor/table-ops'
 import { replaceInlineRange } from '../src/renderer/ai/protocol'
 import { setAuthorName } from '../src/renderer/author-name'
 import {
@@ -29,6 +34,7 @@ import {
   applyRevisionsBy,
   collectRevisions,
   coversWholeSentences,
+  downShiftsOf,
   revisionCount,
   gotoRevision,
   rejectAllRevisions,
@@ -1014,7 +1020,7 @@ describe('table row/cell revisions (rowIns/rowDel/cellIns/cellDel)', () => {
     editor.destroy()
   })
 
-  it('reject all: deleted row restored to body text, inserted cell removed, trPr revision record stripped', async () => {
+  it('reject all: deleted row restored to body text, inserted cell taken out of its row, trPr revision record stripped', async () => {
     const { editor, parsed } = await openRevisionTable()
     rejectAllRevisions(editor)
     const plan = pmDocToSavePlan(editor.getJSON() as PmNode, parsed.blocks)
@@ -1025,9 +1031,9 @@ describe('table row/cell revisions (rowIns/rowDel/cellIns/cellDel)', () => {
     expect(model.rows[1].map((c) => c.paras[0])).toEqual(['A2del', 'B2del'])
     expect(model.rows[1][0].richParas?.[0]?.runs?.[0]?.del).toBeUndefined()
     expect(model.rowRevisions).toBeUndefined()
-    // rejecting cellIns = clear the cell's content (grid preserved, cell not removed outright)
-    expect(model.rows[2].map((c) => c.paras[0])).toEqual(['', 'B3'])
-    expect(model.rows[2][0].cellRevision).toBeUndefined()
+    // rejecting cellIns takes the cell out of its row: the row closes up and stops a column short
+    expect(model.rows[2].filter((c) => !c.gridGap).map((c) => c.paras[0])).toEqual(['B3'])
+    expect(model.rows[2].some((c) => c.cellRevision)).toBe(false)
     expect(collectRevisions(editor.state.doc)).toHaveLength(0)
     editor.destroy()
   })
@@ -1677,6 +1683,309 @@ describe('recorder: Delete, cross-paragraph cuts, paragraph marks, columns, AI a
     expect(collectRevisions(again.state.doc)).toEqual([])
     editor.destroy()
     again.destroy()
+  })
+
+  it('inserting a cell that shifts the row right while tracking marks the new cell cellIns', async () => {
+    const { editor, parsed } = await trackedDoc(TABLE_XML)
+    selectFirstCell(editor)
+    expect(insertCells('shiftRight')(editor.state, editor.view.dispatch)).toBe(true)
+    expect(kinds(editor)).toEqual(['cellIns'])
+    const { xml, bytes } = await savedXml(editor, parsed)
+    expect(xml.match(/<w:cellIns w:id="\d+" w:author="Structural Reviewer"/g)).toHaveLength(1)
+    expect(xml).not.toContain('<w:ins ')
+    const rows = (await parseDocx(bytes)).blocks[0].table!.rows
+    expect(rows[0][0].cellRevision?.kind).toBe('ins')
+    expect(rows[1].filter((c) => !c.gridGap)).toHaveLength(rows[0].length - 1)
+  })
+
+  const cellTexts = (editor: Editor) => {
+    const rows: string[][] = []
+    editor.state.doc.firstChild!.forEach((row) => {
+      const cells: string[] = []
+      row.forEach((cell) => cells.push(cell.attrs.gridGap ? '-' : cell.textContent))
+      rows.push(cells)
+    })
+    return rows
+  }
+
+  it('rejecting a cell shifted in to the right moves the row back', async () => {
+    const { editor, parsed } = await trackedDoc(TABLE_XML)
+    selectFirstCell(editor)
+    insertCells('shiftRight')(editor.state, editor.view.dispatch)
+    expect(cellTexts(editor)).toEqual([
+      ['', 'A1', 'B1'],
+      ['A2', 'B2', '-'],
+    ])
+    rejectAllRevisions(editor)
+    expect(kinds(editor)).toEqual([])
+    expect(cellTexts(editor)).toEqual([
+      ['A1', 'B1'],
+      ['A2', 'B2'],
+    ])
+    const { xml } = await savedXml(editor, parsed)
+    expect(xml).not.toContain('gridAfter')
+    expect(xml).not.toContain('w:cellIns')
+    expect(xml.match(/<w:gridCol /g)).toHaveLength(2)
+    editor.destroy()
+  })
+
+  it('rejecting a cell shifted in downward moves the column back and drops the added row', async () => {
+    const { editor, parsed } = await trackedDoc(TABLE_XML)
+    selectFirstCell(editor)
+    insertCells('shiftDown')(editor.state, editor.view.dispatch)
+    expect(cellTexts(editor)).toEqual([
+      ['', 'B1'],
+      ['A1', 'B2'],
+      ['A2', ''],
+    ])
+    expect(kinds(editor)).toEqual(['cellIns', 'cellIns'])
+    // the inserted cell alone: the row it added goes with it
+    rejectCurrentRevision(editor)
+    expect(kinds(editor)).toEqual([])
+    expect(cellTexts(editor)).toEqual([
+      ['A1', 'B1'],
+      ['A2', 'B2'],
+    ])
+    const { xml } = await savedXml(editor, parsed)
+    expect(xml).not.toContain('w:cellIns')
+    expect(xml.match(/<w:tr>/g) ?? xml.match(/<w:tr[ >]/g)).toHaveLength(2)
+
+    selectFirstCell(editor)
+    insertCells('shiftDown')(editor.state, editor.view.dispatch)
+    rejectAllRevisions(editor)
+    expect(kinds(editor)).toEqual([])
+    expect(cellTexts(editor)).toEqual([
+      ['A1', 'B1'],
+      ['A2', 'B2'],
+    ])
+    editor.destroy()
+  })
+
+  it('rejecting cells shifted in downward across the whole width drops the rows they added', async () => {
+    const { editor } = await trackedDoc(TABLE_XML)
+    const cells: number[] = []
+    editor.state.doc.descendants((node, pos) => {
+      if (node.type.name === 'docTableCell') cells.push(pos)
+    })
+    editor.view.dispatch(
+      editor.state.tr.setSelection(CellSelection.create(editor.state.doc, cells[0], cells[3])),
+    )
+    expect(insertCells('shiftDown')(editor.state, editor.view.dispatch)).toBe(true)
+    expect(cellTexts(editor)).toEqual([
+      ['', ''],
+      ['', ''],
+      ['A1', 'B1'],
+      ['A2', 'B2'],
+    ])
+    rejectAllRevisions(editor)
+    expect(kinds(editor)).toEqual([])
+    expect(cellTexts(editor)).toEqual([
+      ['A1', 'B1'],
+      ['A2', 'B2'],
+    ])
+    editor.destroy()
+  })
+
+  it('a row added by shifting down stays while a cell moved into it is still there', async () => {
+    const { editor } = await trackedDoc(TABLE_XML)
+    selectFirstCell(editor)
+    insertCells('shiftDown')(editor.state, editor.view.dispatch)
+    const bottom = collectRevisions(editor.state.doc).at(-1)!
+    applyRevisions(editor, [bottom], 'reject')
+    expect(kinds(editor)).toEqual(['cellIns'])
+    expect(cellTexts(editor)).toEqual([
+      ['', 'B1'],
+      ['A1', 'B2'],
+      ['A2', ''],
+    ])
+    acceptAllRevisions(editor)
+    expect(kinds(editor)).toEqual([])
+    expect(cellTexts(editor)[2]).toEqual(['A2', ''])
+    editor.destroy()
+  })
+
+  const reopened = async (bytes: Uint8Array) => {
+    const parsed = await parseDocx(bytes)
+    const editor = new Editor({
+      extensions: editorExtensions,
+      content: blocksToPmDoc(parsed.blocks),
+    })
+    return { editor, parsed }
+  }
+
+  it('after a reopen the grid tells a cell came in downward: rejecting moves the column back', async () => {
+    const { editor, parsed } = await trackedDoc(TABLE_XML)
+    selectFirstCell(editor)
+    insertCells('shiftDown')(editor.state, editor.view.dispatch)
+    const { bytes } = await savedXml(editor, parsed)
+    editor.destroy()
+
+    const one = await reopened(bytes)
+    expect(cellTexts(one.editor)).toEqual([
+      ['', 'B1'],
+      ['A1', 'B2'],
+      ['A2', ''],
+    ])
+    expect(kinds(one.editor)).toEqual(['cellIns', 'cellIns'])
+    selectFirstCell(one.editor)
+    rejectCurrentRevision(one.editor)
+    expect(kinds(one.editor)).toEqual([])
+    expect(cellTexts(one.editor)).toEqual([
+      ['A1', 'B1'],
+      ['A2', 'B2'],
+    ])
+    const { xml } = await savedXml(one.editor, one.parsed)
+    expect(xml).not.toContain('w:cellIns')
+    expect(xml.match(/<w:tr[ >]/g)).toHaveLength(2)
+    one.editor.destroy()
+
+    const all = await reopened(bytes)
+    rejectAllRevisions(all.editor)
+    expect(cellTexts(all.editor)).toEqual([
+      ['A1', 'B1'],
+      ['A2', 'B2'],
+    ])
+    all.editor.destroy()
+
+    const kept = await reopened(bytes)
+    acceptAllRevisions(kept.editor)
+    expect(cellTexts(kept.editor)).toEqual([
+      ['', 'B1'],
+      ['A1', 'B2'],
+      ['A2', ''],
+    ])
+    kept.editor.destroy()
+  })
+
+  it('a cell that came in to the right is not read as one that came in downward', async () => {
+    const { editor, parsed } = await trackedDoc(TABLE_XML)
+    editor.state.doc.descendants((node, pos) => {
+      if (node.textContent === 'A2' && node.type.name === 'docTableCell')
+        editor.view.dispatch(
+          editor.state.tr.setSelection(TextSelection.create(editor.state.doc, pos + 2)),
+        )
+    })
+    insertCells('shiftRight')(editor.state, editor.view.dispatch)
+    const { bytes } = await savedXml(editor, parsed)
+    editor.destroy()
+    const again = await reopened(bytes)
+    expect(downShiftsOf(again.editor.state.doc.firstChild!)).toBeNull()
+    rejectAllRevisions(again.editor)
+    expect(cellTexts(again.editor)).toEqual([
+      ['A1', 'B1'],
+      ['A2', 'B2'],
+    ])
+    again.editor.destroy()
+  })
+
+  it('Delete Cells with Shift cells left is recorded as w:cellDel', async () => {
+    const { editor, parsed } = await trackedDoc(TABLE_XML)
+    selectFirstCell(editor)
+    expect(deleteCells('shiftLeft')(editor.state, editor.view.dispatch)).toBe(true)
+    expect(kinds(editor)).toEqual(['cellDel'])
+    expect(cellTexts(editor)).toEqual([
+      ['A1', 'B1'],
+      ['A2', 'B2'],
+    ])
+    const { xml, bytes } = await savedXml(editor, parsed)
+    expect(xml.match(/<w:cellDel w:id="\d+" w:author="Structural Reviewer"/g)).toHaveLength(1)
+    expect(xml).toMatch(/<w:del [^>]*><w:r>(?:<w:rPr>.*?<\/w:rPr>)?<w:delText[^>]*>A1/)
+
+    const accepted = await reopened(bytes)
+    acceptAllRevisions(accepted.editor)
+    expect(cellTexts(accepted.editor)).toEqual([
+      ['B1', '-'],
+      ['A2', 'B2'],
+    ])
+    const after = await savedXml(accepted.editor, accepted.parsed)
+    expect(after.xml).not.toContain('w:cellDel')
+    expect(after.xml).toContain('<w:gridAfter w:val="1"/>')
+    accepted.editor.destroy()
+
+    rejectAllRevisions(editor)
+    expect(kinds(editor)).toEqual([])
+    expect(cellTexts(editor)).toEqual([
+      ['A1', 'B1'],
+      ['A2', 'B2'],
+    ])
+    expect((await savedXml(editor, parsed)).xml).not.toContain('w:del')
+    editor.destroy()
+
+    const document = async (mode: 'accept' | 'reject') => {
+      const zip = await JSZip.loadAsync(bytes)
+      const out = applyTrackedChangesXml(await zip.file('word/document.xml')!.async('string'), mode)
+      return out.xml
+    }
+    const acceptedXml = await document('accept')
+    expect(acceptedXml).not.toContain('A1')
+    expect(acceptedXml.match(/<w:tc>/g)).toHaveLength(3)
+    const rejectedXml = await document('reject')
+    expect(rejectedXml).toMatch(/<w:t[^>]*>A1<\/w:t>/)
+    expect(rejectedXml).not.toContain('w:cellDel')
+    expect(rejectedXml.match(/<w:tc>/g)).toHaveLength(4)
+  })
+
+  it('Delete Cells with Shift cells up is recorded, and accepting moves the column up', async () => {
+    const { editor } = await trackedDoc(TABLE_XML)
+    selectFirstCell(editor)
+    expect(deleteCells('shiftUp')(editor.state, editor.view.dispatch)).toBe(true)
+    expect(kinds(editor)).toEqual(['cellDel'])
+    acceptAllRevisions(editor)
+    expect(kinds(editor)).toEqual([])
+    expect(cellTexts(editor)).toEqual([
+      ['A2', 'B1'],
+      ['', 'B2'],
+    ])
+    editor.destroy()
+
+    const own = await trackedDoc(TABLE_XML)
+    selectFirstCell(own.editor)
+    insertCells('shiftRight')(own.editor.state, own.editor.view.dispatch)
+    selectFirstCell(own.editor)
+    deleteCells('shiftLeft')(own.editor.state, own.editor.view.dispatch)
+    // the author's own pending cell just goes
+    expect(kinds(own.editor)).toEqual([])
+    expect(cellTexts(own.editor)[0].slice(0, 2)).toEqual(['A1', 'B1'])
+    own.editor.destroy()
+  })
+
+  it('a lone w:cellIns rejected, or w:cellDel accepted, takes the cell out of its row', async () => {
+    const tc = (text: string, record = '') =>
+      `<w:tc><w:tcPr><w:tcW w:w="2000" w:type="dxa"/>${record}</w:tcPr><w:p><w:r><w:t>${text}</w:t></w:r></w:p></w:tc>`
+    const table = (record: string) =>
+      '<w:tbl><w:tblPr><w:tblW w:w="0" w:type="auto"/></w:tblPr><w:tblGrid>' +
+      '<w:gridCol w:w="2000"/>'.repeat(3) +
+      `</w:tblGrid><w:tr>${tc('A1')}${tc('X', record)}${tc('B1')}</w:tr>` +
+      `<w:tr><w:trPr><w:gridAfter w:val="1"/></w:trPr>${tc('A2')}${tc('B2')}</w:tr></w:tbl>`
+    const inserted = await trackedDoc(
+      table('<w:cellIns w:id="5" w:author="Eve" w:date="2026-01-01T00:00:00Z"/>'),
+    )
+    expect(kinds(inserted.editor)).toEqual(['cellIns'])
+    rejectAllRevisions(inserted.editor)
+    expect(cellTexts(inserted.editor)).toEqual([
+      ['A1', 'B1'],
+      ['A2', 'B2'],
+    ])
+    const { xml } = await savedXml(inserted.editor, inserted.parsed)
+    expect(xml).not.toContain('w:cellIns')
+    expect(xml).not.toContain('gridAfter')
+
+    const deleted = await trackedDoc(
+      table('<w:cellDel w:id="5" w:author="Eve" w:date="2026-01-01T00:00:00Z"/>'),
+    )
+    acceptAllRevisions(deleted.editor)
+    expect(cellTexts(deleted.editor)).toEqual([
+      ['A1', 'B1'],
+      ['A2', 'B2'],
+    ])
+    const kept = await trackedDoc(
+      table('<w:cellDel w:id="5" w:author="Eve" w:date="2026-01-01T00:00:00Z"/>'),
+    )
+    rejectAllRevisions(kept.editor)
+    expect(cellTexts(kept.editor)[0]).toEqual(['A1', 'X', 'B1'])
+    inserted.editor.destroy()
+    deleted.editor.destroy()
+    kept.editor.destroy()
   })
 
   it('inserting a column while tracking marks every new cell cellIns, saved as w:cellIns', async () => {

@@ -1,5 +1,5 @@
 /**
- * The grant flow the #2758 review called out: a renderer-named files:add
+ * The grant flow the genoffice#2758 review called out: a renderer-named files:add
  * must NOT extend what its view may read (the ledger only grows through
  * dialog picks and the preload bridge's drop/paste records), a dropped
  * path reads, and files beside the open deck read. The bridge+shell pair

@@ -148,10 +148,17 @@ export const PARAGRAPH_FORMAT_FIELDS = [
   'bidi',
 ] as const
 const PARAGRAPH_STRUCTURE_FIELDS = ['styleId', 'level', 'kind', 'numId', 'ilvl'] as const
+/** recorded and restored with a paragraph-format change, but not what starts one while typing */
+const PARAGRAPH_FLOW_FIELDS = [
+  'keepNext',
+  'keepLines',
+  'widowControl',
+  'contextualSpacing',
+] as const
 const xmlAttr = (value: string) =>
   value.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;')
 
-interface ParagraphSnapshot {
+export interface ParagraphSnapshot {
   type: string
   format: Record<string, unknown>
   styleId: unknown
@@ -161,19 +168,27 @@ interface ParagraphSnapshot {
   ilvl: unknown
 }
 
-function paragraphSnapshot(node: PmNode): ParagraphSnapshot {
+/** what a paragraph-format change records of a paragraph, from its node type and attrs */
+export function paragraphSnapshotOf(
+  type: string,
+  attrs: Record<string, unknown>,
+): ParagraphSnapshot {
   const format: Record<string, unknown> = {}
-  for (const field of PARAGRAPH_FORMAT_FIELDS) format[field] = node.attrs[field] ?? null
+  for (const field of [...PARAGRAPH_FORMAT_FIELDS, ...PARAGRAPH_FLOW_FIELDS])
+    format[field] = attrs[field] ?? null
   return {
-    type: node.type.name,
+    type,
     format,
-    styleId: node.attrs.styleId ?? null,
-    level: node.attrs.level ?? null,
-    kind: node.attrs.kind ?? null,
-    numId: node.attrs.numId ?? null,
-    ilvl: node.attrs.ilvl ?? null,
+    styleId: attrs.styleId ?? null,
+    level: attrs.level ?? null,
+    kind: attrs.kind ?? null,
+    numId: attrs.numId ?? null,
+    ilvl: attrs.ilvl ?? null,
   }
 }
+
+const paragraphSnapshot = (node: PmNode): ParagraphSnapshot =>
+  paragraphSnapshotOf(node.type.name, node.attrs)
 
 function paragraphPropertiesChanged(before: PmNode, after: PmNode): boolean {
   if (before.type !== after.type) return true
@@ -182,20 +197,27 @@ function paragraphPropertiesChanged(before: PmNode, after: PmNode): boolean {
   )
 }
 
-function formatSnapshot(node: PmNode): Record<string, unknown> {
-  const textStyle = node.marks.find((m) => m.type.name === 'docTextStyle')
+type AnyMark = { type: string | { name: string }; attrs?: Record<string, unknown> | null }
+
+/** what a run-format change records of a piece of text, from its marks (a node's or its JSON's) */
+export function runFormatSnapshotOf(marks: readonly AnyMark[]): Record<string, unknown> {
+  const named = (name: string) =>
+    marks.find((m) => (typeof m.type === 'string' ? m.type : m.type.name) === name)
+  const textStyle = named('docTextStyle')
   const snapshot: Record<string, unknown> = {
-    bold: node.marks.some((m) => m.type.name === 'bold'),
-    italic: node.marks.some((m) => m.type.name === 'italic'),
-    underline: node.marks.some((m) => m.type.name === 'underline'),
-    strike: node.marks.some((m) => m.type.name === 'strike'),
+    bold: !!named('bold'),
+    italic: !!named('italic'),
+    underline: !!named('underline'),
+    strike: !!named('strike'),
   }
   for (const field of TEXT_STYLE_FIELDS) {
-    const value = textStyle?.attrs[field]
+    const value = textStyle?.attrs?.[field]
     if (value !== null && value !== undefined) snapshot[field] = value
   }
   return snapshot
 }
+
+const formatSnapshot = (node: PmNode): Record<string, unknown> => runFormatSnapshotOf(node.marks)
 
 /**
  * docTextStyle attrs for text whose format revision is rejected: every attr
@@ -214,6 +236,7 @@ function rejectedTextStyleAttrs(
     'caps',
     'dstrike',
     'vanishOwn',
+    'snapToGridOwn',
     'kernHalfPoints',
     'positionHalfPoints',
     'shading',
@@ -222,6 +245,7 @@ function rejectedTextStyleAttrs(
   ])
     next[field] = old[field] ?? null
   if (old.vanishOwn != null) next.vanish = old.vanishOwn
+  next.offGrid = old.snapToGridOwn === false ? true : null
   next.cs = old.rtl ?? null
   const kern = old.kernHalfPoints as number | undefined
   const size = old.sizeHalfPoints as number | undefined
@@ -543,9 +567,13 @@ export function applyRevisions(
   mode: 'accept' | 'reject',
 ): void {
   if (ranges.length === 0) return
+  if (mode === 'reject') readShiftsFromGrid(editor, ranges)
   const { state } = editor
   const tr = state.tr
   tr.setMeta(TRACK_IGNORE, true)
+  // cells Shift cells down added in new bottom rows: they go with their row, once its moved cells are back
+  const bottomRowCells: RevisionRange[] = []
+  const shiftedTables: Array<{ pos: number; step: number }> = []
   // reverse order keeps earlier positions valid while later ranges mutate
   for (const r of withMovePairs(state.doc, ranges).sort((a, b) => b.from - a.from)) {
     if (r.kind === 'blockIns' || r.kind === 'blockDel') {
@@ -663,6 +691,10 @@ export function applyRevisions(
           ) as Record<string, unknown>
           const restore: Record<string, unknown> = {}
           for (const field of PARAGRAPH_FORMAT_FIELDS) restore[field] = oldFormat[field] ?? null
+          // a record read from a file lists every property the paragraph had; an older snapshot may not
+          const fromFile = oldFormat === old
+          for (const field of PARAGRAPH_FLOW_FIELDS)
+            if (fromFile || field in oldFormat) restore[field] = oldFormat[field] ?? null
           const hasStructureSnapshot = typeof old.type === 'string'
           if (hasStructureSnapshot) {
             for (const field of PARAGRAPH_STRUCTURE_FIELDS) restore[field] = old[field] ?? null
@@ -779,7 +811,7 @@ export function applyRevisions(
         // accepting a deleted row / rejecting an inserted row = remove the whole row; if it is the only row, remove the whole table
         const $pos = tr.doc.resolve(from)
         if ($pos.parent.childCount <= 1) tr.delete($pos.before(), $pos.after())
-        else tr.delete(from, to)
+        else if (!removeRowAmongMerges(tr, $pos.before(), $pos.index())) tr.delete(from, to)
       } else if (removeNode) {
         const cellPos = from
         const cell = node
@@ -789,12 +821,21 @@ export function applyRevisions(
         const table = $cell.node($cell.depth - 1)
         const map = TableMap.get(table)
         const rect = map.findCell(cellPos - tablePos - 1)
+        const shift = (cell.attrs.cellRevision as { shift?: string }).shift
         const wholeColumn =
+          !shift &&
           map.width > 1 &&
           rect.right - rect.left === 1 &&
-          Array.from({ length: map.height }, (_, row) =>
-            table.nodeAt(map.map[row * map.width + rect.left]!),
-          ).every((c) => (c?.attrs.cellRevision as { kind?: string } | null)?.kind === revKind)
+          Array.from({ length: map.height }, (_, row) => row).every(
+            (row) =>
+              // a cell of a row that is itself inserted or deleted goes or stays with that row
+              (table.child(row).attrs.rowRevision as { kind?: string } | null)?.kind === revKind ||
+              (
+                table.nodeAt(map.map[row * map.width + rect.left]!)?.attrs.cellRevision as {
+                  kind?: string
+                } | null
+              )?.kind === revKind,
+          )
         if (wholeColumn) {
           const widths = columnWidthsPx(table, map)
           const pct = pctOf(table, map, widths)
@@ -807,18 +848,18 @@ export function applyRevisions(
           )
           continue
         }
-        // a lone cell cannot be removed outright (table grid self-repair would re-add an empty one): clear it in place and strip the marker
-        tr.setNodeMarkup(cellPos, undefined, {
-          ...cell.attrs,
-          cellRevision: null,
-          rawTcPr: stripTrackMarker(
-            cell.attrs.rawTcPr as string | null,
-            revKind === 'ins' ? 'w:cellIns' : 'w:cellDel',
-            'w:tcPr',
-          ),
-        })
-        const empty = state.schema.nodes.docParagraph.createAndFill()
-        if (empty) tr.replaceWith(cellPos + 1, cellPos + cell.nodeSize - 1, empty)
+        if (shift === 'row') {
+          bottomRowCells.push(r)
+          continue
+        }
+        if (shift === 'down' && closeColumnOver(tr, tablePos, cellPos)) {
+          shiftedTables.push({ pos: tablePos, step: tr.steps.length })
+          continue
+        }
+        if (shift === 'up' && closeColumnOver(tr, tablePos, cellPos)) continue
+        if (!shift && closeRowOver(tr, tablePos, cellPos)) continue
+        // a merged cell is in the way of the others: the cell stays, emptied, without its mark
+        clearCellInPlace(tr, cellPos, revKind)
       } else {
         // keep the content: clear the revision marker and strip the record from the raw trPr/tcPr bytes (takes effect on save)
         const attrs = isRow
@@ -894,7 +935,406 @@ export function applyRevisions(
       tr.removeMark(from, to, state.schema.marks.del)
     }
   }
+  for (const r of bottomRowCells) {
+    const mapped = tr.mapping.mapResult(r.from, 1)
+    const cell = tr.doc.nodeAt(mapped.pos)
+    if (mapped.deleted || !cell?.attrs.cellRevision) continue
+    const $cell = tr.doc.resolve(mapped.pos)
+    const tablePos = $cell.before($cell.depth - 1)
+    const row = $cell.index($cell.depth - 1)
+    if (dropInsertedRow(tr, tablePos, row)) continue
+    const start = $cell.start()
+    const rest: number[] = []
+    $cell.parent.forEach((other, offset) => {
+      const rev = other.attrs.cellRevision as { kind?: string; shift?: string } | null
+      if (rev?.kind === 'ins' && rev.shift === 'row') rest.unshift(start + offset)
+    })
+    for (const pos of rest) clearCellInPlace(tr, pos, 'ins')
+  }
+  for (const { pos, step } of shiftedTables)
+    settleShiftedRows(tr, tr.mapping.slice(step).map(pos, 1))
+  releaseHeldNames(tr)
   editor.view.dispatch(tr)
+}
+
+/**
+ * A rejected conversion: a paragraph that is no longer struck takes back the
+ * bookmarks it handed to the converted content, each once that content no
+ * longer has it; until then it keeps holding the name.
+ */
+function releaseHeldNames(tr: Transaction): void {
+  const holders: Array<{ node: PmNode; pos: number }> = []
+  const used = new Set<string>()
+  const walk = (node: PmNode, pos: number, struck: boolean): void => {
+    node.forEach((child, offset) => {
+      const at = pos + offset
+      const gone =
+        struck ||
+        !!child.attrs.paraMarkDel ||
+        (child.attrs.rowRevision as { kind?: string } | null)?.kind === 'del'
+      for (const attr of ['bookmarks', 'hiddenBookmarks'] as const)
+        for (const name of (child.attrs[attr] as string[] | null) ?? []) used.add(name)
+      if (child.attrs.bookmarksHeld && !gone) holders.push({ node: child, pos: at })
+      if (!child.isTextblock) walk(child, at + 1, gone)
+    })
+  }
+  walk(tr.doc, 0, false)
+  for (const { node, pos } of holders) {
+    const held = node.attrs.bookmarksHeld as Record<string, string[] | undefined>
+    const kept: Record<string, string[]> = {}
+    for (const attr of ['bookmarks', 'hiddenBookmarks'] as const) {
+      const names = held[attr] ?? []
+      const back = names.filter((name) => !used.has(name))
+      const waiting = names.filter((name) => used.has(name))
+      if (back.length > 0) {
+        tr.setNodeAttribute(pos, attr, [...((node.attrs[attr] as string[] | null) ?? []), ...back])
+        for (const name of back) used.add(name)
+      }
+      if (waiting.length > 0) kept[attr] = waiting
+    }
+    tr.setNodeAttribute(pos, 'bookmarksHeld', Object.keys(kept).length > 0 ? kept : null)
+  }
+}
+
+/**
+ * A row that goes from among cells merged down: a cell that runs through it is
+ * one row shorter, and one that starts in it is left to the rows below. False
+ * when no merged cell crosses the row, which then goes as it is.
+ */
+function removeRowAmongMerges(tr: Transaction, tablePos: number, row: number): boolean {
+  const table = tr.doc.nodeAt(tablePos)!
+  const map = TableMap.get(table)
+  if (row >= map.height) return false
+  const crossed = Array.from({ length: map.width }, (_, col) => {
+    const rect = map.findCell(map.map[row * map.width + col]!)
+    return rect.bottom - rect.top > 1
+  }).some(Boolean)
+  if (!crossed) return false
+  const tableStart = tablePos + 1
+  let rowPos = tableStart
+  for (let i = 0; i < row; i++) rowPos += table.child(i).nodeSize
+  const mapFrom = tr.mapping.maps.length
+  tr.delete(rowPos, rowPos + table.child(row).nodeSize)
+  const seen = new Set<number>()
+  for (let col = 0; col < map.width; col++) {
+    const index = row * map.width + col
+    const offset = map.map[index]!
+    if (seen.has(offset)) continue
+    seen.add(offset)
+    const cell = table.nodeAt(offset)!
+    const rowspan = (cell.attrs.rowspan as number) - 1
+    if (row > 0 && offset === map.map[index - map.width]) {
+      // an attribute step: positions other pending changes hold on the cell stay as they are
+      tr.setNodeAttribute(tr.mapping.slice(mapFrom).map(tableStart + offset), 'rowspan', rowspan)
+    } else if (row + 1 < map.height && offset === map.map[index + map.width]) {
+      // what the row held goes with it: the rows below keep the merged cell, empty
+      const rest = cell.type.createAndFill({ ...cell.attrs, rowspan })
+      const at = tableStart + map.positionAt(row + 1, col, table)
+      if (rest) tr.insert(tr.mapping.slice(mapFrom).map(at), rest)
+    }
+  }
+  return true
+}
+
+const shiftOf = (cell: PmNode): string | undefined =>
+  (cell.attrs.cellRevision as { shift?: string } | null)?.shift
+
+type CellRevision = { kind?: string; author?: string; date?: string; shift?: string }
+
+/**
+ * Which way inserted cells pushed the others is not in the file, but Shift
+ * cells down leaves a shape of its own: rows added at the bottom whose cells
+ * are all inserted except in the columns that moved, and as many inserted
+ * cells higher up in exactly those columns. Null when the grid is not that.
+ */
+export function downShiftsOf(table: PmNode): Map<number, 'down' | 'row'> | null {
+  const map = TableMap.get(table)
+  const revOf = (offset: number) => table.nodeAt(offset)!.attrs.cellRevision as CellRevision | null
+  const inserted = (offset: number) => revOf(offset)?.kind === 'ins'
+  const at = (row: number, col: number) => map.map[row * map.width + col]!
+  const pending = [...new Set(map.map)].filter(inserted)
+  const first = pending.length > 0 ? revOf(pending[0]!)! : null
+  if (
+    !first ||
+    pending.some((offset) => {
+      const rev = revOf(offset)!
+      return rev.shift || rev.author !== first.author || rev.date !== first.date
+    })
+  )
+    return null
+  const bottom = map.height - 1
+  const moved = Array.from({ length: map.width }, (_, col) => col).filter(
+    (col) => !inserted(at(bottom, col)) && !isGap(table.nodeAt(at(bottom, col))),
+  )
+  const contiguous = moved.every((col, i) => i === 0 || col === moved[i - 1]! + 1)
+  if (moved.length === 0 || moved.length === map.width || !contiguous) return null
+  const left = moved[0]!
+  const right = left + moved.length
+  // an added row: its own cells only, inserted (or a placeholder) outside the moved columns
+  const added = (row: number): boolean => {
+    let any = false
+    for (let col = 0; col < map.width; col++) {
+      const rect = map.findCell(at(row, col))
+      if (rect.bottom - rect.top !== 1) return false
+      const fresh = inserted(at(row, col))
+      if (col >= left && col < right) {
+        if (fresh || rect.left < left || rect.right > right) return false
+      } else if (fresh) any = true
+      else if (!isGap(table.nodeAt(at(row, col)))) return false
+    }
+    return any
+  }
+  let height = 0
+  while (height < map.height - 1 && added(bottom - height)) height++
+  if (height === 0) return null
+  const out = new Map<number, 'down' | 'row'>()
+  let rows: number[] | null = null
+  for (let col = 0; col < map.width; col++) {
+    const own: number[] = []
+    for (let row = 0; row <= bottom - height; row++) {
+      if (!inserted(at(row, col))) continue
+      const rect = map.findCell(at(row, col))
+      if (rect.bottom - rect.top !== 1 || rect.left < left || rect.right > right) return null
+      own.push(row)
+      out.set(at(row, col), 'down')
+    }
+    if (col < left || col >= right) continue
+    const block = own.length === height && own.every((row, i) => row === own[0]! + i)
+    if (!block || (rows && rows[0] !== own[0])) return null
+    rows = own
+  }
+  for (let row = bottom - height + 1; row <= bottom; row++)
+    for (let col = 0; col < map.width; col++)
+      if (inserted(at(row, col))) out.set(at(row, col), 'row')
+  return out
+}
+
+/** before a rejection: the cells of a reopened file are told the way they came, as far as their table shows it */
+function readShiftsFromGrid(editor: Editor, ranges: RevisionRange[]): void {
+  const { doc } = editor.state
+  const tr = editor.state.tr
+  const seen = new Set<number>()
+  for (const r of ranges) {
+    if (r.kind !== 'cellIns') continue
+    const cell = doc.nodeAt(r.from)
+    if (!cell?.attrs.cellRevision || shiftOf(cell)) continue
+    const $cell = doc.resolve(r.from)
+    const tablePos = $cell.before($cell.depth - 1)
+    if (seen.has(tablePos)) continue
+    seen.add(tablePos)
+    for (const [offset, shift] of downShiftsOf($cell.node($cell.depth - 1)) ?? []) {
+      const pos = tablePos + 1 + offset
+      const node = doc.nodeAt(pos)!
+      tr.setNodeMarkup(pos, undefined, {
+        ...node.attrs,
+        cellRevision: { ...node.attrs.cellRevision, shift },
+      })
+    }
+  }
+  // its own step, out of the history: the rejection below maps positions through its own steps only
+  if (tr.docChanged)
+    editor.view.dispatch(tr.setMeta(TRACK_IGNORE, true).setMeta('addToHistory', false))
+}
+
+/**
+ * Once no cell shifted in downward is left pending, the rows the insertion
+ * added go where nothing else is in them, and what stays of them is plain.
+ */
+function settleShiftedRows(tr: Transaction, tablePos: number): void {
+  const table = tr.doc.nodeAt(tablePos)
+  if (table?.type.name !== 'docTable') return
+  let down = false
+  table.forEach((row) => row.forEach((cell) => (down ||= shiftOf(cell) === 'down')))
+  if (down) return
+  for (let row = table.childCount - 1; row >= 0; row--) {
+    const live = tr.doc.nodeAt(tablePos)!
+    if (row >= live.childCount) continue
+    let at = tablePos + 1
+    for (let i = 0; i < row; i++) at += live.child(i).nodeSize
+    const cells: number[] = []
+    live.child(row).forEach((cell, offset) => {
+      if (shiftOf(cell) === 'row') cells.unshift(at + 1 + offset)
+    })
+    if (cells.length === 0 || dropInsertedRow(tr, tablePos, row)) continue
+    for (const pos of cells) clearCellInPlace(tr, pos, 'ins')
+  }
+}
+
+function clearCellInPlace(tr: Transaction, cellPos: number, revKind: 'ins' | 'del'): void {
+  const cell = tr.doc.nodeAt(cellPos)!
+  tr.setNodeMarkup(cellPos, undefined, {
+    ...cell.attrs,
+    cellRevision: null,
+    rawTcPr: stripTrackMarker(
+      cell.attrs.rawTcPr as string | null,
+      revKind === 'ins' ? 'w:cellIns' : 'w:cellDel',
+      'w:tcPr',
+    ),
+  })
+  const empty = cell.type.schema.nodes.docParagraph.createAndFill()
+  if (empty) tr.replaceWith(cellPos + 1, cellPos + cell.nodeSize - 1, empty)
+}
+
+const isGap = (cell: PmNode | null | undefined): boolean => cell?.attrs.gridGap === true
+
+/** a grid row no cell reaches into from above and none leaves downward */
+function ownRow(table: PmNode, map: TableMap, row: number): PmNode[] | null {
+  const cells: PmNode[] = []
+  for (let col = 0; col < map.width;) {
+    const rect = map.findCell(map.map[row * map.width + col]!)
+    if (rect.top !== row || rect.bottom !== row + 1) return null
+    cells.push(table.nodeAt(map.map[row * map.width + col]!)!)
+    col = rect.right
+  }
+  return cells
+}
+
+/** the row goes when nothing but inserted cells and placeholders is left in it */
+function dropInsertedRow(tr: Transaction, tablePos: number, row: number): boolean {
+  const table = tr.doc.nodeAt(tablePos)!
+  const cells = ownRow(table, TableMap.get(table), row)
+  const inserted = (cell: PmNode) =>
+    isGap(cell) || (cell.attrs.cellRevision as { kind?: string } | null)?.kind === 'ins'
+  if (!cells || table.childCount < 2 || !cells.every(inserted) || cells.every(isGap)) return false
+  let pos = tablePos + 1
+  for (let i = 0; i < row; i++) pos += table.child(i).nodeSize
+  tr.delete(pos, pos + table.child(row).nodeSize)
+  return true
+}
+
+/**
+ * A rejected inserted cell (or an accepted deleted one) leaves its row, as
+ * the w:tc leaves the w:tr: the cells after it close up and a placeholder
+ * takes the row's end. False when a vertically merged cell is among them.
+ */
+function closeRowOver(tr: Transaction, tablePos: number, cellPos: number): boolean {
+  const table = tr.doc.nodeAt(tablePos)!
+  const map = TableMap.get(table)
+  const rect = map.findCell(cellPos - tablePos - 1)
+  for (let col = rect.left; col < map.width;) {
+    const next = map.findCell(map.map[rect.top * map.width + col]!)
+    if (next.top !== rect.top || next.bottom !== rect.top + 1) return false
+    col = next.right
+  }
+  const cell = table.nodeAt(cellPos - tablePos - 1)!
+  const span = rect.right - rect.left
+  const widths = columnWidthsPx(table, map)
+  const pct = pctOf(table, map, widths)
+  const gap = cell.type.create(
+    {
+      ...cell.attrs,
+      gridGap: true,
+      fill: null,
+      borders: null,
+      cellRevision: null,
+      rawTcPr: stripTrackMarker(
+        stripTrackMarker(cell.attrs.rawTcPr as string | null, 'w:cellIns', 'w:tcPr'),
+        'w:cellDel',
+        'w:tcPr',
+      ),
+      colwidth: widths ? widths.slice(map.width - span) : null,
+    },
+    cell.type.schema.nodes.docParagraph.create(),
+  )
+  tr.insert(tr.doc.resolve(cellPos).end(), gap)
+  tr.delete(cellPos, cellPos + cell.nodeSize)
+
+  let shorter = tr.doc.nodeAt(tablePos)!
+  const rowCells = ownRow(shorter, TableMap.get(shorter), rect.top)
+  if (rowCells?.every(isGap)) {
+    if (shorter.childCount < 2) {
+      tr.delete(tablePos, tablePos + shorter.nodeSize)
+      return true
+    }
+    let pos = tablePos + 1
+    for (let i = 0; i < rect.top; i++) pos += shorter.child(i).nodeSize
+    tr.delete(pos, pos + shorter.child(rect.top).nodeSize)
+    shorter = tr.doc.nodeAt(tablePos)!
+  }
+  // columns every row now ends short of are the ones the insertion added
+  const trailing = (t: PmNode, m: TableMap, row: number) => {
+    let count = 0
+    while (count < m.width && isGap(t.nodeAt(m.map[row * m.width + m.width - 1 - count]!))) count++
+    return count
+  }
+  let spare = Infinity
+  const shortMap = TableMap.get(shorter)
+  for (let row = 0; row < shortMap.height; row++)
+    spare = Math.min(spare, trailing(shorter, shortMap, row))
+  if (spare === 0 || spare >= shortMap.width) return true
+  for (let i = 0; i < spare; i++) {
+    const t = tr.doc.nodeAt(tablePos)!
+    const m = TableMap.get(t)
+    removeColumn(
+      tr,
+      {
+        top: 0,
+        left: m.width - 1,
+        bottom: m.height,
+        right: m.width,
+        map: m,
+        table: t,
+        tableStart: tablePos + 1,
+      },
+      m.width - 1,
+    )
+  }
+  reflowColumns(
+    tr,
+    tablePos,
+    widths?.slice(0, map.width - spare) ?? null,
+    pct.slice(0, map.width - spare),
+  )
+  return true
+}
+
+/**
+ * A cell Shift cells down put in goes back out: the cells below it move up
+ * one row, and the row the insertion added at the bottom goes once nothing
+ * but its own cells is left in it. False when a merged cell is in the column.
+ */
+function closeColumnOver(tr: Transaction, tablePos: number, cellPos: number): boolean {
+  const table = tr.doc.nodeAt(tablePos)!
+  const map = TableMap.get(table)
+  const rect = map.findCell(cellPos - tablePos - 1)
+  const column: number[] = []
+  for (let row = rect.top; row < map.height; row++) {
+    const offset = map.map[row * map.width + rect.left]!
+    const each = map.findCell(offset)
+    if (each.left !== rect.left || each.right !== rect.left + 1 || each.bottom - each.top !== 1)
+      return false
+    column.push(offset)
+  }
+  const cell = table.nodeAt(column[0]!)!
+  const blank = cell.type.schema.nodes.docParagraph.create()
+  const last = table.nodeAt(column[column.length - 1]!)!
+  const deleted = (cell.attrs.cellRevision as { kind?: string } | null)?.kind === 'del'
+  const filler = deleted
+    ? // Delete Cells, shift up: the column keeps its length, a blank cell like the last takes the end
+      last.type.create(
+        {
+          ...last.attrs,
+          cellRevision: null,
+          rawTcPr: stripTrackMarker(
+            stripTrackMarker(last.attrs.rawTcPr as string | null, 'w:cellIns', 'w:tcPr'),
+            'w:cellDel',
+            'w:tcPr',
+          ),
+        },
+        blank,
+      )
+    : // the cell left over at the bottom belongs to the row the insertion added
+      cell.type.create(
+        { ...cell.attrs, cellRevision: { ...cell.attrs.cellRevision, shift: 'row' } },
+        blank,
+      )
+  for (let i = column.length - 1; i >= 0; i--) {
+    const at = tablePos + 1 + column[i]!
+    const next = i === column.length - 1 ? filler : table.nodeAt(column[i + 1]!)!
+    tr.replaceWith(at, at + table.nodeAt(column[i]!)!.nodeSize, next)
+  }
+  if (!deleted) dropInsertedRow(tr, tablePos, map.height - 1)
+  return true
 }
 
 /**
@@ -1590,7 +2030,9 @@ export const TrackChangesExtension = Extension.create<object, TrackChangesStorag
             }
             return false
           })
-          for (const { node, pos } of deletedBlocks.sort((a, b) => b.pos - a.pos)) {
+          // blocks that went from one place come back in their order: the later one first
+          const inOrder = deletedBlocks.map((block, order) => ({ ...block, order }))
+          for (const { node, pos } of inOrder.sort((a, b) => b.pos - a.pos || b.order - a.order)) {
             tr.insert(
               tr.mapping.map(pos, -1),
               node.type.create(

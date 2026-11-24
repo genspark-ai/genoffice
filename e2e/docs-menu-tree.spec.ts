@@ -10,7 +10,7 @@ import { launchShell, closeAndSaveVideo, waitForPageWithUrl } from './helpers'
  */
 
 const BASELINE = join(__dirname, 'baselines', 'docs-menu-tree.json')
-const MENUS = ['File', 'Edit', 'View', 'Insert', 'Format', 'Tools', 'Table']
+const MENUS = ['File', 'Edit', 'View', 'Insert', 'Format', 'Tools', 'Table', 'Window']
 
 interface MenuNode {
   label: string
@@ -50,16 +50,81 @@ const menuTree = (app: ElectronApplication, menus: string[]): Promise<MenuNode[]
       .map(walk)
   }, menus)
 
-// macOS keeps Settings in the application menu and binds Go To differently;
-// fold the other platforms onto the macOS shape so one baseline serves both
-function toMacShape(nodes: MenuNode[]): MenuNode[] {
-  return nodes
-    .filter((n) => n.accelerator !== 'CmdOrCtrl+,')
-    .map((n) => ({
-      ...n,
-      ...(n.accelerator === 'Ctrl+G' ? { accelerator: 'Alt+Cmd+G' } : {}),
-      ...(n.submenu ? { submenu: toMacShape(n.submenu) } : {}),
-    }))
+/** the chords Word for Mac alone has, by the path of the item that shows them */
+const MAC_ONLY_CHORDS: Record<string, string> = {
+  'File/New from Template…': 'Shift+Cmd+P',
+  'Edit/Paste Special…': 'Ctrl+Cmd+V',
+  'Edit/Find/Find Next': 'Cmd+G',
+  'Edit/Find/Find Previous': 'Shift+Cmd+G',
+  'Edit/Find/Replace…': 'Shift+Cmd+H',
+  'Edit/Toggle Drawing': 'Ctrl+Cmd+Z',
+  'View/Focus': 'Ctrl+Shift+Cmd+F',
+  'View/Ribbon': 'Alt+Cmd+R',
+  'Insert/Equation…': 'Ctrl+=',
+  'Format/Format Object…': 'Shift+Cmd+1',
+  'Format/Selection Pane…': 'Alt+Cmd+U',
+  'Tools/Thesaurus…': 'Ctrl+Alt+Cmd+R',
+  'Table/Delete/Rows': 'Ctrl+Cmd+X',
+}
+
+/** items whose chord Word for Mac gives to another command (Normal style, Replace) */
+const NO_CHORD_ON_MAC = new Set(['Window/New Window', 'File/Back to Home'])
+
+// the shell's interface zoom is Cmd+Ctrl on macOS; the baseline holds the chord of the other platforms
+function interfaceZoomAsElsewhere(node: MenuNode): MenuNode {
+  const key = /^Cmd\+Ctrl\+([-=0])$/.exec(node.accelerator ?? '')?.[1]
+  return {
+    ...node,
+    ...(key ? { accelerator: `CmdOrCtrl+Alt+${key}` } : {}),
+    ...(node.submenu ? { submenu: node.submenu.map(interfaceZoomAsElsewhere) } : {}),
+  }
+}
+
+// macOS keeps Settings in the application menu, binds Go To differently and has
+// Word for Mac's own chords; fold the other platforms onto the macOS shape so
+// one baseline serves both
+function toMacShape(nodes: MenuNode[], trail = ''): MenuNode[] {
+  if (process.platform === 'darwin') return nodes.map(interfaceZoomAsElsewhere)
+  return (
+    nodes
+      // Preferences and the suite's Settings are in the application menu on macOS
+      .filter((n) => n.accelerator !== 'CmdOrCtrl+,' && n.label !== 'Settings…')
+      .map((n) => {
+        const path = trail + n.label
+        const macOnly = n.accelerator ? undefined : MAC_ONLY_CHORDS[path]
+        // the key order of the walk: label, type, role, accelerator, disabled, checked, submenu
+        const { disabled, checked, submenu, ...head } = n
+        if (NO_CHORD_ON_MAC.has(path)) delete head.accelerator
+        return {
+          ...head,
+          ...(n.accelerator === 'Ctrl+G' ? { accelerator: 'Alt+Cmd+G' } : {}),
+          ...(path === 'Edit/Paste and Match Formatting'
+            ? { accelerator: 'CmdOrCtrl+Alt+Shift+V' }
+            : {}),
+          ...(macOnly ? { accelerator: macOnly } : {}),
+          ...(disabled ? { disabled } : {}),
+          ...(checked === undefined ? {} : { checked }),
+          ...(submenu ? { submenu: toMacShape(submenu, `${path}/`) } : {}),
+        }
+      })
+  )
+}
+
+// the Window menu begins and ends with the system's own items, which differ by platform:
+// the baseline holds the commands between them
+function windowCommands(nodes: MenuNode[]): MenuNode[] {
+  return nodes.map((top) => {
+    if (top.label !== 'Window' || !top.submenu) return top
+    const ours = top.submenu.filter(
+      (item) =>
+        !item.role &&
+        !['Minimize', 'Close Window', 'Minimize All', 'Zoom All'].includes(item.label ?? ''),
+    )
+    while (ours[0]?.type === 'separator') ours.shift()
+    while (ours.at(-1)?.type === 'separator') ours.pop()
+    // the menu's own role is macOS' too
+    return { label: top.label, submenu: ours }
+  })
 }
 
 test('the Docs menu bar matches its baseline', async () => {
@@ -77,7 +142,8 @@ test('the Docs menu bar matches its baseline', async () => {
     // what is greyed out depends on where the focus is: put the caret in the document
     const docPage = await waitForPageWithUrl(app, '://docs/')
     await docPage.locator('.ProseMirror').first().click()
-    const read = async () => JSON.stringify(toMacShape(await menuTree(app, MENUS)), null, 2) + '\n'
+    const read = async () =>
+      JSON.stringify(toMacShape(windowCommands(await menuTree(app, MENUS))), null, 2) + '\n'
     if (process.env.UPDATE_E2E_BASELINES || !existsSync(BASELINE)) {
       // the renderer's first state report greys items out a moment after the menu is built
       await page.waitForTimeout(3000)

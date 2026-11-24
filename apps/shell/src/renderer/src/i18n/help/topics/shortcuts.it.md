@@ -35,123 +35,235 @@ Word ha una barra dei menu completa, quindi le combinazioni di file e formattazi
 
 ### File
 
-| Azione          | macOS | Windows / Linux |
-| --------------- | ----- | --------------- |
-| Nuovo           | ⌘N    | Ctrl+N          |
-| Nuova finestra  | ⇧⌘N   | Ctrl+Shift+N    |
-| Apri…           | ⌘O    | Ctrl+O          |
-| Salva           | ⌘S    | Ctrl+S          |
-| Salva come…     | ⇧⌘S   | Ctrl+Shift+S    |
-| Stampa          | ⌘P    | Ctrl+P          |
-| Chiudi (scheda) | ⌘W    | Ctrl+W          |
+| Azione           | macOS   | Windows / Linux |
+| ---------------- | ------- | --------------- |
+| Nuovo            | ⌘N / ⌃N | Ctrl+N          |
+| Nuova finestra   | —       | Ctrl+Shift+N    |
+| Apri…            | ⌘O      | Ctrl+O          |
+| Salva            | ⌘S / ⌃S | Ctrl+S          |
+| Salva come…      | ⇧⌘S     | Ctrl+Shift+S    |
+| Stampa           | ⌘P / ⌃P | Ctrl+P          |
+| Chiudi (scheda)  | ⌘W      | Ctrl+W          |
+| Nuovo da modello | ⇧⌘P     | —               |
 
 `⌘P` non è la stampa del browser. Word impagina prima un’anteprima di stampa, così che un foglio stampato corrisponda esattamente a una pagina a schermo, poi apre la propria finestra di stampa.
 
 ### Modifica
 
-| Azione                      | macOS | Windows / Linux |
-| --------------------------- | ----- | --------------- |
-| Annulla                     | ⌘Z    | Ctrl+Z          |
-| Ripeti                      | ⇧⌘Z   | Ctrl+Shift+Z    |
-| Taglia                      | ⌘X    | Ctrl+X          |
-| Copia                       | ⌘C    | Ctrl+C          |
-| Incolla                     | ⌘V    | Ctrl+V          |
-| Incolla come testo semplice | ⌥⇧⌘V  | Ctrl+Shift+V    |
-| Seleziona tutto             | ⌘A    | Ctrl+A          |
-| Trova                       | ⌘F    | Ctrl+F          |
-| Sostituisci                 | ⌃H    | Ctrl+H          |
-| Vai a                       | ⌥⌘G   | Ctrl+G          |
-| Scorciatoie da tastiera     | ⌘/    | Ctrl+/          |
+| Azione                             | macOS           | Windows / Linux |
+| ---------------------------------- | --------------- | --------------- |
+| Annulla                            | ⌘Z / ⌃Z         | Ctrl+Z          |
+| Ripeti                             | ⇧⌘Z             | Ctrl+Shift+Z    |
+| Taglia                             | ⌘X / ⌃X / F2    | Ctrl+X          |
+| Copia                              | ⌘C / ⌃C / F3    | Ctrl+C          |
+| Incolla                            | ⌘V / ⌃V / F4    | Ctrl+V          |
+| Incolla come testo semplice        | ⌥⇧⌘V            | Ctrl+Shift+V    |
+| Seleziona tutto                    | ⌘A / ⌃A         | Ctrl+A          |
+| Trova                              | ⌘F / ⌃F         | Ctrl+F          |
+| Sostituisci                        | ⇧⌘H / ⌃H        | Ctrl+H          |
+| Vai a                              | ⌥⌘G / F5        | Ctrl+G          |
+| Scorciatoie da tastiera            | ⌘/              | Ctrl+/          |
+| Ripeti o ripristina                | ⌘Y / ⌃Y / ⌥⏎    | Ctrl+Y          |
+| Mantieni solo il testo             | ⇧⌘V             | —               |
+| Incolla speciale                   | ⌃⌘V             | —               |
+| Trova successivo                   | ⌘G / ⇧F4 / ⇧⌘F4 | —               |
+| Trova precedente                   | ⇧⌘G             | —               |
+| Attiva/disattiva disegno           | ⌃⌘Z             | —               |
+| Elimina riga                       | ⌃⌘X             | —               |
+| Inserisci sopra                    | ⌃⌘I             | —               |
+| Elimina la parola precedente       | ⌥⌫ / ⌘⌫         | —               |
+| Elimina la parola successiva       | ⌥⌦ / ⌘⌦         | —               |
+| Taglia nella raccolta              | ⌘F3             | —               |
+| Inserisci contenuto della raccolta | ⇧⌘F3            | —               |
+| Cancella contenuto                 | Clear           | —               |
+| Copia testo                        | ⇧F2             | —               |
 
-Sostituisci è Ctrl+H su entrambe le piattaforme perché `⌘H` nasconde la finestra su macOS e non raggiunge mai Word. Vai a segue la ripartizione propria di Word: `⌥⌘G` sul Mac, così `⇧⌘G` resta libero per il conteggio parole.
+Sostituisci è Ctrl+H su entrambe le piattaforme perché `⌘H` nasconde la finestra su macOS e non raggiunge mai Word. Vai a segue la ripartizione propria di Word: `⌥⌘G` sul Mac, dove `⌘G` e `⇧⌘G` sono Trova successivo e Trova precedente.
+
+### Spostamento e selezione
+
+| Azione                                             | macOS                  | Windows / Linux |
+| -------------------------------------------------- | ---------------------- | --------------- |
+| Inizio della riga                                  | ⌘← / Home / ⌃↑         | —               |
+| Fine della riga                                    | ⌘→ / End / ⌃↓          | —               |
+| Paragrafo precedente                               | ⌘↑ / ⌥↑                | —               |
+| Paragrafo successivo                               | ⌘↓ / ⌥↓                | —               |
+| Inizio del documento                               | ⌘Home / ⌥Home          | —               |
+| Fine del documento                                 | ⌘End / ⌥End            | —               |
+| Seleziona fino all'inizio della riga               | ⇧⌘← / ⇧Home            | —               |
+| Seleziona fino alla fine della riga                | ⇧⌘→ / ⇧End             | —               |
+| Seleziona fino al paragrafo precedente             | ⇧⌘↑ / ⌥⇧↑              | —               |
+| Seleziona fino al paragrafo successivo             | ⇧⌘↓ / ⌥⇧↓              | —               |
+| Seleziona fino all'inizio del documento            | ⇧⌘Home                 | —               |
+| Seleziona fino alla fine del documento             | ⇧⌘End                  | —               |
+| Una schermata in su                                | PageUp                 | —               |
+| Una schermata in giù                               | PageDown               | —               |
+| Seleziona una schermata in su                      | ⇧PageUp                | —               |
+| Seleziona una schermata in giù                     | ⇧PageDown              | —               |
+| Parte superiore della finestra                     | ⌥⌘PageUp               | —               |
+| Parte inferiore della finestra                     | ⌥⌘PageDown             | —               |
+| Seleziona fino alla parte superiore della finestra | ⌥⇧⌘PageUp              | —               |
+| Seleziona fino alla parte inferiore della finestra | ⌥⇧⌘PageDown            | —               |
+| Sfoglia precedente (pagina, Trova o Vai a)         | ⌘PageUp                | —               |
+| Sfoglia successivo (pagina, Trova o Vai a)         | ⌘PageDown              | —               |
+| Sezione precedente                                 | ⌥PageUp                | —               |
+| Sezione successiva                                 | ⌥PageDown              | —               |
+| Estendi selezione                                  | F8                     | —               |
+| Riduci selezione                                   | ⇧F8                    | —               |
+| Torna alla modifica precedente                     | ⇧F5 / ⌥⌘Z              | —               |
+| Prima cella della riga                             | ⌃Home / ⌥⇧Home         | —               |
+| Ultima cella della riga                            | ⌃End / ⌥⇧End           | —               |
+| Prima cella della colonna                          | ⌃PageUp / ⌥⇧PageUp     | —               |
+| Ultima cella della colonna                         | ⌃PageDown / ⌥⇧PageDown | —               |
+| Seleziona tabella                                  | ⌥Clear                 | —               |
 
 ### Formattazione del testo
 
-| Azione                                                     | macOS    | Windows / Linux       |
-| ---------------------------------------------------------- | -------- | --------------------- |
-| Grassetto                                                  | ⌘B       | Ctrl+B                |
-| Corsivo                                                    | ⌘I       | Ctrl+I                |
-| Sottolineato                                               | ⌘U       | Ctrl+U                |
-| Carattere… (finestra)                                      | ⌘D       | Ctrl+D                |
-| Aumenta dimensione carattere                               | ⇧⌘.      | Ctrl+Shift+.          |
-| Riduci dimensione carattere                                | ⇧⌘,      | Ctrl+Shift+,          |
-| Aumenta dimensione carattere di 1 pt                       | ⌘]       | Ctrl+]                |
-| Riduci dimensione carattere di 1 pt                        | ⌘[       | Ctrl+[                |
-| Apice                                                      | ⇧⌘= / ⌘. | Ctrl+Shift+= / Ctrl+. |
-| Pedice                                                     | ⌘,       | Ctrl+,                |
-| Cambia maiuscole/minuscole                                 | ⇧F3      | Shift+F3              |
-| Copia formattazione (con testo selezionato)                | ⇧⌘C      | Ctrl+Shift+C          |
-| Incolla formattazione (dopo una copia della formattazione) | ⇧⌘V      | Ctrl+Alt+Shift+V      |
-| Cancella tutta la formattazione                            | ⌃␣       | Ctrl+Space            |
+| Azione                                                     | macOS               | Windows / Linux       |
+| ---------------------------------------------------------- | ------------------- | --------------------- |
+| Grassetto                                                  | ⌘B / ⇧⌘B / ⌃B / ⌃⇧B | Ctrl+B                |
+| Corsivo                                                    | ⌘I / ⇧⌘I / ⌃I / ⌃⇧I | Ctrl+I                |
+| Sottolineato                                               | ⌘U / ⇧⌘U / ⌃U / ⌃⇧U | Ctrl+U                |
+| Carattere… (finestra)                                      | ⌘D                  | Ctrl+D                |
+| Aumenta dimensione carattere                               | ⇧⌘.                 | Ctrl+Shift+.          |
+| Riduci dimensione carattere                                | ⇧⌘,                 | Ctrl+Shift+,          |
+| Aumenta dimensione carattere di 1 pt                       | ⌘]                  | Ctrl+]                |
+| Riduci dimensione carattere di 1 pt                        | ⌘[                  | Ctrl+[                |
+| Apice                                                      | ⇧⌘=                 | Ctrl+Shift+= / Ctrl+. |
+| Pedice                                                     | ⇧⌘-                 | Ctrl+,                |
+| Cambia maiuscole/minuscole                                 | ⇧F3                 | Shift+F3              |
+| Copia formattazione (con testo selezionato)                | ⌥⌘C / ⇧⌘C           | Ctrl+Shift+C          |
+| Incolla formattazione (dopo una copia della formattazione) | ⌥⌘V                 | Ctrl+Alt+Shift+V      |
+| Cancella tutta la formattazione                            | ⌃␣                  | Ctrl+Space            |
+| Sottolineato doppio                                        | ⇧⌘D                 | —                     |
+| Sottolinea solo le parole                                  | ⇧⌘W                 | —                     |
+| Barrato                                                    | ⇧⌘X                 | —                     |
+| Tutto maiuscole                                            | ⇧⌘A                 | —                     |
+| Maiuscoletto                                               | ⇧⌘K                 | —                     |
+| Nascosto                                                   | ⌃⇧H                 | —                     |
 
-Le due combinazioni del pennello di formattazione sono l’unico punto in cui il tasto di Windows non è un semplice rinominamento: Incolla formattazione porta Alt perché Ctrl+Shift+V lì incolla già e adegua lo stile.
+Copia e incolla formato seguono Word su ciascuna piattaforma: `⌥⌘C` / `⌥⌘V` sul Mac, dove `⇧⌘V` incolla solo il testo; su Windows e Linux incolla formato porta Alt perché lì Ctrl+Shift+V incolla già adattando lo stile.
 
 ### Formattazione del paragrafo
 
-| Azione                                               | macOS | Windows / Linux |
-| ---------------------------------------------------- | ----- | --------------- |
-| Allinea a sinistra                                   | ⌘L    | Ctrl+L          |
-| Centra                                               | ⌘E    | Ctrl+E          |
-| Allinea a destra                                     | ⌘R    | Ctrl+R          |
-| Giustifica                                           | ⌘J    | Ctrl+J          |
-| Interlinea 1,0                                       | ⌘1    | Ctrl+1          |
-| Interlinea 1,5                                       | ⌘5    | Ctrl+5          |
-| Interlinea 2,0                                       | ⌘2    | Ctrl+2          |
-| Aumenta rientro                                      | ⌃M    | Ctrl+M          |
-| Riduci rientro                                       | ⌃⇧M   | Ctrl+Shift+M    |
-| Rientro sporgente                                    | ⌘T    | Ctrl+T          |
-| Rimuovi rientro sporgente                            | ⇧⌘T   | Ctrl+Shift+T    |
-| Cancella la formattazione del paragrafo              | ⌃Q    | Ctrl+Q          |
-| Normale (stile)                                      | ⌥⌘0   | Ctrl+Alt+0      |
-| Titolo 1 (stile)                                     | ⌥⌘1   | Ctrl+Alt+1      |
-| Titolo 2 (stile)                                     | ⌥⌘2   | Ctrl+Alt+2      |
-| Titolo 3 (stile)                                     | ⌥⌘3   | Ctrl+Alt+3      |
-| Paragrafo… (finestra)                                | ⌥⌘M   | Ctrl+Alt+M      |
-| Sposta il paragrafo in alto                          | ⌥⇧↑   | Alt+Shift+↑     |
-| Sposta il paragrafo in basso                         | ⌥⇧↓   | Alt+Shift+↓     |
-| Declassa elemento elenco (all’inizio di un elemento) | Tab   | Tab             |
-| Promuovi elemento elenco (all’inizio di un elemento) | ⇧Tab  | Shift+Tab       |
+| Azione                                               | macOS               | Windows / Linux |
+| ---------------------------------------------------- | ------------------- | --------------- |
+| Allinea a sinistra                                   | ⌘L                  | Ctrl+L          |
+| Centra                                               | ⌘E                  | Ctrl+E          |
+| Allinea a destra                                     | ⌘R                  | Ctrl+R          |
+| Giustifica                                           | ⌘J                  | Ctrl+J          |
+| Interlinea 1,0                                       | ⌘1                  | Ctrl+1          |
+| Interlinea 1,5                                       | ⌘5                  | Ctrl+5          |
+| Interlinea 2,0                                       | ⌘2                  | Ctrl+2          |
+| Aumenta rientro                                      | ⌃⇧M / ⌃M            | Ctrl+M          |
+| Riduci rientro                                       | ⇧⌘M                 | Ctrl+Shift+M    |
+| Rientro sporgente                                    | ⌘T                  | Ctrl+T          |
+| Rimuovi rientro sporgente                            | ⇧⌘T                 | Ctrl+Shift+T    |
+| Cancella la formattazione del paragrafo              | ⌥⌘Q / ⌃Q            | Ctrl+Q          |
+| Normale (stile)                                      | ⇧⌘N / ⌥⌘0 / ⌥⇧Clear | Ctrl+Alt+0      |
+| Titolo 1 (stile)                                     | ⌥⌘1                 | Ctrl+Alt+1      |
+| Titolo 2 (stile)                                     | ⌥⌘2                 | Ctrl+Alt+2      |
+| Titolo 3 (stile)                                     | ⌥⌘3                 | Ctrl+Alt+3      |
+| Paragrafo… (finestra)                                | ⌥⌘M                 | Ctrl+Alt+M      |
+| Sposta il paragrafo in alto                          | ⌃⇧↑                 | Alt+Shift+↑     |
+| Sposta il paragrafo in basso                         | ⌃⇧↓                 | Alt+Shift+↓     |
+| Alza di livello il titolo                            | ⌃⇧←                 | —               |
+| Abbassa di livello il titolo                         | ⌃⇧→                 | —               |
+| Espandi titolo (visualizzazione Struttura)           | ⌃⇧= / ⌃⇧Num+        | —               |
+| Comprimi titolo (visualizzazione Struttura)          | ⌃⇧- / ⌃⇧Num-        | —               |
+| Mostra livello struttura 1                           | ⌃⇧1                 | —               |
+| Mostra livello struttura 2                           | ⌃⇧2                 | —               |
+| Mostra livello struttura 3                           | ⌃⇧3                 | —               |
+| Mostra livello struttura 4                           | ⌃⇧4                 | —               |
+| Mostra livello struttura 5                           | ⌃⇧5                 | —               |
+| Mostra livello struttura 6                           | ⌃⇧6                 | —               |
+| Mostra livello struttura 7                           | ⌃⇧7                 | —               |
+| Mostra livello struttura 8                           | ⌃⇧8                 | —               |
+| Mostra livello struttura 9                           | ⌃⇧9                 | —               |
+| Mostra tutti i titoli (visualizzazione Struttura)    | ⌃⇧A                 | —               |
+| Declassa elemento elenco (all’inizio di un elemento) | Tab                 | Tab             |
+| Promuovi elemento elenco (all’inizio di un elemento) | ⇧Tab                | Shift+Tab       |
+| Elenchi puntati                                      | ⇧⌘L                 | —               |
 
-Il rientro, il rientro sporgente e la cancellazione della formattazione del paragrafo funzionano solo con Ctrl su entrambe le piattaforme: `⌘M` riduce a icona la finestra e `⌘Q` esce, quindi una combinazione con Command sarebbe una modifica silenziosa mentre esci. Tab cambia il livello dell’elenco solo quando il cursore è all’inizio di un elemento o si estende su più elementi; nel testo inserisce un carattere di tabulazione, e `⇧Tab` promuove sempre.
+Aumenta e riduci rientro seguono Word su ciascuna piattaforma: `⌃⇧M` / `⇧⌘M` sul Mac, Ctrl+M / Ctrl+Shift+M su Windows e Linux; `⌘M` da solo riduce a icona la finestra e `⌘Q` esce. Tab cambia il livello dell’elenco solo quando il cursore è all’inizio di un elemento o si estende su più elementi; nel testo inserisce un carattere di tabulazione, e `⇧Tab` promuove sempre.
 
 ### Inserimento
 
-| Azione                         | macOS | Windows / Linux  |
-| ------------------------------ | ----- | ---------------- |
-| Interruzione di pagina         | ⌘⏎    | Ctrl+Enter       |
-| Interruzione di colonna        | ⇧⌘⏎   | Ctrl+Shift+Enter |
-| Interruzione di riga           | ⇧⏎    | Shift+Enter      |
-| Collegamento…                  | ⌘K    | Ctrl+K           |
-| Nuovo commento                 | ⌥⌘A   | Ctrl+Alt+A       |
-| Inserisci nota a piè di pagina | ⌥⌘F   | Ctrl+Alt+F       |
-| Inserisci nota di chiusura     | ⌥⌘E   | Ctrl+Alt+D       |
-| Data (campo)                   | ⌥⇧D   | Alt+Shift+D      |
-| Ora (campo)                    | ⌥⇧T   | Alt+Shift+T      |
-| Spazio unificatore             | ⇧⌘␣   | Ctrl+Shift+Space |
-| Trattino unificatore           | ⇧⌘-   | Ctrl+Shift+-     |
+| Azione                                           | macOS       | Windows / Linux  |
+| ------------------------------------------------ | ----------- | ---------------- |
+| Interruzione di pagina                           | ⌘⏎          | Ctrl+Enter       |
+| Interruzione di colonna                          | ⇧⌘⏎         | Ctrl+Shift+Enter |
+| Interruzione di riga                             | ⇧⏎          | Shift+Enter      |
+| Collegamento…                                    | ⌘K          | Ctrl+K           |
+| Nuovo commento                                   | ⌥⌘A         | Ctrl+Alt+A       |
+| Inserisci nota a piè di pagina                   | ⌥⌘F         | Ctrl+Alt+F       |
+| Inserisci nota di chiusura                       | ⌥⌘E         | Ctrl+Alt+D       |
+| Data (campo)                                     | ⌃⇧D / ⌥⇧D   | Alt+Shift+D      |
+| Ora (campo)                                      | ⌃⇧T / ⌥⇧T   | Alt+Shift+T      |
+| Spazio unificatore                               | ⌃⇧␣ / ⇧⌘␣   | Ctrl+Shift+Space |
+| Trattino unificatore                             | ⌥⇧⌘-        | Ctrl+Shift+-     |
+| Numero di pagina (pagina corrente)               | ⌃⇧P         | —                |
+| Inserisci parentesi graffe di campo              | ⌘F9         | —                |
+| Collega al precedente                            | ⌃⇧R         | —                |
+| Inserisci campo di unione                        | ⌃⇧F         | —                |
+| Segna voce di sommario                           | ⌥⇧⌘O        | —                |
+| Interruzione di sezione (pagina successiva)      | ⌘⌤          | —                |
+| Lineetta media                                   | ⌘Num-       | —                |
+| Lineetta lunga                                   | ⌥⌘Num-      | —                |
+| Equazione                                        | ⌃=          | —                |
+| Segnalibro                                       | ⇧⌘F5        | —                |
+| Crea nuova voce di glossario                     | ⌥F3         | —                |
+| Segna voce di indice                             | ⌥⇧⌘X        | —                |
+| Segna citazione                                  | ⌥⇧⌘I        | —                |
+| Trattino facoltativo                             | ⌥⌘-         | —                |
+| Carattere di tabulazione in una cella di tabella | ⌃Tab / ⌥Tab | —                |
 
 Inserisci nota di chiusura è una vera divisione tra piattaforme, non un rinominamento: Word usa `⌥⌘E` sul Mac perché lì `⌥⌘D` appartiene al Dock.
 
 ### Revisione e strumenti
 
-| Azione                       | macOS | Windows / Linux |
-| ---------------------------- | ----- | --------------- |
-| Revisione                    | ⇧⌘E   | Ctrl+Shift+E    |
-| Conteggio parole             | ⇧⌘G   | Ctrl+Shift+G    |
-| Correzione                   | F7    | F7              |
-| Aggiorna campo               | F9    | F9              |
-| Mostra/nascondi codici campo | ⌥F9   | Alt+F9          |
+| Azione                                           | macOS      | Windows / Linux |
+| ------------------------------------------------ | ---------- | --------------- |
+| Revisione                                        | ⇧⌘E        | Ctrl+Shift+E    |
+| Conteggio parole                                 | —          | Ctrl+Shift+G    |
+| Correzione                                       | —          | F7              |
+| Aggiorna campo                                   | F9 / ⌥⇧⌘U  | F9              |
+| Mostra/nascondi codici campo                     | ⌥F9        | Alt+F9          |
+| Thesaurus                                        | ⌃⌥⌘R / ⇧F7 | —               |
+| Ortografia e grammatica                          | ⌥⌘L / F7   | Ctrl+Alt+L      |
+| Errore di ortografia successivo                  | ⌥F7        | —               |
+| Traduci                                          | ⌃⌥⌘T       | —               |
+| Attiva/disattiva il codice del campo selezionato | ⇧F9        | —               |
+| Blocca campi                                     | ⌘F11 / ⌘3  | —               |
+| Sblocca campi                                    | ⇧⌘F11 / ⌘4 | —               |
+| Scollega campi                                   | ⇧⌘F9 / ⌘6  | —               |
+| Campo successivo                                 | F11        | —               |
+| Campo precedente                                 | ⇧F11       | —               |
+| Modifica elenco destinatari                      | ⌃⇧E        | —               |
+| Finalizza e unisci                               | ⌃⇧N        | —               |
 
-F7 esegue la correzione IA e F9 aggiorna i campi; entrambe richiedono un documento caricato. Una volta che un vincolo di modifica attiva la Revisione, questa non può più essere disattivata.
+F7 apre Ortografia e grammatica sul Mac, come in Word, ed esegue la correzione IA su Windows e Linux; F9 aggiorna i campi. Una volta che un vincolo di modifica attiva la Revisione, questa non può più essere disattivata.
 
 ### Vista
 
-| Azione                                 | macOS | Windows / Linux |
-| -------------------------------------- | ----- | --------------- |
-| Ingrandisci                            | ⌘=    | Ctrl+=          |
-| Riduci                                 | ⌘-    | Ctrl+-          |
-| Zoom al 100 %                          | ⌘0    | Ctrl+0          |
-| Mostra/nascondi segni di formattazione | ⌘8    | Ctrl+Shift+8    |
+| Azione                                 | macOS       | Windows / Linux |
+| -------------------------------------- | ----------- | --------------- |
+| Ingrandisci                            | ⌘=          | Ctrl+=          |
+| Riduci                                 | ⌘-          | Ctrl+-          |
+| Zoom al 100 %                          | ⌘0          | Ctrl+0          |
+| Mostra/nascondi segni di formattazione | ⌘8          | Ctrl+Shift+8    |
+| Layout di stampa                       | ⌥⌘P         | —               |
+| Struttura                              | ⌥⌘O         | —               |
+| Bozza                                  | ⌥⌘N         | —               |
+| Dividi                                 | ⌥⌘S         | —               |
+| Rimuovi divisione                      | ⌃⇧C         | —               |
+| Finestra successiva                    | ⌘F6 / ⌥F6   | —               |
+| Finestra precedente                    | ⇧⌘F6 / ⌥⇧F6 | —               |
+| Riquadro Stili                         | ⌥⇧⌘S        | —               |
+| Messa a fuoco                          | ⌃⇧⌘F        | —               |
+| Barra multifunzione                    | ⌥⌘R         | —               |
+| Formato oggetto                        | ⇧⌘1         | —               |
+| Riquadro di selezione                  | ⌥⌘U         | —               |
 
 La combinazione dei segni di formattazione segue la ripartizione propria di Word, `⌘8` contro Ctrl+Shift+8. Word gestisce lo zoom solo con le tre combinazioni di menu qui sopra — `⌘+` non fa nulla.
 

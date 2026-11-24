@@ -2191,6 +2191,27 @@ button {
   pointer-events: none;
 }
 
+/* Hand tool: a drag scrolls the view instead of selecting text */
+.pdf-scroll.pdf-hand {
+  cursor: grab;
+}
+
+.pdf-scroll.pdf-hand .textLayer,
+.pdf-scroll.pdf-hand .pdf-ocr-layer {
+  user-select: none;
+}
+
+.pdf-scroll.pdf-hand .textLayer span,
+.pdf-scroll.pdf-hand .pdf-ocr-layer span {
+  cursor: inherit;
+}
+
+.pdf-scroll.pdf-panning,
+.pdf-scroll.pdf-panning * {
+  cursor: grabbing !important;
+  user-select: none;
+}
+
 .pdf-draw-shape {
   cursor: move;
 }
@@ -3414,6 +3435,28 @@ button {
 .rb-menu button:disabled {
   opacity: 0.4;
   cursor: default;
+}
+
+.rb-menu .rb-width-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.rb-menu .rb-width-item.active {
+  background: var(--accent-soft);
+}
+
+.rb-width-line {
+  width: 64px;
+  border-radius: 4px;
+  background: currentcolor;
+}
+
+.pdf-page-menu-check {
+  width: 18px;
+  flex: none;
+  text-align: left;
 }
 
 .rb-menu-sep {
