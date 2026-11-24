@@ -5905,12 +5905,15 @@ textarea:focus {
  * system colors inside the popups resolve to their dark variants: the menu
  * item buttons only carry Univer's dark-mode text class, so their labels turn
  * white on the light menu surface and vanish (genoffice#2041). Track Univer's
- * own dark flag so its popups get the UA scheme matching what they render. */
-.univer-popup {
+ * own dark flag so its popups get the UA scheme matching what they render.
+ * Submenus portal to body, outside .univer-popup (genoffice#2960). */
+.univer-popup,
+[data-u-context-menu-submenu] {
   color-scheme: light;
 }
 
-.univer-dark .univer-popup {
+.univer-dark .univer-popup,
+.univer-dark [data-u-context-menu-submenu] {
   color-scheme: dark;
 }
 
