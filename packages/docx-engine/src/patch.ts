@@ -2720,7 +2720,7 @@ export async function saveDocx(
           `<Relationship Id="${escapeXmlAttr(r.rId)}" Type="${r.type}" Target="${escapeXmlAttr(r.target)}"${r.external ? ' TargetMode="External"' : ''}/>`,
       )
       .join('')
-    relsXml = relsXml.replace('</Relationships>', `${inserts}</Relationships>`)
+    relsXml = relsXml.replace('</Relationships>', () => `${inserts}</Relationships>`)
     relsChanged = true
   }
 
