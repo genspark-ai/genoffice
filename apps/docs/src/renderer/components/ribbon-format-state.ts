@@ -471,7 +471,10 @@ export function computeFormatState(
     listOrdered: sub
       ? paraAttrs.listMarker?.kind === 'ordered'
       : editor.isActive('docListItem', { kind: 'ordered' }),
-    align: str(paraAttrs.align),
+    // the whole table selected: the alignment buttons show (and set) the table's own
+    align: tableSelected(editor)
+      ? (str((editor.state.selection as NodeSelection).node.attrs.tblAlign) ?? 'left')
+      : str(paraAttrs.align),
     bidi: paraAttrs.bidi === true || paraAttrs.bidiInferred === true,
     selectionBidi: effectiveBidi(paraAttrs) || (!sub && selectionHasBidi(editor)),
     lineSpacing: typeof paraAttrs.lineSpacing === 'number' ? paraAttrs.lineSpacing : null,
@@ -490,4 +493,9 @@ function inlinePictureOf(ed: Editor): Record<string, unknown> | null {
   if (!(sel instanceof NodeSelection) || sel.node.type.name !== 'docInlineImage') return null
   const attrs = sel.node.attrs
   return attrs.rule || !attrs.dataUrl ? null : attrs
+}
+
+function tableSelected(editor: Editor): boolean {
+  const sel = editor.state.selection
+  return sel instanceof NodeSelection && sel.node.type.name === 'docTable'
 }
