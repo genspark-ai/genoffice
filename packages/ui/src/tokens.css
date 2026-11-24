@@ -47,6 +47,10 @@
   --danger-bg: #fdf3f3;
   /* Word's changed-line bar (Simple Markup): fixed red, tuned per theme */
   --docs-revision-bar: #c00000;
+  /* Word's grammar mark: a blue double underline */
+  --docs-grammar-mark: #2b6ee0;
+  /* Word's spelling mark: a red wavy underline */
+  --docs-spelling-mark: #d13438;
   --search-hit-bg: #ffe28a;
   --search-hit-active-bg: #ff9632;
   --search-hit-active-ink: #fff;
@@ -122,6 +126,8 @@
   --danger: #d13438;
   --danger-bg: #3a2020;
   --docs-revision-bar: #ff6b6b;
+  --docs-grammar-mark: #6ea8ff;
+  --docs-spelling-mark: #ff6b6b;
   --search-hit-bg: #745a1e;
   --search-hit-active-bg: #d4781f;
   --search-hit-active-ink: #1e1e1e;
@@ -181,6 +187,8 @@
     --danger: #d13438;
     --danger-bg: #3a2020;
     --docs-revision-bar: #ff6b6b;
+    --docs-grammar-mark: #6ea8ff;
+    --docs-spelling-mark: #ff6b6b;
     --search-hit-bg: #745a1e;
     --search-hit-active-bg: #d4781f;
     --search-hit-active-ink: #1e1e1e;

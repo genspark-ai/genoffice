@@ -1,3 +1,4 @@
+import { isTrueBooleanCell } from './xlsx-escapes'
 import { ensureRelationshipNamespace } from './xlsx-namespace'
 import { columnLabel } from '../domain/cell-address'
 import { shortDateNumFmtId } from '../shared/short-date'
@@ -407,7 +408,7 @@ function extractCellValue(
     return sharedStrings[idx] ?? null
   }
   if (type === 'str') return decodePivotXmlEntities(rawValue)
-  if (type === 'b') return rawValue === '1' ? 1 : 0
+  if (type === 'b') return isTrueBooleanCell(rawValue) ? 1 : 0
   const n = Number(rawValue)
   return Number.isFinite(n) ? n : decodePivotXmlEntities(rawValue)
 }

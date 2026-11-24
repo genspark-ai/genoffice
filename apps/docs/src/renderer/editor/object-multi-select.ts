@@ -27,6 +27,8 @@ export interface GroupMemberSource {
   /** the anchor's offsets, EMU */
   xEmu: number
   yEmu: number
+  /** carried behind a paragraph of text (a shape that left a table cell with it), not behind another drawing */
+  behindText?: boolean
 }
 
 /**
@@ -189,9 +191,13 @@ function regroupPasted(trs: readonly Transaction[], state: EditorState): Transac
 function strandedCarried(state: EditorState): Transaction | null {
   const tr = state.tr
   let anchored = false
+  let onText = false
   state.doc.forEach((node, pos) => {
     const member = node.type.name === 'docProtected' && !!node.attrs.member
-    if (node.attrs.carried && !anchored) {
+    const behindText = member && !!(node.attrs.member as GroupMemberSource).behindText
+    const held = behindText ? onText : anchored
+    onText = node.isTextblock || (onText && held && !!node.attrs.carried)
+    if (node.attrs.carried && !held) {
       const down = Math.round(Number(node.attrs.carriedDy ?? 0) * 9525)
       tr.setNodeMarkup(pos, undefined, {
         ...node.attrs,

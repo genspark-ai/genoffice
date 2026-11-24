@@ -172,6 +172,20 @@ export function detachedWindowsOf(kind: TabKind): BrowserWindow[] {
   return out
 }
 
+/** the detached windows of a kind as window-switching sees them, oldest first */
+export function detachedTabsOf(kind: TabKind): { id: string; title: string; focused: boolean }[] {
+  const out: { id: string; title: string; focused: boolean }[] = []
+  for (const [wcId, rec] of detached) {
+    if (rec.kind !== kind || rec.released || rec.window.isDestroyed()) continue
+    out.push({
+      id: ID_PREFIX + wcId,
+      title: rec.window.getTitle(),
+      focused: rec.window.isFocused(),
+    })
+  }
+  return out
+}
+
 /** takes the documents out of every detached window of a kind, closing the windows, for the shell to make tabs of */
 export function releaseDetachedOf(kind: TabKind): DetachedTab[] {
   const out: DetachedTab[] = []

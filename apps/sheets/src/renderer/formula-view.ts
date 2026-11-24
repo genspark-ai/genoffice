@@ -22,6 +22,7 @@ import { RENDER_RAW_FORMULA_KEY } from '@univerjs/preset-sheets-core'
 import { BEFORE_CELL_EDIT, INTERCEPTOR_POINT, SheetInterceptorService } from '@univerjs/sheets'
 import { IEditorBridgeService } from '@univerjs/sheets-ui'
 
+import { formulaToLocal, getNumberSeparators } from './number-separators'
 import type { LazyWorkbookState, UniverRuntime } from './univer-state'
 
 /// Formula-view sheets for blank/demo workbooks (no LazyWorkbookState).
@@ -82,7 +83,8 @@ export function installFormulaViewInterceptor(
         location.rawData?.f ??
         indexedFormulaText(state, location.subUnitId, location.row, location.col)
       if (typeof formula !== 'string' || formula === '') return next(cell)
-      return { ...(cell ?? {}), v: formula, t: CellValueType.STRING, p: null }
+      const shown = formulaToLocal(formula, getNumberSeparators())
+      return { ...(cell ?? {}), v: shown, t: CellValueType.STRING, p: null }
     },
   })
 }
@@ -150,13 +152,14 @@ export function installFormulaTextInterceptor(
     const sheetId =
       cellState.sheetId ?? runtime.univerAPI.getActiveWorkbook()?.getActiveSheet()?.getSheetId()
     if (!sheetId) return
-    const formula = indexedFormulaText(
+    const indexed = indexedFormulaText(
       lazyWorkbookRef.current,
       sheetId,
       cellState.row,
       cellState.column,
     )
-    if (!formula) return
+    if (!indexed) return
+    const formula = formulaToLocal(indexed, getNumberSeparators())
     setTimeout(() => {
       if (token !== generation) return
       // Never stomp live typing.

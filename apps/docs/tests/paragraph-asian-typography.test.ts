@@ -224,7 +224,7 @@ describe('Asian Typography: what OK writes', () => {
     expect(found.map((d) => d.from)).toEqual([2, 5])
   })
   it('the Strict level puts a joiner before small kana in Japanese text only', async () => {
-    const { kinsokuOffPluginKey, setStrictKinsoku } =
+    const { kinsokuOffPluginKey, setKinsokuLevel } =
       await import('../src/renderer/editor/cjk-punct-shrink')
     const ja = '<w:rPr><w:lang w:eastAsia="ja-JP"/></w:rPr>'
     const zh = '<w:rPr><w:lang w:eastAsia="zh-CN"/></w:rPr>'
@@ -237,10 +237,64 @@ describe('Asian Typography: what OK writes', () => {
         .find()
         .map((d) => d.from)
     expect(marks()).toEqual([])
-    setStrictKinsoku(editor, true)
+    setKinsokuLevel(editor, true, null)
     expect(marks()).toEqual([2, 3])
-    setStrictKinsoku(editor, false)
+    setKinsokuLevel(editor, false, null)
     expect(marks()).toEqual([])
+  })
+  it('the Custom level replaces the standard lists for text of its language only', async () => {
+    const { kinsokuOffPluginKey, setKinsokuLevel } =
+      await import('../src/renderer/editor/cjk-punct-shrink')
+    const ja = '<w:rPr><w:lang w:eastAsia="ja-JP"/></w:rPr>'
+    const zh = '<w:rPr><w:lang w:eastAsia="zh-CN"/></w:rPr>'
+    // kanji, a listed kana, a stop the list drops, an opener the list drops, a listed kana
+    const text = '\u56fd\u3042\u3002\uff08\u3044\u56fd'
+    const run = (rPr: string) => `<w:p><w:r>${rPr}<w:t>${text}</w:t></w:r></w:p>`
+    const { editor } = await openDoc(run(ja) + run(zh))
+    const marks = () =>
+      kinsokuOffPluginKey
+        .getState(editor.state)!
+        .find()
+        .map((d) => `${d.from}:${(d.spec as { key: string }).key}`)
+    const custom = { lang: 'ja-JP', before: '\u3042', after: '\u3044' }
+    setKinsokuLevel(editor, false, custom)
+    expect(marks()).toEqual([
+      '2:kinsoku-custom',
+      '3:kinsoku-free',
+      '4:kinsoku-free',
+      '5:kinsoku-free',
+      '6:kinsoku-custom',
+    ])
+    // Strict wins over a Japanese list
+    setKinsokuLevel(editor, true, custom)
+    expect(marks()).toEqual([])
+    // a list for a language no East Asian text has changes nothing
+    setKinsokuLevel(editor, false, { ...custom, lang: 'English' })
+    expect(marks()).toEqual([])
+    setKinsokuLevel(editor, false, { ...custom, lang: 'zh-CN' })
+    expect(marks().map((m) => Number(m.split(':')[0]))).toEqual([10, 11, 12, 13, 14])
+  })
+  it('a listed character behind an inline object still gets its joiner', async () => {
+    const { kinsokuOffPluginKey, setKinsokuLevel } =
+      await import('../src/renderer/editor/cjk-punct-shrink')
+    const run = '<w:r><w:t>\u56fd</w:t></w:r><w:r><w:br/></w:r><w:r><w:t>\u3042\u56fd</w:t></w:r>'
+    const { editor } = await openDoc(`<w:p>${run}</w:p>`)
+    const first = editor.state.doc.firstChild!
+    expect(first.childCount).toBe(3)
+    expect(first.child(1).isText).toBe(false)
+    setKinsokuLevel(editor, false, { lang: 'zh-CN', before: '\u3042', after: '' })
+    const found = kinsokuOffPluginKey.getState(editor.state)!.find()
+    expect(found.map((d) => `${d.from}:${(d.spec as { key: string }).key}`)).toEqual([
+      '3:kinsoku-custom',
+    ])
+  })
+  it('a Custom list frees a Latin mark only where it touches East Asian text', async () => {
+    const { kinsokuOffPluginKey, setKinsokuLevel } =
+      await import('../src/renderer/editor/cjk-punct-shrink')
+    const { editor } = await openDoc(p('', '\u56fd) a.b (\u56fd'))
+    setKinsokuLevel(editor, false, { lang: 'zh-CN', before: '', after: '' })
+    const found = kinsokuOffPluginKey.getState(editor.state)!.find()
+    expect(found.map((d) => d.from)).toEqual([2, 9])
   })
   it('Text Alignment writes w:textAlignment, and Auto takes it away', async () => {
     const { editor, parsed } = await openDoc(p('<w:keepNext/><w:jc w:val="center"/>'))

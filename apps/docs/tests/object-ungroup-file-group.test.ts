@@ -113,7 +113,7 @@ describe('ungrouping a group that came with the file', () => {
     const [at] = objects(editor)
     const before = boxesAt(editor, at).map((b) => [b.offsetXEmu, b.offsetYEmu, b.widthPx])
     select(editor, at)
-    expect(canUngroupObjects(editor.state)).toBe(true)
+    expect(canUngroupObjects(editor.state, blocks)).toBe(true)
     expect(ungroupSelectedObjects(editor, blocks)).toBe(true)
 
     const now = objects(editor)
@@ -319,7 +319,7 @@ describe('ungrouping a group that came with the file', () => {
     expect(once.match(/<wpg:wgp[ >]/g)).toHaveLength(1)
 
     select(editor, now[1])
-    expect(canUngroupObjects(editor.state)).toBe(true)
+    expect(canUngroupObjects(editor.state, blocks)).toBe(true)
     expect(ungroupSelectedObjects(editor, blocks)).toBe(true)
     now = objects(editor)
     expect(now.map((pos) => boxesAt(editor, pos).length)).toEqual([1, 1, 1])
@@ -379,12 +379,29 @@ describe('ungrouping a group that came with the file', () => {
       para('Lead') + group('', THREE).replace('<wp:wrapNone/>', '<wp:wrapTopAndBottom/>')
     const { editor, blocks } = await open(banded)
     select(editor, objects(editor)[0])
+    // Ungroup is greyed out rather than offered without effect
+    expect(canUngroupObjects(editor.state, blocks)).toBe(false)
     expect(ungroupSelectedObjects(editor, blocks)).toBe(false)
     expect(objects(editor)).toHaveLength(1)
     editor.destroy()
   })
 
-  it('leaves a group placed by alignment as it is', async () => {
+  it('does not offer Ungroup on an aligned group with no child to read its place off', async () => {
+    const lines = THREE.replace(/prst="ellipse"/g, 'prst="line"')
+    const aligned =
+      para('Lead') +
+      group('', lines).replace(
+        /<wp:positionH[^>]*>.*?<\/wp:positionH>/,
+        '<wp:positionH relativeFrom="margin"><wp:align>center</wp:align></wp:positionH>',
+      )
+    const { editor, blocks } = await open(aligned)
+    select(editor, objects(editor)[0])
+    expect(canUngroupObjects(editor.state, blocks)).toBe(false)
+    expect(ungroupSelectedObjects(editor, blocks)).toBe(false)
+    editor.destroy()
+  })
+
+  it('takes a group placed by alignment apart from where the page drew it', async () => {
     const aligned =
       para('Lead') +
       group('', THREE).replace(
@@ -392,9 +409,26 @@ describe('ungrouping a group that came with the file', () => {
         '<wp:positionH relativeFrom="margin"><wp:align>center</wp:align></wp:positionH>',
       )
     const { editor, blocks } = await open(aligned)
-    select(editor, objects(editor)[0])
-    expect(ungroupSelectedObjects(editor, blocks)).toBe(false)
-    expect(objects(editor)).toHaveLength(1)
+    const [at] = objects(editor)
+    const before = boxesAt(editor, at).map((b) => [b.offsetXEmu, b.offsetYEmu, b.widthPx])
+    select(editor, at)
+    expect(canUngroupObjects(editor.state, blocks)).toBe(true)
+    expect(ungroupSelectedObjects(editor, blocks)).toBe(true)
+    const now = objects(editor)
+    expect(now).toHaveLength(3)
+    // drawn where they were
+    expect(
+      now.map((pos) => boxesAt(editor, pos)[0]).map((b) => [b.offsetXEmu, b.offsetYEmu, b.widthPx]),
+    ).toEqual(before)
+
+    // the alignment is written as offsets from the column; the vertical offsets are the file's own
+    const xml = await savedBody(editor, aligned)
+    expect(xml).not.toContain('<wp:align>')
+    expect(xml.match(/<wp:positionH relativeFrom="column">/g)).toHaveLength(3)
+    expect(offsets(xml, 'V')).toEqual([20, 40, 130])
+    // no layout here: the three keep their places from each other
+    const [x1, x2, x3] = offsets(xml, 'H')
+    expect([x2 - x1, x3 - x1]).toEqual([140, 60])
     editor.destroy()
   })
 })

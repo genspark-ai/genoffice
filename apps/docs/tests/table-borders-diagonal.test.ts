@@ -104,8 +104,8 @@ describe('sideLine: the diagonals', () => {
   })
 
   it('No Border clears a diagonal, matching the four edges', () => {
-    expect(sideLine('none', 'tl2br', EDGE, LINE)).toEqual({ style: 'none' })
-    expect(sideLine('none', 'tr2bl', EDGE, LINE)).toEqual({ style: 'none' })
+    expect(sideLine('none', 'tl2br', EDGE, LINE)).toEqual({ style: 'nil' })
+    expect(sideLine('none', 'tr2bl', EDGE, LINE)).toEqual({ style: 'nil' })
   })
 
   it('the compound modes stay edges-only, as in Word', () => {
@@ -156,12 +156,12 @@ describe('setSelectionBorders: the diagonals', () => {
     run(editor, 'tl2br')
     expect(run(editor, 'none')).toBe(true)
     expect(bordersAt(editor, 0, 0)).toEqual({
-      top: { style: 'none' },
-      bottom: { style: 'none' },
-      left: { style: 'none' },
-      right: { style: 'none' },
-      tl2br: { style: 'none' },
-      tr2bl: { style: 'none' },
+      top: { style: 'nil' },
+      bottom: { style: 'nil' },
+      left: { style: 'nil' },
+      right: { style: 'nil' },
+      tl2br: { style: 'nil' },
+      tr2bl: { style: 'nil' },
     })
   })
 

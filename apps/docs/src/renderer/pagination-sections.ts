@@ -1,6 +1,6 @@
 // Section geometry: page box, margins, columns, doc-grid pitch and the
 // per-block column / width / vertical-alignment specs derived from sections.
-import { charPitchPt, LINE_GRIDS } from './char-grid'
+import { CHAR_GRIDS, charPitchPt, gridRightIndentPt, LINE_GRIDS } from './char-grid'
 import type { SectionInfo, SectionSettings, TextFlowDirection } from '@genoffice/docx-engine'
 
 import { mirrorShiftPx } from './page-margins'
@@ -186,6 +186,49 @@ export function sectionCharCellSpecs(
     if (!b.el) continue
     const c = cells[Math.max(0, Math.min(b.section ?? 0, cells.length - 1))] ?? 0
     if (c !== 0) specs.push({ el: b.el, dx: 0, dy: 0, charCellPt: c })
+  }
+  return specs
+}
+
+/**
+ * Right indent (pt) the section's character grid adds to paragraphs with
+ * w:adjustRightInd on, else 0. Only `legacy` documents (compatibilityMode
+ * below 15) adjust; unequal columns were not probed and stay as they are.
+ */
+export function sectionRightIndentPt(s: SectionInfo, basePt: number, legacy: boolean): number {
+  const g = s.settings.docGrid
+  if (!legacy || !g || !CHAR_GRIDS.includes(g.type)) return 0
+  const col = sectionColGeom(s)
+  if (!col.equalWidth) return 0
+  return gridRightIndentPt((col.colWidthPx * 72) / 96, charPitchPt(basePt, g.charSpace))
+}
+
+/** the adjustment every section shares, else null (per block through sectionRightIndentSpecs) */
+export function docRightIndentPt(
+  sections: SectionInfo[],
+  basePt: number,
+  legacy: boolean,
+): number | null {
+  if (sections.length === 0) return null
+  const v = sectionRightIndentPt(sections[0], basePt, legacy)
+  for (const s of sections) if (sectionRightIndentPt(s, basePt, legacy) !== v) return null
+  return v !== 0 ? v : null
+}
+
+/** per-block adjustment for documents whose sections disagree on it */
+export function sectionRightIndentSpecs(
+  blocks: BlockBox[],
+  sections: SectionInfo[],
+  basePt: number,
+  legacy: boolean,
+): ColumnBlockPlacement[] {
+  const adjusts = sections.map((s) => sectionRightIndentPt(s, basePt, legacy))
+  if (!adjusts.some((a) => a !== 0) || adjusts.every((a) => a === adjusts[0])) return []
+  const specs: ColumnBlockPlacement[] = []
+  for (const b of blocks) {
+    if (!b.el) continue
+    const a = adjusts[Math.max(0, Math.min(b.section ?? 0, adjusts.length - 1))] ?? 0
+    if (a !== 0) specs.push({ el: b.el, dx: 0, dy: 0, rightIndentPt: a })
   }
   return specs
 }
@@ -892,6 +935,21 @@ export function verticalBlockShift(
   return { dx: mode === 'btLr' ? off : fillWidthPx - off - extentPx, dy: 0 - off }
 }
 
+/** a table's own box on a horizontal line: its width and where its left edge sits from the content edge */
+export interface TableBoxPx {
+  widthPx: number
+  leftPx: number
+}
+
+function domTableBox(el: HTMLElement): TableBoxPx {
+  const leftPx = parseFloat(getComputedStyle(el).marginLeft) || 0
+  // a read-only table sits inside its block: the table's own box is the one to place
+  const inner = el.tagName === 'TABLE' ? null : el.querySelector<HTMLElement>('table')
+  if (!inner) return { widthPx: el.offsetWidth, leftPx }
+  const within = inner.offsetLeft - (inner.offsetParent === el ? 0 : el.offsetLeft)
+  return { widthPx: inner.offsetWidth, leftPx: leftPx + within }
+}
+
 /**
  * Per-block placement for pages of vertical-text sections. Blocks are measured
  * horizontally at the line length (contentWidth) and paginated against the
@@ -900,12 +958,17 @@ export function verticalBlockShift(
  * flow footprint is trimmed back to the measured one via margin-bottom so the
  * page gap math stays that of a horizontal page (the last block also absorbs
  * the flow beyond the physical body height).
+ *
+ * A table is not turned (Word draws it upright): it hangs from the line start
+ * with its far edge at the flow position and takes no room in the flow, and the
+ * blocks that start beside it begin their lines past it.
  */
 export function verticalTextSpecs(
   blocks: BlockBox[],
   slices: PageSlice[],
   sections: SectionInfo[],
   geoms: SectionGeom[],
+  tableBox: (el: HTMLElement) => TableBoxPx = domTableBox,
 ): ColumnBlockPlacement[] {
   const specs: ColumnBlockPlacement[] = []
   if (!sections.some((s) => sectionVertical(s.settings))) return specs
@@ -925,9 +988,31 @@ export function verticalTextSpecs(
       if (b.el && !b.floated && b.top >= slice.start - 0.5) page.push(b)
     }
     const used = slice.end - slice.start
+    // the tables still beside the flow position: where each ends and how far lines start past it
+    let beside: { endOff: number; insetPx: number }[] = []
     page.forEach((b, i) => {
       const off = b.top - slice.start
       const next = page[i + 1]
+      beside = beside.filter((t) => off < t.endOff - 0.5)
+      const insetPx = beside.reduce((m, t) => Math.max(m, t.insetPx), 0)
+      const firstOnPage = i === 0
+      if (isTableBlock(b.el!)) {
+        const box = tableBox(b.el!)
+        const shift = verticalBlockShift(mode, g.contentHeight, off, box.widthPx)
+        specs.push({
+          el: b.el!,
+          dx: shift.dx - box.leftPx,
+          dy: shift.dy + insetPx,
+          vertical: {
+            mode,
+            marginBottomPx: (next ? next.top - b.top : 0) - b.height,
+            firstOnPage,
+            table: { heightPx: b.height },
+          },
+        })
+        beside.push({ endOff: off + box.widthPx, insetPx: insetPx + b.height })
+        return
+      }
       const marginBottomPx = next
         ? next.top - b.top - lineLen
         : Math.min(used, lineLen) - off - lineLen
@@ -937,7 +1022,7 @@ export function verticalTextSpecs(
         // applied, the physical margins no longer hold the indents
         widthPx: Math.max(0, lineLen - (b.inlineExtraPx ?? blockInlineExtraPx(b.el!))),
         ...verticalBlockShift(mode, g.contentHeight, off, b.height),
-        vertical: { mode, marginBottomPx, firstOnPage: i === 0 },
+        vertical: { mode, marginBottomPx, firstOnPage, ...(insetPx > 0 ? { insetPx } : {}) },
       })
     })
   }

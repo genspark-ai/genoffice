@@ -9,6 +9,7 @@
  */
 import type { Node as PmNode } from '@tiptap/pm/model'
 import { textParaLineBox } from '../text-layout/para-line-box'
+import { openDocumentText } from '../text-layout/open-document'
 import {
   asciiOnlyCjkFace,
   autoSpacingPt,
@@ -592,6 +593,7 @@ const CLIPBOARD_PARA_ATTR_TYPES: Record<string, 'string' | 'number' | 'boolean'>
   contextualSpacing: 'boolean',
   suppressAutoHyphens: 'boolean',
   mirrorIndents: 'boolean',
+  adjustRightInd: 'boolean',
   keepNext: 'boolean',
   keepLines: 'boolean',
   widowControl: 'boolean',
@@ -613,6 +615,8 @@ const CLIPBOARD_PARA_ATTR_TYPES: Record<string, 'string' | 'number' | 'boolean'>
   emptyRunSize: 'number',
   emptyRunFont: 'string',
   markSize: 'number',
+  markColor: 'string',
+  markHighlight: 'string',
   borders: 'string',
   borderLines: 'string',
   borderPad: 'string',
@@ -820,6 +824,7 @@ export interface LayoutParaFormat {
   contextualSpacing?: boolean | null
   suppressAutoHyphens?: boolean | null
   mirrorIndents?: boolean | null
+  adjustRightInd?: boolean | null
   emptyRunSize?: number | null
   emptyRunFont?: string | null
   /** in-flow pictures and nothing else */
@@ -1034,12 +1039,27 @@ export function lineBoxSpec(
     if (fmt.contextualSpacing === true) classes.push('ctx-sp')
     else if (fmt.contextualSpacing === false) classes.push('ctx-sp-off')
     if (fmt.mirrorIndents === true) classes.push('doc-mirror-ind')
+    if (fmt.adjustRightInd != null)
+      classes.push(fmt.adjustRightInd ? 'doc-rind-on' : 'doc-rind-off')
   }
   if (fmt.suppressAutoHyphens === true)
     styles.push('hyphens:manual', '-webkit-hyphens:manual', '--doc-shy:none')
   // the rule exists only in a document that hyphenates (doc-style-css)
   else if (fmt.suppressAutoHyphens === false) classes.push('doc-hyphens-on')
   return { classes, styles }
+}
+
+const END_INDENT = 'margin-inline-end:'
+
+/**
+ * A body paragraph's right indent as written on the element. Below
+ * compatibilityMode 15 the character grid adds to it (--doc-rind,
+ * doc-style-css); a Word 2013 document keeps the plain length.
+ */
+export function endIndentDecl(length: string): string {
+  return openDocumentText().legacyLayout
+    ? `${END_INDENT}calc(${length} + var(--doc-rind, 0pt))`
+    : `${END_INDENT}${length}`
 }
 
 /** inline leaves of an engine paragraph: a run's text, then its picture (the
@@ -1158,6 +1178,7 @@ export function fromRuns(
       contextualSpacing: fmt?.contextualSpacing ?? null,
       suppressAutoHyphens: fmt?.suppressAutoHyphens ?? null,
       mirrorIndents: fmt?.mirrorIndents ?? null,
+      adjustRightInd: fmt?.adjustRightInd ?? null,
       emptyRunSize: fmt?.emptyRunSizeHalfPoints ?? null,
       emptyRunFont: fmt?.emptyRunFontFamily ?? null,
       picOnly,
@@ -1378,6 +1399,7 @@ export function fromPmNode(
       contextualSpacing: node.attrs.contextualSpacing as boolean | null,
       suppressAutoHyphens: node.attrs.suppressAutoHyphens as boolean | null,
       mirrorIndents: node.attrs.mirrorIndents as boolean | null,
+      adjustRightInd: node.attrs.adjustRightInd as boolean | null,
       emptyRunSize: numOrNull(node.attrs.emptyRunSize),
       emptyRunFont: node.attrs.emptyRunFont ? String(node.attrs.emptyRunFont) : null,
       picOnly,
@@ -1446,6 +1468,12 @@ export function fromPmNode(
           anchorHost,
         }),
       )
+  }
+  // last, so a border standing out from the indent has already moved it
+  for (let i = styles.length - 1; i >= 0; i--) {
+    if (!styles[i].startsWith(END_INDENT)) continue
+    styles[i] = endIndentDecl(styles[i].slice(END_INDENT.length))
+    break
   }
   // a positioned frame (below) models the same w:framePr; frameBox only covers frames without a width
   if (node.attrs.frameBox && !node.attrs.frame)

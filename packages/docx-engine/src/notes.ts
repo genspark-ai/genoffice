@@ -99,6 +99,10 @@ export function parseNotesXml(xml: string, kind: NoteKind, read?: NoteParagraphR
     // Word draws the entry number only where a self-reference mark run exists
     // (empty-body notes keep their line but show no numeral — Word probe 2026-09-01)
     const noRefMark = !NOTE_REF_MARK_RE.test(entryXml)
+    const bookmarks = Array.from(
+      entryXml.matchAll(/<w:bookmarkStart\b[^>]*\bw:name=(["'])(.*?)\1/g),
+      (m) => decodeEntities(m[2]),
+    )
     return {
       id,
       text,
@@ -107,6 +111,7 @@ export function parseNotesXml(xml: string, kind: NoteKind, read?: NoteParagraphR
       ...(/ADDIN\s+(?:ZOTERO_|CSL_)/.test(entryXml) ? { zoteroField: true as const } : {}),
       ...(first ? { spacing: first.spacing } : {}),
       ...(noRefMark ? { noRefMark: true as const } : {}),
+      ...(bookmarks.length > 0 ? { bookmarks } : {}),
     }
   })
 }

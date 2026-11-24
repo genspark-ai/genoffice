@@ -1,10 +1,12 @@
 import type { PDFDocumentProxy } from 'pdfjs-dist'
 import { MARKUP_TYPE_BY_ANNOT, type SavedMarkupAnnot } from './edit-state'
 import { toSavedNote, type PdfJsAnnotData, type SavedNoteAnnot } from './note-threads'
+import { toSavedShape, type PdfJsShapeData, type SavedShapeAnnot } from './shape-hit'
 
 export interface PageSavedAnnots {
   markups: SavedMarkupAnnot[]
   notes: SavedNoteAnnot[]
+  shapes: SavedShapeAnnot[]
 }
 
 export interface SavedAnnotCounts {
@@ -23,9 +25,10 @@ export async function loadSavedAnnots(
 ): Promise<PageSavedAnnots> {
   try {
     const page = await doc.getPage(origIdx + 1)
-    const annots = (await page.getAnnotations()) as (PdfJsAnnotData & {
-      quadPoints?: Float32Array | null
-    })[]
+    const annots = (await page.getAnnotations()) as (PdfJsAnnotData &
+      PdfJsShapeData & {
+        quadPoints?: Float32Array | null
+      })[]
     const markups = annots.flatMap((a) => {
       const type = MARKUP_TYPE_BY_ANNOT[a.annotationType]
       // Only ref-backed annots can be addressed for deletion (id "123R" → object 123)
@@ -53,9 +56,10 @@ export async function loadSavedAnnots(
       const note = toSavedNote(a, origIdx)
       return note ? [note] : []
     })
-    return { markups, notes }
+    const shapes = annots.flatMap((a) => toSavedShape(a, origIdx) ?? [])
+    return { markups, notes, shapes }
   } catch {
-    return { markups: [], notes: [] } // page unreadable; no saved annotations to offer
+    return { markups: [], notes: [], shapes: [] } // page unreadable; no saved annotations to offer
   }
 }
 

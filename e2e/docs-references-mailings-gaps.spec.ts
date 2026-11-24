@@ -282,11 +282,11 @@ test('Mark Index Entry takes a subentry, a cross-reference, bold pages and Mark 
       .toBe(2)
     await expect(page.locator('.doc-page').getByText('Cases', { exact: true })).toHaveCount(1)
 
+    // the index's section was saved when it went in: wait for this save by what was added since
     await saveFromMenu(app)
-    await expect
-      .poll(() => documentXml(docPath), { timeout: 30_000 })
-      .toContain(' XE "Pears" \\t "See Fruit" ')
+    await expect.poll(() => documentXml(docPath), { timeout: 30_000 }).toContain(' TOA \\h \\p ')
     const saved = await documentXml(docPath)
+    expect(saved).toContain(' XE "Pears" \\t "See Fruit" ')
     expect(saved.match(/ XE "Fruit:Apples" \\b /g)).toHaveLength(2)
     expect(saved).toMatch(
       /TA \\l (?:"|&quot;)Baldwin v\. Alberti, 58 Wn\. 2d 243 \(1961\)(?:"|&quot;) \\s (?:"|&quot;)Baldwin(?:"|&quot;) \\c 1 /,

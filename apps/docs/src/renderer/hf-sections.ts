@@ -12,14 +12,22 @@
  * Sections referencing the same parsed part show one another's pending edit,
  * since the save rewrites that shared part. No section is special-cased.
  */
-import type {
-  HeaderFooter,
-  HfImage,
-  HfPartInfo,
-  HfPictureEdit,
-  SectionInfo,
+import {
+  NEW_PICTURE_TOKEN_PREFIX,
+  pictureLinkToken,
+  retargetImageBlip,
+  withPictureLink,
+  type HeaderFooter,
+  type HfImage,
+  type HfParagraph,
+  type HfPartInfo,
+  type HfPictureEdit,
+  type HfPictureLink,
+  type Run,
+  type SectionInfo,
 } from '@genoffice/docx-engine'
 import { hfFromPart, type HfVariantKey, type HfVariantsState, type HfView } from './doc-state'
+import type { PageFacts } from './editor/field-results'
 
 export type HfKind = 'header' | 'footer'
 
@@ -132,25 +140,39 @@ function pendingForRef(
   return undefined
 }
 
-/** results per edit map and image list: consumers compare image lists by identity */
-const editedImagesMemo = new WeakMap<
-  NonNullable<HeaderFooter['pictureEdits']>,
-  WeakMap<HfImage[], HfImage[]>
->()
+/** results per edit maps and image list: consumers compare image lists by identity */
+const editedImagesMemo = new WeakMap<object, WeakMap<object, WeakMap<HfImage[], HfImage[]>>>()
+const NO_EDITS = {}
 
-/** the part's images with the strip's pending moves / resizes (page-relative boxes) applied */
+const bytesUrl = (bytes: NonNullable<HfPictureLink['bytes']>): string =>
+  `data:${bytes.mime};base64,${bytes.base64}`
+
+/**
+ * The part's images with the strip's pending moves / resizes (page-relative boxes) applied,
+ * and the bytes Update Now read for a linked one.
+ */
 export function withHfPictureEdits(
   images: HfImage[] | undefined,
   value: HeaderFooter | null | undefined,
 ): HfImage[] | undefined {
   const edits = value?.pictureEdits
-  if (!images || !edits) return images
-  let memo = editedImagesMemo.get(edits)
-  if (!memo) editedImagesMemo.set(edits, (memo = new WeakMap()))
+  const links = value?.pictureLinks
+  if (!images || (!edits && !links)) return images
+  let byLinks = editedImagesMemo.get(edits ?? NO_EDITS)
+  if (!byLinks) editedImagesMemo.set(edits ?? NO_EDITS, (byLinks = new WeakMap()))
+  let memo = byLinks.get(links ?? NO_EDITS)
+  if (!memo) byLinks.set(links ?? NO_EDITS, (memo = new WeakMap()))
   const hit = memo.get(images)
   if (hit) return hit
-  const out = images.map((img): HfImage => {
-    const edit = img.drawing == null ? undefined : edits[img.drawing]
+  const out = images.map((image): HfImage => {
+    const bytes = image.linkDrawing == null ? undefined : links?.[image.linkDrawing]?.bytes
+    let img = image
+    if (bytes) {
+      // the save drops the crop with the old bytes
+      const { crop: _old, ...rest } = image
+      img = { ...rest, dataUrl: bytesUrl(bytes) }
+    }
+    const edit = img.drawing == null ? undefined : edits?.[img.drawing]
     if (!edit) return img
     // an axis the picture moved along is pinned to the page; the other keeps
     // its base (an aligned picture realigns at its new size, as in Word)
@@ -272,7 +294,174 @@ export function withHfEdit(
 export function hfTextCommit(prev: HeaderFooter | undefined, next: HeaderFooter): HeaderFooter {
   const { pictureOnly: _textKept, ...rest } = next
   const pictureEdits = prev?.pictureEdits ?? next.pictureEdits
-  return pictureEdits ? { ...rest, pictureEdits } : rest
+  const pictureLinks = prev?.pictureLinks ?? next.pictureLinks
+  // a commit that carries the runs but not what their placeholders stand for keeps the bytes
+  const newPictures =
+    prev?.newPictures || next.newPictures
+      ? { ...prev?.newPictures, ...next.newPictures }
+      : undefined
+  return {
+    ...rest,
+    ...(pictureEdits ? { pictureEdits } : {}),
+    ...(pictureLinks ? { pictureLinks } : {}),
+    ...(newPictures ? { newPictures } : {}),
+  }
+}
+
+/** one linked picture of a header or footer, as Edit > Links lists it */
+export interface HfPictureLinkRow {
+  /** the first section whose strip shows the part */
+  si: number
+  kind: HfKind
+  variant: HfView
+  drawing: number
+  target: string
+  docPr?: string
+}
+
+const HF_KINDS: readonly HfKind[] = ['header', 'footer']
+const HF_VIEWS: readonly HfView[] = ['default', 'first', 'even']
+
+const docPrOf = (xml: string): string | undefined => /<wp:docPr\s[^>]*\bid="([^"]+)"/.exec(xml)?.[1]
+
+const hfRuns = (paras: HfParagraph[] | undefined): Run[] =>
+  (paras ?? []).flatMap((p) => [...p.runs, ...(p.cells?.flatMap((c) => c.paras.flat()) ?? [])])
+
+const holdsPicture = (paras: HfParagraph[] | undefined, docPr: string): boolean =>
+  hfRuns(paras).some((run) => run.image && docPrOf(run.image.xml) === docPr)
+
+/**
+ * The linked pictures of every header and footer part a section shows, each part once, with
+ * what Edit > Links did since: a broken link is gone, a changed one names its new file. A
+ * picture that stood in the part's text and was deleted from it is gone too.
+ */
+export function hfPictureLinkRows(state: HfSectionState): HfPictureLinkRow[] {
+  const parts = state.parsed?.hfParts
+  if (!parts) return []
+  const rows: HfPictureLinkRow[] = []
+  const seen = new Set<string>()
+  state.sections.forEach((sec, si) => {
+    for (const kind of HF_KINDS)
+      for (const variant of HF_VIEWS) {
+        const rId = refOf(sec, kind, variant)
+        const linked = rId && !seen.has(rId) ? parts[rId]?.linkedPictures : undefined
+        if (!rId || !linked || state.links[linkKey(sec.lastBlockIndex, kind, variant)]) continue
+        seen.add(rId)
+        const pending =
+          state.edits[editKey(sec.lastBlockIndex, kind, variant)] ??
+          pendingForRef(state, kind, variant, rId)
+        const rewritten = pending && !pending.pictureOnly && !pending.keepContent
+        for (const picture of linked) {
+          const { docPr } = picture
+          const deleted =
+            rewritten &&
+            docPr !== undefined &&
+            holdsPicture(parts[rId].paras, docPr) &&
+            !holdsPicture(pending.paras, docPr)
+          const edit = pending?.pictureLinks?.[picture.drawing]
+          const target = edit ? edit.target : picture.target
+          if (target !== null && !deleted)
+            rows.push({
+              si,
+              kind,
+              variant,
+              drawing: picture.drawing,
+              target,
+              ...(docPr ? { docPr } : {}),
+            })
+        }
+      }
+  })
+  return rows
+}
+
+// its own range: the placeholders the save numbers, the ones held on nodes and the engine's start lower
+const LINK_RUN_TOKEN_BASE = 3_000_000
+let linkRunSeq = 0
+
+/**
+ * The part's paragraphs with a link change on the run that holds the picture: a part written
+ * anew writes its runs, not the bytes the file had. `bytes` collects what new placeholders stand for.
+ */
+function withLinkOnRuns(
+  paras: HfParagraph[] | undefined,
+  link: HfPictureLink,
+  bytes: NonNullable<HeaderFooter['newPictures']>,
+): HfParagraph[] | undefined {
+  const { docPr } = link
+  if (!paras || docPr === undefined || !holdsPicture(paras, docPr)) return paras
+  const onRun = (run: Run): Run => {
+    const image = run.image
+    if (!image || docPrOf(image.xml) !== docPr) return run
+    let { xml, dataUrl } = image
+    const { linkTarget: _was, vectorUrl, ...rest } = image
+    const fresh = link.bytes && bytesUrl(link.bytes) !== dataUrl
+    if (link.bytes && fresh) {
+      const token = `${NEW_PICTURE_TOKEN_PREFIX}${LINK_RUN_TOKEN_BASE + ++linkRunSeq}`
+      xml = retargetImageBlip(xml, token)
+      dataUrl = bytesUrl(link.bytes)
+      bytes[token] = link.bytes
+    }
+    xml = withPictureLink(xml, link.target === null ? null : pictureLinkToken(link.target))
+    return {
+      ...run,
+      image: {
+        ...rest,
+        xml,
+        dataUrl,
+        ...(vectorUrl && !fresh ? { vectorUrl } : {}),
+        ...(link.target === null ? {} : { linkTarget: link.target }),
+      },
+    }
+  }
+  return paras.map((p) => ({
+    ...p,
+    runs: p.runs.map(onRun),
+    ...(p.cells
+      ? { cells: p.cells.map((c) => ({ ...c, paras: c.paras.map((runs) => runs.map(onRun)) })) }
+      : {}),
+  }))
+}
+
+/**
+ * The pending maps after Edit > Links changed a linked picture of section `si`'s strip:
+ * `target` is the file it names from now on (null breaks the link), `bytes` what Update Now
+ * read. A strip with no pending content keeps its text bytes (pictureOnly).
+ */
+export function withHfPictureLink(
+  state: HfSectionState,
+  row: Pick<HfPictureLinkRow, 'si' | 'kind' | 'variant' | 'drawing' | 'docPr'>,
+  change: Pick<HfPictureLink, 'target' | 'bytes'>,
+): Pick<HfSectionState, 'edits' | 'links'> | null {
+  const { si, kind, variant, drawing, docPr } = row
+  const target = hfCommitTarget(state, si, kind, variant)
+  if (!target) return null
+  const resolved = resolveHf(state, si, kind, variant).value ?? { text: '' }
+  const cur =
+    state.edits[target.key] ??
+    (Object.values(state.edits).includes(resolved) ? resolved : { ...resolved, pictureOnly: true })
+  // new bytes stay the picture's own once its link names another file or is broken
+  const bytes = change.bytes ?? cur.pictureLinks?.[drawing]?.bytes
+  const link: HfPictureLink = {
+    target: change.target,
+    ...(bytes ? { bytes } : {}),
+    ...(docPr ? { docPr } : {}),
+  }
+  const placed: NonNullable<HeaderFooter['newPictures']> = {}
+  const paras = withLinkOnRuns(cur.paras, link, placed)
+  const newPictures = { ...cur.newPictures, ...placed }
+  return {
+    edits: {
+      ...state.edits,
+      [target.key]: {
+        ...cur,
+        ...(paras ? { paras } : {}),
+        ...(Object.keys(newPictures).length > 0 ? { newPictures } : {}),
+        pictureLinks: { ...cur.pictureLinks, [drawing]: link },
+      },
+    },
+    links: state.links,
+  }
 }
 
 /**
@@ -352,6 +541,38 @@ export interface HfSaveOptions {
   footerFirst?: HeaderFooter
   headerEven?: HeaderFooter
   footerEven?: HeaderFooter
+}
+
+/** each rewritten part stores the numbers of the first page the layout shows it on */
+export function withHfFieldResults(
+  options: HfSaveOptions,
+  lastEnd: number | undefined,
+  pageOf: ((sectionEnd: number, variant: HfView) => PageFacts | null) | undefined,
+): HfSaveOptions {
+  if (!pageOf) return options
+  const settled = (hf: HeaderFooter, sectionEnd: number, variant: HfView): HeaderFooter => {
+    const page = pageOf(sectionEnd, variant)
+    return page
+      ? { ...hf, fieldResults: { page: page.display, sectionPages: page.sectionPages } }
+      : hf
+  }
+  const out = { ...options }
+  if (lastEnd !== undefined)
+    for (const kind of ['header', 'footer'] as const)
+      for (const [variant, suffix] of [
+        ['default', ''],
+        ['first', 'First'],
+        ['even', 'Even'],
+      ] as const) {
+        const hf = out[`${kind}${suffix}`]
+        if (hf) out[`${kind}${suffix}`] = settled(hf, lastEnd, variant)
+      }
+  if (out.sectionHf)
+    out.sectionHf = out.sectionHf.map((e) => ({
+      ...e,
+      hf: settled(e.hf, e.lastBlockIndex, e.variant),
+    }))
+  return out
 }
 
 /**

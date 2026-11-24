@@ -108,6 +108,50 @@ describe('header layout-table rows', () => {
     const part = Object.values(doc.hfParts ?? {})[0]
     expect(part.images!.find((i) => i.floating)!.anchorPara).toBe(1)
   })
+
+  // Word probe: page (20, 10) pt offsets in a header cell land 20 / 10 pt inside that cell's corner
+  it('measures a cell-anchored picture with page-relative offsets from its cell', async () => {
+    const paged = (id: string, layoutInCell = '1') =>
+      LOGO(id)
+        .replace('layoutInCell="1"', `layoutInCell="${layoutInCell}"`)
+        .replace('relativeFrom="column"', 'relativeFrom="page"')
+        .replace('relativeFrom="paragraph"', 'relativeFrom="page"')
+    const doc = await parseDocx(
+      await build(
+        ROW(
+          '<w:tc><w:p><w:r><w:t>Title</w:t></w:r></w:p></w:tc>' +
+            `<w:tc><w:p>${paged('4')}</w:p><w:p>${paged('5', '0')}</w:p></w:tc>`,
+        ),
+      ),
+    )
+    const [inCell, onPage] = doc.headerImages!.filter((i) => i.floating)
+    expect(inCell).toMatchObject({ posHRel: 'margin', posXPx: 82 + 524, posVRel: 'paragraph' })
+    expect(inCell.posYPx).toBe(3)
+    expect(inCell.anchorPara).toBe(0)
+    expect(onPage).toMatchObject({ posHRel: 'page', posXPx: 82, posVRel: 'page' })
+    expect(onPage.anchorPara).toBeUndefined()
+  })
+
+  it('drops HTML auto spacing at the top and bottom edge of a cell', async () => {
+    const auto = (attrs: string) =>
+      `<w:p><w:pPr><w:spacing w:before="100" w:after="100" ${attrs}/></w:pPr><w:r><w:t>x</w:t></w:r></w:p>`
+    const both = 'w:beforeAutospacing="1" w:afterAutospacing="1"'
+    const doc = await parseDocx(
+      await build(
+        ROW(
+          `<w:tc>${auto(both)}${auto(both)}${auto(both)}</w:tc>` +
+            `<w:tc>${auto('')}${auto('')}</w:tc>`,
+        ),
+      ),
+    )
+    const [edge, literal] = doc.headerParas!.find((p) => p.cells)!.cells!
+    expect(edge.paraProps![0]!.spaceBefore).toBeUndefined()
+    expect(edge.paraProps![0]!.spaceAfter).toBe(280)
+    expect(edge.paraProps![1]).toMatchObject({ spaceBefore: 280, spaceAfter: 280 })
+    expect(edge.paraProps![2]!.spaceBefore).toBe(280)
+    expect(edge.paraProps![2]!.spaceAfter).toBeUndefined()
+    expect(literal.paraProps![0]).toMatchObject({ spaceBefore: 100, spaceAfter: 100 })
+  })
 })
 
 describe('header/footer PAGE field formatting', () => {

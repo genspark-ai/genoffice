@@ -75,7 +75,9 @@ export function bmpToPng(bytes: Uint8Array): Uint8Array | null {
     const colors = Math.min(view.getUint32(46, true) || 1 << bitCount, 1 << bitCount)
     const start = 14 + headerSize
     palette = new Uint8Array(colors * 3)
-    for (let i = 0; i < colors && start + i * 4 + 2 < bytes.length; i++) {
+    // entries end where the pixels begin; past that the bytes are pixel data
+    const end = Math.min(pixelOffset, bytes.length)
+    for (let i = 0; i < colors && start + i * 4 + 4 <= end; i++) {
       palette[i * 3] = bytes[start + i * 4 + 2]
       palette[i * 3 + 1] = bytes[start + i * 4 + 1]
       palette[i * 3 + 2] = bytes[start + i * 4]

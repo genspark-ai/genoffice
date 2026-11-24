@@ -8,6 +8,7 @@ const STYLE_FLAGS = [
   'pageBreakBefore',
   'contextualSpacing',
   'suppressAutoHyphens',
+  'adjustRightInd',
 ] as const
 
 export interface ParagraphDefaultInput {

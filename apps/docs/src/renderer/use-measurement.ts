@@ -17,6 +17,7 @@ const ABBR_KEYS: Record<MeasurementUnit, StringKey> = {
   pt: 'appUnitPtAbbr',
   pi: 'appUnitPiAbbr',
 }
+import { styleAreaTwips, subscribeStyleArea } from './style-area'
 
 export const UNIT_NAME_KEYS: Record<MeasurementUnit, StringKey> = {
   in: 'appUnitInches',
@@ -38,6 +39,10 @@ export interface Measurement {
 
 export function useMeasurementUnit(): MeasurementUnit {
   return useSyncExternalStore(subscribeMeasurementUnit, measurementUnit, measurementUnit)
+}
+
+export function useStyleAreaTwips(): number {
+  return useSyncExternalStore(subscribeStyleArea, styleAreaTwips, styleAreaTwips)
 }
 
 /** Unit-bound helpers that follow the preference and the UI language. */

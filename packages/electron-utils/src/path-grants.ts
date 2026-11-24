@@ -6,7 +6,7 @@
 ///
 /// Without the check, every such handler trusts the path the renderer sends
 /// and only an extension whitelist stands between a compromised renderer and
-/// arbitrary file reads (the defense-in-depth gap the #2746 review left as
+/// arbitrary file reads (the defense-in-depth gap the genoffice#2746 review left as
 /// follow-up; the html preview iframe cannot reach the contextBridge on this
 /// Electron, so these reads are renderer-compromise hardening, not
 /// document-reachable).

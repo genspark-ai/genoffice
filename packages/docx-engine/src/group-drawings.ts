@@ -422,8 +422,27 @@ export interface UngroupedMember {
   /** the anchor's offsets, EMU */
   xEmu: number
   yEmu: number
+  /** the child's box from the group's corner, EMU */
+  box: { x: number; y: number; cx: number; cy: number }
   /** how many of the group's text boxes come before this child's own */
   textBoxesBefore: number
+}
+
+/** where the page drew the group's corner: from the column's edge and the paragraph's top, EMU */
+export interface GroupCorner {
+  xEmu: number
+  yEmu: number
+}
+
+/** an anchor's wp:align on an axis written as an offset from the column (H) or the paragraph (V) */
+function alignAsOffset(head: string, axis: 'H' | 'V', emu: number): string {
+  const from = axis === 'H' ? 'column' : 'paragraph'
+  return head.replace(
+    new RegExp(
+      `<wp:position${axis}\\b[^>]*>\\s*<wp:align>[^<]*</wp:align>\\s*</wp:position${axis}>`,
+    ),
+    `<wp:position${axis} relativeFrom="${from}"><wp:posOffset>${Math.round(emu)}</wp:posOffset></wp:position${axis}>`,
+  )
 }
 
 /** w:txbxContent elements not inside another one */
@@ -442,18 +461,42 @@ function topTextBoxes(xml: string): number {
 interface Ungrouped {
   holder: Holder
   members: UngroupedMember[]
+  /** the axes whose place was taken from the corner the page drew */
+  fromCorner: { h: boolean; v: boolean }
 }
 
 /**
  * The children of the block's `drawing`-th anchored drawing, a group, each as
  * an anchor of its own where it stood; an inner group stays a group. Null
  * when it is not a group, holds anything but shapes, pictures and groups, or
- * is placed by alignment (no offsets to write the children's places from).
+ * is placed by alignment and no `corner` says where the page drew it: an
+ * aligned axis then takes its offset from there.
  */
-function ungrouped(xml: string, drawing: number, nextId: number): Ungrouped | null {
+function ungrouped(
+  xml: string,
+  drawing: number,
+  nextId: number,
+  corner?: GroupCorner,
+): Ungrouped | null {
   const holder = anchoredDrawings(xml)[drawing]
-  const parts = holder ? drawingParts(holder.drawing) : null
-  if (!holder || !parts) return null
+  const read = holder ? drawingParts(holder.drawing) : null
+  if (!holder || !read) return null
+  const offsetOf = (axis: 'H' | 'V'): number | null => {
+    const m = new RegExp(
+      `<wp:position${axis}\\b[^>]*>\\s*<wp:posOffset>(-?\\d+)</wp:posOffset>`,
+    ).exec(read.head)
+    return m ? parseInt(m[1], 10) : null
+  }
+  const fromCorner = { h: offsetOf('H') === null, v: offsetOf('V') === null }
+  if ((fromCorner.h || fromCorner.v) && !corner) return null
+  let head = read.head
+  if (fromCorner.h) head = alignAsOffset(head, 'H', corner!.xEmu)
+  if (fromCorner.v) head = alignAsOffset(head, 'V', corner!.yEmu)
+  const anchorX = fromCorner.h ? Math.round(corner!.xEmu) : offsetOf('H')!
+  const anchorY = fromCorner.v ? Math.round(corner!.yEmu) : offsetOf('V')!
+  // an axis placed some other way than by an offset or an alignment
+  if (shiftedPosition(head, 'H', 0) === null || shiftedPosition(head, 'V', 0) === null) return null
+  const parts = { ...read, head }
   const open = /^<wpg:wgp\b[^>]*>/.exec(parts.content)
   const propsEnd = parts.content.indexOf('</wpg:grpSpPr>')
   if (!open || propsEnd < 0 || !parts.content.endsWith('</wpg:wgp>')) return null
@@ -467,16 +510,6 @@ function ungrouped(xml: string, drawing: number, nextId: number): Ungrouped | nu
     cx: attrOf(tagOf('chExt'), 'cx') ?? group.cx,
     cy: attrOf(tagOf('chExt'), 'cy') ?? group.cy,
   }
-  const offsetOf = (axis: 'H' | 'V'): number | null => {
-    const m = new RegExp(
-      `<wp:position${axis}\\b[^>]*>\\s*<wp:posOffset>(-?\\d+)</wp:posOffset>`,
-    ).exec(parts.head)
-    return m ? parseInt(m[1], 10) : null
-  }
-  const anchorX = offsetOf('H')
-  const anchorY = offsetOf('V')
-  if (anchorX === null || anchorY === null) return null
-
   const spaces = new Map([...parts.spaces, ...inlineNamespaces(open[0])])
   spaces.delete('a')
   const body = parts.content.slice(propsEnd + '</wpg:grpSpPr>'.length, -'</wpg:wgp>'.length)
@@ -532,10 +565,11 @@ function ungrouped(xml: string, drawing: number, nextId: number): Ungrouped | nu
       kind: inner ? 'group' : element.name === 'pic:pic' ? 'picture' : 'shape',
       xEmu,
       yEmu,
+      box: { x: placed.x, y: placed.y, cx: placed.cx, cy: placed.cy },
       textBoxesBefore,
     })
   }
-  return members.length > 0 ? { holder, members } : null
+  return members.length > 0 ? { holder, members, fromCorner } : null
 }
 
 /** The group split into one anchor per child in the same run; null when it cannot be taken apart. */
@@ -562,18 +596,22 @@ export interface SplitGroupParagraph {
    * (see `regroupDrawings`).
    */
   paragraphs: string[]
+  /** the axes the group was placed on by alignment: their offsets come from `corner` */
+  fromCorner: { h: boolean; v: boolean }
 }
 
 export function splitGroupParagraph(
   xml: string,
   drawing: number,
   nextId: number,
+  corner?: GroupCorner,
 ): SplitGroupParagraph | null {
-  const split = ungrouped(xml, drawing, nextId)
+  const split = ungrouped(xml, drawing, nextId, corner)
   if (!split || !/^\s*<w:p[\s>]/.test(xml)) return null
-  const { holder, members } = split
+  const { holder, members, fromCorner } = split
   return {
     members,
+    fromCorner,
     paragraphs: [
       xml.slice(0, holder.start) + inHolder(holder, members[0].drawing) + xml.slice(holder.end),
       ...members.slice(1).map((m) => `<w:p><w:r>${m.drawing}</w:r></w:p>`),

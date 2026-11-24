@@ -7,7 +7,8 @@
         "accelerator": "CmdOrCtrl+N"
       },
       {
-        "label": "New from Template…"
+        "label": "New from Template…",
+        "accelerator": "Shift+Cmd+P"
       },
       {
         "label": "Open…",
@@ -82,10 +83,6 @@
         "type": "separator"
       },
       {
-        "label": "New Window",
-        "accelerator": "Shift+CmdOrCtrl+N"
-      },
-      {
         "label": "Name with AI…"
       },
       {
@@ -105,8 +102,7 @@
         "type": "separator"
       },
       {
-        "label": "Back to Home",
-        "accelerator": "Shift+CmdOrCtrl+H"
+        "label": "Back to Home"
       }
     ]
   },
@@ -146,11 +142,12 @@
         "role": "paste"
       },
       {
-        "label": "Paste Special…"
+        "label": "Paste Special…",
+        "accelerator": "Ctrl+Cmd+V"
       },
       {
         "label": "Paste and Match Formatting",
-        "role": "pasteandmatchstyle"
+        "accelerator": "CmdOrCtrl+Alt+Shift+V"
       },
       {
         "label": "",
@@ -183,17 +180,20 @@
             "accelerator": "CmdOrCtrl+F"
           },
           {
-            "label": "Find Next"
+            "label": "Find Next",
+            "accelerator": "Cmd+G"
           },
           {
-            "label": "Find Previous"
+            "label": "Find Previous",
+            "accelerator": "Shift+Cmd+G"
           },
           {
             "label": "",
             "type": "separator"
           },
           {
-            "label": "Replace…"
+            "label": "Replace…",
+            "accelerator": "Shift+Cmd+H"
           },
           {
             "label": "Go To…",
@@ -209,6 +209,14 @@
         "type": "separator"
       },
       {
+        "label": "Links…",
+        "disabled": true
+      },
+      {
+        "label": "",
+        "type": "separator"
+      },
+      {
         "label": "Select Data…",
         "disabled": true
       },
@@ -217,7 +225,8 @@
         "type": "separator"
       },
       {
-        "label": "Toggle Drawing"
+        "label": "Toggle Drawing",
+        "accelerator": "Ctrl+Cmd+Z"
       }
     ]
   },
@@ -251,6 +260,7 @@
       {
         "label": "Focus",
         "type": "checkbox",
+        "accelerator": "Ctrl+Shift+Cmd+F",
         "checked": false
       },
       {
@@ -260,6 +270,7 @@
       {
         "label": "Ribbon",
         "type": "checkbox",
+        "accelerator": "Alt+Cmd+R",
         "checked": true
       },
       {
@@ -620,7 +631,8 @@
         "type": "separator"
       },
       {
-        "label": "Equation…"
+        "label": "Equation…",
+        "accelerator": "Ctrl+="
       },
       {
         "label": "Advanced Symbol…"
@@ -721,7 +733,8 @@
         "type": "separator"
       },
       {
-        "label": "Format Object…"
+        "label": "Format Object…",
+        "accelerator": "Shift+Cmd+1"
       },
       {
         "label": "",
@@ -735,7 +748,8 @@
         "type": "separator"
       },
       {
-        "label": "Selection Pane…"
+        "label": "Selection Pane…",
+        "accelerator": "Alt+Cmd+U"
       },
       {
         "label": "",
@@ -795,6 +809,11 @@
             "checked": false
           },
           {
+            "label": "Hide Grammar Errors",
+            "type": "checkbox",
+            "checked": false
+          },
+          {
             "label": "",
             "type": "separator"
           },
@@ -804,7 +823,8 @@
         ]
       },
       {
-        "label": "Thesaurus…"
+        "label": "Thesaurus…",
+        "accelerator": "Ctrl+Alt+Cmd+R"
       },
       {
         "label": "Hyphenation…"
@@ -894,6 +914,10 @@
             "label": "Table…"
           },
           {
+            "label": "",
+            "type": "separator"
+          },
+          {
             "label": "Columns to the Left",
             "disabled": true
           },
@@ -902,12 +926,20 @@
             "disabled": true
           },
           {
+            "label": "",
+            "type": "separator"
+          },
+          {
             "label": "Rows Above",
             "disabled": true
           },
           {
             "label": "Rows Below",
             "disabled": true
+          },
+          {
+            "label": "",
+            "type": "separator"
           },
           {
             "label": "Cells…",
@@ -928,6 +960,7 @@
           },
           {
             "label": "Rows",
+            "accelerator": "Ctrl+Cmd+X",
             "disabled": true
           },
           {
@@ -956,10 +989,6 @@
             "disabled": true
           }
         ]
-      },
-      {
-        "label": "",
-        "type": "separator"
       },
       {
         "label": "Merge Cells",
@@ -1042,6 +1071,26 @@
       {
         "label": "Table Properties…",
         "disabled": true
+      }
+    ]
+  },
+  {
+    "label": "Window",
+    "submenu": [
+      {
+        "label": "New Window"
+      },
+      {
+        "label": "Arrange All"
+      },
+      {
+        "label": "Merge All Windows",
+        "disabled": true
+      },
+      {
+        "label": "Split",
+        "type": "checkbox",
+        "checked": false
       }
     ]
   }

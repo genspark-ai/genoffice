@@ -296,16 +296,22 @@ test("File, Edit and Tools carry Word's remaining items at Word's place", async 
       'Paste Special…',
       'Paste and Match Formatting',
     ])
-    expect(edit[paste + 2].role?.toLowerCase()).toBe('pasteandmatchstyle')
-    // Word's Links… between them is not built, so it is not listed and one separator stays
+    // its click arms the plain paste, which a role item would never run
+    expect(edit[paste + 2].role).toBeUndefined()
+    expect(edit[paste + 2].accelerator).toBe(
+      process.platform === 'darwin' ? 'CmdOrCtrl+Alt+Shift+V' : 'CmdOrCtrl+Shift+V',
+    )
     const find = labels.indexOf('Find')
-    expect(labels.slice(find, find + 3)).toEqual(['Find', '---', 'Select Data…'])
+    expect(labels.slice(find, find + 5)).toEqual(['Find', '---', 'Links…', '---', 'Select Data…'])
 
-    // there is no grammar checking: nothing sits between Hide Spelling Errors and the separator
+    // the grammar marks of an AI check can be hidden: the toggle follows Hide Spelling Errors
     const spelling = await menuItems(app, ['Tools', 'Spelling and Grammar'])
     const hideSpelling = spelling.findIndex((item) => item.label === 'Hide Spelling Errors')
-    expect(spelling[hideSpelling + 1].type).toBe('separator')
-    expect(spelling.map((item) => item.label)).not.toContain('Hide Grammar Errors')
+    expect(spelling[hideSpelling + 1]).toMatchObject({
+      label: 'Hide Grammar Errors',
+      type: 'checkbox',
+    })
+    expect(spelling[hideSpelling + 2].type).toBe('separator')
 
     // Open Recent ends in a separator and More…, which opens the Open dialog
     const recent = await menuItems(app, ['File', 'Open Recent'])

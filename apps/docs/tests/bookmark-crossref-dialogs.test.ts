@@ -9,6 +9,7 @@ import { blocksToPmDoc, pmDocToSavePlan, type PmNode } from '../src/renderer/edi
 import {
   addBookmark,
   collectBookmarks,
+  goToBookmark,
   crossRefField,
   insertCrossReference,
   listRefTargets,
@@ -19,6 +20,8 @@ import {
 import { collectCaptions } from '../src/renderer/commands/reference-commands'
 import { editorExtensions } from '../src/renderer/editor/extensions'
 import { listGoToItems } from '../src/renderer/editor/goto'
+import { collectRevisions, type TrackChangesStorage } from '../src/renderer/editor/revisions'
+import { bookmarkContext, evaluateFormula, NO_TABLE } from '../src/renderer/editor/table-formula'
 
 const WORDS = { above: 'above', below: 'below', onPage: (n: number) => `on page ${n}` }
 
@@ -57,6 +60,96 @@ function caretAtEnd(editor: Editor) {
 }
 
 describe('Bookmark dialog model', () => {
+  const PRICE =
+    '<w:p><w:r><w:t>Price 100, discount 25 each</w:t></w:r></w:p>' +
+    '<w:p><w:r><w:t>Second 7 paragraph</w:t></w:r></w:p>'
+  const select = (editor: Editor, text: string) => {
+    let from = -1
+    editor.state.doc.descendants((node, pos) => {
+      if (from < 0 && node.isText && node.text!.includes(text))
+        from = pos + node.text!.indexOf(text)
+    })
+    editor.view.dispatch(
+      editor.state.tr.setSelection(
+        TextSelection.create(editor.state.doc, from, from + text.length),
+      ),
+    )
+  }
+
+  it('a bookmark made from a selection covers that text: formulas, Go To, edits and the save', async () => {
+    const { editor, parsed } = await open(PRICE)
+    const untouched = await saved(editor, parsed)
+    expect(untouched.bytes).toEqual(await buildDocx({ bodyXml: PRICE }))
+    const storage = editor.storage.trackChanges as TrackChangesStorage
+    storage.enabled = true
+    select(editor, '25')
+    expect(addBookmark(editor, 'Discount')).toBe(true)
+    storage.enabled = false
+    expect(collectRevisions(editor.state.doc)).toEqual([])
+    expect(collectBookmarks(editor.state.doc).map((b) => b.name)).toEqual(['Discount'])
+    const context = () => bookmarkContext(editor.state.doc, parsed.blocks)
+    expect(context().bookmark('DISCOUNT')).toBe('25')
+    expect(evaluateFormula('Discount*2', NO_TABLE, { row: -1, col: -1 }, context())).toBe(50)
+
+    // an edit beside the range leaves it; one inside it is part of it
+    select(editor, 'Price')
+    editor.commands.insertContent('Cost')
+    expect(context().bookmark('DISCOUNT')).toBe('25')
+    select(editor, '25')
+    editor.commands.setTextSelection(editor.state.selection.from + 1)
+    editor.commands.insertContent('0')
+    expect(context().bookmark('DISCOUNT')).toBe('205')
+
+    goToBookmark(editor, collectBookmarks(editor.state.doc)[0])
+    const { from, to } = editor.state.selection
+    expect(editor.state.doc.textBetween(from, to)).toBe('205')
+
+    const { xml, bytes } = await saved(editor, parsed)
+    expect(xml).toMatch(
+      /discount <\/w:t><\/w:r><w:bookmarkStart w:id="(\d+)" w:name="Discount"\/><w:r>.*?>205<\/w:t><\/w:r><w:bookmarkEnd w:id="\1"\/><w:r>/,
+    )
+    expect(xml.match(/w:name="Discount"/g)).toHaveLength(1)
+    const again = await parseDocx(bytes)
+    const reopened = new Editor({
+      element: document.createElement('div'),
+      extensions: editorExtensions,
+      content: blocksToPmDoc(again.blocks) as never,
+    })
+    expect(bookmarkContext(reopened.state.doc, again.blocks).bookmark('DISCOUNT')).toBe('205')
+    reopened.destroy()
+
+    // the same name given to other text moves there; removing it takes the range with it
+    select(editor, 'Second 7 paragraph')
+    addBookmark(editor, 'Discount')
+    expect(context().bookmark('DISCOUNT')).toBe('Second 7 paragraph')
+    expect(collectBookmarks(editor.state.doc).map((b) => b.pos)).toHaveLength(1)
+    removeBookmark(editor, collectBookmarks(editor.state.doc)[0])
+    expect(context().bookmark('DISCOUNT')).toBeNull()
+    expect((await saved(editor, parsed)).xml).not.toContain('w:bookmarkStart')
+    editor.destroy()
+  })
+
+  it('a bookmark made across two paragraphs opens in the first and closes in the second', async () => {
+    const { editor, parsed } = await open(PRICE)
+    let from = -1
+    let to = -1
+    editor.state.doc.descendants((node, pos) => {
+      if (!node.isText) return
+      if (node.text!.includes('each')) from = pos + node.text!.indexOf('each')
+      if (node.text!.includes('Second')) to = pos + 'Second'.length
+    })
+    editor.view.dispatch(
+      editor.state.tr.setSelection(TextSelection.create(editor.state.doc, from, to)),
+    )
+    addBookmark(editor, 'Wide')
+    expect(bookmarkContext(editor.state.doc, parsed.blocks).bookmark('WIDE')).toBe('each Second')
+    const { xml } = await saved(editor, parsed)
+    expect(xml).toMatch(
+      /<w:bookmarkStart w:id="(\d+)" w:name="Wide"\/><w:r>.*?>each<\/w:t><\/w:r><\/w:p><w:p>.*?>Second<\/w:t><\/w:r><w:bookmarkEnd w:id="\1"\/>/,
+    )
+    editor.destroy()
+  })
+
   it('lists by name or by location, with Word internals only on request', async () => {
     const { editor } = await open()
     const { doc } = editor.state

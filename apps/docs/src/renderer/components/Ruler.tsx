@@ -305,7 +305,12 @@ function paragraphIndents(editor: Editor): ParagraphIndents {
         left =
           (cssLengthToTwips(cs.marginInlineStart) ?? 0) +
           (isList ? (cssLengthToTwips(cs.paddingInlineStart) ?? 0) : outset('--pbdr-os'))
-      if (right === null) right = (cssLengthToTwips(cs.marginInlineEnd) ?? 0) + outset('--pbdr-oe')
+      // the share a character grid adds (w:adjustRightInd) is not the paragraph's indent
+      if (right === null)
+        right =
+          (cssLengthToTwips(cs.marginInlineEnd) ?? 0) +
+          outset('--pbdr-oe') -
+          (el?.parentElement?.classList.contains('doc-page') ? outset('--doc-rind') : 0)
       if (firstLine === null) {
         const textIndent = cssLengthToTwips(cs.textIndent) ?? 0
         if (isList && textIndent <= 0) {

@@ -85,15 +85,27 @@ export function loadIconLibrary(): Promise<LibraryIcon[]> {
   return loading
 }
 
-/** icons whose name or keywords have a word starting with every word of the query */
-export function searchIcons(icons: LibraryIcon[], query: string): LibraryIcon[] {
+/**
+ * Icons whose name or keywords have a word starting with every word of the
+ * query. The keywords are English; `categoryNames` are the category names in
+ * the language of the UI, where a query word may sit anywhere (a language
+ * written without spaces has no word starts).
+ */
+export function searchIcons(
+  icons: LibraryIcon[],
+  query: string,
+  categoryNames?: Partial<Record<IconCategory, string>>,
+): LibraryIcon[] {
   const terms = query.toLowerCase().split(/\s+/).filter(Boolean)
   if (terms.length === 0) return icons
   return icons.filter((icon) => {
     const words = `${icon.label} ${icon.name.replace(/_/g, ' ')} ${icon.keywords}`
       .toLowerCase()
       .split(/[\s-]+/)
-    return terms.every((term) => words.some((word) => word.startsWith(term)))
+    const category = categoryNames?.[icon.category]?.toLowerCase() ?? ''
+    return terms.every(
+      (term) => words.some((word) => word.startsWith(term)) || category.includes(term),
+    )
   })
 }
 

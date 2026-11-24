@@ -152,6 +152,7 @@ import {
   type AgentImage,
 } from '@genoffice/agent-core'
 import { imageGenerationAvailable, type AiSettings } from '@genoffice/ai-provider/browser'
+import { sendRoute } from '../ai/agent-configured'
 import { type WorkbookOperation } from '@genoffice/xlsx-gateway/domain/workbook-dsl'
 import {
   columnLabel,
@@ -470,6 +471,7 @@ import { installNotePopupCard, type NotePopupCard } from './note-hover-card'
 import { collectNotePictures, type NotePicture, type PendingNotePicture } from './note-pictures'
 import { handleRemoveNotePicture } from './note-picture-actions'
 import { installFormulaNullResultFix } from './formula-null-result'
+import { installNumberSeparators } from './number-separators-runtime'
 import { installNumberFormatFix } from './numfmt-fix'
 import { installIfsEmptySetFix } from './ifs-empty-set'
 import { installExcel365Aggregators } from './excel-365-aggregators'
@@ -1331,7 +1333,7 @@ export function App({
   }
 
   // ---- AI: real LLM agent (falls back to the deterministic planner above
-  // when no provider is configured — see isAgentConfigured/handleSend) ----
+  // when no provider is configured — see sendRoute/handleSend) ----
   const [aiSettings, setAiSettingsState] = useState<AiSettings | null>(null)
   const aiSettingsRef = useRef<AiSettings | null>(null)
   aiSettingsRef.current = aiSettings
@@ -1856,17 +1858,6 @@ export function App({
         },
       },
     })
-  }
-
-  function isAgentConfigured(): boolean {
-    const settings = aiSettingsRef.current
-    if (!settings) return false
-    const config = settings.providers[settings.provider]
-    if (!config?.model) return false
-    // Genspark's key never lands in the settings file; the main process injects
-    // it from the gsk login state. When logged out, requests return an error
-    // guiding sign-in — not intercepted here.
-    return settings.provider === 'genspark' || !!config.apiKey
   }
 
   /** Image attachments read as base64 and sent multimodal with this user message
@@ -2494,6 +2485,9 @@ export function App({
       runtime,
       () => lazyWorkbookRef.current?.file.date1904 === true,
     )
+    // Decimal-comma regions: the grid, the editors and the formula bar speak
+    // the region's notation; the model stays canonical.
+    const numberSeparatorsDisposable = installNumberSeparators(runtime)
     const errorAlignDisposable = installErrorValueAlignment(runtime)
     // CELL("filename") resolves the session's on-disk path; converted
     // imports (needsSaveAs) count as never-saved, like Excel.
@@ -2838,7 +2832,12 @@ export function App({
           (id) => id === SET_RANGE_VALUES_MUTATION,
           cellValueBounds,
         )
-        if (resultSync) queueChartDataSync(resultSync.sheetId, resultSync.bounds)
+        // Only after a user edit: the recalculation on open and volatile
+        // cells must not journal a chart edit into an untouched workbook.
+        const resultState = lazyWorkbookRef.current
+        if (resultSync && (!resultState || journalSize(resultState.editJournal) > 0)) {
+          queueChartDataSync(resultSync.sheetId, resultSync.bounds)
+        }
         if (options?.fromFormula) return
         // The copy finished (or failed); a stale source must not claim a
         // later, unrelated insert-sheet.
@@ -4015,6 +4014,7 @@ export function App({
       tsvClipboardDisposable.dispose()
       formulaViewDisposable.dispose()
       formulaTextDisposable.dispose()
+      numberSeparatorsDisposable.dispose()
       formulaBarAutosizeDisposable.dispose()
       fxButtonDisposable.dispose()
       pickRelayDisposable.dispose()
@@ -4120,7 +4120,6 @@ export function App({
     // skills ride with this one message only: the chips clear like attachments do
     const sentSkills = overrideInstruction ? [] : attachedSkillsRef.current
     if (sentSkills.length > 0) setAttachedSkills([])
-    const agentConfigured = isAgentConfigured()
     // Retry re-sends in place: drop the failed bubble and its error reply instead
     // of stacking a "Not sent" duplicate above the resent copy.
     const alreadyPersisted = retryIndex !== undefined && chat[retryIndex]?.persisted === true
@@ -4161,7 +4160,7 @@ export function App({
     // real LLM configured → let the agent read context and propose operations;
     // otherwise fall back to the local, deterministic regex planner
     // (kept for offline use and for the fixed micro-DSL it still supports).
-    if (agentConfigured) {
+    if (sendRoute(aiSettingsRef.current, instruction) === 'agent') {
       runAgent(instruction, sentAtts, sentSkills)
       return
     }

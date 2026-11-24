@@ -6,6 +6,7 @@ import { join, resolve } from 'node:path'
 import { createRequire } from 'node:module'
 import { PNG } from 'pngjs'
 import type { SlidesApi } from '../apps/slides/src/shared/ipc'
+import { holdEvaluations } from './helpers'
 
 test('Slides copy provides an OS image while internal paste stays editable and stale captures are rejected', async ({
   browserName: _browserName,
@@ -28,6 +29,7 @@ test('Slides copy provides an OS image while internal paste stays editable and s
     ],
     env: { ...env, GENOFFICE_USER_DATA: join(dir, 'user-data'), GENOFFICE_LANG: 'en' },
   })
+  holdEvaluations(app)
   try {
     const page = await app.firstWindow()
     await expect(page.locator('.stage-wrap canvas').first()).toBeVisible()

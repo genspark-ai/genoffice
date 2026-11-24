@@ -22,6 +22,7 @@ export {
   checkUpdatesMenuItem,
   editMenuTemplate,
   helpMenuTemplate,
+  hasSettingsInvoker,
   setSettingsInvoker,
   setUpdateCheckInvoker,
   settingsMenuItem,

@@ -165,3 +165,55 @@ it('an East Asian-only edit does not materialize inherited Latin or complex-scri
   expect(xml).toContain('w:eastAsia="KaiTi"')
   expect(xml).not.toMatch(/w:(ascii|hAnsi|cs)=/)
 })
+
+import { buildThemeXml } from '../src/theme'
+
+describe('a theme pick shows before it is saved', () => {
+  const STYLES =
+    '<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:docDefaults><w:rPrDefault><w:rPr><w:rFonts w:asciiTheme="minorHAnsi" w:hAnsiTheme="minorHAnsi"/></w:rPr></w:rPrDefault></w:docDefaults><w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/></w:style><w:style w:type="paragraph" w:styleId="Heading1"><w:name w:val="heading 1"/><w:basedOn w:val="Normal"/><w:rPr><w:rFonts w:asciiTheme="majorHAnsi" w:hAnsiTheme="majorHAnsi"/><w:color w:val="2F5496" w:themeColor="accent1" w:themeShade="BF"/></w:rPr></w:style></w:styles>'
+  const pick = {
+    fonts: { major: 'Trebuchet MS', minor: 'Georgia' },
+    colors: { name: 'Facet', accent1: '90C226' },
+  }
+  const docx = async (theme: boolean) => {
+    const zip = await JSZip.loadAsync(
+      await buildDocx({ bodyXml: '<w:p><w:r><w:t>text</w:t></w:r></w:p>' }),
+    )
+    zip.file('word/styles.xml', STYLES)
+    if (theme) {
+      zip.file(
+        'word/theme/theme1.xml',
+        buildThemeXml({ major: 'Calibri Light', minor: 'Calibri' }, {}),
+      )
+    }
+    return zip.generateAsync({ type: 'uint8array' })
+  }
+
+  for (const theme of [true, false]) {
+    it(`resolves the styles as the saved file will, ${theme ? 'with' : 'without'} a theme part`, async () => {
+      const parsed = await parseDocx(await docx(theme))
+      const live = await previewFontSettings(parsed, [], undefined, pick)
+      const saved = await parseDocx(
+        await saveDocx(parsed, [{ kind: 'original', docxIndex: 0 }], {
+          themeFonts: pick.fonts,
+          themeColors: pick.colors,
+        }),
+      )
+      const heading = live.styles.get('Heading1')?.display
+      expect(heading?.fontAscii).toBe('Trebuchet MS')
+      expect(heading?.color).not.toBe(parsed.styles.get('Heading1')?.display?.color)
+      expect(heading).toEqual(saved.styles.get('Heading1')?.display)
+      expect(live.docDefaults).toEqual(saved.docDefaults)
+      expect(live.docDefaults?.asciiFont).toBe('Georgia')
+      expect(live.themeColors).toEqual(saved.themeColors)
+      expect(live.themeFonts).toEqual(saved.themeFonts)
+    })
+  }
+
+  it('leaves the theme alone without a pick', async () => {
+    const parsed = await parseDocx(await docx(true))
+    const live = await previewFontSettings(parsed, [])
+    expect(live.themeColors).toEqual(parsed.themeColors)
+    expect(live.styles.get('Heading1')?.display).toEqual(parsed.styles.get('Heading1')?.display)
+  })
+})

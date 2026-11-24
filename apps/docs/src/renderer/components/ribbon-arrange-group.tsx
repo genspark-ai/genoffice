@@ -1,13 +1,15 @@
+import type { ReactNode } from 'react'
 import type { Editor } from '@tiptap/core'
-import { type TextboxDisplay } from '@genoffice/docx-engine'
 import { WRAP_OPTIONS } from './ContextMenu'
-import { shapeWrapOf } from '../editor/floating-z-order'
+import { getActiveSubEditor } from '../editor/active-editor'
+import { arrangeStateOf } from '../editor/arrange-target'
 import { canGroupObjects, canUngroupObjects } from '../editor/object-group'
-import { useI18n } from '../i18n/locale'
+import { useI18n, type StringKey } from '../i18n/locale'
 import type { ActionCommandId } from '../../shared/commands'
 import { NONE } from '../commands/menu-commands'
 import { RbCommand, useRunCommand } from './ribbon-command'
 import { AlignObjectsMenu } from './ribbon-align-menu'
+import { RbGroupMenu } from './ribbon-group-menu'
 import {
   IconCaret,
   IconPosition,
@@ -38,25 +40,50 @@ export function ArrangeGroup({
     runCommand(id, payload)
     setDropdown(() => null)
   }
-  // enabled when a floating object (image/textbox) is selected
-  const protAttrs = editor.getAttributes('docProtected')
-  const isImage = protAttrs?.blockType === 'image' && !!protAttrs.imageDataUrl
-  const isFloatingBox =
-    Array.isArray(protAttrs?.textboxes) && (protAttrs.textboxes as unknown[]).length > 0
-  const canWrap = hasDoc && (isImage || isFloatingBox)
-  // position presets write imagePosH/imagePosV (and clear the drag offsets):
-  // original images patch through imagePatchOf, newly inserted ones save the
-  // same margin-relative align pair via NewImage.posH/posV
-  const canPosition = hasDoc && isImage
+  const state = arrangeStateOf(editor, getActiveSubEditor())
+  const canWrap = hasDoc && state.canWrap
+  const canPosition = hasDoc && state.canPosition
+  const canOrder = hasDoc && state.canOrder
   const canGroup = hasDoc && canGroupObjects(editor.state)
   const canUngroup = hasDoc && canUngroupObjects(editor.state)
-  const boxes = protAttrs?.textboxes as TextboxDisplay[] | undefined
-  const currentWrap = boxes?.length
-    ? shapeWrapOf(boxes[0])
-    : ((protAttrs?.imageWrap as string | null) ?? null)
+  const currentWrap = state.wrap
+  // Word's two stacking buttons each open the step and the jump to the end
+  const order = (
+    name: 'arrange-forward' | 'arrange-backward',
+    step: [StringKey, string],
+    end: [StringKey, string],
+    icon: ReactNode,
+  ) => (
+    <div className="rb-split-wrap">
+      <button
+        className="rb-big"
+        disabled={!canOrder}
+        data-tip={t(step[0])}
+        onClick={() => toggleDropdown(setDropdown, name)}
+      >
+        <span className="rb-big-icon">
+          {icon}
+          <IconCaret />
+        </span>
+        <span>{t(step[0])}</span>
+      </button>
+      {dropdown === name && (
+        <div data-rb-panel="" className="layout-menu">
+          {[step, end].map(([label, payload]) => (
+            <button key={payload} onClick={() => pick('arrange-order', payload)}>
+              <b>{t(label)}</b>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
 
   return (
-    <div className="ribbon-group">
+    <div className="ribbon-group" data-menu={1001}>
+      <RbGroupMenu name={t('ribbonGroupArrange')}>
+        <IconPosition size={BIG} />
+      </RbGroupMenu>
       <div className="ribbon-group-items">
         <div className="rb-split-wrap">
           <button
@@ -85,7 +112,7 @@ export function ArrangeGroup({
                     <button
                       key={`${v}-${h}`}
                       className={`pos-cell ph-${h} pv-${v}${
-                        protAttrs?.imagePosH === h && protAttrs?.imagePosV === v ? ' active' : ''
+                        state.posH === h && state.posV === v ? ' active' : ''
                       }`}
                       data-tip={t('ribbonPosition')}
                       aria-label={t('ribbonPosition')}
@@ -126,28 +153,18 @@ export function ArrangeGroup({
             </div>
           )}
         </div>
-        <button
-          className="rb-big"
-          disabled={!canWrap}
-          data-tip={t('appBringForward')}
-          onClick={() => runCommand('arrange-order', 'forward')}
-        >
-          <span className="rb-big-icon">
-            <IconBringForward size={BIG} />
-          </span>
-          <span>{t('appBringForward')}</span>
-        </button>
-        <button
-          className="rb-big"
-          disabled={!canWrap}
-          data-tip={t('appSendBackward')}
-          onClick={() => runCommand('arrange-order', 'backward')}
-        >
-          <span className="rb-big-icon">
-            <IconSendBackward size={BIG} />
-          </span>
-          <span>{t('appSendBackward')}</span>
-        </button>
+        {order(
+          'arrange-forward',
+          ['appBringForward', 'forward'],
+          ['appBringToFront', 'front'],
+          <IconBringForward size={BIG} />,
+        )}
+        {order(
+          'arrange-backward',
+          ['appSendBackward', 'backward'],
+          ['appSendToBack', 'back'],
+          <IconSendBackward size={BIG} />,
+        )}
         <RbCommand cmd="format-selection-pane" look="big">
           <IconSelectionPane size={BIG} />
         </RbCommand>
@@ -162,6 +179,7 @@ export function ArrangeGroup({
         <div className="rb-split-wrap">
           <button
             className="rb-big"
+            data-icon={1}
             disabled={!canGroup && !canUngroup}
             data-tip={t('ribbonArrangeGroup')}
             onClick={() => toggleDropdown(setDropdown, 'arrange-group')}
@@ -186,7 +204,8 @@ export function ArrangeGroup({
         <div className="rb-split-wrap">
           <button
             className="rb-big"
-            disabled={!hasDoc || !isImage}
+            data-icon={1}
+            disabled={!hasDoc || !(state.canRotate || state.canFlip)}
             data-tip={t('ribbonArrangeRotate')}
             onClick={() => toggleDropdown(setDropdown, 'arrange-rotate')}
           >
@@ -198,10 +217,18 @@ export function ArrangeGroup({
           </button>
           {dropdown === 'arrange-rotate' && (
             <div data-rb-panel="" className="layout-menu">
-              <button onClick={() => pick('picture-rotate', '90')}>{t('ribbonRotateRight')}</button>
-              <button onClick={() => pick('picture-rotate', '-90')}>{t('ribbonRotateLeft')}</button>
-              <button onClick={() => pick('picture-flip', 'v')}>{t('ribbonFlipV')}</button>
-              <button onClick={() => pick('picture-flip', 'h')}>{t('ribbonFlipH')}</button>
+              <button disabled={!state.canRotate} onClick={() => pick('picture-rotate', '90')}>
+                {t('ribbonRotateRight')}
+              </button>
+              <button disabled={!state.canRotate} onClick={() => pick('picture-rotate', '-90')}>
+                {t('ribbonRotateLeft')}
+              </button>
+              <button disabled={!state.canFlip} onClick={() => pick('picture-flip', 'v')}>
+                {t('ribbonFlipV')}
+              </button>
+              <button disabled={!state.canFlip} onClick={() => pick('picture-flip', 'h')}>
+                {t('ribbonFlipH')}
+              </button>
             </div>
           )}
         </div>

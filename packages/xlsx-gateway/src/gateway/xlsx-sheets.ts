@@ -175,15 +175,16 @@ function renameHyperlinkLocation(
   return `${formatSheetQualifier(newName)}!${match[2]}`
 }
 
-/// Rewrites qualified references in chart series (`<c:f>` bodies).
+/// Rewrites qualified references in chart series: `<c:f>` / `<cx:f>` bodies,
+/// whatever prefix the producer bound the chart namespace to.
 export function renameSheetReferencesInChart(
   chartXml: string,
   oldName: string,
   newName: string,
 ): string {
   return chartXml.replace(
-    /(<c:f>)([\s\S]*?)(<\/c:f>)/g,
-    (_full, open: string, body: string, close: string) =>
+    /(<((?:[A-Za-z_][\w.-]*:)?f)(?:\s[^>]*)?>)([\s\S]*?)(<\/\2>)/g,
+    (_full, open: string, _tag: string, body: string, close: string) =>
       `${open}${escapeXmlText(renameSheetInFormula(decodeEntities(body), oldName, newName))}${close}`,
   )
 }
@@ -218,36 +219,6 @@ export function chartReferencesSheet(chartXml: string, sheetName: string): boole
     if (formulaReferencesSheet(decodeEntities(match[1] ?? ''), sheetName)) return true
   }
   return false
-}
-
-/// Prepares a source sheet's relationships part for its duplicate. Hyperlink
-/// relationships clone verbatim (ids are part-scoped, targets are external or
-/// workbook-internal anchors). Printer settings reference a part the copy
-/// must not share, so they are dropped — the caller strips the matching
-/// r:id attributes. Anything else (drawings, tables, comments, pivots) would
-/// leave the clone pointing at parts that cannot be shared: fail closed.
-export function prepareClonedSheetRels(
-  relsXml: string,
-  sourceName: string,
-): { relsXml: string | null; droppedPrinterSettings: boolean } {
-  let droppedPrinterSettings = false
-  let result = relsXml
-  for (const match of relsXml.matchAll(/<Relationship\b[^>]*?\bType="([^"]+)"[^>]*?\/>\s*/g)) {
-    if (/\/hyperlink$/.test(match[1] ?? '')) continue
-    if (/\/printerSettings$/.test(match[1] ?? '')) {
-      droppedPrinterSettings = true
-      result = result.replace(match[0], '')
-      continue
-    }
-    throw new SheetEditError(
-      `Sheet "${sourceName}" carries charts, images, tables, or comments — ` +
-        'duplicating it is not supported yet.',
-    )
-  }
-  return {
-    relsXml: /<Relationship\b/.test(result) ? result : null,
-    droppedPrinterSettings,
-  }
 }
 
 /// Drops pageSetup r:id attributes from a cloned worksheet whose

@@ -268,7 +268,9 @@ test("the table's Borders and Shading, Toggle Drawing and Set as Default run", a
     await expect(setDefault).toBeEnabled()
     await setDefault.click()
     await expect(
-      page.getByText('New blank documents will start with this theme and paragraph spacing'),
+      page.getByText(
+        'New blank documents will start with this theme, style set and paragraph spacing',
+      ),
     ).toBeVisible()
     const kept = await page.evaluate(() => localStorage.getItem('aidocs.designDefault'))
     expect(JSON.parse(kept ?? '{}').spacing).toEqual({ afterTwips: 160, line: 2 })

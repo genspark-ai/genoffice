@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import type { Editor } from '@tiptap/core'
 import { useI18n } from '../i18n/locale'
 import {
+  hyphenationLoading,
   hyphenationReady,
   nextManualCandidate,
   skipManualWord,
@@ -136,8 +137,8 @@ const frame = () => new Promise<void>((resolve) => requestAnimationFrame(() => r
 async function probeSettled(editor: Editor): Promise<void> {
   for (let i = 0; i < 180; i++) {
     await frame()
-    const dict = editor.storage.hyphenation.dict
-    if (dict && hyphenationReady(dict)) break
+    const { on, dict } = editor.storage.hyphenation
+    if (on && !hyphenationLoading() && (!dict || hyphenationReady(dict))) break
   }
   await frame()
   await frame()
@@ -177,6 +178,8 @@ export function ManualHyphenationDialog({
   const word = found && found !== 'done' ? found : null
   const answer = (yes: boolean) => {
     if (!word) return
+    // the answered word goes at once: it must not take a second answer while the next is looked for
+    setFound(null)
     if (yes) {
       editor.view.dispatch(editor.state.tr.insertText('\u00ad', word.from + point))
       setAfter(word.to + 1)

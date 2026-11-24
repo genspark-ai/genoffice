@@ -15,6 +15,7 @@ import {
   canShiftCells,
   deleteCells,
   editableOrToast,
+  insertCells,
   insertRowsOrColumns,
   selectTablePart,
   setCellAlignment,
@@ -408,7 +409,7 @@ describe('deleteCells', () => {
   it('shift left drops the cell and parks a gridAfter placeholder at the row end', async () => {
     const { editor, parsed } = await open(tableXml(2, 3))
     caretIn(editor, 0, 0)
-    expect(canShiftCells(editor.state)).toBe(true)
+    expect(canShiftCells(editor.state, 'row')).toBe(true)
     expect(run(editor, deleteCells('shiftLeft'))).toBe(true)
     expect(grid(editor)[0]).toEqual(['B1', 'C1', ''])
     expect(tableAt(editor).node.child(0).child(2).attrs.gridGap).toBe(true)
@@ -457,15 +458,188 @@ describe('deleteCells', () => {
     expect(grid(editor).map((r) => r[0])).toEqual(['A1', 'A2', 'A3'])
   })
 
-  it('refuses to shift in a table with merged cells and still deletes whole rows', async () => {
-    const { editor } = await open(tableXml(3, 2))
+  it('shifts beside a merged cell that is not in the way', async () => {
+    const { editor, parsed } = await open(tableXml(3, 3))
     selectCells(editor, [0, 0], [0, 1])
     run(editor, mergeCells)
     caretIn(editor, 1, 0)
-    expect(canShiftCells(editor.state)).toBe(false)
+    expect(canShiftCells(editor.state, 'row')).toBe(true)
+    expect(run(editor, deleteCells('shiftLeft'))).toBe(true)
+    expect(grid(editor)).toEqual([
+      ['A1B1', 'A1B1', 'C1'],
+      ['B2', 'C2', ''],
+      ['A3', 'B3', 'C3'],
+    ])
+    caretIn(editor, 1, 2)
+    expect(canShiftCells(editor.state, 'column')).toBe(true)
+    caretIn(editor, 1, 0)
+    expect(run(editor, deleteCells('shiftUp'))).toBe(true)
+    expect(grid(editor).map((r) => r[0])).toEqual(['A1B1', 'A3', ''])
+    const rows = savedTableXml(editor, parsed).match(/<w:tr>[\s\S]*?<\/w:tr>/g)!
+    expect(rows[0]).toContain('<w:gridSpan w:val="2"/>')
+    expect(rows[0].match(/<w:tc>/g)).toHaveLength(2)
+  })
+
+  it('shifts a merged cell out with the cells after it', async () => {
+    const { editor } = await open(tableXml(2, 3))
+    selectCells(editor, [0, 0], [0, 1])
+    run(editor, mergeCells)
+    caretIn(editor, 0, 0)
+    expect(run(editor, deleteCells('shiftLeft'))).toBe(true)
+    expect(grid(editor)[0]).toEqual(['C1', '', ''])
+  })
+
+  it('refuses to shift through a merged cell and still deletes whole rows', async () => {
+    const { editor } = await open(tableXml(3, 3))
+    selectCells(editor, [0, 1], [1, 1])
+    run(editor, mergeCells)
+    caretIn(editor, 1, 0)
+    expect(canShiftCells(editor.state, 'row')).toBe(false)
     expect(run(editor, deleteCells('shiftLeft'))).toBe(false)
+    // the merged cell is after the caret's column, not in it
+    expect(canShiftCells(editor.state, 'column')).toBe(true)
+    caretIn(editor, 2, 1)
+    expect(canShiftCells(editor.state, 'row')).toBe(true)
+    caretIn(editor, 0, 1)
+    expect(canShiftCells(editor.state, 'column')).toBe(false)
+    expect(run(editor, deleteCells('shiftUp'))).toBe(false)
     expect(run(editor, deleteCells('row'))).toBe(true)
-    expect(grid(editor).length).toBe(2)
+    expect(grid(editor).length).toBe(1)
+  })
+})
+
+describe('insertCells', () => {
+  it('shift right pushes the row along and the other rows save a gridAfter', async () => {
+    const { editor, parsed } = await open(tableXml(2, 3))
+    caretIn(editor, 0, 1)
+    expect(run(editor, insertCells('shiftRight'))).toBe(true)
+    expect(grid(editor)).toEqual([
+      ['A1', '', 'B1', 'C1'],
+      ['A2', 'B2', 'C2', ''],
+    ])
+    expect(tableAt(editor).node.child(1).child(3).attrs.gridGap).toBe(true)
+    // the caret is in the new cell
+    editor.commands.insertContent('new')
+    expect(grid(editor)[0][1]).toBe('new')
+    const xml = savedTableXml(editor, parsed)
+    expect(xml.match(/<w:gridCol /g)).toHaveLength(4)
+    const [first, second] = xml.match(/<w:tr>[\s\S]*?<\/w:tr>/g)!
+    expect(first.match(/<w:tc>/g)).toHaveLength(4)
+    expect(first).not.toContain('gridAfter')
+    expect(second.match(/<w:tc>/g)).toHaveLength(3)
+    expect(second).toContain('<w:gridAfter w:val="1"/>')
+  })
+
+  it('shift right in a row that already stops short fills its own gap first', async () => {
+    const { editor, parsed } = await open(tableXml(2, 3))
+    caretIn(editor, 0, 0)
+    run(editor, insertCells('shiftRight'))
+    caretIn(editor, 1, 2)
+    expect(run(editor, insertCells('shiftRight'))).toBe(true)
+    expect(grid(editor)).toEqual([
+      ['', 'A1', 'B1', 'C1'],
+      ['A2', 'B2', '', 'C2'],
+    ])
+    const xml = savedTableXml(editor, parsed)
+    expect(xml).not.toContain('gridAfter')
+    expect(xml.match(/<w:gridCol /g)).toHaveLength(4)
+  })
+
+  it('shift right for a block of cells inserts as many as are selected in each row', async () => {
+    const { editor } = await open(tableXml(3, 2))
+    selectCells(editor, [0, 0], [1, 1])
+    run(editor, insertCells('shiftRight'))
+    expect(grid(editor)).toEqual([
+      ['', '', 'A1', 'B1'],
+      ['', '', 'A2', 'B2'],
+      ['A3', 'B3', '', ''],
+    ])
+  })
+
+  it('shift down adds a row at the bottom and moves only the selected column', async () => {
+    const { editor, parsed } = await open(
+      tableXml(2, 2, { tcPr: { B1: '<w:shd w:val="clear" w:color="auto" w:fill="FFFF00"/>' } }),
+    )
+    caretIn(editor, 0, 1)
+    expect(run(editor, insertCells('shiftDown'))).toBe(true)
+    expect(grid(editor)).toEqual([
+      ['A1', ''],
+      ['A2', 'B1'],
+      ['', 'B2'],
+    ])
+    const xml = savedTableXml(editor, parsed)
+    const rows = xml.match(/<w:tr>[\s\S]*?<\/w:tr>/g)!
+    expect(rows).toHaveLength(3)
+    for (const tr of rows) expect(tr.match(/<w:tc>/g)).toHaveLength(2)
+    // the new cell is formatted like the one it was inserted at
+    expect(rows[0].match(/w:fill="FFFF00"/g)).toHaveLength(1)
+    expect(rows[1].match(/w:fill="FFFF00"/g)).toHaveLength(1)
+  })
+
+  it('opens a ragged table as Word writes it and shifts in it', async () => {
+    const ragged =
+      '<w:tbl><w:tblPr><w:tblStyle w:val="TableGrid"/></w:tblPr><w:tblGrid>' +
+      '<w:gridCol w:w="2000"/>'.repeat(4) +
+      '</w:tblGrid><w:tr>' +
+      ['A1', 'B1', 'C1', 'D1'].map((n) => cellXml(n)).join('') +
+      '</w:tr><w:tr><w:trPr><w:gridAfter w:val="2"/></w:trPr>' +
+      ['A2', 'B2'].map((n) => cellXml(n)).join('') +
+      '</w:tr></w:tbl>'
+    const { editor, parsed } = await open(ragged)
+    caretIn(editor, 1, 0)
+    expect(canShiftCells(editor.state, 'row')).toBe(true)
+    expect(run(editor, insertCells('shiftRight'))).toBe(true)
+    expect(grid(editor)[1]).toEqual(['', 'A2', 'B2', ''])
+    const second = savedTableXml(editor, parsed).match(/<w:tr>[\s\S]*?<\/w:tr>/g)![1]
+    expect(second).toContain('<w:gridAfter w:val="1"/>')
+    expect(second.match(/<w:tc>/g)).toHaveLength(3)
+  })
+
+  it('shifts right and down under a merged heading row', async () => {
+    const { editor, parsed } = await open(tableXml(3, 2))
+    selectCells(editor, [0, 0], [0, 1])
+    run(editor, mergeCells)
+    caretIn(editor, 1, 0)
+    expect(run(editor, insertCells('shiftRight'))).toBe(true)
+    expect(grid(editor)).toEqual([
+      ['A1B1', 'A1B1', ''],
+      ['', 'A2', 'B2'],
+      ['A3', 'B3', ''],
+    ])
+    caretIn(editor, 1, 1)
+    expect(run(editor, insertCells('shiftDown'))).toBe(true)
+    expect(grid(editor).map((r) => r[1])).toEqual(['A1B1', '', 'A2', 'B3'])
+    expect(grid(editor).map((r) => r[0])).toEqual(['A1B1', '', 'A3', ''])
+    const rows = savedTableXml(editor, parsed).match(/<w:tr>[\s\S]*?<\/w:tr>/g)!
+    expect(rows).toHaveLength(4)
+    expect(rows[0]).toContain('<w:gridSpan w:val="2"/>')
+    expect(rows[0]).toContain('<w:gridAfter w:val="1"/>')
+  })
+
+  it('inserts a cell as wide as the merged cell it is inserted at', async () => {
+    const { editor } = await open(tableXml(2, 3))
+    selectCells(editor, [0, 0], [0, 1])
+    run(editor, mergeCells)
+    caretIn(editor, 0, 0)
+    expect(run(editor, insertCells('shiftRight'))).toBe(true)
+    expect(grid(editor)).toEqual([
+      ['', '', 'A1B1', 'A1B1', 'C1'],
+      ['A2', 'B2', 'C2', '', ''],
+    ])
+    const first = tableAt(editor).node.child(0)
+    expect([first.child(0).attrs.colspan, first.child(1).attrs.colspan]).toEqual([2, 2])
+  })
+
+  it('refuses when a merged cell is in the way', async () => {
+    const { editor } = await open(tableXml(3, 3))
+    selectCells(editor, [1, 1], [2, 1])
+    run(editor, mergeCells)
+    caretIn(editor, 1, 0)
+    expect(run(editor, insertCells('shiftRight'))).toBe(false)
+    caretIn(editor, 0, 1)
+    expect(run(editor, insertCells('shiftDown'))).toBe(false)
+    caretIn(editor, 0, 0)
+    expect(run(editor, insertCells('shiftRight'))).toBe(true)
   })
 })
 

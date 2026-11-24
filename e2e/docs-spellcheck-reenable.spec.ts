@@ -1,8 +1,7 @@
 /**
  * Re-enabling Review → Spelling must restore red squiggles on EXISTING text
- * with no click or keystroke from the user (the earlier focus-cycle fix did
- * not actually do this). Squiggles are
- * native Chromium markers invisible to the DOM, so the assertion is
+ * with no click or keystroke from the user. The lines are a CSS highlight the
+ * page draws; this spec checks what the user sees, so the assertion is
  * pixel-based: count red-ish pixels over the page.
  */
 import { test, expect } from '@playwright/test'
@@ -49,7 +48,7 @@ const POLL = { timeout: 15_000, intervals: [250, 500, 1000] }
 const pageText = (page: Page) =>
   page.evaluate(() => document.querySelector('.doc-page')?.textContent ?? '')
 
-/** Chromium paints markers word by word: wait for the count to pass `atLeast`, then to settle. */
+/** wait for the count to pass `atLeast`, then to settle */
 async function settledRedCount(page: Page, atLeast = 0): Promise<number> {
   const deadline = Date.now() + POLL.timeout
   let last = await redCount(page)
@@ -62,7 +61,7 @@ async function settledRedCount(page: Page, atLeast = 0): Promise<number> {
   return last
 }
 
-// belt and braces: the native spellchecker is outside the app's control
+// belt and braces: the dictionary is outside the app's control
 test.describe.configure({ retries: 1 })
 
 test('re-enabling spellcheck respells existing text without user input', async () => {
@@ -72,7 +71,7 @@ test('re-enabling spellcheck respells existing text without user input', async (
   try {
     await page.locator('.quick-card').first().click()
     const editor = await waitForPageWithUrl(app, '://docs/')
-    const docPage = editor.locator('.doc-page[contenteditable="true"][spellcheck="true"]')
+    const docPage = editor.locator('.doc-page[contenteditable="true"]')
     await docPage.waitFor()
 
     await docPage.click()
@@ -84,7 +83,7 @@ test('re-enabling spellcheck respells existing text without user input', async (
     // no squiggles at all (e.g. the dictionary could not be provisioned in
     // this environment): the pixel assertions below would be meaningless
     const baseline = await settledRedCount(editor, SQUIGGLE_PIXELS)
-    test.skip(baseline < SQUIGGLE_PIXELS, 'native spellchecker inactive in this environment')
+    test.skip(baseline < SQUIGGLE_PIXELS, 'no dictionary in this environment')
     const textBefore = await pageText(editor)
 
     const spelling = editor.getByRole('button', { name: 'Spelling' })
@@ -106,10 +105,8 @@ test('re-enabling spellcheck respells existing text without user input', async (
       })
       .toBeGreaterThanOrEqual(Math.max(off + SQUIGGLE_PIXELS + 1, Math.floor(baseline * 0.8)))
 
-    // the markers return the moment the kick's trusted space lands; the kick
-    // scrubs that space a beat later, so the "no trace" check must wait for it
     await expect
-      .poll(() => pageText(editor), { ...POLL, message: 'the respell kick leaves no trace' })
+      .poll(() => pageText(editor), { ...POLL, message: 'the toggle leaves the text alone' })
       .toBe(textBefore)
     const textAfter = await pageText(editor)
     expect(textAfter).not.toContain('\u200b')
@@ -157,7 +154,7 @@ test('toggling spellcheck never scrolls the view to the caret', async () => {
     )
     await spelling.click() // off
     await wait(800)
-    await spelling.click() // on again → respell kick types at the (off-screen) caret
+    await spelling.click() // on again, with the caret off-screen
     await wait(2500)
     const after = await editor.evaluate(
       () => document.querySelector('.editor-scroll')?.scrollTop ?? -1,

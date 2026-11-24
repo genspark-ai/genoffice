@@ -47,6 +47,13 @@ import type { PageLayout } from '../editor/goto'
 import { hfVariantHeightsPx, sectionHfHeights } from '../hf-heights'
 import { pageMargins } from '../page-margins'
 import { noteSeparatorPx, noteSeparatorRulePx } from '../line-metrics'
+import {
+  noteAreaPx,
+  noteColumnWidth,
+  noteColumnsClass,
+  noteColumnsStyle,
+  type NoteColumns,
+} from '../note-columns'
 import { cssFontFamily } from '../text-layout/font-rules'
 import { syncPreviewLineNumbers } from '../editor/line-numbers'
 import { syncPreviewColumnRules } from '../editor/column-rules'
@@ -360,6 +367,7 @@ export function PaginationPreview({
   watermarkDirty,
   pendingWatermark,
   blockMetaOf,
+  noteColumnsOf,
   layout,
   layoutRev,
   footnotesBeneathText,
@@ -400,6 +408,8 @@ export function PaginationPreview({
   pendingWatermark?: HfImage | null
   /** docxIndex → parse-layer pagination constraints (keepNext/widow/table-row flags) */
   blockMetaOf?: BlockMetaOf
+  /** set when a section lays its footnote area out in columns (note-columns) */
+  noteColumnsOf?: (section: SectionSettings) => NoteColumns | null
   /** the canvas pass's layout (after any pending pass, or a new one when `fresh`): the PageCut list the sheets print */
   layout?: (fresh?: boolean) => PageLayout | null
   /** bumped after every canvas pass: the sheets rebuild on the new cuts */
@@ -622,6 +632,7 @@ export function PaginationPreview({
         // when the canvas column layout is inactive, measure as full-width single flow
         dropCols: colMode === 'none',
         blockMetaOf,
+        ...(noteColumnsOf ? { noteColumns: { of: noteColumnsOf } } : {}),
         ...(sections.some((s) => sectionVertical(s.settings))
           ? { inlineExtraOf: blockInlineExtraPx }
           : {}),
@@ -1064,10 +1075,9 @@ export function PaginationPreview({
           const mBottom = effectiveBottomPx(s, footerReservedPx)
           const contentH = pageH - mTop - mBottom
           const notes = pageNotes[i] ?? []
+          const noteCols = notes[0]?.cols ?? null
           const notesH =
-            notes.length > 0
-              ? notes.reduce((sum, n) => sum + n.height, 0) + noteSeparatorPx('footnote')
-              : 0
+            notes.length > 0 ? noteAreaPx(notes, noteCols) + noteSeparatorPx('footnote') : 0
           // page vertical alignment (sectPr w:vAlign): content of non-full pages shifts down as a whole
           const usedH = Math.min(slice.end - slice.start, contentH)
           const vSpare = Math.max(0, contentH - usedH)
@@ -1483,61 +1493,83 @@ export function PaginationPreview({
                       width: pageW - mL - mR,
                       height: notesH,
                       ...separatorVars('footnote'),
+                      ...(noteCols
+                        ? { '--note-col-w': `${noteColumnWidth(pageW - mL - mR, noteCols)}px` }
+                        : {}),
                       ...(noteArea.top === null
                         ? { bottom: twipsToPx(s.marginBottom) }
                         : { top: noteArea.top }),
                     }}
                   >
-                    {notes.map((n) => (
-                      // entries get reserved heights (DOM-measured at these exact styles);
-                      // min-height lets a residual long entry spill into the bottom margin
-                      // instead of overprinting the next entry
-                      <div
-                        key={n.id}
-                        className={['pv-footnote', ...noteRowBox(n).classes, ...hyphClass].join(
-                          ' ',
-                        )}
-                        style={{ minHeight: n.height, ...noteRowBox(n).style }}
-                      >
-                        {!n.noRefMark && <sup>{noteMarkText('footnote', n.no, n.fmt)}</sup>}
-                        {n.richParas
-                          ? n.richParas.map((para, pi) => (
-                              <span key={pi}>
-                                {pi > 0 && <br />}
-                                {para.map((run, ri) => (
-                                  <span
-                                    key={ri}
-                                    className={noteRunClass(run)}
-                                    style={{
-                                      fontWeight: run.bold ? 600 : undefined,
-                                      fontStyle: run.italic ? 'italic' : undefined,
-                                      textDecoration:
-                                        [run.underline && 'underline', run.strike && 'line-through']
-                                          .filter(Boolean)
-                                          .join(' ') || undefined,
-                                      color: run.color ? textColorValue(run.color) : undefined,
-                                      fontSize: run.sizeHalfPoints
-                                        ? `${run.sizeHalfPoints / 2}pt`
-                                        : undefined,
-                                      fontFamily: run.fontAscii
-                                        ? cssFontFamily(run.fontAscii)
-                                        : undefined,
-                                      WebkitTextStroke: run.textOutline
-                                        ? textOutlineCssValue(run.textOutline)
-                                        : undefined,
-                                      textTransform: run.caps === 'all' ? 'uppercase' : undefined,
-                                      fontVariantCaps:
-                                        run.caps === 'small' ? 'small-caps' : undefined,
-                                    }}
-                                  >
-                                    {noteRunContent(para, ri)}
-                                  </span>
-                                ))}
-                              </span>
-                            ))
-                          : noteRunContent([n], 0)}
-                      </div>
-                    ))}
+                    {((rows) =>
+                      noteCols ? (
+                        <div
+                          className={noteColumnsClass(noteCols)}
+                          style={noteColumnsStyle(notes, noteCols)}
+                        >
+                          {rows}
+                        </div>
+                      ) : (
+                        rows
+                      ))(
+                      notes.map((n) => (
+                        // entries get reserved heights (DOM-measured at these exact styles);
+                        // min-height lets a residual long entry spill into the bottom margin
+                        // instead of overprinting the next entry; in columns a note runs on
+                        // into the next column instead
+                        <div
+                          key={n.id}
+                          className={['pv-footnote', ...noteRowBox(n).classes, ...hyphClass].join(
+                            ' ',
+                          )}
+                          style={{
+                            ...(noteCols ? {} : { minHeight: n.height }),
+                            ...noteRowBox(n).style,
+                          }}
+                        >
+                          {!n.noRefMark && <sup>{noteMarkText('footnote', n.no, n.fmt)}</sup>}
+                          {n.richParas
+                            ? n.richParas.map((para, pi) => (
+                                <span key={pi}>
+                                  {pi > 0 && <br />}
+                                  {para.map((run, ri) => (
+                                    <span
+                                      key={ri}
+                                      className={noteRunClass(run)}
+                                      style={{
+                                        fontWeight: run.bold ? 600 : undefined,
+                                        fontStyle: run.italic ? 'italic' : undefined,
+                                        textDecoration:
+                                          [
+                                            run.underline && 'underline',
+                                            run.strike && 'line-through',
+                                          ]
+                                            .filter(Boolean)
+                                            .join(' ') || undefined,
+                                        color: run.color ? textColorValue(run.color) : undefined,
+                                        fontSize: run.sizeHalfPoints
+                                          ? `${run.sizeHalfPoints / 2}pt`
+                                          : undefined,
+                                        fontFamily: run.fontAscii
+                                          ? cssFontFamily(run.fontAscii)
+                                          : undefined,
+                                        WebkitTextStroke: run.textOutline
+                                          ? textOutlineCssValue(run.textOutline)
+                                          : undefined,
+                                        textTransform: run.caps === 'all' ? 'uppercase' : undefined,
+                                        fontVariantCaps:
+                                          run.caps === 'small' ? 'small-caps' : undefined,
+                                      }}
+                                    >
+                                      {noteRunContent(para, ri)}
+                                    </span>
+                                  ))}
+                                </span>
+                              ))
+                            : noteRunContent([n], 0)}
+                        </div>
+                      )),
+                    )}
                   </div>
                 )}
                 {(() => {

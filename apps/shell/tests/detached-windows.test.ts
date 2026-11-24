@@ -370,6 +370,26 @@ describe('focused window as menu target', () => {
     expect(detached.focusedDetachedKind()).toBe('pdf')
   })
 
+  it('lists the windows of a kind for window switching, with the one that has the keys', () => {
+    for (const [id, kind] of [
+      [21, 'docs'],
+      [22, 'sheets'],
+      [23, 'docs'],
+    ] as const) {
+      detached.createDetachedEditorWindow({
+        view: fakeView(id) as never,
+        kind,
+        title: `window ${id}`,
+        applyMenuFor: () => {},
+      })
+    }
+    instances.at(-1)!.focused = true
+    expect(detached.detachedTabsOf('docs')).toEqual([
+      { id: 'detached:21', title: 'window 21', focused: false },
+      { id: 'detached:23', title: 'window 23', focused: true },
+    ])
+  })
+
   it('claims the slides menu target on focus', async () => {
     const { setActiveSlidesWebContents } = await import('../../slides/src/main/slides-main')
     const view = fakeView(9)

@@ -11,7 +11,7 @@ const WORD = /\p{L}[\p{L}\p{M}'’]*/gu
 const UNSPACED =
   /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}\p{Script=Thai}]/u
 
-function wordsOfBlock(block: PmNode, blockPos: number, out: SpellWord[]): void {
+export function wordsOfBlock(block: PmNode, blockPos: number, out: SpellWord[]): void {
   let text = ''
   let start = 0
   const flush = () => {
@@ -53,10 +53,11 @@ export function nextMisspelling(
   from: number,
   to: number,
   misspelled: (word: string) => boolean,
+  dismissed?: (word: SpellWord) => boolean,
 ): SpellWord | null {
   const known = new Map<string, boolean>()
   for (const word of spellWords(doc)) {
-    if (word.to <= from || word.to > to) continue
+    if (word.to <= from || word.to > to || dismissed?.(word)) continue
     let wrong = known.get(word.word)
     if (wrong === undefined) known.set(word.word, (wrong = misspelled(word.word)))
     if (wrong) return word

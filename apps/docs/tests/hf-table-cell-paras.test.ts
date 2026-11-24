@@ -5,6 +5,7 @@ import {
   hfFloatPagePos,
   hfHasVisibleContent,
   hfImageHangsOnPara,
+  hfRowBoxLeftPx,
   hfStripGeom,
   hfTextBoxStyle,
   hfWashoutFilter,
@@ -659,5 +660,23 @@ describe('cell paragraph line factor and row-anchored pictures', () => {
     // margin band: x = marginLeft + posXPx, strip-relative = posXPx
     expect(hosted.style.left).toBe('606px')
     expect(el.querySelector('.page-hf-images')).toBeNull()
+    // a row hung into the margin by its table indent carries the picture with it
+    const hung: HeaderFooter = {
+      text: '',
+      paras: [{ runs: [] }, { ...value.paras![1], row: { indentTwips: -600 } }],
+    }
+    const moved = makeGapHfEl({
+      kind: 'header',
+      value: hung,
+      images: [img],
+      pageNo: 1,
+      pageTotal: 1,
+      geom,
+    }).querySelector<HTMLElement>('.page-hf-row.page-hf-anchor > img')!
+    expect(moved.style.left).toBe('646px')
+    // a floated row keeps a cell-measured picture at its cell: only the baked indent comes off
+    const floated = { indentTwips: -600, float: { xTwips: 1500 } }
+    expect(hfRowBoxLeftPx(floated, { kind: 'header', columnPx: 600 }, true)).toBe(-40)
+    expect(hfRowBoxLeftPx(floated, { kind: 'header', columnPx: 600 })).toBe(100)
   })
 })

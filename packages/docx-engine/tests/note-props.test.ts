@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import JSZip from 'jszip'
 import {
   applySectionSettings,
+  applyTitlePg,
   notePropsFromXml,
   parseDocx,
   readSections,
@@ -237,6 +238,92 @@ describe('w:footnotePr / w:endnotePr', () => {
 
 const partOf = async (bytes: Uint8Array, path: string) =>
   (await (await JSZip.loadAsync(bytes)).file(path)?.async('string')) ?? ''
+
+describe('w15:footnoteColumns', () => {
+  const PAGE =
+    '<w:pgSz w:w="12240" w:h="15840"/>' +
+    '<w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="720" w:footer="720" w:gutter="0"/>' +
+    '<w:cols w:num="2" w:space="720"/>'
+  // where Word writes it: the last child of the sectPr, the value in the w namespace
+  const stated = `<w:sectPr>${PAGE}<w:docGrid w:linePitch="360"/><w15:footnoteColumns w:val="1"/></w:sectPr>`
+
+  it('reads the count a section states; none means as many as the section has', () => {
+    expect(sectionSettingsFromXml(stated).footnoteColumns).toBe(1)
+    expect(sectionSettingsFromXml(`<w:sectPr>${PAGE}</w:sectPr>`).footnoteColumns).toBeUndefined()
+    expect(
+      sectionSettingsFromXml(
+        `<w:sectPr>${PAGE}<w15:footnoteColumns w:val="3"></w15:footnoteColumns></w:sectPr>`,
+      ).footnoteColumns,
+    ).toBe(3)
+  })
+
+  it('does not take a count Word does not offer, nor the one of a tracked previous sectPr', () => {
+    for (const val of ['0', '5', 'x'])
+      expect(
+        sectionSettingsFromXml(`<w:sectPr>${PAGE}<w15:footnoteColumns w:val="${val}"/></w:sectPr>`)
+          .footnoteColumns,
+      ).toBeUndefined()
+    expect(
+      sectionSettingsFromXml(
+        `<w:sectPr>${PAGE}<w:sectPrChange w:id="1" w:author="a">${stated}</w:sectPrChange></w:sectPr>`,
+      ).footnoteColumns,
+    ).toBeUndefined()
+  })
+
+  it('writes the count last, replaces it, and removes it to match the section', () => {
+    const settings = sectionSettingsFromXml(stated)
+    expect(applySectionSettings(stated, settings)).toBe(stated)
+    const three = applySectionSettings(stated, { ...settings, footnoteColumns: 3 })
+    expect(three).toBe(stated.replace('w:val="1"', 'w:val="3"'))
+    const { footnoteColumns: _stated, ...matching } = settings
+    expect(applySectionSettings(stated, matching)).toBe(
+      `<w:sectPr>${PAGE}<w:docGrid w:linePitch="360"/></w:sectPr>`,
+    )
+    const tracked = `<w:sectPr>${PAGE}<w:sectPrChange w:id="1" w:author="a">${stated}</w:sectPrChange></w:sectPr>`
+    expect(
+      applySectionSettings(tracked, { ...sectionSettingsFromXml(tracked), footnoteColumns: 2 }),
+    ).toBe(
+      `<w:sectPr>${PAGE}<w15:footnoteColumns w:val="2"/><w:sectPrChange w:id="1" w:author="a">${stated}</w:sectPrChange></w:sectPr>`,
+    )
+  })
+
+  it('a save declares the namespace and lists it as ignorable; the file reads back', async () => {
+    const source = await buildDocx({ bodyXml: '<w:p><w:r><w:t>a</w:t></w:r></w:p>' })
+    const parsed = await parseDocx(source)
+    const section = { ...readSections(parsed)[0].settings, footnoteColumns: 2 }
+    const saved = await saveDocx(parsed, [{ kind: 'original', docxIndex: 0 }], { section })
+    const documentXml = await partOf(saved, 'word/document.xml')
+    expect(documentXml).toContain('<w15:footnoteColumns w:val="2"/></w:sectPr>')
+    const root = /<w:document\b[^>]*>/.exec(documentXml)![0]
+    expect(root).toContain('xmlns:w15="http://schemas.microsoft.com/office/word/2012/wordml"')
+    expect(root).toContain('xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"')
+    expect(/mc:Ignorable="([^"]*)"/.exec(root)![1].split(' ')).toContain('w15')
+    const reparsed = await parseDocx(saved)
+    expect(readSections(reparsed)[0].settings.footnoteColumns).toBe(2)
+    // saved again unchanged, the root keeps its bytes
+    const again = await saveDocx(reparsed, [{ kind: 'original', docxIndex: 0 }], {
+      section: readSections(reparsed)[0].settings,
+    })
+    expect(/<w:document\b[^>]*>/.exec(await partOf(again, 'word/document.xml'))![0]).toBe(root)
+  })
+  it('stays the last child when another property is added after it', () => {
+    const bare = `<w:sectPr>${PAGE}<w15:footnoteColumns w:val="2"/></w:sectPr>`
+    const settings = sectionSettingsFromXml(bare)
+    const tail = (xml: string) => xml.slice(xml.indexOf('<w:cols'))
+    expect(
+      tail(applySectionSettings(bare, { ...settings, vAlign: 'center', formProt: false })),
+    ).toBe(
+      '<w:cols w:num="2" w:space="720"/><w:formProt w:val="0"/><w:vAlign w:val="center"/>' +
+        '<w15:footnoteColumns w:val="2"/></w:sectPr>',
+    )
+    expect(tail(applyTitlePg(bare, true))).toBe(
+      '<w:cols w:num="2" w:space="720"/><w:titlePg/><w15:footnoteColumns w:val="2"/></w:sectPr>',
+    )
+    expect(tail(applySectionSettings(bare, { ...settings, bidi: true }))).toBe(
+      '<w:cols w:num="2" w:space="720"/><w:bidi/><w15:footnoteColumns w:val="2"/></w:sectPr>',
+    )
+  })
+})
 
 describe('saving note properties for the whole document', () => {
   it('sets them in settings.xml and in every section, keeps the rest, and reads them back', async () => {

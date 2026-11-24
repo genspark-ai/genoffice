@@ -3,6 +3,7 @@ import type { Mark as PmMark } from '@tiptap/pm/model'
 import { Plugin, TextSelection, type EditorState, type Transaction } from '@tiptap/pm/state'
 import { sdtCheckboxGlyphs } from '@genoffice/docx-engine'
 import { TRACK_IGNORE } from './revisions'
+import { SECTION_GUARD_PASS } from './section-edit-guard'
 
 /**
  * Click-to-toggle for the two kinds of checkbox a docx can hold: legacy
@@ -58,7 +59,10 @@ export function toggleCheckboxAt(
   if (next === null) return null
   const tr = state.tr.replaceWith(from, from + glyph.length, state.schema.text(next, node.marks))
   tr.setSelection(TextSelection.create(tr.doc, from + next.length))
-  return tr.setMeta(TRACK_IGNORE, true).setMeta('addToHistory', true)
+  return tr
+    .setMeta(TRACK_IGNORE, true)
+    .setMeta('addToHistory', true)
+    .setMeta(SECTION_GUARD_PASS, true)
 }
 
 export const CheckboxToggleExtension = Extension.create<object, CheckboxToggleStorage>({

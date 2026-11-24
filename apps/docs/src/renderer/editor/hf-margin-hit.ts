@@ -71,5 +71,6 @@ export function hfBandAt(
   return null
 }
 
-/** targets a margin double-click leaves alone: a picture or a control keeps its own double-click */
-export const HF_MARGIN_SKIP = 'img, svg, canvas, a[href], button, input, textarea, select'
+/** targets a margin double-click leaves alone: a picture, a control or a text box keeps its own double-click */
+export const HF_MARGIN_SKIP =
+  'img, svg, canvas, a[href], button, input, textarea, select, .doc-textbox'

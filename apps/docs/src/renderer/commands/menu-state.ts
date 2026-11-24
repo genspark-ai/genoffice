@@ -33,6 +33,8 @@ export interface MenuStateInput {
   hasTableOfFigures: boolean
   hasIndex: boolean
   hasTableOfAuthorities: boolean
+  /** the document has content linked to another file (see link-fields.ts) */
+  hasLinks: boolean
   /** a mail-merge recipient list is attached */
   hasMergeSource: boolean
   /** a Docs window stands outside the tab strip */
@@ -45,6 +47,8 @@ export interface MenuStateInput {
   canRepeat: boolean
   /** check-as-you-type spelling is on */
   spellcheck: boolean
+  /** the grammar marks of the last check are not drawn */
+  grammarHidden: boolean
   /** the document has a file of its own */
   onDisk: boolean
   /** the document asks to be opened read-only */
@@ -56,6 +60,8 @@ export interface MenuStateInput {
     ruler: boolean
     grid: boolean
     navigation: boolean
+    /** the window is split in two panes */
+    split: boolean
     /** the navigation pane is open on its page thumbnails */
     thumbnails: boolean
     /** tracked changes are shown as markup */
@@ -162,6 +168,7 @@ const EDITS: ReadonlySet<CommandId> = new Set([
   'mailings-find-recipient',
   'view-footnotes',
   'mark-index-entry',
+  'mark-toc-entry',
   'index-automark',
   'update-index',
   'file-always-read-only',
@@ -180,6 +187,12 @@ const EDITS: ReadonlySet<CommandId> = new Set([
   'italic',
   'underline',
   'strikethrough',
+  'all-caps',
+  'small-caps',
+  'double-underline',
+  'word-underline',
+  'hidden-text',
+  'delete-word',
   'subscript',
   'superscript',
   'indent-decrease',
@@ -208,6 +221,8 @@ const EDITS: ReadonlySet<CommandId> = new Set([
   'tools-hyphenation',
   'design-paragraph-spacing',
   'design-custom-paragraph-spacing',
+  'design-style-set',
+  'design-style-set-reset',
   'line-spacing',
   'space-before',
   'space-after',
@@ -226,9 +241,13 @@ const EDITS: ReadonlySet<CommandId> = new Set([
   'list-preset',
   'list-style',
   'list-style-add',
+  'list-style-modify',
   'list-style-delete',
   'list-dialog',
+  'synonym-replace',
+  'grammar-replace',
   'apply-style',
+  'style-normal',
   'numbering',
   'direction-ltr',
   'direction-rtl',
@@ -250,6 +269,8 @@ const EDITS: ReadonlySet<CommandId> = new Set([
   'document-theme',
   'theme-fonts',
   'theme-colors',
+  'theme-reset',
+  'theme-browse',
   'page-color',
   'watermark',
   'page-border',
@@ -277,6 +298,8 @@ const EDITS: ReadonlySet<CommandId> = new Set([
   'picture-rotate',
   'picture-flip',
   'picture-replace',
+  'picture-replace-icon',
+  'picture-replace-clipboard',
   'picture-edit',
   'picture-position',
   'picture-graphics-fill',
@@ -415,6 +438,7 @@ export type DocumentStateInput = Pick<
   | 'hasTableOfFigures'
   | 'hasIndex'
   | 'hasTableOfAuthorities'
+  | 'hasLinks'
   | 'hasMergeSource'
   | 'windowsDetached'
 >
@@ -441,6 +465,7 @@ export function offByDocument(id: CommandId, input: DocumentStateInput): boolean
     (!input.hasTableOfFigures && id === 'update-table-of-figures') ||
     (!input.hasIndex && id === 'update-index') ||
     (!input.hasTableOfAuthorities && id === 'toa-update') ||
+    (!input.hasLinks && id === 'edit-links') ||
     (!input.hasMergeSource && NEEDS_MERGE_SOURCE.has(id)) ||
     (!input.windowsDetached && id === 'view-merge-windows') ||
     // in body text a formula goes in at the caret, which a selected picture is not
@@ -463,6 +488,7 @@ export function menuCommandState(input: MenuStateInput): CommandMenuState {
   if (view.ruler) checked.push('toggle-ruler')
   if (view.grid) checked.push('toggle-grid')
   if (view.navigation) checked.push('toggle-navigation')
+  if (view.split) checked.push('split-view')
   if (view.thumbnails) checked.push('view-thumbnails')
   if (view.markup) checked.push('view-markup')
   if (view.ribbon) checked.push('view-ribbon')
@@ -470,6 +496,7 @@ export function menuCommandState(input: MenuStateInput): CommandMenuState {
   if (input.readOnlyRecommended) checked.push('file-always-read-only')
   if (view.reviewPane) checked.push('review-pane')
   if (!input.spellcheck) checked.push('tools-hide-spelling')
+  if (input.grammarHidden) checked.push('tools-hide-grammar')
   const disabled = ALL.filter(
     (id) =>
       editCommandOff(id, input) ?? (offByDocument(id, input) || (!input.onDisk && ON_DISK.has(id))),

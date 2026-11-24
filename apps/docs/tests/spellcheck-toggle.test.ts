@@ -1,7 +1,5 @@
-// Review → Spelling toggles the native check-as-you-type spellchecker (r168):
-// the ribbon button flips the persisted pref, and the editorProps route (App's
-// setOptions call) must actually move the spellcheck attribute on the editable
-// DOM — a direct DOM write would be reverted by ProseMirror's attribute deco.
+// Review → Spelling shows or hides the red lines under misspelled words: the
+// ribbon button flips the persisted pref.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, createElement } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
@@ -33,29 +31,6 @@ describe('spellcheck preference', () => {
     expect(spellcheckEnabled()).toBe(false)
     localStorage.setItem(SPELLCHECK_KEY, '1')
     expect(spellcheckEnabled()).toBe(true)
-  })
-})
-
-describe('editorProps route', () => {
-  it('moves the spellcheck attribute on the editable DOM via setOptions', () => {
-    const editor = new Editor({
-      element: document.createElement('div'),
-      extensions: editorExtensions,
-      editorProps: { attributes: { class: 'doc-page', spellcheck: 'true' } },
-      content: { type: 'doc', content: [{ type: 'docParagraph' }] },
-    })
-    expect(editor.view.dom.getAttribute('spellcheck')).toBe('true')
-    editor.setOptions({
-      editorProps: {
-        ...editor.options.editorProps,
-        attributes: {
-          ...(editor.options.editorProps.attributes as Record<string, string>),
-          spellcheck: 'false',
-        },
-      },
-    })
-    expect(editor.view.dom.getAttribute('spellcheck')).toBe('false')
-    editor.destroy()
   })
 })
 

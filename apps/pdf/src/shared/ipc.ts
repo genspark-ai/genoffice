@@ -277,12 +277,12 @@ export interface MarkupInput {
 
 /** Delete an annotation already saved in the file. Object number is only a lookup
     hint; subtype + rect guard against (and recover from) object renumbering by a rewrite.
-    'note' targets Text (comment) annotations, 'polygon' Polygon shape annotations. */
+    'note' targets Text (comment) annotations, the rest the drawn shape annotations. */
 export interface AnnotDeleteInput {
   pageIndex: number
   /** PDF object number (pdf.js annotation id "123R" → 123) */
   objNum: number
-  subtype: MarkupType | 'note' | 'polygon'
+  subtype: MarkupType | 'note' | 'ink' | 'square' | 'circle' | 'line' | 'polygon' | 'caret'
   /** Text-markup geometry when rect reflects a synthesized viewer appearance. */
   quadPoints?: number[]
   /** Annotation /Rect in PDF user space, for fallback matching */

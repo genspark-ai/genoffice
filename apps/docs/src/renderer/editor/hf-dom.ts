@@ -1753,8 +1753,27 @@ export function hfImageHangsOnPara(img: HfImage): boolean {
   )
 }
 
+/** what a row-anchored picture's strip x subtracts to become row-local: the row box's start-edge
+ *  offset, or for a cell-measured x under a floated row only the tblInd the parser baked in */
+export function hfRowBoxLeftPx(
+  row: HfTableRow | undefined,
+  geom?: HfRowGeom,
+  cellMeasured = false,
+): number {
+  if (!row || row.bidiVisual) return 0
+  const indent = (row.indentTwips ?? 0) / TWIPS_PER_PX
+  if (row.float && cellMeasured) return indent
+  const floated = hfRowFloatLeftPx(row, geom)
+  if (floated != null) return floated
+  return row.align ? 0 : indent
+}
+
 /** placement of such an image inside its (position: relative) anchor row */
-export function hfAnchoredImgStyle(img: HfImage, geom?: HfStripGeom): Record<string, string> {
+export function hfAnchoredImgStyle(
+  img: HfImage,
+  geom?: HfStripGeom,
+  rowLeftPx = 0,
+): Record<string, string> {
   const style: Record<string, string> = { position: 'absolute', top: `${img.posYPx ?? 0}px` }
   if (geom) {
     const pos = hfFloatPagePos(img, {
@@ -1768,7 +1787,7 @@ export function hfAnchoredImgStyle(img: HfImage, geom?: HfStripGeom): Record<str
       sectMarginTop: geom.marginTop,
       sectMarginBottom: geom.marginBottom,
     })
-    style.left = `${pos.x - (geom.stripLeft ?? geom.marginLeft)}px`
+    style.left = `${pos.x - (geom.stripLeft ?? geom.marginLeft) - rowLeftPx}px`
     if (pos.translateX) style.transform = `translateX(${pos.translateX}%)`
   } else style.left = `${img.posXPx ?? 0}px`
   if (img.widthPx) style.width = `${img.widthPx}px`
@@ -2043,7 +2062,8 @@ export function makeGapHfEl(opts: {
     if (!anchor) continue
     anchor.classList.add('page-hf-anchor')
     const el = hfImgNode(img)
-    assignStyle(el, hfAnchoredImgStyle(img, geom))
+    const rowLeft = hfRowBoxLeftPx(paras[img.anchorPara!]?.row, rowGeom, img.posHRel === 'margin')
+    assignStyle(el, hfAnchoredImgStyle(img, geom, rowLeft))
     anchor.append(el)
   }
   return wrap

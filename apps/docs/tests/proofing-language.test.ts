@@ -64,10 +64,59 @@ describe('proofing language', () => {
     expect(languageSlot('he-IL')).toBe('bidi')
   })
 
-  it('does nothing without a selection', () => {
+  it('a bare caret marks the word it is in', () => {
     editor.commands.setTextSelection(3)
-    expect(setProofingLanguage(editor, 'fr-FR')).toBe(false)
-    expect(langs()[0][1]).toBeNull()
+    expect(setProofingLanguage(editor, 'fr-FR')).toBe(true)
+    expect(langs().slice(0, 2)).toEqual([
+      ['plain', { val: 'fr-FR' }, null],
+      [' ', null, undefined],
+    ])
+    expect(proofingLanguageOf(editor)).toBe('fr-FR')
+  })
+
+  it('a caret at the start of a word reads that word, not the run before it', () => {
+    editor.commands.setTextSelection({ from: 1, to: 7 })
+    setProofingLanguage(editor, 'fr-FR', true)
+    editor.commands.setTextSelection(7)
+    expect(proofingLanguageOf(editor)).toBe('ja-JP')
+    expect(noProofOf(editor)).toBe(false)
+  })
+
+  it('a bare caret outside any word marks what is typed next', () => {
+    editor.commands.setContent({ type: 'doc', content: [{ type: 'docParagraph' }] })
+    editor.commands.setTextSelection(1)
+    expect(setProofingLanguage(editor, 'fr-FR', true)).toBe(true)
+    expect(proofingLanguageOf(editor)).toBe('fr-FR')
+    editor.commands.insertContent('oui')
+    expect(langs()).toEqual([['oui', { val: 'fr-FR' }, null]])
+    expect(noProofOf(editor)).toBe(true)
+  })
+
+  it('reads the slot the text is written in', () => {
+    const lang = JSON.stringify({ val: 'en-US', eastAsia: 'zh-CN', bidi: 'he-IL' })
+    editor.commands.setContent({
+      type: 'doc',
+      content: [
+        {
+          type: 'docParagraph',
+          content: [
+            {
+              type: 'text',
+              text: 'word \u4e2d\u6587 \u05e9\u05dc\u05d5\u05dd',
+              marks: [{ type: 'docTextStyle', attrs: { lang } }],
+            },
+          ],
+        },
+      ],
+    })
+    editor.commands.setTextSelection({ from: 1, to: 5 })
+    expect(proofingLanguageOf(editor)).toBe('en-US')
+    editor.commands.setTextSelection({ from: 6, to: 8 })
+    expect(proofingLanguageOf(editor)).toBe('zh-CN')
+    editor.commands.setTextSelection(7)
+    expect(proofingLanguageOf(editor)).toBe('zh-CN')
+    editor.commands.setTextSelection({ from: 9, to: 13 })
+    expect(proofingLanguageOf(editor)).toBe('he-IL')
   })
 
   it('marks every run of the selection as that one language, each keeping its formatting', () => {

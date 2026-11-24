@@ -70,7 +70,7 @@ test('context menu offers spelling suggestions and applies one', async () => {
   try {
     await page.locator('.quick-card').first().click()
     const editor = await waitForPageWithUrl(app, '://docs/')
-    const docPage = editor.locator('.doc-page[contenteditable="true"][spellcheck="true"]')
+    const docPage = editor.locator('.doc-page[contenteditable="true"]')
     await docPage.waitFor()
 
     // native menus are invisible to the DOM: count Menu.popup calls in the main process
@@ -90,7 +90,8 @@ test('context menu offers spelling suggestions and applies one', async () => {
     // a word no dictionary has, unique per run: Add to Dictionary writes to the
     // OS custom dictionary on some platforms, so a fixed word would stop being
     // flagged after the first run on a developer machine
-    const dictWord = `qzv${Date.now() % 100000}x`
+    // letters only: a word with digits in it is not checked, as in Word
+    const dictWord = `qzv${[...String(Date.now() % 100000)].map((d) => 'bcdfghjklm'[+d]).join('')}x`
     await docPage.click()
     await editor.keyboard.type(`The quick brown fox jumsp over the ${dictWord} lazyy dog `, {
       delay: 20,

@@ -38,6 +38,9 @@ export async function prepareLibraryIcons(names: string[]): Promise<void> {
   )
 }
 
+/** a prepared icon, for Change Picture > From Icons */
+export const preparedIcon = (name: string): NewPicture | undefined => prepared.get(name)
+
 /**
  * Puts the prepared icons into the caret's paragraph, in the order given, as
  * one undo step. The caret may be in a header, footer or text box: the editor

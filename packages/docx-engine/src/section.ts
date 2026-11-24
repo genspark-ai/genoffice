@@ -215,9 +215,20 @@ export function sectionSettingsFromXml(
     ...(docGrid ? { docGrid } : {}),
     ...(textDirectionOf(xml) ? { textDirection: textDirectionOf(xml) } : {}),
     ...(onOffTagIn(xml, 'w:noEndnote') ? { noEndnote: true } : {}),
+    ...(onOffTagIn(xml, 'w:formProt') === false ? { formProt: false as const } : {}),
     ...(footnotePr ? { footnotePr } : {}),
     ...(endnotePr ? { endnotePr } : {}),
+    ...(footnoteColumnsOf(xml) ? { footnoteColumns: footnoteColumnsOf(xml) } : {}),
   }
+}
+
+const FOOTNOTE_COLUMNS = /<w15:footnoteColumns\b[^>]*(?:\/>|>\s*<\/w15:footnoteColumns>)/
+
+/** w15:footnoteColumns of a sectPr slice (Word offers 1-4); undefined when absent or out of range */
+function footnoteColumnsOf(xml: string): number | undefined {
+  const tag = FOOTNOTE_COLUMNS.exec(liveSectPr(xml))?.[0]
+  const n = tag ? intAttr(tag, 'w:val', 0) : 0
+  return n >= 1 && n <= 4 ? n : undefined
 }
 
 /** a sectPr without the previous one a tracked w:sectPrChange nests in it */
@@ -509,6 +520,8 @@ const PG_NUM_TYPE_FOLLOWERS =
   /<w:(?:cols|formProt|vAlign|noEndnote|titlePg|textDirection|bidi|rtlGutter|docGrid|printerSettings)[\s/>]/
 const LN_NUM_TYPE_FOLLOWERS =
   /<w:(?:pgNumType|cols|formProt|vAlign|noEndnote|titlePg|textDirection|bidi|rtlGutter|docGrid|printerSettings)[\s/>]/
+const FORM_PROT_FOLLOWERS =
+  /<w:(?:vAlign|noEndnote|titlePg|textDirection|bidi|rtlGutter|docGrid|printerSettings|sectPrChange)[\s/>]/
 const V_ALIGN_FOLLOWERS =
   /<w:(?:noEndnote|titlePg|textDirection|bidi|rtlGutter|docGrid|printerSettings)[\s/>]/
 const NO_ENDNOTE_FOLLOWERS =
@@ -521,10 +534,24 @@ const DOC_GRID_FOLLOWERS = /<w:(?:printerSettings|sectPrChange)[\s/>]/
 /** the line pitch Word writes for a new Latin document */
 export const DEFAULT_LINE_PITCH_TWIPS = 360
 
+const FOOTNOTE_COLUMN_COUNTS = new Set([1, 2, 3, 4])
+
+/** `tag` as the last child Word's own order allows: w15:footnoteColumns stays behind it */
+function appendToSectPr(sectPrXml: string, tag: string): string {
+  const last = /<w15:footnoteColumns\b|<\/w:sectPr>/.exec(sectPrXml)
+  if (!last) return sectPrXml
+  return `${sectPrXml.slice(0, last.index)}${tag}${sectPrXml.slice(last.index)}`
+}
+
 function insertBefore(sectPrXml: string, tag: string, followers: RegExp): string {
   const m = followers.exec(sectPrXml)
   if (m) return `${sectPrXml.slice(0, m.index)}${tag}${sectPrXml.slice(m.index)}`
-  return sectPrXml.replace(/<\/w:sectPr>/, `${tag}</w:sectPr>`)
+  return appendToSectPr(sectPrXml, tag)
+}
+
+/** the section properties a body without a w:sectPr is read with, written out */
+export function defaultSectPrXml(settings: SectionSettings = DEFAULT_SECTION): string {
+  return applySectionSettings('<w:sectPr><w:pgSz/><w:pgMar w:gutter="0"/></w:sectPr>', settings)
 }
 
 /**
@@ -641,7 +668,7 @@ export function applySectionSettings(sectPrXml: string, settings: SectionSetting
       `<w:pgMar w:top="${settings.marginTop - (settings.gutterAtTop ? gutter : 0)}" w:right="${settings.marginRight}"` +
       ` w:bottom="${settings.marginBottom}" w:left="${settings.marginLeft - (settings.gutterAtTop ? 0 : gutter)}"` +
       ` w:header="708" w:footer="708" w:gutter="${gutter}"/>`
-    xml = xml.replace(/<\/w:sectPr>/, `${pgMar}</w:sectPr>`)
+    xml = appendToSectPr(xml, pgMar)
   }
 
   // page border (pgBorders sits between pgMar and cols in CT_SectPr)
@@ -698,7 +725,7 @@ export function applySectionSettings(sectPrXml: string, settings: SectionSetting
       const at = before.index + before[0].length
       return `${xml.slice(0, at)}${tag}${xml.slice(at)}`
     }
-    return xml.replace(/<\/w:sectPr>/, `${tag}</w:sectPr>`)
+    return appendToSectPr(xml, tag)
   }
   if (
     !equalCols &&
@@ -773,6 +800,13 @@ export function applySectionSettings(sectPrXml: string, settings: SectionSetting
     if (vAlign) xml = insertBefore(xml, `<w:vAlign w:val="${vAlign}"/>`, V_ALIGN_FOLLOWERS)
   }
 
+  // w:formProt (after cols): Word writes it only to switch a section's protection off
+  if ((settings.formProt === false) !== (onOffTagIn(xml, 'w:formProt') === false)) {
+    xml = stripElement(xml, 'w:formProt')
+    if (settings.formProt === false)
+      xml = insertBefore(xml, '<w:formProt w:val="0"/>', FORM_PROT_FOLLOWERS)
+  }
+
   // w:noEndnote (after vAlign): an unchanged one stays as the file has it
   if (!!settings.noEndnote !== !!onOffTagIn(xml, 'w:noEndnote')) {
     xml = stripElement(xml, 'w:noEndnote')
@@ -793,6 +827,19 @@ export function applySectionSettings(sectPrXml: string, settings: SectionSetting
   const endnote = noteDelta('w:endnotePr', settings.endnotePr)
   if (Object.keys(footnote).length + Object.keys(endnote).length > 0)
     xml = applySectionNoteProps(xml, { footnote, endnote })
+
+  // footnote columns (w15:footnoteColumns, where Word writes it: last, before a tracked
+  // change): absent means the section's own column count, so it is written by leaving it out
+  const noteCols = settings.footnoteColumns
+  if (
+    noteCols !== footnoteColumnsOf(xml) &&
+    (noteCols === undefined || FOOTNOTE_COLUMN_COUNTS.has(noteCols))
+  ) {
+    const live = liveSectPr(xml)
+    xml = live.replace(new RegExp(FOOTNOTE_COLUMNS, 'g'), '') + xml.slice(live.length)
+    if (noteCols)
+      xml = insertBefore(xml, `<w15:footnoteColumns w:val="${noteCols}"/>`, /<w:sectPrChange[\s/>]/)
+  }
 
   // text flow (w:textDirection, after titlePg): horizontal is written by leaving
   // the tag out; an unchanged one stays as the file has it
@@ -850,7 +897,7 @@ export function applySectionSettings(sectPrXml: string, settings: SectionSetting
       xml = xml.replace(BIDI_ELEMENT, '<w:bidi/>')
     } else if (settings.bidi && !hasBidi) {
       if (/<w:docGrid/.test(xml)) xml = xml.replace(/(<w:docGrid)/, '<w:bidi/>$1')
-      else xml = xml.replace(/<\/w:sectPr>/, '<w:bidi/></w:sectPr>')
+      else xml = appendToSectPr(xml, '<w:bidi/>')
     } else if (!settings.bidi && hasBidi) {
       xml = xml.replace(BIDI_ELEMENT, '')
     }

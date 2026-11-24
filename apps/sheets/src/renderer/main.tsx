@@ -25,6 +25,7 @@ import {
 } from './cell-font-fallback'
 import { connectMeasurementUnit } from '@genoffice/ui/use-measurement-unit'
 import { LocaleProvider, setModuleLang } from './i18n/locale'
+import { separatorsForLocale, setNumberSeparators } from './number-separators'
 import type { DocTheme, UiTheme } from '../shared/desktop-api'
 import './styles.css'
 
@@ -75,11 +76,14 @@ async function bootstrap(): Promise<void> {
   try {
     // per-promise catch: standalone runs have no app:get-theme handler, and
     // that rejection must not drop a resolved language
-    ;[lang, theme, docTheme] = await Promise.all([
+    let numberLocale: string | undefined
+    ;[lang, theme, docTheme, numberLocale] = await Promise.all([
       window.desktopApi.getLanguage().catch(() => 'zh' as const),
       window.desktopApi.getTheme().catch(() => 'system' as const),
       window.desktopApi.getDocumentTheme?.().catch(() => 'follow' as const),
+      window.desktopApi.getNumberLocale?.().catch(() => undefined),
     ])
+    setNumberSeparators(separatorsForLocale(numberLocale))
   } catch {
     /* dev renderer without the preload bridge */
   }

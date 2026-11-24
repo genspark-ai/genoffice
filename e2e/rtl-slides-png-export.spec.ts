@@ -4,6 +4,7 @@ import { cp, mkdtemp, readFile, writeFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { createRequire } from 'node:module'
+import { holdEvaluations } from './helpers'
 
 /**
  * An RTL UI must not re-author a deck that gets exported (genoffice#1861).
@@ -66,6 +67,7 @@ async function run(lang: string): Promise<Run> {
       ],
       env: { ...env, GENOFFICE_USER_DATA: join(dir, 'user-data'), GENOFFICE_LANG: lang },
     })
+    holdEvaluations(app)
     try {
       const page = await app.firstWindow()
       await expect(page.locator('html')).toHaveAttribute('dir', lang === 'ar' ? 'rtl' : 'ltr')

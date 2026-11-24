@@ -93,6 +93,17 @@ test.describe('sheets: picture in cell', () => {
       await sheets.mouse.dblclick(box.x + box.width / 2, box.y + box.height / 2)
       const viewer = sheets.getByRole('dialog', { name: 'Image viewer' })
       await expect(viewer).toBeVisible({ timeout: 10_000 })
+      // The viewer covers the window and centres the picture in it.
+      await expect(viewer).toHaveCSS('position', 'fixed')
+      const shown = viewer.locator('.gs-imgview-img')
+      await expect(shown).toBeVisible()
+      await expect(async () => {
+        const frame = await shown.boundingBox()
+        const size = await sheets.evaluate(() => ({ w: innerWidth, h: innerHeight }))
+        if (!frame) throw new Error('viewer picture has no box')
+        expect(Math.abs(frame.x + frame.width / 2 - size.w / 2)).toBeLessThan(2)
+        expect(Math.abs(frame.y + frame.height / 2 - size.h / 2)).toBeLessThan(2)
+      }).toPass({ timeout: 5_000 })
       await sheets.screenshot({ path: screenshotPath('cell-image-viewer') })
       await sheets.keyboard.press('Escape')
       await expect(viewer).toHaveCount(0)

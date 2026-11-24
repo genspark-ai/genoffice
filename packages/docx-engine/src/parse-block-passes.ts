@@ -191,6 +191,21 @@ export function normalizeImageZOrders(blocks: Block[]): void {
       }
     }
   }
+  // floating pictures among text stack in the same space
+  for (const runs of blockRunGroups(blocks)) {
+    for (const run of runs ?? []) {
+      const image = run.image
+      if (image?.zOrder === undefined) continue
+      anchored.push({
+        get: () => image.zOrder!,
+        set: (rank) => {
+          if (rank === 0) delete image.zOrder
+          else image.zOrder = rank
+          image.zOrderNormalized = true
+        },
+      })
+    }
+  }
   if (!anchored.some((e) => Math.abs(e.get()) > 10000)) return
   anchored
     .map((e, i) => ({ e, i }))

@@ -82,4 +82,17 @@ describe('the range of a bookmark', () => {
     expect(await docxBookmarkRange(docx, 'Missing')).toBeNull()
     expect(await docxBookmarkRange(docx, 'Empty')).toBeNull()
   })
+
+  it('reads an id as text, whatever characters the file put in it', async () => {
+    const id = '(x+x+)+y'
+    const docx = await buildDocx({
+      bodyXml: para(
+        `<w:bookmarkStart w:id="${id}" w:name="Odd"/>` +
+          run('kept') +
+          `<w:bookmarkEnd w:id="${id}"/>`,
+      ),
+    })
+    const range = await docxBookmarkRange(docx, 'Odd')
+    expect(await textsOf(range!.bytes)).toEqual(['kept'])
+  })
 })

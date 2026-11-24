@@ -255,3 +255,68 @@ test('logic formulas a document arrives with are recomputed on Update Field', as
     rmSync(dir, { recursive: true, force: true })
   }
 })
+
+test('a command sent before the editor has read a click acts where the click landed', async () => {
+  test.setTimeout(180_000)
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), 'genoffice-e2e-formula-logic-')))
+  const docPath = join(dir, 'pending-click.docx')
+  writeFileSync(
+    docPath,
+    await docxWith(
+      table(
+        row(para('North'), para('4')),
+        row(para('South'), para('6')),
+        row(para('Most'), formulaPara('=MAX(ABOVE)', '6')),
+        row(para('Sum'), para('')),
+      ) +
+        para('tail') +
+        SECT_PR,
+    ),
+  )
+  const { launched, app, page } = await openDoc(docPath)
+  try {
+    await expect(page.locator('.doc-page table')).toHaveCount(1, { timeout: 30_000 })
+    await cell(page, 0, 2, 1).click()
+    await clickMenu(app, ['Table', 'Formula…'])
+    const dialog = page.locator('.formula-dialog')
+    const input = dialog.locator('input[name="formula"]')
+    await expect(input).toHaveValue('=MAX(ABOVE)')
+    await page.keyboard.press('Escape')
+    await expect(dialog).toBeHidden()
+
+    // the editor redraws its selection 20 ms after it takes the focus: queued behind that, so
+    // the click below is not undone by it
+    await cell(page, 0, 2, 1).click()
+    await expect(page.locator('.doc-page.ProseMirror-focused')).toBeVisible()
+    await page.evaluate(() => new Promise((resolve) => setTimeout(resolve, 20)))
+    // the browser reports a new selection a moment after the click; on a busy renderer the command gets there first
+    await page.evaluate(() => {
+      let pending = false
+      const hold = (event: Event) => {
+        event.stopImmediatePropagation()
+        pending = true
+      }
+      window.addEventListener('selectionchange', hold, true)
+      Object.assign(window, {
+        releaseSelectionChange: () => {
+          window.removeEventListener('selectionchange', hold, true)
+          if (pending) document.dispatchEvent(new Event('selectionchange'))
+        },
+      })
+    })
+    await cell(page, 0, 3, 1).click()
+    await clickMenu(app, ['Table', 'Formula…'])
+    await expect(input).toHaveValue('=SUM(ABOVE)')
+    await page.evaluate(() =>
+      (window as unknown as { releaseSelectionChange: () => void }).releaseSelectionChange(),
+    )
+    await dialog.locator('button.primary').click()
+    await expect(dialog).toBeHidden()
+    await expect
+      .poll(async () => (await tableRows(page, 0)).map((cells) => cells[1]))
+      .toEqual(['4', '6', '6', '16'])
+  } finally {
+    await closeAndSaveVideo(launched, VIDEO_DIR)
+    rmSync(dir, { recursive: true, force: true })
+  }
+})

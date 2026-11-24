@@ -48,6 +48,13 @@ describe('straight connector rendering', () => {
     )
     expect(svg).toContain('M 0 38 L 198 0')
   })
+
+  it('vert runs top to bottom down the middle of the band', () => {
+    const svg = decodedSvg(
+      shapeBackgroundImage('line', 12, 200, undefined, '112233', { vert: true }),
+    )
+    expect(svg).toContain('M 5 0 L 5 198')
+  })
 })
 
 describe('authored outline width', () => {

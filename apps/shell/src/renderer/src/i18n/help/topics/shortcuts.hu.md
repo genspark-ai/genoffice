@@ -35,123 +35,235 @@ A Word teljes menüvel rendelkezik, ezért az alábbi fájl- és formázási bil
 
 ### Fájl
 
-| Művelet         | macOS | Windows / Linux |
-| --------------- | ----- | --------------- |
-| Új              | ⌘N    | Ctrl+N          |
-| Új ablak        | ⇧⌘N   | Ctrl+Shift+N    |
-| Megnyitás…      | ⌘O    | Ctrl+O          |
-| Mentés          | ⌘S    | Ctrl+S          |
-| Mentés másként… | ⇧⌘S   | Ctrl+Shift+S    |
-| Nyomtatás       | ⌘P    | Ctrl+P          |
-| Bezárás (lap)   | ⌘W    | Ctrl+W          |
+| Művelet         | macOS   | Windows / Linux |
+| --------------- | ------- | --------------- |
+| Új              | ⌘N / ⌃N | Ctrl+N          |
+| Új ablak        | —       | Ctrl+Shift+N    |
+| Megnyitás…      | ⌘O      | Ctrl+O          |
+| Mentés          | ⌘S / ⌃S | Ctrl+S          |
+| Mentés másként… | ⇧⌘S     | Ctrl+Shift+S    |
+| Nyomtatás       | ⌘P / ⌃P | Ctrl+P          |
+| Bezárás (lap)   | ⌘W      | Ctrl+W          |
+| Új sablonból    | ⇧⌘P     | —               |
 
 A ⌘P nem a böngésző nyomtatása. A Word előbb nyomtatási előnézetet jelenít meg, így egy kinyomtatott lap pontosan egy képernyőoldalnak felel meg, majd megnyitja a saját nyomtatási párbeszédpaneljét.
 
 ### Szerkesztés
 
-| Művelet                     | macOS | Windows / Linux |
-| --------------------------- | ----- | --------------- |
-| Visszavonás                 | ⌘Z    | Ctrl+Z          |
-| Újra                        | ⇧⌘Z   | Ctrl+Shift+Z    |
-| Kivágás                     | ⌘X    | Ctrl+X          |
-| Másolás                     | ⌘C    | Ctrl+C          |
-| Beillesztés                 | ⌘V    | Ctrl+V          |
-| Beillesztés csak szövegként | ⌥⇧⌘V  | Ctrl+Shift+V    |
-| Az összes kijelölése        | ⌘A    | Ctrl+A          |
-| Keresés                     | ⌘F    | Ctrl+F          |
-| Csere                       | ⌃H    | Ctrl+H          |
-| Ugrás                       | ⌥⌘G   | Ctrl+G          |
-| Billentyűparancsok          | ⌘/    | Ctrl+/          |
+| Művelet                        | macOS           | Windows / Linux |
+| ------------------------------ | --------------- | --------------- |
+| Visszavonás                    | ⌘Z / ⌃Z         | Ctrl+Z          |
+| Újra                           | ⇧⌘Z             | Ctrl+Shift+Z    |
+| Kivágás                        | ⌘X / ⌃X / F2    | Ctrl+X          |
+| Másolás                        | ⌘C / ⌃C / F3    | Ctrl+C          |
+| Beillesztés                    | ⌘V / ⌃V / F4    | Ctrl+V          |
+| Beillesztés csak szövegként    | ⌥⇧⌘V            | Ctrl+Shift+V    |
+| Az összes kijelölése           | ⌘A / ⌃A         | Ctrl+A          |
+| Keresés                        | ⌘F / ⌃F         | Ctrl+F          |
+| Csere                          | ⇧⌘H / ⌃H        | Ctrl+H          |
+| Ugrás                          | ⌥⌘G / F5        | Ctrl+G          |
+| Billentyűparancsok             | ⌘/              | Ctrl+/          |
+| Mégis vagy ismétlés            | ⌘Y / ⌃Y / ⌥⏎    | Ctrl+Y          |
+| Csak szöveg megtartása         | ⇧⌘V             | —               |
+| Irányított beillesztés         | ⌃⌘V             | —               |
+| Következő                      | ⌘G / ⇧F4 / ⇧⌘F4 | —               |
+| Előző keresése                 | ⇧⌘G             | —               |
+| Rajzolás be/ki                 | ⌃⌘Z             | —               |
+| Sorok törlése                  | ⌃⌘X             | —               |
+| Beszúrás felülre               | ⌃⌘I             | —               |
+| Előző szó törlése              | ⌥⌫ / ⌘⌫         | —               |
+| Következő szó törlése          | ⌥⌦ / ⌘⌦         | —               |
+| Kivágás a gyűjtőbe             | ⌘F3             | —               |
+| A gyűjtő tartalmának beszúrása | ⇧⌘F3            | —               |
+| Tartalom törlése               | Clear           | —               |
+| Szöveg másolása                | ⇧F2             | —               |
 
-A Csere mindkét platformon Ctrl+H, mert a ⌘H macOS alatt elrejti az ablakot, és soha nem jut el a Wordig. Az Ugrás a Word saját felosztását követi: macOS-en ⌥⌘G, így a ⇧⌘G szabadon marad a Szavak száma számára.
+A Csere mindkét platformon Ctrl+H, mert a ⌘H macOS alatt elrejti az ablakot, és soha nem jut el a Wordig. Az Ugrás a Word saját felosztását követi: macOS-en ⌥⌘G, ahol a ⌘G és a ⇧⌘G a Következő keresése és az Előző keresése.
+
+### Navigálás és kijelölés
+
+| Művelet                                            | macOS                  | Windows / Linux |
+| -------------------------------------------------- | ---------------------- | --------------- |
+| Sor eleje                                          | ⌘← / Home / ⌃↑         | —               |
+| Sor vége                                           | ⌘→ / End / ⌃↓          | —               |
+| Előző bekezdés                                     | ⌘↑ / ⌥↑                | —               |
+| Következő bekezdés                                 | ⌘↓ / ⌥↓                | —               |
+| Dokumentum eleje                                   | ⌘Home / ⌥Home          | —               |
+| Dokumentum vége                                    | ⌘End / ⌥End            | —               |
+| Kijelölés a sor elejéig                            | ⇧⌘← / ⇧Home            | —               |
+| Kijelölés a sor végéig                             | ⇧⌘→ / ⇧End             | —               |
+| Kijelölés az előző bekezdésig                      | ⇧⌘↑ / ⌥⇧↑              | —               |
+| Kijelölés a következő bekezdésig                   | ⇧⌘↓ / ⌥⇧↓              | —               |
+| Kijelölés a dokumentum elejéig                     | ⇧⌘Home                 | —               |
+| Kijelölés a dokumentum végéig                      | ⇧⌘End                  | —               |
+| Egy képernyővel feljebb                            | PageUp                 | —               |
+| Egy képernyővel lejjebb                            | PageDown               | —               |
+| Kijelölés egy képernyővel feljebb                  | ⇧PageUp                | —               |
+| Kijelölés egy képernyővel lejjebb                  | ⇧PageDown              | —               |
+| Ablak teteje                                       | ⌥⌘PageUp               | —               |
+| Ablak alja                                         | ⌥⌘PageDown             | —               |
+| Kijelölés az ablak tetejéig                        | ⌥⇧⌘PageUp              | —               |
+| Kijelölés az ablak aljáig                          | ⌥⇧⌘PageDown            | —               |
+| Tallózás az előzőre (oldal, keresés vagy ugrás)    | ⌘PageUp                | —               |
+| Tallózás a következőre (oldal, keresés vagy ugrás) | ⌘PageDown              | —               |
+| Előző szakasz                                      | ⌥PageUp                | —               |
+| Következő szakasz                                  | ⌥PageDown              | —               |
+| Kijelölés bővítése                                 | F8                     | —               |
+| Kijelölés szűkítése                                | ⇧F8                    | —               |
+| Vissza az előző szerkesztéshez                     | ⇧F5 / ⌥⌘Z              | —               |
+| A sor első cellája                                 | ⌃Home / ⌥⇧Home         | —               |
+| A sor utolsó cellája                               | ⌃End / ⌥⇧End           | —               |
+| Az oszlop első cellája                             | ⌃PageUp / ⌥⇧PageUp     | —               |
+| Az oszlop utolsó cellája                           | ⌃PageDown / ⌥⇧PageDown | —               |
+| Táblázat kijelölése                                | ⌥Clear                 | —               |
 
 ### Szövegformázás
 
-| Művelet                                        | macOS    | Windows / Linux       |
-| ---------------------------------------------- | -------- | --------------------- |
-| Félkövér                                       | ⌘B       | Ctrl+B                |
-| Dőlt                                           | ⌘I       | Ctrl+I                |
-| Aláhúzott                                      | ⌘U       | Ctrl+U                |
-| Betűtípus… (párbeszédpanel)                    | ⌘D       | Ctrl+D                |
-| Betűméret növelése                             | ⇧⌘.      | Ctrl+Shift+.          |
-| Betűméret csökkentése                          | ⇧⌘,      | Ctrl+Shift+,          |
-| Betűméret növelése 1 pt-tal                    | ⌘]       | Ctrl+]                |
-| Betűméret csökkentése 1 pt-tal                 | ⌘[       | Ctrl+[                |
-| Felső index                                    | ⇧⌘= / ⌘. | Ctrl+Shift+= / Ctrl+. |
-| Alsó index                                     | ⌘,       | Ctrl+,                |
-| Kis- és nagybetűk                              | ⇧F3      | Shift+F3              |
-| Formázás másolása (kijelölt szöveggel)         | ⇧⌘C      | Ctrl+Shift+C          |
-| Formázás beillesztése (Formázás másolása után) | ⇧⌘V      | Ctrl+Alt+Shift+V      |
-| Összes formázás törlése                        | ⌃␣       | Ctrl+Space            |
+| Művelet                                        | macOS               | Windows / Linux       |
+| ---------------------------------------------- | ------------------- | --------------------- |
+| Félkövér                                       | ⌘B / ⇧⌘B / ⌃B / ⌃⇧B | Ctrl+B                |
+| Dőlt                                           | ⌘I / ⇧⌘I / ⌃I / ⌃⇧I | Ctrl+I                |
+| Aláhúzott                                      | ⌘U / ⇧⌘U / ⌃U / ⌃⇧U | Ctrl+U                |
+| Betűtípus… (párbeszédpanel)                    | ⌘D                  | Ctrl+D                |
+| Betűméret növelése                             | ⇧⌘.                 | Ctrl+Shift+.          |
+| Betűméret csökkentése                          | ⇧⌘,                 | Ctrl+Shift+,          |
+| Betűméret növelése 1 pt-tal                    | ⌘]                  | Ctrl+]                |
+| Betűméret csökkentése 1 pt-tal                 | ⌘[                  | Ctrl+[                |
+| Felső index                                    | ⇧⌘=                 | Ctrl+Shift+= / Ctrl+. |
+| Alsó index                                     | ⇧⌘-                 | Ctrl+,                |
+| Kis- és nagybetűk                              | ⇧F3                 | Shift+F3              |
+| Formázás másolása (kijelölt szöveggel)         | ⌥⌘C / ⇧⌘C           | Ctrl+Shift+C          |
+| Formázás beillesztése (Formázás másolása után) | ⌥⌘V                 | Ctrl+Alt+Shift+V      |
+| Összes formázás törlése                        | ⌃␣                  | Ctrl+Space            |
+| Dupla aláhúzás                                 | ⇧⌘D                 | —                     |
+| Csak a szavak aláhúzása                        | ⇧⌘W                 | —                     |
+| Áthúzott                                       | ⇧⌘X                 | —                     |
+| Csupa nagybetű                                 | ⇧⌘A                 | —                     |
+| Kiskapitális                                   | ⇧⌘K                 | —                     |
+| Rejtett                                        | ⌃⇧H                 | —                     |
 
-A két formázás-másoló billentyűparancs az egyetlen hely, ahol a Windows-billentyű nem puszta átnevezés: a Formázás beillesztése Alt-ot kap, mert ott a Ctrl+Shift+V már a beillesztést és a stílus illesztését végzi.
+A formátum másolása és beillesztése mindkét platformon a Wordöt követi: Macen ⌥⌘C / ⌥⌘V, ahol a ⇧⌘V csak a szöveget illeszti be; Windowson és Linuxon a formátum beillesztése Alt billentyűt is kap, mert ott a Ctrl+Shift+V már a stílushoz igazított beillesztés.
 
 ### Bekezdésformázás
 
-| Művelet                              | macOS | Windows / Linux |
-| ------------------------------------ | ----- | --------------- |
-| Balra igazítás                       | ⌘L    | Ctrl+L          |
-| Középre igazítás                     | ⌘E    | Ctrl+E          |
-| Jobbra igazítás                      | ⌘R    | Ctrl+R          |
-| Sorkizárt                            | ⌘J    | Ctrl+J          |
-| Sorköz 1,0                           | ⌘1    | Ctrl+1          |
-| Sorköz 1,5                           | ⌘5    | Ctrl+5          |
-| Sorköz 2,0                           | ⌘2    | Ctrl+2          |
-| Behúzás növelése                     | ⌃M    | Ctrl+M          |
-| Behúzás csökkentése                  | ⌃⇧M   | Ctrl+Shift+M    |
-| Függő behúzás                        | ⌘T    | Ctrl+T          |
-| Függő behúzás eltávolítása           | ⇧⌘T   | Ctrl+Shift+T    |
-| Bekezdés formázásának törlése        | ⌃Q    | Ctrl+Q          |
-| Normál (stílus)                      | ⌥⌘0   | Ctrl+Alt+0      |
-| Címsor 1 (stílus)                    | ⌥⌘1   | Ctrl+Alt+1      |
-| Címsor 2 (stílus)                    | ⌥⌘2   | Ctrl+Alt+2      |
-| Címsor 3 (stílus)                    | ⌥⌘3   | Ctrl+Alt+3      |
-| Bekezdés… (párbeszédpanel)           | ⌥⌘M   | Ctrl+Alt+M      |
-| Bekezdés mozgatása felfelé           | ⌥⇧↑   | Alt+Shift+↑     |
-| Bekezdés mozgatása lefelé            | ⌥⇧↓   | Alt+Shift+↓     |
-| Listaelem lefokozása (elem elején)   | Tab   | Tab             |
-| Listaelem előléptetése (elem elején) | ⇧Tab  | Shift+Tab       |
+| Művelet                                    | macOS               | Windows / Linux |
+| ------------------------------------------ | ------------------- | --------------- |
+| Balra igazítás                             | ⌘L                  | Ctrl+L          |
+| Középre igazítás                           | ⌘E                  | Ctrl+E          |
+| Jobbra igazítás                            | ⌘R                  | Ctrl+R          |
+| Sorkizárt                                  | ⌘J                  | Ctrl+J          |
+| Sorköz 1,0                                 | ⌘1                  | Ctrl+1          |
+| Sorköz 1,5                                 | ⌘5                  | Ctrl+5          |
+| Sorköz 2,0                                 | ⌘2                  | Ctrl+2          |
+| Behúzás növelése                           | ⌃⇧M / ⌃M            | Ctrl+M          |
+| Behúzás csökkentése                        | ⇧⌘M                 | Ctrl+Shift+M    |
+| Függő behúzás                              | ⌘T                  | Ctrl+T          |
+| Függő behúzás eltávolítása                 | ⇧⌘T                 | Ctrl+Shift+T    |
+| Bekezdés formázásának törlése              | ⌥⌘Q / ⌃Q            | Ctrl+Q          |
+| Normál (stílus)                            | ⇧⌘N / ⌥⌘0 / ⌥⇧Clear | Ctrl+Alt+0      |
+| Címsor 1 (stílus)                          | ⌥⌘1                 | Ctrl+Alt+1      |
+| Címsor 2 (stílus)                          | ⌥⌘2                 | Ctrl+Alt+2      |
+| Címsor 3 (stílus)                          | ⌥⌘3                 | Ctrl+Alt+3      |
+| Bekezdés… (párbeszédpanel)                 | ⌥⌘M                 | Ctrl+Alt+M      |
+| Bekezdés mozgatása felfelé                 | ⌃⇧↑                 | Alt+Shift+↑     |
+| Bekezdés mozgatása lefelé                  | ⌃⇧↓                 | Alt+Shift+↓     |
+| Címsor előléptetése                        | ⌃⇧←                 | —               |
+| Címsor lefokozása                          | ⌃⇧→                 | —               |
+| Címsor kibontása (Vázlat nézet)            | ⌃⇧= / ⌃⇧Num+        | —               |
+| Címsor összecsukása (Vázlat nézet)         | ⌃⇧- / ⌃⇧Num-        | —               |
+| Megjelenítendő vázlatszint 1               | ⌃⇧1                 | —               |
+| Megjelenítendő vázlatszint 2               | ⌃⇧2                 | —               |
+| Megjelenítendő vázlatszint 3               | ⌃⇧3                 | —               |
+| Megjelenítendő vázlatszint 4               | ⌃⇧4                 | —               |
+| Megjelenítendő vázlatszint 5               | ⌃⇧5                 | —               |
+| Megjelenítendő vázlatszint 6               | ⌃⇧6                 | —               |
+| Megjelenítendő vázlatszint 7               | ⌃⇧7                 | —               |
+| Megjelenítendő vázlatszint 8               | ⌃⇧8                 | —               |
+| Megjelenítendő vázlatszint 9               | ⌃⇧9                 | —               |
+| Minden címsor megjelenítése (Vázlat nézet) | ⌃⇧A                 | —               |
+| Listaelem lefokozása (elem elején)         | Tab                 | Tab             |
+| Listaelem előléptetése (elem elején)       | ⇧Tab                | Shift+Tab       |
+| Felsorolás                                 | ⇧⌘L                 | —               |
 
-A Behúzás, a függő behúzás és a Bekezdés formázásának törlése mindkét platformon csak Ctrl-parancs: a ⌘M minimalizálja az ablakot, a ⌘Q pedig kilép, így egy Command-parancs észrevétlenül szerkesztené a dokumentumot kilépés közben. A Tab csak akkor vált listaszintet, ha a kurzor egy elem elején áll, vagy a kijelölés több elemre terjed ki; a szövegen belül tabulátorkaraktert szúr be, a ⇧Tab pedig mindig előléptet.
+A behúzás növelése és csökkentése mindkét platformon a Wordöt követi: Macen ⌃⇧M / ⇧⌘M, Windowson és Linuxon Ctrl+M / Ctrl+Shift+M; a ⌘M önmagában minimalizálja az ablakot, a ⌘Q pedig kilép. A Tab csak akkor vált listaszintet, ha a kurzor egy elem elején áll, vagy a kijelölés több elemre terjed ki; a szövegen belül tabulátorkaraktert szúr be, a ⇧Tab pedig mindig előléptet.
 
 ### Beszúrás
 
-| Művelet              | macOS | Windows / Linux  |
-| -------------------- | ----- | ---------------- |
-| Oldaltörés           | ⌘⏎    | Ctrl+Enter       |
-| Hasábtörés           | ⇧⌘⏎   | Ctrl+Shift+Enter |
-| Sortörés             | ⇧⏎    | Shift+Enter      |
-| Hivatkozás…          | ⌘K    | Ctrl+K           |
-| Új megjegyzés        | ⌥⌘A   | Ctrl+Alt+A       |
-| Lábjegyzet beszúrása | ⌥⌘F   | Ctrl+Alt+F       |
-| Végjegyzet beszúrása | ⌥⌘E   | Ctrl+Alt+D       |
-| Dátum (mező)         | ⌥⇧D   | Alt+Shift+D      |
-| Idő (mező)           | ⌥⇧T   | Alt+Shift+T      |
-| Nemtörő szóköz       | ⇧⌘␣   | Ctrl+Shift+Space |
-| Nemtörő kötőjel      | ⇧⌘-   | Ctrl+Shift+-     |
+| Művelet                               | macOS       | Windows / Linux  |
+| ------------------------------------- | ----------- | ---------------- |
+| Oldaltörés                            | ⌘⏎          | Ctrl+Enter       |
+| Hasábtörés                            | ⇧⌘⏎         | Ctrl+Shift+Enter |
+| Sortörés                              | ⇧⏎          | Shift+Enter      |
+| Hivatkozás…                           | ⌘K          | Ctrl+K           |
+| Új megjegyzés                         | ⌥⌘A         | Ctrl+Alt+A       |
+| Lábjegyzet beszúrása                  | ⌥⌘F         | Ctrl+Alt+F       |
+| Végjegyzet beszúrása                  | ⌥⌘E         | Ctrl+Alt+D       |
+| Dátum (mező)                          | ⌃⇧D / ⌥⇧D   | Alt+Shift+D      |
+| Idő (mező)                            | ⌃⇧T / ⌥⇧T   | Alt+Shift+T      |
+| Nemtörő szóköz                        | ⌃⇧␣ / ⇧⌘␣   | Ctrl+Shift+Space |
+| Nemtörő kötőjel                       | ⌥⇧⌘-        | Ctrl+Shift+-     |
+| Oldalszám (aktuális oldal)            | ⌃⇧P         | —                |
+| Mezőkapcsok beszúrása                 | ⌘F9         | —                |
+| Kapcsolás az előzőhöz                 | ⌃⇧R         | —                |
+| Egyesítési mező beszúrása             | ⌃⇧F         | —                |
+| Tartalomjegyzék-bejegyzés megjelölése | ⌥⇧⌘O        | —                |
+| Szakasztörés (következő oldal)        | ⌘⌤          | —                |
+| Félkvirtmínusz                        | ⌘Num-       | —                |
+| Kvirtmínusz                           | ⌥⌘Num-      | —                |
+| Egyenlet                              | ⌃=          | —                |
+| Könyvjelző                            | ⇧⌘F5        | —                |
+| Új kész szöveg létrehozása            | ⌥F3         | —                |
+| Tárgymutató-bejegyzés megjelölése     | ⌥⇧⌘X        | —                |
+| Idézet megjelölése                    | ⌥⇧⌘I        | —                |
+| Feltételes kötőjel                    | ⌥⌘-         | —                |
+| Tabulátorkarakter táblázatcellában    | ⌃Tab / ⌥Tab | —                |
 
 A Végjegyzet beszúrása valódi platformeltérés, nem átnevezés: a Word Macen ⌥⌘E-t használ, mert ott az ⌥⌘D a Dockhoz tartozik.
 
 ### Véleményezés és eszközök
 
-| Művelet                    | macOS | Windows / Linux |
-| -------------------------- | ----- | --------------- |
-| Változáskövetés            | ⇧⌘E   | Ctrl+Shift+E    |
-| Szavak száma               | ⇧⌘G   | Ctrl+Shift+G    |
-| Nyelvi ellenőrzés          | F7    | F7              |
-| Mező frissítése            | F9    | F9              |
-| Mezőkódok be-/kikapcsolása | ⌥F9   | Alt+F9          |
+| Művelet                          | macOS      | Windows / Linux |
+| -------------------------------- | ---------- | --------------- |
+| Változáskövetés                  | ⇧⌘E        | Ctrl+Shift+E    |
+| Szavak száma                     | —          | Ctrl+Shift+G    |
+| Nyelvi ellenőrzés                | —          | F7              |
+| Mező frissítése                  | F9 / ⌥⇧⌘U  | F9              |
+| Mezőkódok be-/kikapcsolása       | ⌥F9        | Alt+F9          |
+| Szinonimaszótár                  | ⌃⌥⌘R / ⇧F7 | —               |
+| Helyesírás és nyelvhelyesség     | ⌥⌘L / F7   | Ctrl+Alt+L      |
+| Következő helyesírási hiba       | ⌥F7        | —               |
+| Fordítás                         | ⌃⌥⌘T       | —               |
+| A kijelölt mező kódjának váltása | ⇧F9        | —               |
+| Mezők zárolása                   | ⌘F11 / ⌘3  | —               |
+| Mezők zárolásának feloldása      | ⇧⌘F11 / ⌘4 | —               |
+| Mezők csatolásának megszüntetése | ⇧⌘F9 / ⌘6  | —               |
+| Következő mező                   | F11        | —               |
+| Előző mező                       | ⇧F11       | —               |
+| Címzettlista szerkesztése        | ⌃⇧E        | —               |
+| Befejezés és egyesítés           | ⌃⇧N        | —               |
 
-Az F7 lefuttatja az AI nyelvi ellenőrzését, az F9 pedig frissíti a mezőket; mindkettőhöz betöltött dokumentum kell. Ha egy szerkesztési korlátozás bekapcsolta a Változáskövetést, az már nem kapcsolható ki.
+Az F7 Macen, ahogy a Wordben, a Helyesírás és nyelvhelyesség párbeszédpanelt nyitja meg, Windowson és Linuxon az AI nyelvi ellenőrzését futtatja; az F9 frissíti a mezőket. Ha egy szerkesztési korlátozás bekapcsolta a Változáskövetést, az már nem kapcsolható ki.
 
 ### Nézet
 
-| Művelet                               | macOS | Windows / Linux |
-| ------------------------------------- | ----- | --------------- |
-| Nagyítás                              | ⌘=    | Ctrl+=          |
-| Kicsinyítés                           | ⌘-    | Ctrl+-          |
-| Nagyítás 100%-ra                      | ⌘0    | Ctrl+0          |
-| Formázásjelek megjelenítése/elrejtése | ⌘8    | Ctrl+Shift+8    |
+| Művelet                               | macOS       | Windows / Linux |
+| ------------------------------------- | ----------- | --------------- |
+| Nagyítás                              | ⌘=          | Ctrl+=          |
+| Kicsinyítés                           | ⌘-          | Ctrl+-          |
+| Nagyítás 100%-ra                      | ⌘0          | Ctrl+0          |
+| Formázásjelek megjelenítése/elrejtése | ⌘8          | Ctrl+Shift+8    |
+| Nyomtatási elrendezés                 | ⌥⌘P         | —               |
+| Vázlat                                | ⌥⌘O         | —               |
+| Piszkozat                             | ⌥⌘N         | —               |
+| Felosztás                             | ⌥⌘S         | —               |
+| Felosztás megszüntetése               | ⌃⇧C         | —               |
+| Következő ablak                       | ⌘F6 / ⌥F6   | —               |
+| Előző ablak                           | ⇧⌘F6 / ⌥⇧F6 | —               |
+| Stílusok panel                        | ⌥⇧⌘S        | —               |
+| Fókusz                                | ⌃⇧⌘F        | —               |
+| Menüszalag                            | ⌥⌘R         | —               |
+| Objektum formázása                    | ⇧⌘1         | —               |
+| Kijelöléspanel                        | ⌥⌘U         | —               |
 
 A formázásjelek billentyűparancsa a Word saját felosztását követi: macOS-en ⌘8, máshol Ctrl+Shift+8. A Word a nagyítást kizárólag a fenti három menüparancson keresztül kezeli — a ⌘+ itt nem csinál semmit.
 

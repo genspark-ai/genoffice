@@ -94,6 +94,24 @@ describe('searching the icons', () => {
     expect(searchIcons(icons, 'no such thing')).toEqual([])
   })
 
+  it('finds icons by the name their category has in the language of the UI', async () => {
+    const icons = await loadIconLibrary()
+    const medical = icons.filter((icon) => icon.category === 'medical')
+    const labels = { medical: 'Medizin', nature: 'Natur und Umwelt' }
+    expect(searchIcons(icons, 'medizin', labels)).toEqual(medical)
+    // a language written without spaces has no word starts: the query may sit anywhere
+    const han = { medical: '\u533b\u7597\u4e0e\u5065\u5eb7' }
+    expect(searchIcons(icons, '\u5065\u5eb7', han)).toEqual(medical)
+    // each word is looked for in both: a category name and an English keyword together
+    expect(names(searchIcons(icons, 'medizin heart', labels))).toEqual(
+      expect.arrayContaining(['heart_pulse']),
+    )
+    expect(searchIcons(icons, 'medizin heart', labels).every((i) => i.category === 'medical')).toBe(
+      true,
+    )
+    expect(searchIcons(icons, 'medizin')).toEqual([])
+  })
+
   it('returns everything for an empty query', async () => {
     const icons = await loadIconLibrary()
     expect(searchIcons(icons, '  ')).toBe(icons)

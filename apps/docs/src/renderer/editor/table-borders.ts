@@ -36,7 +36,8 @@ type Diagonal = (typeof DIAGONALS)[number]
 
 const isDiagonal = (side: Side | Diagonal): side is Diagonal => side === 'tl2br' || side === 'tr2bl'
 
-const NONE: BorderLine = { style: 'none' }
+// "nil", not "none": Word lets a cell's "none" fall back to the table's own borders and draws them
+const NONE: BorderLine = { style: 'nil' }
 
 /** Word's "Apply to" rule: selected cells get the borders; a bare caret formats the whole table */
 function targetRect(rect: TableRect, cellSelection: boolean): TableRect {

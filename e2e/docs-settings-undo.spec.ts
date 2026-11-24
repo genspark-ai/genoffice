@@ -9,7 +9,7 @@ import { mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from '
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { launchShell, closeAndSaveVideo, waitForPageWithUrl } from './helpers'
-import { docxWith, para, saveFromMenu } from './docs-objects-fixture'
+import { docxWith, para, saveFromMenu, withLanguage } from './docs-objects-fixture'
 
 const VIDEO_DIR = 'docs-settings-undo'
 const PAGE =
@@ -97,7 +97,19 @@ async function caretIn(page: Page, paragraph: string) {
 
 async function typeIn(page: Page, paragraph: string, text: string) {
   await caretIn(page, paragraph)
-  await page.keyboard.press('Home')
+  // a Home pressed while the page is still settling leaves the caret at the end
+  await expect(async () => {
+    await page.keyboard.press('Home')
+    const offset = await page.evaluate(
+      () =>
+        (
+          window as never as {
+            __aidocs: { editor: { state: { selection: { $from: { parentOffset: number } } } } }
+          }
+        ).__aidocs.editor.state.selection.$from.parentOffset,
+    )
+    expect(offset).toBe(0)
+  }).toPass({ timeout: 15_000 })
   await page.keyboard.type(text)
   await expect(paragraphOf(page, text.trim())).toBeVisible()
 }
@@ -311,7 +323,10 @@ test('one OK in the Hyphenation dialog is one undo step, in order with typing, a
   test.setTimeout(300_000)
   const dir = realpathSync(mkdtempSync(join(tmpdir(), 'genoffice-e2e-settings-undo-')))
   const docPath = join(dir, 'hyphenation.docx')
-  writeFileSync(docPath, await docxWith(para('apple') + para(LOWER) + para(CAPS) + SECT_PR))
+  writeFileSync(
+    docPath,
+    await withLanguage(await docxWith(para('apple') + para(LOWER) + para(CAPS) + SECT_PR)),
+  )
   const session = await openDoc(docPath)
   try {
     const { app, page } = session

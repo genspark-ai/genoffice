@@ -26,7 +26,7 @@ const note = (pageIndex: number, objNum: number, inReplyTo: number | null): Save
 
 describe('createSavedAnnotCountsLoader', () => {
   it('does not inspect any page until its result is requested', async () => {
-    const loadPage = vi.fn(async () => ({ markups: [], notes: [] }))
+    const loadPage = vi.fn(async () => ({ markups: [], notes: [], shapes: [] }))
 
     const loadCounts = createSavedAnnotCountsLoader(doc, loadPage)
 
@@ -54,7 +54,7 @@ describe('createSavedAnnotCountsLoader', () => {
     const controller = new AbortController()
     const loadPage = vi.fn(async () => {
       controller.abort()
-      return { markups: [], notes: [] }
+      return { markups: [], notes: [], shapes: [] }
     })
     const loadCounts = createSavedAnnotCountsLoader(doc, loadPage, controller.signal)
 

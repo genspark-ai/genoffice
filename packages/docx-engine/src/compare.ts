@@ -13,19 +13,22 @@
  * written here therefore resolves through the same accept / reject path.
  *
  * Text whose formatting alone changed carries a w:rPrChange with the old
- * formatting, and a body paragraph whose own properties changed a
- * w:pPrChange with the original's. A paragraph that sits elsewhere with the
- * same text is a move (w:moveFrom / w:moveTo). Headers, footers, footnotes,
- * endnotes, text boxes and the cells of a table that kept its shape are
- * compared as text (compare-story.ts).
+ * formatting, and a paragraph whose own properties changed a w:pPrChange
+ * with the original's. A paragraph, or a stretch of one, that sits elsewhere
+ * with the same text is a move (w:moveFrom / w:moveTo). A picture or an
+ * equation that differs is the old one deleted and the new one inserted.
+ * Headers, footers, footnotes, endnotes, text boxes and table cells are
+ * compared in their own XML, a table row by row (compare-story.ts).
  *
  * Comparing reads each document with its pending changes accepted. Combining
  * (`keepRevisions`) reads the text with its markup: a change either document
  * already tracks stays under its own author and date, and only what differs
  * beyond those is a new change.
  *
- * Out of scope: moves shorter than a paragraph, pictures and fields inside a
- * changed header, footer, note or table cell.
+ * Out of scope: a table with a column added or removed across a merged cell
+ * (replaced whole),
+ * pictures and fields inside a changed header, footer, note or table cell,
+ * shapes and charts (compared as whole blocks, the old one not carried).
  */
 import type JSZip from 'jszip'
 import {
@@ -34,8 +37,11 @@ import {
   diffTableXml,
   diffTextBoxXml,
   insertedStoryXml,
+  relabelledMove,
   renumberedParaMark,
+  withoutForeignObjects,
   type StoryDiffContext,
+  type StoryFragment,
 } from './compare-story'
 import {
   existingPPrChange,
@@ -44,10 +50,10 @@ import {
   recordedPPr,
   withPPrChange,
 } from './compare-ppr'
-import { paraMarkRevisionXml, setParaMarkRevision } from './generate'
+import { NEW_PICTURE_TOKEN_PREFIX, paraMarkRevisionXml, setParaMarkRevision } from './generate'
 import { NOTE_PART_PATH, type NoteKind } from './notes'
 import { parseRels, resolveMainDocumentPath, resolveRelationshipTargetPath } from './parse-package'
-import { saveDocx, type ParsedDocFull, type SaveBlock } from './patch'
+import { saveDocx, type ParsedDocFull, type SaveBlock, type SaveOptions } from './patch'
 import { hfReferenceRId, hfReferenceTags, hfReferenceType } from './section'
 import type { Block, GeneratedBlock, RevisionInfo, Run } from './types'
 import { escapeXmlAttr } from './xml-utils'
@@ -222,14 +228,18 @@ export async function compareDocuments(
   const ids = new RevisionIds([revised.internal.documentXml, ...stories.map((s) => s.right)])
   const plan = planBody(original, revised, setup, ids)
   const partXml: Record<string, string> = {}
-  const ctx = storyContext(setup, ids, plan.summary)
+  const ctx = storyContext(setup, ids, plan.summary, paragraphFormats(original, revised))
+  const names = { next: plan.storyMoves }
   for (const story of stories) {
-    const xml = story.diff(ctx)
-    if (xml !== story.right) partXml[story.path] = xml
+    const fragments: StoryFragment[] = []
+    const diffed = story.diff({ ...ctx, ...(storyMoves(setup) ? { fragments } : {}) })
+    const [xml] = movedInStories([diffed], fragments, setup, ids, plan.summary, names)
+    if (xml !== story.right) partXml[story.path] = xml!
   }
   const bytes = await saveDocx(revised, plan.blocks, {
     revisionIdFloor: ids.peek(),
     partXml,
+    newPictures: plan.newPictures,
     ...(setup.settings.comments ? {} : { comments: [] }),
   })
   return { bytes, summary: plan.summary }
@@ -267,7 +277,13 @@ export function compareBlocks(
   original: ParsedDocFull,
   revised: ParsedDocFull,
   options: CompareOptions = {},
-): { blocks: SaveBlock[]; summary: CompareSummary; nextRevisionId: number } {
+): {
+  blocks: SaveBlock[]
+  summary: CompareSummary
+  nextRevisionId: number
+  /** bytes of the original's pictures the plan carries as deleted: SaveOptions.newPictures */
+  newPictures: NonNullable<SaveOptions['newPictures']>
+} {
   const ids = new RevisionIds([revised.internal.documentXml])
   const plan = planBody(original, revised, setupOf(options), ids)
   return { ...plan, nextRevisionId: ids.peek() }
@@ -278,9 +294,21 @@ function planBody(
   revised: ParsedDocFull,
   setup: Setup,
   ids: RevisionIds,
-): { blocks: SaveBlock[]; summary: CompareSummary } {
+): {
+  blocks: SaveBlock[]
+  summary: CompareSummary
+  newPictures: NonNullable<SaveOptions['newPictures']>
+  /** how many moves were named inside table cells and text boxes */
+  storyMoves: number
+} {
   const { rules, settings, author, date, granularity, keepRevisions } = setup
+  const cellFragments: StoryFragment[] = []
+  const inCells = (): StoryDiffContext => ({
+    ...storyContext(setup, ids, summary, formats),
+    ...(storyMoves(setup) ? { fragments: cellFragments } : {}),
+  })
 
+  objects = freshObjects()
   const left = unitsOf(original, keepRevisions, false)
   const right = unitsOf(revised, keepRevisions, keepRevisions)
   const aligned = alignUnits(left, right, rules)
@@ -305,6 +333,7 @@ function planBody(
   const readRuns = keepRevisions ? markupRuns : comparableRuns
   const carry = carrier(ids, summary)
   const formats = paragraphFormats(original, revised)
+  const fragments: Fragment[] = []
 
   for (const entry of aligned) {
     if (!settings.tables && (entry.kind === 'removed' ? entry.left : entry.right).block.table) {
@@ -342,7 +371,13 @@ function planBody(
         )
         let rawPPr = rules.ignoreFormatting
           ? null
-          : formats.changed(leftBlock, rightBlock, keepRevisions, { author, date }, ids)
+          : formats.changed(
+              leftBlock.rawPPr,
+              rightBlock.rawPPr,
+              keepRevisions,
+              { author, date },
+              ids,
+            )
         if (rawPPr !== null) {
           if (rawPPr.carried) summary.carried++
           else summary.formatChanges++
@@ -354,10 +389,15 @@ function planBody(
             if (!mark || rightBlock[key]) continue
             summary.carried++
             const record = JSON.stringify({ author: mark.author, date: mark.date })
+            // the mark of a moved paragraph; settle() makes it plain again when the move does not survive
+            const moved = leftBlock.moveRevision === (kind === 'del' ? 'from' : 'to')
+            const xml = paraMarkRevisionXml(kind, record, () => ids.take())
             rawPPr = {
               xml: setParaMarkRevision(
                 rawPPr?.xml ?? rightBlock.rawPPr ?? '',
-                paraMarkRevisionXml(kind, record, () => ids.take()),
+                moved
+                  ? xml.replace(/^<w:(?:del|ins)\b/, kind === 'del' ? '<w:moveFrom' : '<w:moveTo')
+                  : xml,
               ),
             }
           }
@@ -409,10 +449,34 @@ function planBody(
             continue
           }
           if (chunk.kind === 'fmt') {
-            const old = oldStyle(leftRuns[chunk.leftRun!]!)
+            const source = leftRuns[chunk.leftRun!]!
+            const old = oldStyle(source)
+            const theirs = keepRevisions ? source.rPrChange : undefined
             for (const r of sliceRuns(rightRuns, chunk.right![0], chunk.right![1])) {
               if (keepRevisions && r.rPrChange) {
                 runs.push(emittedRun(r))
+                continue
+              }
+              // the revised text is formatted as the original was before or after its own tracked change
+              if (theirs && [styleKey(source), styleKey(theirs.old ?? {})].includes(styleKey(r))) {
+                summary.carried++
+                const id = ids.take()
+                const run = restyled(emittedRun(r), source, (styleId) =>
+                  revised.styles.has(styleId),
+                )
+                runs.push({
+                  ...run,
+                  // the record is written from the raw properties: it takes its new id there too
+                  ...(run.rawRPr
+                    ? {
+                        rawRPr: run.rawRPr.replace(
+                          /(<w:rPrChange\b[^>]*?\bw:id=")[^"]*"/,
+                          `$1${id}"`,
+                        ),
+                      }
+                    : {}),
+                  rPrChange: { ...theirs, id },
+                })
                 continue
               }
               summary.formatChanges++
@@ -424,6 +488,7 @@ function planBody(
           if (chunk.kind === 'del') {
             const gone = foreignRuns(sliceRuns(leftRuns, chunk.left![0], chunk.left![1]))
             if (gone.some((r) => !isTracked(r))) summary.deletions++
+            if (!gone.some(isTracked)) fragments.push({ kind: 'del', info, runs: gone })
             runs.push(
               ...gone.map((r) =>
                 isTracked(r) ? { ...r, ...carry.marks(r) } : { ...r, del: info },
@@ -432,6 +497,7 @@ function planBody(
           } else {
             const added = sliceRuns(rightRuns, chunk.right![0], chunk.right![1]).map(emittedRun)
             if (added.some((r) => !isTracked(r))) summary.insertions++
+            if (!added.some(isTracked)) fragments.push({ kind: 'ins', info, runs: added })
             runs.push(...added.map((r) => (isTracked(r) ? r : { ...r, ins: info })))
           }
         }
@@ -445,7 +511,11 @@ function planBody(
         continue
       }
       // a table, a picture or a field: the whole block is kept or replaced
-      if (comparableText(entry.left.text, rules) === comparableText(entry.right.text, rules)) {
+      const sameText =
+        comparableText(entry.left.text, rules) === comparableText(entry.right.text, rules)
+      // the paragraphs inside may still differ in their formatting
+      const holdsParagraphs = !!(leftBlock.table ?? leftBlock.textboxes)
+      if (sameText && (rules.ignoreFormatting || !holdsParagraphs)) {
         summary.unchangedParagraphs++
         blocks.push(originalPassthrough(rightBlock))
         continue
@@ -459,7 +529,7 @@ function planBody(
         const xml = diffTextBoxXml(
           leftBlock.originalXml ?? '',
           rightBlock.originalXml ?? '',
-          storyContext(setup, ids, summary),
+          inCells(),
         )
         if (xml !== null) {
           summary.changedParagraphs++
@@ -472,12 +542,8 @@ function planBody(
         }
       }
       if (leftBlock.table && rightBlock.table && leftBlock.originalXml && rightBlock.originalXml) {
-        const xml = diffTableXml(
-          leftBlock.originalXml,
-          rightBlock.originalXml,
-          storyContext(setup, ids, summary),
-        )
-        if (xml !== null) {
+        const xml = diffTableXml(leftBlock.originalXml, rightBlock.originalXml, inCells())
+        if (xml !== null && xml !== rightBlock.originalXml) {
           summary.changedParagraphs++
           blocks.push({
             kind: 'xml',
@@ -486,6 +552,16 @@ function planBody(
           })
           continue
         }
+        if (xml !== null) {
+          summary.unchangedParagraphs++
+          blocks.push(originalPassthrough(rightBlock))
+          continue
+        }
+      }
+      if (sameText) {
+        summary.unchangedParagraphs++
+        blocks.push(originalPassthrough(rightBlock))
+        continue
       }
       summary.deletedParagraphs++
       summary.insertedParagraphs++
@@ -523,11 +599,71 @@ function planBody(
     blocks.push(insertedBlock(added, author, date, ids, keepRevisions))
   }
 
-  return { blocks, summary }
+  carry.settle(blocks)
+  if (settings.moves) moveFragments(fragments, rules, summary)
+  const names = { next: 0 }
+  const held = blocks.filter((block) => block.kind === 'xml')
+  movedInStories(
+    held.map((block) => block.xml),
+    cellFragments,
+    setup,
+    ids,
+    summary,
+    names,
+  ).forEach((xml, i) => (held[i]!.xml = xml))
+  return { blocks, summary, newPictures: objects.pictures, storyMoves: names.next }
+}
+
+/** moves are read in the stories of a comparison; a combination keeps each side's own changes apart */
+const storyMoves = (setup: Setup): boolean => setup.settings.moves && !setup.keepRevisions
+
+/**
+ * Text the comparison deleted in one place of a story (a header, a footer,
+ * the notes, the cells and text boxes of the body) and inserted in another
+ * place of the same story, read as a move under the rule of moveFragments.
+ */
+function movedInStories(
+  parts: string[],
+  fragments: StoryFragment[],
+  setup: Setup,
+  ids: RevisionIds,
+  summary: CompareSummary,
+  names: { next: number },
+): string[] {
+  const sides = new Map<string, { ins: StoryFragment[]; del: StoryFragment[] }>()
+  for (const fragment of fragments) {
+    const text = comparableText(fragment.text.replace(/\s+/g, ' ').trim(), setup.rules)
+    if (text.split(' ').length < MOVE_MIN_WORDS) continue
+    const entry = sides.get(text) ?? { ins: [], del: [] }
+    entry[fragment.kind].push(fragment)
+    sides.set(text, entry)
+  }
+  const out = [...parts]
+  const ctx = { author: setup.author, date: setup.date, takeId: () => ids.take() }
+  for (const { ins, del } of sides.values()) {
+    if (ins.length !== 1 || del.length !== 1) continue
+    // a fragment of a table that was replaced whole after all is in no part
+    const pair = [del[0]!, ins[0]!].map((fragment) => ({
+      fragment,
+      at: out.findIndex((xml) => xml.includes(`<w:${fragment.kind} w:id="${fragment.id}"`)),
+    }))
+    if (pair.some(({ at }) => at === -1)) continue
+    const name = `story${++names.next}`
+    for (const { fragment, at } of pair) out[at] = relabelledMove(out[at]!, fragment, name, ctx)
+    summary.moves++
+    summary.insertions--
+    summary.deletions--
+  }
+  return out
 }
 
 /** the text diff of a story outside the body model, under this comparison's rules */
-function storyContext(setup: Setup, ids: RevisionIds, counts: CompareSummary): StoryDiffContext {
+function storyContext(
+  setup: Setup,
+  ids: RevisionIds,
+  counts: CompareSummary,
+  formats: ReturnType<typeof paragraphFormats>,
+): StoryDiffContext {
   const rules: Rules = { ...setup.rules, ignoreFormatting: true }
   const units = (texts: string[]) => texts.map((text, index) => ({ index, text }))
   return {
@@ -541,6 +677,12 @@ function storyContext(setup: Setup, ids: RevisionIds, counts: CompareSummary): S
     same: (left, right) => comparableText(left, rules) === comparableText(right, rules),
     tables: setup.settings.tables,
     counts,
+    ...(setup.rules.ignoreFormatting
+      ? {}
+      : {
+          paragraphFormat: (left: string | undefined, right: string | undefined) =>
+            formats.changed(left, right, setup.keepRevisions, setup, ids),
+        }),
   }
 }
 
@@ -682,7 +824,7 @@ function movedParagraphs(
     unit.textual &&
     !(keepRevisions && unit.block.runs?.some(isTracked)) &&
     !unit.block.sdtShell &&
-    !unit.text.includes(PICTURE_TOKEN) &&
+    !HOLDS_OBJECT.test(unit.text) &&
     /\S/.test(unit.text)
   const gone = new Map<string, Aligned[]>()
   for (const entry of aligned) {
@@ -700,6 +842,55 @@ function movedParagraphs(
     out.set(entry, name)
   }
   return out
+}
+
+/** a stretch of a paragraph the comparison deleted or inserted as one change */
+interface Fragment {
+  kind: 'ins' | 'del'
+  info: RevisionInfo
+  runs: Run[]
+}
+
+/** a moved stretch is at least this many words: a shorter one is as likely a repeated phrase */
+const MOVE_MIN_WORDS = 4
+
+/**
+ * Text deleted in one place and inserted in another, inside a paragraph or
+ * across two: the same change read as a move. Only the labels change, so
+ * accepting or rejecting resolves exactly as the deletion and insertion did.
+ * A stretch moves when it is long enough and has one twin on the other side.
+ */
+function moveFragments(fragments: Fragment[], rules: Rules, summary: CompareSummary): void {
+  const key = (fragment: Fragment): string | null => {
+    if (fragment.runs.some((run) => run.image ?? run.math)) return null
+    const text = comparableText(
+      fragment.runs
+        .map((run) => run.text)
+        .join('')
+        .replace(/\s+/g, ' ')
+        .trim(),
+      rules,
+    )
+    return text.split(' ').length >= MOVE_MIN_WORDS ? text : null
+  }
+  const sides = new Map<string, { ins: Fragment[]; del: Fragment[] }>()
+  for (const fragment of fragments) {
+    const text = key(fragment)
+    if (text === null) continue
+    const entry = sides.get(text) ?? { ins: [], del: [] }
+    entry[fragment.kind].push(fragment)
+    sides.set(text, entry)
+  }
+  let n = 0
+  for (const { ins, del } of sides.values()) {
+    if (ins.length !== 1 || del.length !== 1) continue
+    const name = `fragment${++n}`
+    ins[0]!.info.move = name
+    del[0]!.info.move = name
+    summary.moves++
+    summary.insertions--
+    summary.deletions--
+  }
 }
 
 /** a paragraph that moved, at its old place (del) or its new one (ins) */
@@ -743,22 +934,34 @@ function whollyTracked(block: Block): boolean {
 interface Carrier {
   /** the tracked-change marks of a run of the original, under ids of this document */
   marks: (run: Run) => Pick<Run, 'ins' | 'del'>
+  /** once every block is planned: a move whose other half did not come along reads as a deletion or an insertion */
+  settle: (blocks: SaveBlock[]) => void
 }
+
+/** keeps a carried move's name apart from the ones the comparison hands out */
+const CARRIED_MOVE = 'carried-'
+
+const PARA_MARK_MOVE = /<w:move(From|To)\b([^>]*\/>)/g
 
 /**
  * Tracked changes of the original keep their author and date and take a new
- * id; a move loses its name, since its other half may not come along.
+ * id. A move stays a move when both its halves come along.
  */
 function carrier(ids: RevisionIds, summary: CompareSummary): Carrier {
   const seen = new Map<string, RevisionInfo>()
+  const halves = new Map<string, { ins: RevisionInfo[]; del: RevisionInfo[] }>()
   const one = (kind: 'ins' | 'del', info: RevisionInfo): RevisionInfo => {
     const key = JSON.stringify([kind, info.author, info.date ?? null, info.id ?? null])
     let out = seen.get(key)
     if (!out) {
-      const { move: _move, ...rest } = info
-      out = { ...rest, id: ids.take() }
+      out = { ...info, id: ids.take(), ...(info.move ? { move: CARRIED_MOVE + info.move } : {}) }
       seen.set(key, out)
       summary.carried++
+      if (out.move) {
+        const ends = halves.get(out.move) ?? { ins: [], del: [] }
+        ends[kind].push(out)
+        halves.set(out.move, ends)
+      }
     }
     return out
   }
@@ -767,6 +970,23 @@ function carrier(ids: RevisionIds, summary: CompareSummary): Carrier {
       ...(run.ins ? { ins: one('ins', run.ins) } : {}),
       ...(run.del ? { del: one('del', run.del) } : {}),
     }),
+    settle(blocks) {
+      for (const ends of halves.values()) {
+        if (ends.ins.length && ends.del.length) continue
+        for (const info of [...ends.ins, ...ends.del]) delete info.move
+      }
+      for (const entry of blocks) {
+        if (entry.kind !== 'generated' || !entry.block.rawPPr) continue
+        const { rawPPr, runs } = entry.block
+        if (runs.some((run) => run.ins?.move ?? run.del?.move)) continue
+        const live = rawPPr.split('<w:pPrChange')[0]!
+        const plain = live.replace(
+          PARA_MARK_MOVE,
+          (_all, side: string, rest: string) => `<w:${side === 'From' ? 'del' : 'ins'}${rest}`,
+        )
+        if (plain !== live) entry.block.rawPPr = plain + rawPPr.slice(live.length)
+      }
+    },
   }
 }
 
@@ -785,31 +1005,31 @@ function paragraphFormats(original: ParsedDocFull, revised: ParsedDocFull) {
     ` w:id="${id}" w:author="${escapeXmlAttr(author)}"` +
     (date ? ` w:date="${escapeXmlAttr(date)}"` : '')
   return {
+    /** `left` / `right`: each paragraph's own w:pPr, undefined when it has none */
     changed(
-      left: Block,
-      right: Block,
+      left: string | undefined,
+      right: string | undefined,
       keepRevisions: boolean,
       label: { author: string; date: string },
       ids: RevisionIds,
     ): { xml: string; carried?: boolean } | null {
-      if (keepRevisions && right.pPrChangeInfo) return null
-      const same =
-        paragraphFormatKey(left.rawPPr, leftList) === paragraphFormatKey(right.rawPPr, rightList)
+      if (keepRevisions && right?.includes('<w:pPrChange')) return null
+      const same = paragraphFormatKey(left, leftList) === paragraphFormatKey(right, rightList)
       if (!same) {
         return {
           xml: withPPrChange(
-            right.rawPPr,
-            recordedPPr(left.rawPPr, keep),
+            right,
+            recordedPPr(left, keep),
             attrs(ids.take(), label.author, label.date),
           ),
         }
       }
       // the original tracks the formatting both now have
-      const theirs = keepRevisions ? existingPPrChange(left.rawPPr) : null
+      const theirs = keepRevisions ? existingPPrChange(left) : null
       if (!theirs) return null
       return {
         xml: withPPrChange(
-          right.rawPPr,
+          right,
           recordedPPr(theirs.recorded, keep),
           attrs(ids.take(), theirs.author, theirs.date),
         ),
@@ -1191,9 +1411,13 @@ function paragraphChunks(
       })
       continue
     }
+    const leftRun = leftRuns[runIndexAt(leftStarts, op.l.start)]
+    const rightRun = rightRuns[runIndexAt(rightStarts, op.r.start)]
     const styled =
       !rules.ignoreFormatting &&
-      styleOf(leftRuns, leftStarts, op.l) !== styleOf(rightRuns, rightStarts, op.r)
+      (styleKey(leftRun) !== styleKey(rightRun) ||
+        // a formatting change the original tracks and the revised one does not show
+        (!!tracked && !!leftRun?.rPrChange && !rightRun?.rPrChange))
     if (styled) {
       flush()
       chunks.push({
@@ -1424,7 +1648,7 @@ function hasRevision(chunks: Chunk[]): boolean {
 
 /** words (or characters) and the whitespace between them */
 function tokenize(text: string, granularity: CompareGranularity): Token[] {
-  const re = granularity === 'char' ? /[^\s]|\s+/g : /\S+|\s+/g
+  const re = granularity === 'char' ? /[^\s]|\s+/g : WORDS
   const out: Token[] = []
   for (const m of text.matchAll(re)) {
     out.push({ text: m[0], start: m.index, end: m.index + m[0].length })
@@ -1507,32 +1731,44 @@ function runStarts(runs: Run[]): number[] {
   return out
 }
 
-/** the formatting of the run a token starts in */
-function styleOf(runs: Run[], starts: number[], token: Token): string {
-  const index = runIndexAt(starts, token.start)
-  const run = index >= 0 ? runs[index] : undefined
-  if (!run) return ''
-  return JSON.stringify([
-    run.styleId ?? null,
-    run.bold ?? false,
-    run.italic ?? false,
-    run.underline ?? false,
-    run.strike ?? false,
-    run.dstrike ?? false,
-    run.color ?? null,
-    run.sizeHalfPoints ?? null,
-    run.font ?? null,
-    run.fontAscii ?? null,
-    run.eastAsiaFont ?? null,
-    run.highlight ?? null,
-    run.shading ?? null,
-    run.vertAlign ?? null,
-    run.caps ?? null,
-    run.vanish ?? false,
-    run.charSpacingTwips ?? null,
-    run.charScalePct ?? null,
-    run.rtl ?? false,
-  ])
+/** the formatting two runs are compared by */
+const STYLE_FIELDS = [
+  'styleId',
+  'bold',
+  'italic',
+  'underline',
+  'strike',
+  'dstrike',
+  'color',
+  'sizeHalfPoints',
+  'font',
+  'fontAscii',
+  'eastAsiaFont',
+  'highlight',
+  'shading',
+  'vertAlign',
+  'caps',
+  'vanish',
+  'charSpacingTwips',
+  'charScalePct',
+  'rtl',
+] as const
+
+const styleKey = (run: { [K in (typeof STYLE_FIELDS)[number]]?: unknown } | undefined): string =>
+  run ? JSON.stringify(STYLE_FIELDS.map((field) => run[field] || null)) : ''
+
+/** a run of the revised document under the formatting (and its tracked change) of one of the original */
+function restyled(run: Run, source: Run, hasStyle: (styleId: string) => boolean): Run {
+  const out: Record<string, unknown> = { ...run }
+  const from = source as unknown as Record<string, unknown>
+  for (const field of STYLE_FIELDS) {
+    if (from[field] === undefined) delete out[field]
+    else out[field] = from[field]
+  }
+  if (source.styleId && !hasStyle(source.styleId)) delete out.styleId
+  if (source.rawRPr === undefined) delete out.rawRPr
+  else out.rawRPr = source.rawRPr
+  return out as unknown as Run
 }
 
 /** the code of the field the token starts in; null outside a field */
@@ -1623,9 +1859,18 @@ function deletedBlock(
     }
   }
   if (block.type === 'image') {
+    const drawing = /<w:drawing>[\s\S]*?<\/w:drawing>/.exec(block.originalXml ?? '')?.[0]
+    const picture =
+      drawing && block.imageDataUrl
+        ? carriedPicture({ dataUrl: block.imageDataUrl, xml: drawing })
+        : null
     return {
       kind: 'generated',
-      block: generatedFrom(block, [{ text: '[picture]', del: revision }]),
+      block: generatedFrom(block, [
+        picture
+          ? { text: '', image: picture, del: revision }
+          : { text: '[picture]', del: revision },
+      ]),
       revision: { kind: 'del', author, date, id: ids.take() },
     }
   }
@@ -1671,39 +1916,101 @@ function insertedBlock(
   }
 }
 
-/** stands in for a picture in the compared text, so a picture is a token the diff keeps or moves */
+/** stands in for an object nothing identifies: it never differs from another */
 const PICTURE_TOKEN = '\uFFFC'
+const OBJECT_FIRST = 0xe000
+const OBJECT_LAST = 0xefff
+const OBJECT_CHARS = '\\uE000-\\uEFFF\\uFFFC'
+const HOLDS_OBJECT = new RegExp(`[${OBJECT_CHARS}]`)
+/** a picture or an equation is a word of its own */
+const WORDS = new RegExp(`[${OBJECT_CHARS}]|[^\\s${OBJECT_CHARS}]+|\\s+`, 'g')
+
+/**
+ * The pictures and equations of one comparison. Each distinct object (a
+ * picture by its bytes, an equation by its OMML) stands in the compared text
+ * as one character of its own, so the same object on both sides is kept and a
+ * different one is a deletion and an insertion.
+ */
+interface ComparedObjects {
+  tokens: Map<string, string>
+  /** what an equation's run read as before its token took its place */
+  texts: Map<string, string>
+  /** pictures of the original that come along deleted, by the placeholder their drawing names */
+  pictures: NonNullable<SaveOptions['newPictures']>
+}
+const freshObjects = (): ComparedObjects => ({ tokens: new Map(), texts: new Map(), pictures: {} })
+let objects = freshObjects()
+
+function objectToken(identity: string, text = ''): string {
+  let token = objects.tokens.get(identity)
+  if (!token) {
+    const code = OBJECT_FIRST + objects.tokens.size
+    token = code > OBJECT_LAST ? PICTURE_TOKEN : String.fromCharCode(code)
+    objects.tokens.set(identity, token)
+    objects.texts.set(token, text)
+  }
+  return token
+}
+
+const withObjectToken = (run: Run): Run =>
+  run.math
+    ? { ...run, text: objectToken(`math ${run.math.omml}`, run.text) }
+    : run.image && !run.text
+      ? { ...run, text: objectToken(`picture ${run.image.dataUrl}`) }
+      : run
 
 /**
  * The runs as a reader sees them with every pending change accepted: deleted
- * text is gone, inserted text is plain. A picture becomes a one-character
- * token so it survives slicing by character range.
+ * text is gone, inserted text is plain. A picture or an equation becomes a
+ * one-character token so it survives slicing by character range.
  */
 function comparableRuns(runs: Run[]): Run[] {
   const out: Run[] = []
   for (const run of runs) {
     if (run.del) continue
     const { ins: _ins, ...rest } = run
-    out.push(rest.image && !rest.text ? { ...rest, text: PICTURE_TOKEN } : rest)
+    out.push(withObjectToken(rest))
   }
   return out
 }
 
 /** the runs with their pending changes as they are: deleted text stays, marked deleted */
 function markupRuns(runs: Run[]): Run[] {
-  return runs.map((run) => (run.image && !run.text ? { ...run, text: PICTURE_TOKEN } : run))
+  return runs.map(withObjectToken)
 }
 
-/** a run of the revised document, the picture token folded back into the picture run */
+/** a run of the revised document, the object token folded back into the run it stands for */
 function emittedRun(run: Run): Run {
-  return run.image && run.text === PICTURE_TOKEN ? { ...run, text: '' } : run
+  return (run.image ?? run.math) && run.text.length === 1 && HOLDS_OBJECT.test(run.text)
+    ? { ...run, text: objects.texts.get(run.text) ?? '' }
+    : run
+}
+
+const SIMPLE_PICTURE = /^data:(image\/(?:png|jpeg|gif));base64,(.+)$/
+
+/**
+ * A picture of the original as a drawing this package can hold: its bytes
+ * land as a new media part on save. null when the drawing names more of its
+ * package than the one bitmap.
+ */
+function carriedPicture(image: NonNullable<Run['image']>): NonNullable<Run['image']> | null {
+  const data = SIMPLE_PICTURE.exec(image.dataUrl)
+  const refs = image.xml.match(/\br:[A-Za-z]+\s*=\s*"[^"]*"/g) ?? []
+  if (!data || refs.length !== 1 || !refs[0]!.startsWith('r:embed')) return null
+  const token = `${NEW_PICTURE_TOKEN_PREFIX}${Object.keys(objects.pictures).length + 1}`
+  objects.pictures[token] = { base64: data[2]!, mime: data[1] as 'image/png' }
+  const xml = image.xml
+    .replace(refs[0]!, `r:embed="${token}"`)
+    .replace(/(<wp:docPr\b[^>]*?\bid=")[^"]*"/, `$1${token}"`)
+  return { ...image, xml }
 }
 
 /**
  * Runs of the original document that end up in the redline as deleted text.
- * What points into the original package stays behind: a picture is named
- * instead of carried, a note reference goes, and a comment range, a link or a
- * field leaves its text.
+ * What points into the original package stays behind: a note reference goes,
+ * a comment range, a link or a field leaves its text, and a picture that
+ * names more than its own bitmap, or an embedded equation object, is named
+ * instead of carried.
  */
 function foreignRuns(runs: Run[]): Run[] {
   const out: Run[] = []
@@ -1717,6 +2024,9 @@ function foreignRuns(runs: Run[]): Run[] {
       taInstr: _taInstr,
       taRuns: _taRuns,
       tcInstr: _tcInstr,
+      linkBegin: _linkBegin,
+      linkEnd: _linkEnd,
+      rangeMark: _rangeMark,
       refField: _refField,
       refInstr: _refInstr,
       instrField: _instrField,
@@ -1724,22 +2034,20 @@ function foreignRuns(runs: Run[]): Run[] {
       zoteroFieldPart: _zoteroFieldPart,
       fldBeginXml: _fldBeginXml,
       fldDirty: _fldDirty,
+      fldLock: _fldLock,
       sdtCheckboxXml: _sdtCheckboxXml,
       ...rest
     } = run
-    out.push(image ? { ...rest, text: '[picture]' } : rest)
+    const picture = image && carriedPicture(image)
+    if (picture) out.push({ ...rest, text: '', image: picture })
+    else if (image) out.push({ ...rest, text: '[picture]' })
+    else if (rest.math?.oleXml) {
+      // the embedded object names relationships of the original package
+      const { math: _math, ...plain } = rest
+      out.push({ ...plain, text: '[picture]' })
+    } else out.push(emittedRun(rest))
   }
   return out
-}
-
-/** drop the drawings, VML pictures and embedded objects of a fragment from the other package */
-function withoutForeignObjects(xml: string): string {
-  return xml
-    .replace(/<w:drawing>[\s\S]*?<\/w:drawing>/g, '')
-    .replace(/<w:pict(?:\s[^>]*)?>[\s\S]*?<\/w:pict>/g, '')
-    .replace(/<w:object(?:\s[^>]*)?>[\s\S]*?<\/w:object>/g, '')
-    .replace(/<w:(?:footnote|endnote|comment)Reference\b[^>]*\/>/g, '')
-    .replace(/<w:commentRange(?:Start|End)\b[^>]*\/>/g, '')
 }
 
 /**

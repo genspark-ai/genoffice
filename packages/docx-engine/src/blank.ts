@@ -170,11 +170,12 @@ export const WORD_THEME_COLORS: Readonly<ThemeColors> = {
 
 export const WORD_THEME_FONTS: Readonly<ThemeFonts> = { major: 'Aptos Display', minor: 'Aptos' }
 
-const stylesXml = (eastAsiaFont?: string, wordDefaults = false): string =>
+const stylesXml = (eastAsiaFont?: string, lang?: string, wordDefaults = false): string =>
   XML_DECL +
   '<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">' +
   '<w:docDefaults><w:rPrDefault><w:rPr>' +
   `<w:rFonts w:ascii="Calibri"${eastAsiaFont ? ` w:eastAsia="${eastAsiaFont}"` : ''} w:hAnsi="Calibri"/><w:sz w:val="22"/><w:szCs w:val="22"/>` +
+  (lang ? `<w:lang w:val="${lang}"/>` : '') +
   '</w:rPr></w:rPrDefault>' +
   '<w:pPrDefault><w:pPr><w:spacing w:after="120" w:line="276" w:lineRule="auto"/></w:pPr></w:pPrDefault></w:docDefaults>' +
   '<w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/><w:qFormat/></w:style>' +
@@ -699,6 +700,11 @@ export interface BlankDocxOptions {
    * Word/our renderer then substitute per script when CJK text appears.
    */
   eastAsiaFont?: string
+  /**
+   * docDefaults w:lang w:val (BCP-47). Word hyphenates only text that declares a
+   * language; omitted, none is written.
+   */
+  lang?: string
   /** Page size of the single section; defaults to A4. */
   paperSize?: BlankPaperSize
   /** Creation stamp of docProps/core.xml; defaults to now (tests pin a fixed date). */
@@ -761,7 +767,7 @@ export async function buildBlankDocx(options?: BlankDocxOptions): Promise<Uint8A
   )
 
   const wordDefaults = options?.wordDefaults === true
-  zip.file('word/styles.xml', stylesXml(options?.eastAsiaFont, wordDefaults))
+  zip.file('word/styles.xml', stylesXml(options?.eastAsiaFont, options?.lang, wordDefaults))
   zip.file('word/numbering.xml', NUMBERING_XML)
   if (wordDefaults) {
     zip.file('word/settings.xml', SETTINGS_XML)

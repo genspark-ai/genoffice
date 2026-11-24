@@ -53,6 +53,7 @@ function useCommandOff(
       hasTableOfFigures: format.hasTableOfFigures,
       hasIndex: format.hasIndex,
       hasTableOfAuthorities: format.hasTableOfAuthorities,
+      hasLinks: format.hasLinks,
       hasMergeSource: view.hasMergeSource,
       windowsDetached: view.windowsDetached,
       ...over,
@@ -96,10 +97,13 @@ export function useRunCommand(): RibbonCommandSource['run'] {
 export function RbCommand({
   cmd,
   look = 'icon',
+  iconAt,
   children,
 }: {
   cmd: RibbonCommandId
   look?: 'icon' | 'small' | 'big'
+  /** rank at which a big button gives up its caption (see ribbon-fit) */
+  iconAt?: number
   children: ReactNode
 }) {
   const { t } = useI18n()
@@ -110,6 +114,7 @@ export function RbCommand({
     return (
       <button
         className={`rb-big${command.pressed ? ' active' : ''}`}
+        data-icon={iconAt}
         disabled={command.disabled}
         data-tip={tip}
         onClick={command.run}

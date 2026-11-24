@@ -310,6 +310,42 @@ describe('grouped and sibling pictures', () => {
     expect(img?.xml).toContain('<wpg:wgp')
   })
 
+  it('a grouped picture keeps its own source crop and placed proportions', async () => {
+    const pic = (id: string, y: number, cy: number, srcRect: string) =>
+      `<pic:pic><pic:nvPicPr><pic:cNvPr id="${id}" name="Picture ${id}"/><pic:cNvPicPr/></pic:nvPicPr>` +
+      `<pic:blipFill><a:blip r:embed="rId10"/>${srcRect}<a:stretch/></pic:blipFill>` +
+      `<pic:spPr><a:xfrm><a:off x="100000" y="${y}"/><a:ext cx="952500" cy="${cy}"/></a:xfrm>` +
+      `<a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic>`
+    // the child space starts at x = 100000: the pictures sit at the group's left edge
+    const group =
+      `<wpg:wgp ${WPG_NS}><wpg:cNvGrpSpPr/><wpg:grpSpPr>` +
+      `<a:xfrm><a:off x="0" y="0"/><a:ext cx="952500" cy="1905000"/>` +
+      `<a:chOff x="100000" y="0"/><a:chExt cx="952500" cy="1905000"/></a:xfrm></wpg:grpSpPr>` +
+      pic('2', 0, 952500, '<a:srcRect l="50000" b="25000"/>') +
+      pic('3', 952500, 476250, '') +
+      pic('4', 1428750, 476250, '<a:srcRect l="-10000"/>') +
+      `</wpg:wgp>`
+    const para =
+      `<w:p><w:r><w:drawing><wp:inline><wp:extent cx="952500" cy="1905000"/>` +
+      `<wp:docPr id="9" name="Group 9"/><a:graphic><a:graphicData uri="${GROUP_URI}">${group}` +
+      `</a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p>`
+    const doc = await parseDocx(await buildDocx({ bodyXml: para, withImage: true }))
+    const img = doc.blocks[0].runs?.[0]?.image
+    expect(img?.layers).toEqual([
+      {
+        dataUrl: img!.dataUrl,
+        x: 0,
+        y: 0,
+        w: 1,
+        h: 0.5,
+        crop: { l: 0.5, t: 0, r: 0, b: 0.25 },
+        aspect: 1,
+      },
+      { dataUrl: img!.dataUrl, x: 0, y: 0.5, w: 1, h: 0.25 },
+      { dataUrl: img!.dataUrl, x: 0, y: 0.75, w: 1, h: 0.25 },
+    ])
+  })
+
   it('a group holding a shape next to its pictures keeps the photo-box route', async () => {
     const doc = await parseDocx(
       await buildDocx({ bodyXml: anchorParagraph(GROUP_WITH_PIC, GROUP_URI), withImage: true }),

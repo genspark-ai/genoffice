@@ -6,7 +6,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { createElement, act } from 'react'
 import { createRoot } from 'react-dom/client'
 import { ShortcutsDialog } from '../src/renderer/components/ShortcutsDialog'
-import { SHORTCUTS } from '../src/renderer/shortcuts'
+import { SHORTCUTS, shortcutKeys } from '../src/renderer/shortcuts'
 import { t } from '../src/renderer/i18n/locale'
 
 function render(onClose = () => {}) {
@@ -34,9 +34,11 @@ function render(onClose = () => {}) {
 }
 
 describe('ShortcutsDialog', () => {
-  it('lists every registry entry under a group heading', () => {
+  it('lists every registry entry that has a chord on this platform under a group heading', () => {
     const view = render()
-    expect(view.rows().length).toBe(SHORTCUTS.length)
+    const withChord = SHORTCUTS.filter((def) => shortcutKeys(def))
+    expect(withChord.length).toBeLessThan(SHORTCUTS.length)
+    expect(view.rows().length).toBe(withChord.length)
     expect(view.container.querySelectorAll('.sc-group h3').length).toBeGreaterThan(3)
     view.unmount()
   })
@@ -46,10 +48,11 @@ describe('ShortcutsDialog', () => {
     view.type(t('ribbonPageBreak'))
     expect(view.rows().length).toBe(1)
     view.type('F9')
-    expect(view.rows().map((row) => row.querySelector('.sc-label')!.textContent)).toEqual([
-      t('appUpdateField'),
-      t('appToggleFieldCodes'),
-    ])
+    const onF9 = SHORTCUTS.filter((def) => shortcutKeys(def).includes('F9'))
+    expect(onF9.length).toBeGreaterThanOrEqual(2)
+    expect(view.rows().map((row) => row.querySelector('.sc-label')!.textContent)).toEqual(
+      onF9.map((def) => t(def.labelKey)),
+    )
     view.type('nothing here')
     expect(view.rows().length).toBe(0)
     expect(view.container.querySelector('.sc-empty')).not.toBeNull()

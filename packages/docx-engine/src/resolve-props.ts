@@ -125,6 +125,8 @@ export interface EffectiveRPr {
   strike: boolean
   caps: 'none' | 'all' | 'small'
   vanish: boolean
+  /** w:snapToGrid off (direct / character style / paragraph style): the run leaves the character grid */
+  snapToGrid?: false
   charSpacingTwips: number
   kernHalfPoints?: number
   vertAlign?: 'superscript' | 'subscript'
@@ -186,6 +188,7 @@ interface RLayer {
   strike?: boolean
   caps?: 'none' | 'all' | 'small'
   vanish?: boolean
+  snapToGrid?: boolean
   charSpacingTwips?: number
   kernHalfPoints?: number
   vertAlign?: 'superscript' | 'subscript' | 'baseline'
@@ -637,6 +640,7 @@ function styleRLayer(d: StyleDisplay | undefined, cs: boolean): RLayer {
   if (d.strike !== undefined) out.strike = d.strike
   if (d.caps) out.caps = d.caps
   if (d.vanish !== undefined) out.vanish = d.vanish
+  if (d.snapToGrid !== undefined) out.snapToGrid = d.snapToGrid
   if (d.charSpacingTwips !== undefined) out.charSpacingTwips = d.charSpacingTwips
   if (d.kernHalfPoints !== undefined) out.kernHalfPoints = d.kernHalfPoints
   if (d.bdr) out.bdr = d.bdr
@@ -729,6 +733,8 @@ function directRLayer(
     const vanish = onOffOf(rPr, 'w:vanish')
     if (vanish !== undefined) out.vanish = vanish
   }
+  const snap = onOffOf(rPr, 'w:snapToGrid')
+  if (snap !== undefined) out.snapToGrid = snap
   const spacing = parseInt(attrsOf(findChild(rPr, 'w:spacing') ?? {})['w:val'] ?? '', 10)
   if (Number.isFinite(spacing)) out.charSpacingTwips = spacing
   const kern = attrsOf(findChild(rPr, 'w:kern') ?? {})['w:val']
@@ -757,6 +763,7 @@ const PLAIN_RKEYS = [
   'color',
   'underline',
   'caps',
+  'snapToGrid',
   'charSpacingTwips',
   'kernHalfPoints',
   'vertAlign',
@@ -862,6 +869,7 @@ export function resolveRunProps(
     strike: acc.strike!,
     caps: acc.caps!,
     vanish: acc.vanish!,
+    ...(acc.snapToGrid === false ? { snapToGrid: false as const } : {}),
     charSpacingTwips: acc.charSpacingTwips!,
     ...(acc.kernHalfPoints !== undefined ? { kernHalfPoints: acc.kernHalfPoints } : {}),
     ...(acc.vertAlign && acc.vertAlign !== 'baseline' ? { vertAlign: acc.vertAlign } : {}),

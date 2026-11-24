@@ -41,6 +41,7 @@ export interface StyleParaProps {
   suppressLineNumbers?: boolean
   contextualSpacing?: boolean
   suppressAutoHyphens?: boolean
+  adjustRightInd?: boolean
   /** 1-9 (w:outlineLvl val + 1) */
   outlineLevel?: number | null
   /** list level linked to the style (w:numPr); null removes it */
@@ -407,6 +408,7 @@ function patchPara(children: Children, pp: StyleParaProps): void {
   children.flag('w:suppressLineNumbers', pp.suppressLineNumbers)
   children.flag('w:contextualSpacing', pp.contextualSpacing)
   children.flag('w:suppressAutoHyphens', pp.suppressAutoHyphens)
+  children.flag('w:adjustRightInd', pp.adjustRightInd)
   if (pp.outlineLevel !== undefined) {
     children.set(
       'w:outlineLvl',
@@ -536,6 +538,23 @@ export function upsertStyleXml(xml: string, up: StyleUpsert): string {
   return match
     ? xml.replace(existing, () => styleXml)
     : xml.replace('</w:styles>', () => `${styleXml}</w:styles>`)
+}
+
+/** a w:style with the run and paragraph properties of `rPr` / `pPr` (inner XML) it does not state itself */
+export function withDefaultPropsXml(styleXml: string, rPr: string, pPr: string): string {
+  const children = new Children(splitXmlChildren(innerOf(styleXml)), STYLE_CHILD_ORDER)
+  const fold = (name: 'w:rPr' | 'w:pPr', defaults: string, order: readonly string[]) => {
+    const own = new Children(
+      splitXmlChildren(innerOf(children.get(name)?.xml ?? `<${name}/>`)),
+      order,
+    )
+    for (const child of splitXmlChildren(defaults))
+      if (!own.get(child.name)) own.set(child.name, child.xml)
+    if (own.size) children.set(name, `<${name}>${own.toXml()}</${name}>`)
+  }
+  fold('w:pPr', pPr, PPR_CHILD_ORDER)
+  fold('w:rPr', rPr, RPR_CHILD_ORDER)
+  return tag('w:style', parseTag(styleXml).attrs, children.toXml())
 }
 
 export function hasStyleXml(xml: string, styleId: string): boolean {

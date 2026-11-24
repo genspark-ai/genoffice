@@ -35,123 +35,235 @@ Word có thanh menu đầy đủ, nên các tổ hợp phím tệp và định d
 
 ### Tệp
 
-| Hành động      | macOS | Windows / Linux |
-| -------------- | ----- | --------------- |
-| Tạo mới        | ⌘N    | Ctrl+N          |
-| Cửa sổ mới     | ⇧⌘N   | Ctrl+Shift+N    |
-| Mở…            | ⌘O    | Ctrl+O          |
-| Lưu            | ⌘S    | Ctrl+S          |
-| Lưu dưới dạng… | ⇧⌘S   | Ctrl+Shift+S    |
-| In             | ⌘P    | Ctrl+P          |
-| Đóng (thẻ)     | ⌘W    | Ctrl+W          |
+| Hành động      | macOS   | Windows / Linux |
+| -------------- | ------- | --------------- |
+| Tạo mới        | ⌘N / ⌃N | Ctrl+N          |
+| Cửa sổ mới     | —       | Ctrl+Shift+N    |
+| Mở…            | ⌘O      | Ctrl+O          |
+| Lưu            | ⌘S / ⌃S | Ctrl+S          |
+| Lưu dưới dạng… | ⇧⌘S     | Ctrl+Shift+S    |
+| In             | ⌘P / ⌃P | Ctrl+P          |
+| Đóng (thẻ)     | ⌘W      | Ctrl+W          |
+| Mới từ Mẫu     | ⇧⌘P     | —               |
 
 `⌘P` không phải lệnh in của trình duyệt. Word dàn trang xem trước khi in trước, nên một trang in ra đúng bằng một trang trên màn hình, rồi mới mở hộp thoại in riêng của nó.
 
 ### Chỉnh sửa
 
-| Hành động                   | macOS | Windows / Linux |
-| --------------------------- | ----- | --------------- |
-| Hoàn tác                    | ⌘Z    | Ctrl+Z          |
-| Làm lại                     | ⇧⌘Z   | Ctrl+Shift+Z    |
-| Cắt                         | ⌘X    | Ctrl+X          |
-| Sao chép                    | ⌘C    | Ctrl+C          |
-| Dán                         | ⌘V    | Ctrl+V          |
-| Dán dưới dạng văn bản thuần | ⌥⇧⌘V  | Ctrl+Shift+V    |
-| Chọn tất cả                 | ⌘A    | Ctrl+A          |
-| Tìm                         | ⌘F    | Ctrl+F          |
-| Thay thế                    | ⌃H    | Ctrl+H          |
-| Đi tới                      | ⌥⌘G   | Ctrl+G          |
-| Phím tắt bàn phím           | ⌘/    | Ctrl+/          |
+| Hành động                   | macOS           | Windows / Linux |
+| --------------------------- | --------------- | --------------- |
+| Hoàn tác                    | ⌘Z / ⌃Z         | Ctrl+Z          |
+| Làm lại                     | ⇧⌘Z             | Ctrl+Shift+Z    |
+| Cắt                         | ⌘X / ⌃X / F2    | Ctrl+X          |
+| Sao chép                    | ⌘C / ⌃C / F3    | Ctrl+C          |
+| Dán                         | ⌘V / ⌃V / F4    | Ctrl+V          |
+| Dán dưới dạng văn bản thuần | ⌥⇧⌘V            | Ctrl+Shift+V    |
+| Chọn tất cả                 | ⌘A / ⌃A         | Ctrl+A          |
+| Tìm                         | ⌘F / ⌃F         | Ctrl+F          |
+| Thay thế                    | ⇧⌘H / ⌃H        | Ctrl+H          |
+| Đi tới                      | ⌥⌘G / F5        | Ctrl+G          |
+| Phím tắt bàn phím           | ⌘/              | Ctrl+/          |
+| Làm lại hoặc lặp lại        | ⌘Y / ⌃Y / ⌥⏎    | Ctrl+Y          |
+| Chỉ giữ lại văn bản         | ⇧⌘V             | —               |
+| Dán đặc biệt                | ⌃⌘V             | —               |
+| Tìm tiếp                    | ⌘G / ⇧F4 / ⇧⌘F4 | —               |
+| Tìm Trước                   | ⇧⌘G             | —               |
+| Bật/tắt Vẽ                  | ⌃⌘Z             | —               |
+| Xóa hàng                    | ⌃⌘X             | —               |
+| Chèn lên trên               | ⌃⌘I             | —               |
+| Xóa từ trước                | ⌥⌫ / ⌘⌫         | —               |
+| Xóa từ sau                  | ⌥⌦ / ⌘⌦         | —               |
+| Cắt vào Spike               | ⌘F3             | —               |
+| Chèn nội dung Spike         | ⇧⌘F3            | —               |
+| Xóa nội dung                | Clear           | —               |
+| Sao chép văn bản            | ⇧F2             | —               |
 
-Thay thế là Ctrl+H trên cả hai nền tảng vì `⌘H` ẩn cửa sổ trên macOS và không bao giờ tới được Word. Đi tới theo đúng cách chia của Word: `⌥⌘G` trên Mac, nhờ vậy `⇧⌘G` vẫn rảnh cho Đếm từ.
+Thay thế là Ctrl+H trên cả hai nền tảng vì `⌘H` ẩn cửa sổ trên macOS và không bao giờ tới được Word. Đi tới theo đúng cách chia của Word: `⌥⌘G` trên Mac, nơi `⌘G` và `⇧⌘G` là Tìm Tiếp và Tìm Trước.
+
+### Điều hướng và chọn
+
+| Hành động                                         | macOS                  | Windows / Linux |
+| ------------------------------------------------- | ---------------------- | --------------- |
+| Đầu dòng                                          | ⌘← / Home / ⌃↑         | —               |
+| Cuối dòng                                         | ⌘→ / End / ⌃↓          | —               |
+| Đoạn trước                                        | ⌘↑ / ⌥↑                | —               |
+| Đoạn sau                                          | ⌘↓ / ⌥↓                | —               |
+| Đầu tài liệu                                      | ⌘Home / ⌥Home          | —               |
+| Cuối tài liệu                                     | ⌘End / ⌥End            | —               |
+| Chọn đến đầu dòng                                 | ⇧⌘← / ⇧Home            | —               |
+| Chọn đến cuối dòng                                | ⇧⌘→ / ⇧End             | —               |
+| Chọn đến đoạn trước                               | ⇧⌘↑ / ⌥⇧↑              | —               |
+| Chọn đến đoạn sau                                 | ⇧⌘↓ / ⌥⇧↓              | —               |
+| Chọn đến đầu tài liệu                             | ⇧⌘Home                 | —               |
+| Chọn đến cuối tài liệu                            | ⇧⌘End                  | —               |
+| Lên một màn hình                                  | PageUp                 | —               |
+| Xuống một màn hình                                | PageDown               | —               |
+| Chọn lên một màn hình                             | ⇧PageUp                | —               |
+| Chọn xuống một màn hình                           | ⇧PageDown              | —               |
+| Đầu cửa sổ                                        | ⌥⌘PageUp               | —               |
+| Cuối cửa sổ                                       | ⌥⌘PageDown             | —               |
+| Chọn đến đầu cửa sổ                               | ⌥⇧⌘PageUp              | —               |
+| Chọn đến cuối cửa sổ                              | ⌥⇧⌘PageDown            | —               |
+| Duyệt mục trước (Trang, Tìm kiếm hoặc Đi tới)     | ⌘PageUp                | —               |
+| Duyệt mục tiếp theo (Trang, Tìm kiếm hoặc Đi tới) | ⌘PageDown              | —               |
+| Phần trước                                        | ⌥PageUp                | —               |
+| Phần tiếp theo                                    | ⌥PageDown              | —               |
+| Mở rộng vùng chọn                                 | F8                     | —               |
+| Thu hẹp vùng chọn                                 | ⇧F8                    | —               |
+| Quay lại vị trí sửa trước                         | ⇧F5 / ⌥⌘Z              | —               |
+| Ô đầu tiên trong hàng                             | ⌃Home / ⌥⇧Home         | —               |
+| Ô cuối cùng trong hàng                            | ⌃End / ⌥⇧End           | —               |
+| Ô đầu tiên trong cột                              | ⌃PageUp / ⌥⇧PageUp     | —               |
+| Ô cuối cùng trong cột                             | ⌃PageDown / ⌥⇧PageDown | —               |
+| Chọn bảng                                         | ⌥Clear                 | —               |
 
 ### Định dạng văn bản
 
-| Hành động                                  | macOS    | Windows / Linux       |
-| ------------------------------------------ | -------- | --------------------- |
-| Đậm                                        | ⌘B       | Ctrl+B                |
-| Nghiêng                                    | ⌘I       | Ctrl+I                |
-| Gạch chân                                  | ⌘U       | Ctrl+U                |
-| Phông chữ… (hộp thoại)                     | ⌘D       | Ctrl+D                |
-| Tăng cỡ phông chữ                          | ⇧⌘.      | Ctrl+Shift+.          |
-| Giảm cỡ phông chữ                          | ⇧⌘,      | Ctrl+Shift+,          |
-| Tăng cỡ phông chữ 1 pt                     | ⌘]       | Ctrl+]                |
-| Giảm cỡ phông chữ 1 pt                     | ⌘[       | Ctrl+[                |
-| Chỉ số trên                                | ⇧⌘= / ⌘. | Ctrl+Shift+= / Ctrl+. |
-| Chỉ số dưới                                | ⌘,       | Ctrl+,                |
-| Đổi chữ hoa thường                         | ⇧F3      | Shift+F3              |
-| Sao chép định dạng (khi đã chọn văn bản)   | ⇧⌘C      | Ctrl+Shift+C          |
-| Dán định dạng (sau khi Sao chép định dạng) | ⇧⌘V      | Ctrl+Alt+Shift+V      |
-| Xóa mọi định dạng                          | ⌃␣       | Ctrl+Space            |
+| Hành động                                  | macOS               | Windows / Linux       |
+| ------------------------------------------ | ------------------- | --------------------- |
+| Đậm                                        | ⌘B / ⇧⌘B / ⌃B / ⌃⇧B | Ctrl+B                |
+| Nghiêng                                    | ⌘I / ⇧⌘I / ⌃I / ⌃⇧I | Ctrl+I                |
+| Gạch chân                                  | ⌘U / ⇧⌘U / ⌃U / ⌃⇧U | Ctrl+U                |
+| Phông chữ… (hộp thoại)                     | ⌘D                  | Ctrl+D                |
+| Tăng cỡ phông chữ                          | ⇧⌘.                 | Ctrl+Shift+.          |
+| Giảm cỡ phông chữ                          | ⇧⌘,                 | Ctrl+Shift+,          |
+| Tăng cỡ phông chữ 1 pt                     | ⌘]                  | Ctrl+]                |
+| Giảm cỡ phông chữ 1 pt                     | ⌘[                  | Ctrl+[                |
+| Chỉ số trên                                | ⇧⌘=                 | Ctrl+Shift+= / Ctrl+. |
+| Chỉ số dưới                                | ⇧⌘-                 | Ctrl+,                |
+| Đổi chữ hoa thường                         | ⇧F3                 | Shift+F3              |
+| Sao chép định dạng (khi đã chọn văn bản)   | ⌥⌘C / ⇧⌘C           | Ctrl+Shift+C          |
+| Dán định dạng (sau khi Sao chép định dạng) | ⌥⌘V                 | Ctrl+Alt+Shift+V      |
+| Xóa mọi định dạng                          | ⌃␣                  | Ctrl+Space            |
+| Gạch dưới kép                              | ⇧⌘D                 | —                     |
+| Chỉ gạch dưới từ                           | ⇧⌘W                 | —                     |
+| Gạch ngang                                 | ⇧⌘X                 | —                     |
+| Toàn chữ hoa                               | ⇧⌘A                 | —                     |
+| Chữ hoa nhỏ                                | ⇧⌘K                 | —                     |
+| Ẩn                                         | ⌃⇧H                 | —                     |
 
-Hai tổ hợp của công cụ chép định dạng là chỗ duy nhất phím Windows không phải chỉ là đổi tên: Dán định dạng mang theo Alt vì Ctrl+Shift+V ở đó đã dán và khớp kiểu.
+Sao chép và dán định dạng theo Word trên từng nền tảng: `⌥⌘C` / `⌥⌘V` trên Mac, nơi `⇧⌘V` chỉ dán văn bản; trên Windows và Linux, dán định dạng có thêm Alt vì Ctrl+Shift+V ở đó vốn đã dán và khớp kiểu.
 
 ### Định dạng đoạn văn
 
-| Hành động                                  | macOS | Windows / Linux |
-| ------------------------------------------ | ----- | --------------- |
-| Căn trái                                   | ⌘L    | Ctrl+L          |
-| Căn giữa                                   | ⌘E    | Ctrl+E          |
-| Căn phải                                   | ⌘R    | Ctrl+R          |
-| Căn đều                                    | ⌘J    | Ctrl+J          |
-| Giãn dòng 1.0                              | ⌘1    | Ctrl+1          |
-| Giãn dòng 1.5                              | ⌘5    | Ctrl+5          |
-| Giãn dòng 2.0                              | ⌘2    | Ctrl+2          |
-| Tăng thụt lề                               | ⌃M    | Ctrl+M          |
-| Giảm thụt lề                               | ⌃⇧M   | Ctrl+Shift+M    |
-| Thụt lề treo                               | ⌘T    | Ctrl+T          |
-| Bỏ thụt lề treo                            | ⇧⌘T   | Ctrl+Shift+T    |
-| Xóa định dạng đoạn văn                     | ⌃Q    | Ctrl+Q          |
-| Thường (kiểu)                              | ⌥⌘0   | Ctrl+Alt+0      |
-| Tiêu đề 1 (kiểu)                           | ⌥⌘1   | Ctrl+Alt+1      |
-| Tiêu đề 2 (kiểu)                           | ⌥⌘2   | Ctrl+Alt+2      |
-| Tiêu đề 3 (kiểu)                           | ⌥⌘3   | Ctrl+Alt+3      |
-| Đoạn văn… (hộp thoại)                      | ⌥⌘M   | Ctrl+Alt+M      |
-| Chuyển đoạn văn lên                        | ⌥⇧↑   | Alt+Shift+↑     |
-| Chuyển đoạn văn xuống                      | ⌥⇧↓   | Alt+Shift+↓     |
-| Hạ một cấp mục danh sách (ở đầu một mục)   | Tab   | Tab             |
-| Nâng một cấp mục danh sách (ở đầu một mục) | ⇧Tab  | Shift+Tab       |
+| Hành động                                  | macOS               | Windows / Linux |
+| ------------------------------------------ | ------------------- | --------------- |
+| Căn trái                                   | ⌘L                  | Ctrl+L          |
+| Căn giữa                                   | ⌘E                  | Ctrl+E          |
+| Căn phải                                   | ⌘R                  | Ctrl+R          |
+| Căn đều                                    | ⌘J                  | Ctrl+J          |
+| Giãn dòng 1.0                              | ⌘1                  | Ctrl+1          |
+| Giãn dòng 1.5                              | ⌘5                  | Ctrl+5          |
+| Giãn dòng 2.0                              | ⌘2                  | Ctrl+2          |
+| Tăng thụt lề                               | ⌃⇧M / ⌃M            | Ctrl+M          |
+| Giảm thụt lề                               | ⇧⌘M                 | Ctrl+Shift+M    |
+| Thụt lề treo                               | ⌘T                  | Ctrl+T          |
+| Bỏ thụt lề treo                            | ⇧⌘T                 | Ctrl+Shift+T    |
+| Xóa định dạng đoạn văn                     | ⌥⌘Q / ⌃Q            | Ctrl+Q          |
+| Thường (kiểu)                              | ⇧⌘N / ⌥⌘0 / ⌥⇧Clear | Ctrl+Alt+0      |
+| Tiêu đề 1 (kiểu)                           | ⌥⌘1                 | Ctrl+Alt+1      |
+| Tiêu đề 2 (kiểu)                           | ⌥⌘2                 | Ctrl+Alt+2      |
+| Tiêu đề 3 (kiểu)                           | ⌥⌘3                 | Ctrl+Alt+3      |
+| Đoạn văn… (hộp thoại)                      | ⌥⌘M                 | Ctrl+Alt+M      |
+| Chuyển đoạn văn lên                        | ⌃⇧↑                 | Alt+Shift+↑     |
+| Chuyển đoạn văn xuống                      | ⌃⇧↓                 | Alt+Shift+↓     |
+| Tăng cấp đề mục                            | ⌃⇧←                 | —               |
+| Giảm cấp đề mục                            | ⌃⇧→                 | —               |
+| Bung rộng đề mục (dạng xem Dàn bài)        | ⌃⇧= / ⌃⇧Num+        | —               |
+| Thu gọn đề mục (dạng xem Dàn bài)          | ⌃⇧- / ⌃⇧Num-        | —               |
+| Hiện mức dàn bài 1                         | ⌃⇧1                 | —               |
+| Hiện mức dàn bài 2                         | ⌃⇧2                 | —               |
+| Hiện mức dàn bài 3                         | ⌃⇧3                 | —               |
+| Hiện mức dàn bài 4                         | ⌃⇧4                 | —               |
+| Hiện mức dàn bài 5                         | ⌃⇧5                 | —               |
+| Hiện mức dàn bài 6                         | ⌃⇧6                 | —               |
+| Hiện mức dàn bài 7                         | ⌃⇧7                 | —               |
+| Hiện mức dàn bài 8                         | ⌃⇧8                 | —               |
+| Hiện mức dàn bài 9                         | ⌃⇧9                 | —               |
+| Hiện tất cả đề mục (dạng xem Dàn bài)      | ⌃⇧A                 | —               |
+| Hạ một cấp mục danh sách (ở đầu một mục)   | Tab                 | Tab             |
+| Nâng một cấp mục danh sách (ở đầu một mục) | ⇧Tab                | Shift+Tab       |
+| Dấu đầu dòng                               | ⇧⌘L                 | —               |
 
-Thụt lề, thụt lề treo và Xóa định dạng đoạn văn chỉ dùng phím Ctrl trên cả hai nền tảng: `⌘M` thu nhỏ cửa sổ và `⌘Q` thoát ứng dụng, nên một tổ hợp Command sẽ là một chỉnh sửa im lặng ngay lúc thoát. Tab chỉ đổi cấp danh sách khi con trỏ nằm ở đầu một mục hoặc trải trên nhiều mục; bên trong văn bản nó chèn một ký tự tab, còn `⇧Tab` luôn nâng cấp.
+Tăng và giảm thụt lề theo Word trên từng nền tảng: `⌃⇧M` / `⇧⌘M` trên Mac, Ctrl+M / Ctrl+Shift+M trên Windows và Linux; riêng `⌘M` thu nhỏ cửa sổ và `⌘Q` thoát ứng dụng. Tab chỉ đổi cấp danh sách khi con trỏ nằm ở đầu một mục hoặc trải trên nhiều mục; bên trong văn bản nó chèn một ký tự tab, còn `⇧Tab` luôn nâng cấp.
 
 ### Chèn
 
-| Hành động                   | macOS | Windows / Linux  |
-| --------------------------- | ----- | ---------------- |
-| Ngắt trang                  | ⌘⏎    | Ctrl+Enter       |
-| Ngắt cột                    | ⇧⌘⏎   | Ctrl+Shift+Enter |
-| Ngắt dòng                   | ⇧⏎    | Shift+Enter      |
-| Liên kết…                   | ⌘K    | Ctrl+K           |
-| Chú thích mới               | ⌥⌘A   | Ctrl+Alt+A       |
-| Chèn chú thích cuối trang   | ⌥⌘F   | Ctrl+Alt+F       |
-| Chèn chú thích cuối văn bản | ⌥⌘E   | Ctrl+Alt+D       |
-| Ngày (trường)               | ⌥⇧D   | Alt+Shift+D      |
-| Giờ (trường)                | ⌥⇧T   | Alt+Shift+T      |
-| Dấu cách không ngắt         | ⇧⌘␣   | Ctrl+Shift+Space |
-| Dấu gạch nối không ngắt     | ⇧⌘-   | Ctrl+Shift+-     |
+| Hành động                      | macOS       | Windows / Linux  |
+| ------------------------------ | ----------- | ---------------- |
+| Ngắt trang                     | ⌘⏎          | Ctrl+Enter       |
+| Ngắt cột                       | ⇧⌘⏎         | Ctrl+Shift+Enter |
+| Ngắt dòng                      | ⇧⏎          | Shift+Enter      |
+| Liên kết…                      | ⌘K          | Ctrl+K           |
+| Chú thích mới                  | ⌥⌘A         | Ctrl+Alt+A       |
+| Chèn chú thích cuối trang      | ⌥⌘F         | Ctrl+Alt+F       |
+| Chèn chú thích cuối văn bản    | ⌥⌘E         | Ctrl+Alt+D       |
+| Ngày (trường)                  | ⌃⇧D / ⌥⇧D   | Alt+Shift+D      |
+| Giờ (trường)                   | ⌃⇧T / ⌥⇧T   | Alt+Shift+T      |
+| Dấu cách không ngắt            | ⌃⇧␣ / ⇧⌘␣   | Ctrl+Shift+Space |
+| Dấu gạch nối không ngắt        | ⌥⇧⌘-        | Ctrl+Shift+-     |
+| Số trang (trang hiện tại)      | ⌃⇧P         | —                |
+| Chèn dấu ngoặc nhọn của trường | ⌘F9         | —                |
+| Liên kết với phần trước        | ⌃⇧R         | —                |
+| Chèn trường trộn               | ⌃⇧F         | —                |
+| Đánh dấu mục của mục lục       | ⌥⇧⌘O        | —                |
+| Ngắt phần (Trang tiếp theo)    | ⌘⌤          | —                |
+| Gạch ngang ngắn                | ⌘Num-       | —                |
+| Gạch ngang dài                 | ⌥⌘Num-      | —                |
+| Phương trình                   | ⌃=          | —                |
+| Thẻ đánh dấu                   | ⇧⌘F5        | —                |
+| Tạo văn bản tự động mới        | ⌥F3         | —                |
+| Đánh dấu mục chỉ mục           | ⌥⇧⌘X        | —                |
+| Đánh dấu trích dẫn             | ⌥⇧⌘I        | —                |
+| Gạch nối tùy chọn              | ⌥⌘-         | —                |
+| Ký tự tab trong ô bảng         | ⌃Tab / ⌥Tab | —                |
 
 Chèn chú thích cuối văn bản là một cách chia thật sự theo nền tảng, không chỉ là đổi tên: Word dùng `⌥⌘E` trên Mac vì `⌥⌘D` thuộc về Dock ở đó.
 
 ### Rà soát và công cụ
 
-| Hành động         | macOS | Windows / Linux |
-| ----------------- | ----- | --------------- |
-| Theo dõi thay đổi | ⇧⌘E   | Ctrl+Shift+E    |
-| Đếm từ            | ⇧⌘G   | Ctrl+Shift+G    |
-| Soát chính tả     | F7    | F7              |
-| Cập nhật trường   | F9    | F9              |
-| Bật/tắt mã trường | ⌥F9   | Alt+F9          |
+| Hành động                     | macOS      | Windows / Linux |
+| ----------------------------- | ---------- | --------------- |
+| Theo dõi thay đổi             | ⇧⌘E        | Ctrl+Shift+E    |
+| Đếm từ                        | —          | Ctrl+Shift+G    |
+| Soát chính tả                 | —          | F7              |
+| Cập nhật trường               | F9 / ⌥⇧⌘U  | F9              |
+| Bật/tắt mã trường             | ⌥F9        | Alt+F9          |
+| Từ điển đồng nghĩa            | ⌃⌥⌘R / ⇧F7 | —               |
+| Chính tả và Ngữ pháp          | ⌥⌘L / F7   | Ctrl+Alt+L      |
+| Lỗi chính tả tiếp theo        | ⌥F7        | —               |
+| Dịch                          | ⌃⌥⌘T       | —               |
+| Bật/tắt mã của trường đã chọn | ⇧F9        | —               |
+| Khóa trường                   | ⌘F11 / ⌘3  | —               |
+| Mở khóa trường                | ⇧⌘F11 / ⌘4 | —               |
+| Hủy liên kết trường           | ⇧⌘F9 / ⌘6  | —               |
+| Trường tiếp theo              | F11        | —               |
+| Trường trước                  | ⇧F11       | —               |
+| Sửa danh sách người nhận      | ⌃⇧E        | —               |
+| Hoàn tất & phối               | ⌃⇧N        | —               |
 
-F7 chạy soát chính tả bằng AI và F9 cập nhật các trường; cả hai đều cần một tài liệu đã nạp. Khi một hạn chế chỉnh sửa đã bật Theo dõi thay đổi, không thể tắt lại được nữa.
+F7 mở Chính tả và ngữ pháp trên Mac, như trong Word, và chạy soát chính tả bằng AI trên Windows và Linux; F9 cập nhật các trường. Khi một hạn chế chỉnh sửa đã bật Theo dõi thay đổi, không thể tắt lại được nữa.
 
 ### Xem
 
-| Hành động             | macOS | Windows / Linux |
-| --------------------- | ----- | --------------- |
-| Phóng to              | ⌘=    | Ctrl+=          |
-| Thu nhỏ               | ⌘-    | Ctrl+-          |
-| Phóng về 100%         | ⌘0    | Ctrl+0          |
-| Hiện/ẩn dấu định dạng | ⌘8    | Ctrl+Shift+8    |
+| Hành động             | macOS       | Windows / Linux |
+| --------------------- | ----------- | --------------- |
+| Phóng to              | ⌘=          | Ctrl+=          |
+| Thu nhỏ               | ⌘-          | Ctrl+-          |
+| Phóng về 100%         | ⌘0          | Ctrl+0          |
+| Hiện/ẩn dấu định dạng | ⌘8          | Ctrl+Shift+8    |
+| Bố trí in             | ⌥⌘P         | —               |
+| Dàn bài               | ⌥⌘O         | —               |
+| Bản nháp              | ⌥⌘N         | —               |
+| Tách                  | ⌥⌘S         | —               |
+| Loại bỏ tách          | ⌃⇧C         | —               |
+| Cửa sổ tiếp theo      | ⌘F6 / ⌥F6   | —               |
+| Cửa sổ trước          | ⇧⌘F6 / ⌥⇧F6 | —               |
+| Ngăn kiểu             | ⌥⇧⌘S        | —               |
+| Tập trung             | ⌃⇧⌘F        | —               |
+| Dải băng              | ⌥⌘R         | —               |
+| Định dạng Đối tượng   | ⇧⌘1         | —               |
+| Ngăn chọn             | ⌥⌘U         | —               |
 
 Tổ hợp phím dấu định dạng theo đúng cách chia của Word, `⌘8` đối với Ctrl+Shift+8. Word chỉ điều chỉnh thu phóng qua ba phím menu ở trên — `⌘+` không làm gì ở đây.
 

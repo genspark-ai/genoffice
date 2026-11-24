@@ -98,12 +98,29 @@ function jpegDensity(bytes: Uint8Array, view: DataView): PictureDensity | null {
   return exif
 }
 
-/** the density a PNG (pHYs) or JPEG (JFIF, Exif) states; null when it states none */
+const BMP_FILE_HEADER = 14
+const BMP_INFO_HEADER = 40
+
+/** biXPelsPerMeter / biYPelsPerMeter of a BITMAPINFOHEADER or later; the older core header has none */
+function bmpDensity(bytes: Uint8Array, view: DataView): PictureDensity | null {
+  if (bytes.length < BMP_FILE_HEADER + BMP_INFO_HEADER) return null
+  if (view.getUint32(BMP_FILE_HEADER, true) < BMP_INFO_HEADER) return null
+  return density(
+    view.getInt32(BMP_FILE_HEADER + 24, true) * METRES_PER_INCH,
+    view.getInt32(BMP_FILE_HEADER + 28, true) * METRES_PER_INCH,
+  )
+}
+
+/**
+ * The density a PNG (pHYs), JPEG (JFIF, Exif) or BMP (pels per metre) states;
+ * null when it states none. A GIF has no field for one.
+ */
 export function pictureDensityOf(bytes: Uint8Array): PictureDensity | null {
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
   try {
     if (PNG_SIGNATURE.every((byte, i) => bytes[i] === byte)) return pngDensity(bytes, view)
     if (bytes[0] === 0xff && bytes[1] === 0xd8) return jpegDensity(bytes, view)
+    if (bytes[0] === 0x42 && bytes[1] === 0x4d) return bmpDensity(bytes, view)
   } catch {
     return null
   }

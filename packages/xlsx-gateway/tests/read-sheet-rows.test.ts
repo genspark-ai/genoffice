@@ -73,6 +73,18 @@ describe('readSheetRows', () => {
     ])
   })
 
+  it('reads a boolean cell spelled true/false as well as 1/0', async () => {
+    const zip = await JSZip.loadAsync(await sharedStringWorkbook())
+    zip.file(
+      'xl/worksheets/sheet1.xml',
+      '<?xml version="1.0" encoding="UTF-8"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>' +
+        '<row r="1"><c r="A1" t="b"><v>1</v></c><c r="B1" t="b"><v>true</v></c><c r="C1" t="b"><v>TRUE</v></c><c r="D1" t="b"><v>false</v></c><c r="E1" t="b"><v>0</v></c></row>' +
+        '</sheetData></worksheet>',
+    )
+    const rows = await readSheetRows(await zip.generateAsync({ type: 'nodebuffer' }))
+    expect(rows).toEqual([['TRUE', 'TRUE', 'TRUE', 'FALSE', 'FALSE']])
+  })
+
   it('reads a cell that lives in the shared string table', async () => {
     expect(await readSheetRows(await sharedStringWorkbook())).toEqual([['Name'], ['Ada']])
   })

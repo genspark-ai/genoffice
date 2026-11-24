@@ -6,14 +6,20 @@
 import type { Editor } from '@tiptap/core'
 import type { Node as PmNode } from '@tiptap/pm/model'
 import {
-  formatSeqNumber,
+  captionNumberingOfXml,
   generateCaptionXml,
   SEQ_NUMBER_FORMATS,
   type Block,
   type SeqNumberFormat,
 } from '@genoffice/docx-engine'
 import { collectCaptions } from '../commands/reference-commands'
-import { renumberAfterInsert, unreliableSeqLabelsOf } from './field-results'
+import {
+  numberingContextOf,
+  renumberAfterInsert,
+  textOfXml,
+  unreliableSeqLabelsOf,
+} from './field-results'
+import { xmlOfNode } from './toc-update'
 import { t } from '../i18n/locale'
 
 export const AUTO_CAPTION_KINDS = ['table', 'equation'] as const
@@ -99,17 +105,26 @@ export function autoCaptionInserted(editor: Editor, kind: AutoCaptionKind, befor
     }
   })
   if (pos < 0) return
-  const number =
-    collectCaptions(editor, blocksOf()).filter((c) => c.label === rule.label).length + 1
+  const captions = collectCaptions(editor, blocksOf()).filter((c) => c.label === rule.label)
+  const number = captions.length + 1
+  // the label's captions are numbered one way: a chapter number they carry leads this one too
+  const last = captions.length > 0 ? doc.nodeAt(captions[captions.length - 1].pos) : null
+  const chapter = last
+    ? (captionNumberingOfXml(xmlOfNode(last, blocksOf()), rule.label)?.numbering.chapter ?? null)
+    : null
+  const genXml = generateCaptionXml(rule.label, number, '', {
+    format: rule.format,
+    chapter,
+    dirty: unreliableSeqLabelsOf(blocksOf(), editor.schema, numberingContextOf(editor)).has(
+      rule.label,
+    ),
+  })
   const caption = editor.schema.nodes.docProtected.create({
     docxIndex: null,
     blockType: 'passthrough',
     label: t('ribbonCaption'),
-    genXml: generateCaptionXml(rule.label, number, '', {
-      format: rule.format,
-      dirty: unreliableSeqLabelsOf(blocksOf(), editor.schema).has(rule.label),
-    }),
-    fieldDisplay: { kind: 'text', left: `${rule.label} ${formatSeqNumber(number, rule.format)}` },
+    genXml,
+    fieldDisplay: { kind: 'text', left: textOfXml(genXml) },
   })
   const tr = editor.state.tr.insert(rule.position === 'above' ? pos : pos + size, caption)
   // one undo takes the caption away with the block it came with

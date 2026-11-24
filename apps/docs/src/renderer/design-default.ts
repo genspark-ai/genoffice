@@ -1,4 +1,4 @@
-import type { SectionSettings, ThemeColors, ThemeFonts } from '@genoffice/docx-engine'
+import type { SectionSettings, ThemeColors, ThemeFonts, ThemeFormat } from '@genoffice/docx-engine'
 
 /** Format > Document > Default…: the page setup new blank documents start with */
 export interface PageDefault {
@@ -36,6 +36,10 @@ export interface FontDefault {
 export interface DesignDefault {
   fonts?: ThemeFonts
   colors?: ThemeColors
+  /** the theme's name and format scheme, when the look came from a whole theme */
+  format?: ThemeFormat
+  /** the document's styles as a style set: the w:style elements new documents take */
+  styles?: string
   /** the default paragraph style's spacing */
   spacing?: { beforeTwips?: number; afterTwips: number; line: number }
   page?: PageDefault

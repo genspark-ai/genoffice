@@ -27,6 +27,7 @@ const TOGGLES = new Set([
   'w:contextualSpacing',
   'w:mirrorIndents',
   'w:suppressOverlap',
+  'w15:collapsed',
 ])
 
 interface PPrChild {

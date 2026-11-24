@@ -15,8 +15,15 @@ import {
 } from '../src/renderer/editor/hyphenation-static'
 import { appendNoteRuns } from '../src/renderer/editor/note-dom'
 
-const OFF: HyphenationConfig = { dict: null, caps: true, limit: 0, zonePx: 0 }
-const ON: HyphenationConfig = { ...OFF, dict: 'en-us' }
+const OFF: HyphenationConfig = {
+  on: false,
+  dict: null,
+  styleDicts: new Map(),
+  caps: true,
+  limit: 0,
+  zonePx: 0,
+}
+const ON: HyphenationConfig = { ...OFF, on: true, dict: 'en-us' }
 
 const strip = (texts: string[]) =>
   makeGapHfEl({

@@ -499,6 +499,9 @@ describe('parseLenientJson', () => {
     expect(parseLenientJson('{"k0":"y"z",","k1":"„Minta", aalma"}').ok).toBe(false)
   })
   it('keeps a plain-quoted value intact after a low-9 quote closed in the previous member', () => {
-    expect(parseLenientJson('{"a":"„x","b":"y "q" z"}')).toEqual({ ok: true, value: { a: '„x', b: 'y "q" z' } })
+    expect(parseLenientJson('{"a":"„x","b":"y "q" z"}')).toEqual({
+      ok: true,
+      value: { a: '„x', b: 'y "q" z' },
+    })
   })
 })

@@ -62,6 +62,8 @@ export interface DocumentTextContext {
   balancedSpaces: boolean
   /** w:compat doNotUseHTMLParagraphAutoSpacing: adjacent paragraph spacing adds up, HTML auto spacing is 0 */
   additiveSpacing: boolean
+  /** compatibilityMode below 15 */
+  legacyLayout: boolean
 }
 
 function defaultParaDisplay(parsed: ParsedDocFull): StyleDisplay | undefined {
@@ -116,6 +118,7 @@ export function documentTextContext(parsed: ParsedDocFull): DocumentTextContext 
     latinViaEaSlot: isEastAsianLangTag(parsed.docDefaults?.lang),
     balancedSpaces: balance && (parsed.useFELayout === true || bodyEaFace.declared),
     additiveSpacing: parsed.doNotUseHTMLParagraphAutoSpacing === true,
+    legacyLayout: (parsed.compatibilityMode ?? 0) < 15,
   }
   cache.set(parsed, ctx)
   return ctx

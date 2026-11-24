@@ -7,9 +7,13 @@
 import type { Editor } from '@tiptap/core'
 import type { Node as PmNode } from '@tiptap/pm/model'
 import { Selection, TextSelection } from '@tiptap/pm/state'
-import type { Block, NoteInfo } from '@genoffice/docx-engine'
+import type { Block, NoteInfo, NumberingDef } from '@genoffice/docx-engine'
 import { collectCaptions } from '../commands/reference-commands'
-import { noteMarkOf } from './note-ref-fields'
+import type { ListNumberingStorage } from './extensions'
+import { noteMarkOf, relativeNoteRef } from './note-ref-fields'
+import { numberRefSwitches, numberedItems, paragraphNumberAt } from './number-refs'
+import { RANGE_BOOKMARK_MARK as RANGE_MARK, bookmarkRange } from './bookmark-range'
+import { TRACK_IGNORE } from './revisions'
 import { xmlOfNode } from './toc-update'
 
 export interface BookmarkEntry {
@@ -80,7 +84,15 @@ export function addBookmark(editor: Editor, name: string): boolean {
   if (!host) return false
   const names = namesOf(host, 'bookmarks')
   if (!names.includes(name)) tr.setNodeAttribute(at, 'bookmarks', [...names, name])
-  if (tr.docChanged) editor.view.dispatch(tr)
+  const mark = editor.schema.marks[RANGE_MARK]?.create({ name })
+  if (mark) {
+    tr.removeMark(0, doc.content.size, mark)
+    const { selection } = editor.state
+    // the selected text is what the bookmark covers; with a caret it stands for its paragraph
+    if (selection instanceof TextSelection && !selection.empty)
+      tr.addMark(selection.from, selection.to, mark)
+  }
+  if (tr.docChanged) editor.view.dispatch(tr.setMeta(TRACK_IGNORE, true))
   return true
 }
 
@@ -99,9 +111,10 @@ export function removeBookmark(editor: Editor, entry: BookmarkEntry): void {
   }
   const attr = entry.hidden ? 'hiddenBookmarks' : 'bookmarks'
   const rest = namesOf(node, attr).filter((n) => n !== entry.name)
-  editor.view.dispatch(
-    editor.state.tr.setNodeAttribute(entry.pos, attr, rest.length > 0 ? rest : null),
-  )
+  const tr = editor.state.tr.setNodeAttribute(entry.pos, attr, rest.length > 0 ? rest : null)
+  const mark = editor.schema.marks[RANGE_MARK]?.create({ name: entry.name })
+  if (mark && !entry.hidden) tr.removeMark(0, tr.doc.content.size, mark)
+  editor.view.dispatch(tr.setMeta(TRACK_IGNORE, true))
 }
 
 /** Word's Go To: the bookmarked paragraph's text is selected and brought on screen */
@@ -109,17 +122,19 @@ export function goToBookmark(editor: Editor, entry: BookmarkEntry): void {
   const { state, view } = editor
   const node = state.doc.nodeAt(entry.pos)
   if (!node) return
+  const range = entry.hidden ? null : bookmarkRange(state.doc, entry.name)
   const sel = TextSelection.between(
-    state.doc.resolve(entry.pos + 1),
-    state.doc.resolve(entry.pos + node.nodeSize - 1),
+    state.doc.resolve(range?.from ?? entry.pos + 1),
+    state.doc.resolve(range?.to ?? entry.pos + node.nodeSize - 1),
   )
   view.dispatch(state.tr.setSelection(sel).scrollIntoView())
   const dom = view.nodeDOM(entry.pos)
   if (dom instanceof HTMLElement) dom.scrollIntoView?.({ block: 'center' })
 }
 
-/** what a reference points at: a bookmark, a heading, or the captions of one label */
+/** what a reference points at: a numbered paragraph, a bookmark, a heading, a note, or the captions of one label */
 export type RefType =
+  | { kind: 'numbered' }
   | { kind: 'bookmark' }
   | { kind: 'heading' }
   | { kind: 'footnote' }
@@ -130,7 +145,24 @@ export type RefType =
  * what the reference shows: the target's text, its page, or where it is from here;
  * a note's number as plain text or as a reference mark looks
  */
-export type RefContent = 'text' | 'page' | 'aboveBelow' | 'noteNumber' | 'noteNumberFormatted'
+export type RefContent =
+  | 'text'
+  | 'page'
+  | 'aboveBelow'
+  | 'noteNumber'
+  | 'noteNumberFormatted'
+  | 'paraNumber'
+  | 'paraNumberNoContext'
+  | 'paraNumberFullContext'
+
+/** the REF switch of each way a paragraph number is shown */
+const PARA_NUMBER_SWITCH: Partial<Record<RefContent, string>> = {
+  paraNumber: 'r',
+  paraNumberNoContext: 'n',
+  paraNumberFullContext: 'w',
+}
+
+export const isParaNumber = (content: RefContent): boolean => content in PARA_NUMBER_SWITCH
 
 export interface RefTarget {
   pos: number
@@ -140,6 +172,8 @@ export interface RefTarget {
   level?: number
   /** a footnote or endnote: what its reference mark shows */
   noteMark?: string
+  /** what a reference to its text shows, when the list shows more than that */
+  refText?: string
 }
 
 export type RefNotes = Record<'footnote' | 'endnote', NoteInfo[]>
@@ -155,6 +189,18 @@ export function listRefTargets(
   notes?: RefNotes,
 ): RefTarget[] {
   const { doc } = editor.state
+  if (type.kind === 'numbered') {
+    const defs = editor.storage.listNumbering.defs as Map<string, NumberingDef>
+    return numberedItems(doc, defs)
+      .filter((item) => item.node.type.name === 'docListItem' && item.site?.text.trim())
+      .map((item) => ({
+        pos: item.pos,
+        text: `${item.site!.text.trim()} ${item.node.textContent}`,
+        refText: item.node.textContent,
+        bookmark: namesOf(item.node, 'hiddenBookmarks').find((n) => n.startsWith('_Ref')) ?? null,
+        level: item.site!.ilvl + 1,
+      }))
+  }
   if (type.kind === 'footnote' || type.kind === 'endnote') {
     const out: RefTarget[] = []
     const seen = new Set<string>()
@@ -186,14 +232,24 @@ export function listRefTargets(
     }))
   if (type.kind === 'heading') {
     const out: RefTarget[] = []
+    const { defs, styles } = editor.storage.listNumbering as ListNumberingStorage
+    // a heading numbered through its style is read as a list item
+    const numbered = new Map(numberedItems(doc, defs).map((item) => [item.pos, item.site]))
     doc.descendants((node, pos) => {
-      if (node.type.name === 'docHeading' && node.textContent.trim())
+      const style =
+        node.type.name === 'docListItem' ? styles?.get(String(node.attrs.styleId ?? '')) : undefined
+      // a style set back to body text is no heading, as in the navigation pane
+      const styled = style?.headingOutlineOff ? undefined : style?.headingLevel
+      if ((node.type.name === 'docHeading' || styled) && node.textContent.trim()) {
+        const marker = numbered.get(pos)?.text.trim()
         out.push({
           pos,
-          text: node.textContent,
+          text: marker ? `${marker} ${node.textContent}` : node.textContent,
+          refText: node.textContent,
           bookmark: namesOf(node, 'hiddenBookmarks').find((n) => n.startsWith('_Ref')) ?? null,
-          level: Number(node.attrs.level ?? 1),
+          level: styled ?? Number(node.attrs.level ?? 1),
         })
+      }
       return !node.isLeaf
     })
     return out
@@ -234,8 +290,12 @@ export interface CrossRefRequest {
   target: RefTarget
   content: RefContent
   hyperlink: boolean
-  /** Word's "Include above/below", for a page number */
+  /** the target was picked as a heading: one without a number shows 0 */
+  heading?: boolean
+  /** Word's "Include above/below", for a page number or a paragraph number */
   includeAboveBelow: boolean
+  /** Word's "Separate numbers with", for a paragraph number in full context */
+  separator?: string
   /** page of the target and of the cursor, when the layout knows them */
   pages: { target: number; here: number } | null
   words: CrossRefWords
@@ -244,7 +304,13 @@ export interface CrossRefRequest {
 /** the field text and instruction of a reference to `name` */
 export function crossRefField(
   name: string,
-  req: Omit<CrossRefRequest, 'target'> & { text: string; before: boolean; noteMark?: string },
+  req: Omit<CrossRefRequest, 'target'> & {
+    text: string
+    before: boolean
+    noteMark?: string
+    /** the number a REF with this instruction shows for the target */
+    paraNumber?: (instr: string) => string | null
+  },
 ): {
   text: string
   mark: { type: 'refField' | 'instrField'; attrs: Record<string, unknown> }
@@ -257,7 +323,7 @@ export function crossRefField(
     const formatted = req.content === 'noteNumberFormatted'
     const relative = req.content === 'aboveBelow'
     return {
-      text: relative ? where : req.noteMark,
+      text: relative ? relativeNoteRef(req.noteMark, where) : req.noteMark,
       mark: {
         type: 'instrField',
         attrs: {
@@ -286,6 +352,16 @@ export function crossRefField(
         type: 'instrField',
         attrs: { instr: `PAGEREF ${name}${relative ? ' \\p' : ''}${link}`, dirty: true },
       },
+    }
+  }
+  const numbered = PARA_NUMBER_SWITCH[req.content]
+  if (numbered) {
+    const separator =
+      numbered === 'w' && req.separator ? ` \\d "${req.separator.replace(/"/g, '')}"` : ''
+    const instr = ` REF ${name} \\${numbered}${req.includeAboveBelow ? ' \\p' : ''}${separator}${link} `
+    return {
+      text: req.paraNumber?.(instr) || ' ',
+      mark: { type: 'refField', attrs: { name, instr, dirty: false } },
     }
   }
   const relative = req.content === 'aboveBelow'
@@ -336,9 +412,18 @@ export function insertCrossReference(
   }
   const field = crossRefField(name, {
     ...req,
-    text: target.text,
+    text: target.refText ?? target.text,
     before: target.pos < from,
     noteMark: target.noteMark,
+    paraNumber: (instr) => {
+      const switches = numberRefSwitches(instr)
+      const defs = editor.storage.listNumbering.defs as Map<string, NumberingDef>
+      const number = switches
+        ? paragraphNumberAt(state.doc, defs, target.pos, from, switches, req.words)
+        : null
+      // a heading without a number: Word's result is 0
+      return number ?? (req.heading ? '0' : null)
+    },
   })
   const kept = (state.storedMarks ?? $from.marks()).filter((m) => !FIELD_OR_LINK.has(m.type.name))
   const mark = state.schema.marks[field.mark.type].create(field.mark.attrs)

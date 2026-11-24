@@ -9,7 +9,10 @@ import { Extension, type Editor } from '@tiptap/core'
 import type { Node as PmNode } from '@tiptap/pm/model'
 import { Plugin, PluginKey, type EditorState, type Transaction } from '@tiptap/pm/state'
 import { TableMap } from '@tiptap/pm/tables'
-import { collectFields, type FieldRange } from './field-codes'
+import type { Block } from '@genoffice/docx-engine'
+import { bookmarkRange } from './bookmark-range'
+import { collectFields, isFieldLocked, type FieldRange } from './field-codes'
+import { textOfXml } from './field-results'
 import { TRACK_IGNORE } from './revisions'
 
 /** the functions the dialog offers, each evaluated below */
@@ -250,6 +253,8 @@ function evaluate(
     }
     const cell = cellRef(first.value)
     if (!cell || !endsArgument(colon)) return null
+    const outside = cell.row >= from.rows || cell.col >= from.cols
+    if (outside && from === grid && (context?.bookmark(first.value) ?? null) !== null) return null
     at++
     return block(cell.row, cell.col, cell.row, cell.col)
   }
@@ -383,8 +388,8 @@ function evaluate(
       if (token.value === 'TRUE') return 1
       if (token.value === 'FALSE') return 0
       const cell = cellRef(token.value)
-      if (cell) {
-        if (cell.row >= grid.rows || cell.col >= grid.cols) throw new Unsupported()
+      // a name shaped like a cell the table does not have can only be a bookmark
+      if (cell && cell.row < grid.rows && cell.col < grid.cols) {
         if (cell.row === self.row && cell.col === self.col) return 0
         const text = grid.text(cell.row, cell.col)
         return (text === null ? null : cellNumber(text)) ?? 0
@@ -550,8 +555,46 @@ function gridOf(table: PmNode): { grid: FormulaGrid; map: TableMap } {
   return { grid, map }
 }
 
-/** the document's bookmarks as formula operands: a name stands for its paragraph's number */
-export function bookmarkContext(doc: PmNode): FormulaContext {
+let sourceBlocks: () => Block[] = () => []
+
+/** the open document's parsed blocks: a bookmark read from the file has its exact range there */
+export function setFormulaSourceBlocks(source: () => Block[]): void {
+  sourceBlocks = source
+}
+
+const escapeRegExp = (text: string): string => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+
+/**
+ * The text between a bookmark's start and end in a block's XML, when both sit
+ * in one paragraph that still reads `current`; null otherwise.
+ */
+function markedText(xml: string, name: string, current: string): string | null {
+  const start = new RegExp(
+    `<w:bookmarkStart\\b(?=[^>]*\\bw:name="${escapeRegExp(name)}")[^>]*\\bw:id="([^"]*)"[^>]*>`,
+    'i',
+  ).exec(xml)
+  if (!start) return null
+  const from = start.index + start[0].length
+  const end = new RegExp(`<w:bookmarkEnd\\b[^>]*\\bw:id="${escapeRegExp(start[1])}"[^>]*>`).exec(
+    xml.slice(from),
+  )
+  if (!end) return null
+  const inner = xml.slice(from, from + end.index)
+  if (inner.includes('</w:p>')) return null
+  let open = -1
+  for (const match of xml.slice(0, start.index).matchAll(/<w:p[ >]/g)) open = match.index
+  const close = xml.indexOf('</w:p>', from + end.index)
+  if (open < 0 || close < 0 || textOfXml(xml.slice(open, close)) !== current) return null
+  // a bookmark set at a point covers nothing: its paragraph stands for it
+  return textOfXml(inner) || null
+}
+
+/**
+ * The document's bookmarks as formula operands. A name stands for the text
+ * the bookmark covers when the file still tells (the paragraph reads as it
+ * did when it was opened); otherwise for its paragraph.
+ */
+export function bookmarkContext(doc: PmNode, blocks: Block[] = sourceBlocks()): FormulaContext {
   let hosts: Map<string, number> | null = null
   const hostOf = (name: string): number | undefined => {
     if (!hosts) {
@@ -566,10 +609,25 @@ export function bookmarkContext(doc: PmNode): FormulaContext {
     }
     return hosts.get(name)
   }
+  const sourceXml = (pos: number): string | null => {
+    const $pos = doc.resolve(pos)
+    const top = $pos.depth === 0 ? doc.nodeAt(pos) : $pos.node(1)
+    if (!top) return null
+    if (top.attrs.genXml) return String(top.attrs.genXml)
+    const index = top.attrs.docxIndex as number | null
+    if (typeof index !== 'number') return null
+    return blocks.find((block) => block.docxIndex === index)?.originalXml ?? null
+  }
   return {
     bookmark(name) {
+      // a bookmark made here from a selection: the text it was made from
+      const range = bookmarkRange(doc, name)
+      if (range) return doc.textBetween(range.from, range.to, ' ')
       const pos = hostOf(name)
-      return pos === undefined ? null : (doc.nodeAt(pos)?.textContent ?? null)
+      const host = pos === undefined ? null : doc.nodeAt(pos)
+      if (pos === undefined || !host) return null
+      const xml = sourceXml(pos)
+      return (xml ? markedText(xml, name, host.textContent) : null) ?? host.textContent
     },
     table(name) {
       const pos = hostOf(name)
@@ -620,7 +678,7 @@ export function refreshTableFormulas(
     const context = bookmarkContext(doc)
     const jobs: Array<{ field: FieldRange; text: string; index: number; differs: boolean }> = []
     collectFields(doc).forEach((field, index) => {
-      if (!isFormulaInstr(field.instr)) return
+      if (!isFormulaInstr(field.instr) || isFieldLocked(field.mark)) return
       const site = formulaSite(doc, field.from)
       if (!within(site ? site.tablePos : null)) return
       const text = site

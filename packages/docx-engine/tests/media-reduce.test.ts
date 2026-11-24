@@ -207,7 +207,7 @@ describe('planMediaReduction', () => {
       ),
       'word/_rels/document.xml.rels': rels({
         rId1: 'media/tiled.png',
-        rId2: 'media/anim.gif',
+        rId2: 'media/drawn.emf',
         rId3: 'media/grouped.png',
         rId4: 'media/charted.png',
         rId5: 'media/unused-elsewhere.png',
@@ -216,7 +216,7 @@ describe('planMediaReduction', () => {
       'word/charts/chart1.xml': `<c:chartSpace ${NS}><c:spPr><a:blipFill><a:blip r:embed="rId1"/></a:blipFill></c:spPr></c:chartSpace>`,
       'word/charts/_rels/chart1.xml.rels': rels({ rId1: '../media/charted.png' }),
       'word/media/tiled.png': BYTES,
-      'word/media/anim.gif': BYTES,
+      'word/media/drawn.emf': BYTES,
       'word/media/grouped.png': BYTES,
       'word/media/charted.png': BYTES,
       'word/media/unused-elsewhere.png': BYTES,
@@ -225,8 +225,8 @@ describe('planMediaReduction', () => {
     const plan = await planMediaReduction(bytes, 96)
     expect(plan.targets.map((t) => t.partPath)).toEqual(['word/media/unused-elsewhere.png'])
     expect(plan.kept).toEqual([
-      { partPath: 'word/media/anim.gif', reason: 'format' },
       { partPath: 'word/media/charted.png', reason: 'unmeasured' },
+      { partPath: 'word/media/drawn.emf', reason: 'format' },
       { partPath: 'word/media/grouped.png', reason: 'unmeasured' },
       { partPath: 'word/media/tiled.png', reason: 'unmeasured' },
     ])
@@ -298,6 +298,7 @@ describe('rasterInfo', () => {
       width: 640,
       height: 480,
       resamplable: true,
+      output: 'image/png',
     })
     expect(rasterInfo(pngHeader(640, 480, 'acTL'))?.resamplable).toBe(false)
     expect(rasterInfo(jpegHeader(1024, 768, 3))).toEqual({
@@ -305,6 +306,7 @@ describe('rasterInfo', () => {
       width: 1024,
       height: 768,
       resamplable: true,
+      output: 'image/jpeg',
     })
     expect(rasterInfo(jpegHeader(1024, 768, 3, 6))?.resamplable).toBe(false)
     expect(rasterInfo(jpegHeader(1024, 768, 4))?.resamplable).toBe(false)
@@ -417,5 +419,162 @@ describe('deleting the cropped areas of pictures', () => {
     expect(doc).toMatch(/r:embed="rId1"\/><a:stretch>/)
     expect(doc).toMatch(/r:embed="rId2"\/><a:srcRect l="25000" r="25000" t="50000"\/>/)
     expect(await out.file('word/header1.xml')!.async('string')).not.toContain('a:srcRect')
+  })
+})
+
+describe('pictures stored as another format than PNG or JPEG', () => {
+  const bytesOf = (text: string) => Uint8Array.from([...text].map((c) => c.charCodeAt(0)))
+  const le16 = (v: number) => [v & 255, v >> 8]
+  const gif = (frames: number) =>
+    Uint8Array.from([
+      ...bytesOf('GIF89a'),
+      ...le16(40),
+      ...le16(30),
+      0x80,
+      0,
+      0,
+      ...[0, 0, 0, 255, 255, 255],
+      // a graphic control extension, then each frame: descriptor, code size, one data block
+      ...Array.from({ length: frames }, () => [
+        0x21,
+        0xf9,
+        4,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0x2c,
+        ...le16(0),
+        ...le16(0),
+        ...le16(40),
+        ...le16(30),
+        0,
+        2,
+        2,
+        0x4c,
+        0x01,
+        0,
+      ]).flat(),
+      0x3b,
+    ])
+  const bmp = (w: number, h: number) => {
+    const out = new Uint8Array(54)
+    out.set(bytesOf('BM'))
+    const view = new DataView(out.buffer)
+    view.setUint32(14, 40, true)
+    view.setInt32(18, w, true)
+    view.setInt32(22, h, true)
+    return out
+  }
+  const riff = (chunks: number[]) =>
+    Uint8Array.from([...bytesOf('RIFF'), 0, 0, 0, 0, ...bytesOf('WEBP'), ...chunks])
+  const vp8 = [...bytesOf('VP8 '), 10, 0, 0, 0, 0, 0, 0, 0x9d, 0x01, 0x2a, ...le16(64), ...le16(48)]
+  // 14 bits of width - 1, then 14 of height - 1
+  const vp8l = [...bytesOf('VP8L'), 5, 0, 0, 0, 0x2f, 63, 0xc0 | (47 << 6), 47 >> 2, 0]
+  const vp8x = (flags: number, then: number[]) => [
+    ...bytesOf('VP8X'),
+    10,
+    0,
+    0,
+    0,
+    flags,
+    0,
+    0,
+    0,
+    ...[63, 0, 0],
+    ...[47, 0, 0],
+    ...then,
+  ]
+
+  it('reads what a one-frame GIF, a BMP, a WebP and a TIFF are, and what they are stored as', () => {
+    expect(rasterInfo(gif(1))).toEqual({
+      mime: 'image/gif',
+      width: 40,
+      height: 30,
+      resamplable: true,
+      output: 'image/png',
+    })
+    expect(rasterInfo(gif(2))?.resamplable).toBe(false)
+    expect(rasterInfo(bmp(20, -10))).toMatchObject({ mime: 'image/bmp', width: 20, height: 10 })
+    expect(rasterInfo(riff(vp8))).toMatchObject({ width: 64, height: 48, output: 'image/jpeg' })
+    expect(rasterInfo(riff(vp8l))).toMatchObject({ width: 64, height: 48, output: 'image/png' })
+    expect(rasterInfo(riff(vp8x(0, vp8)))).toMatchObject({
+      width: 64,
+      height: 48,
+      resamplable: true,
+      output: 'image/jpeg',
+    })
+    // alpha keeps a lossy picture a PNG; an animation and an Exif turn are left alone
+    expect(rasterInfo(riff(vp8x(0x10, vp8)))?.output).toBe('image/png')
+    expect(rasterInfo(riff(vp8x(0x02, vp8)))?.resamplable).toBe(false)
+    expect(rasterInfo(riff(vp8x(0x08, vp8)))?.resamplable).toBe(false)
+    expect(rasterInfo(bytesOf('II*\0rest'))).toMatchObject({
+      mime: 'image/tiff',
+      output: 'image/png',
+    })
+  })
+
+  it('plans them by their extension and leaves metafiles and SVG out', async () => {
+    const names = ['a.gif', 'b.bmp', 'c.webp', 'd.tiff', 'e.emf', 'f.svg', 'g.wmf']
+    const bytes = await pkg({
+      'word/document.xml': body(names.map((_, i) => para(inline(`rId${i}`, INCH, INCH))).join('')),
+      'word/_rels/document.xml.rels': rels(
+        Object.fromEntries(names.map((name, i) => [`rId${i}`, `media/${name}`])),
+      ),
+      ...Object.fromEntries(names.map((name) => [`word/media/${name}`, BYTES])),
+    })
+    const plan = await planMediaReduction(bytes, 96)
+    expect(plan.targets.map((t) => [t.partPath, t.mime])).toEqual([
+      ['word/media/a.gif', 'image/gif'],
+      ['word/media/b.bmp', 'image/bmp'],
+      ['word/media/c.webp', 'image/webp'],
+      ['word/media/d.tiff', 'image/tiff'],
+    ])
+    expect(plan.kept.map((k) => k.partPath)).toEqual([
+      'word/media/e.emf',
+      'word/media/f.svg',
+      'word/media/g.wmf',
+    ])
+  })
+
+  it('moves a converted part to the name of its new format, with its relationships and content type', async () => {
+    const bytes = await pkg({
+      'word/document.xml': body(
+        para(inline('rId1', INCH, INCH)) + para(inline('rId2', INCH, INCH)),
+      ),
+      'word/_rels/document.xml.rels': rels({ rId1: 'media/a.bmp', rId2: 'media/b.webp' }),
+      'word/header1.xml': `<w:hdr ${NS}>${para(inline('rId7', INCH, INCH))}</w:hdr>`,
+      'word/_rels/header1.xml.rels': rels({ rId7: '/word/media/a.bmp' }),
+      'word/media/a.bmp': BYTES,
+      'word/media/a.png': BYTES,
+      'word/media/b.webp': BYTES,
+    })
+    const out = await JSZip.loadAsync(
+      await replaceDocxParts(
+        bytes,
+        { 'word/media/a.bmp': new Uint8Array([9]), 'word/media/b.webp': new Uint8Array([8]) },
+        [],
+        { 'word/media/a.bmp': 'image/png', 'word/media/b.webp': 'image/jpeg' },
+      ),
+    )
+    expect(out.file('word/media/a.bmp')).toBeNull()
+    expect(out.file('word/media/b.webp')).toBeNull()
+    // a.png was taken by another picture
+    expect(await out.file('word/media/a-2.png')!.async('uint8array')).toEqual(new Uint8Array([9]))
+    expect(await out.file('word/media/a.png')!.async('uint8array')).toEqual(BYTES)
+    expect(await out.file('word/media/b.jpeg')!.async('uint8array')).toEqual(new Uint8Array([8]))
+    const docRels = await out.file('word/_rels/document.xml.rels')!.async('string')
+    expect(docRels).toContain('Target="media/a-2.png"')
+    expect(docRels).toContain('Target="media/b.jpeg"')
+    expect(await out.file('word/_rels/header1.xml.rels')!.async('string')).toContain(
+      'Target="/word/media/a-2.png"',
+    )
+    const types = await out.file('[Content_Types].xml')!.async('string')
+    expect(types.match(/Extension="png"/g)).toHaveLength(1)
+    expect(types).toContain('<Default Extension="jpeg" ContentType="image/jpeg"/>')
+    expect(await out.file('word/document.xml')!.async('uint8array')).toEqual(
+      await (await JSZip.loadAsync(bytes)).file('word/document.xml')!.async('uint8array'),
+    )
   })
 })

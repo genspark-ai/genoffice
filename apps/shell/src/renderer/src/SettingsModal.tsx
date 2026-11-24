@@ -2395,7 +2395,7 @@ export function SettingsModal({
                       </div>
                       <button
                         className="set-btn"
-                        aria-label={t('setExcludedFoldersAdd')}
+                        aria-label={t('setAiEndpointRemove')}
                         onClick={() => void removeExcludedFolder(folder)}
                       >
                         ✕

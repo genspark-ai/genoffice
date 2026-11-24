@@ -1,6 +1,6 @@
 /**
  * Insert > Chart's type list must read as a list: one button per chart type,
- * no two types sharing a label in any language (#2910 — fr showed
+ * no two types sharing a label in any language (genoffice#2910 — fr showed
  * "Histogramme" for both the Column chart and the frequency histogram), and
  * the buttons row wraps inside the 460px modal instead of overflowing it.
  */

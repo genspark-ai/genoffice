@@ -114,6 +114,53 @@ describe('applyAnnotDeletes', () => {
     expect((await listAnnots(out)).length).toBe(2)
   })
 
+  it('removes each drawn shape subtype and leaves the others', async () => {
+    const doc = await PDFDocument.create()
+    doc.addPage([612, 792])
+    const base = { pageIndex: 0, color: [0.86, 0.22, 0.18] as [number, number, number], width: 2 }
+    const { bytes } = await applySaveRequest(
+      await doc.save({ useObjectStreams: false }),
+      request({
+        drawings: [
+          { ...base, kind: 'ink', paths: [[100, 700, 140, 720, 180, 690]] },
+          { ...base, kind: 'rect', rect: [100, 500, 200, 560] },
+          { ...base, kind: 'ellipse', rect: [300, 500, 400, 560] },
+          { ...base, kind: 'arrow', from: [100, 400], to: [200, 440] },
+          {
+            ...base,
+            kind: 'polygon',
+            vertices: [
+              [300, 400],
+              [360, 440],
+              [400, 400],
+            ],
+          },
+          { kind: 'caret', pageIndex: 0, color: base.color, point: [100, 300] },
+        ],
+      }),
+    )
+    const cases: [string, AnnotDeleteInput['subtype']][] = [
+      ['Ink', 'ink'],
+      ['Square', 'square'],
+      ['Circle', 'circle'],
+      ['Line', 'line'],
+      ['Polygon', 'polygon'],
+      ['Caret', 'caret'],
+    ]
+    const before = await listAnnots(bytes)
+    expect(before.map((a) => a.subtype).sort()).toEqual(cases.map(([name]) => name).sort())
+    for (const [name, subtype] of cases) {
+      const target = before.find((a) => a.subtype === name)!
+      const after = await listAnnots(await applyAnnotDeletes(bytes, [toDelete(target, subtype)]))
+      expect(after.map((a) => a.subtype).sort()).toEqual(
+        cases
+          .map(([other]) => other)
+          .filter((other) => other !== name)
+          .sort(),
+      )
+    }
+  })
+
   it('skips out-of-range pages fail-soft', async () => {
     const bytes = await annotatedPdf()
     const hl = (await listAnnots(bytes)).find((a) => a.subtype === 'Highlight')!

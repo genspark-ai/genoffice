@@ -5,24 +5,19 @@ import {
   emuToTwips,
   formatLength,
   isMeasurementUnitState,
-  measurementUnitForRegion,
   parseLength,
   parseLengthEmu,
   twipsToEmu,
 } from '../src/measurement'
 
 describe('measurement units', () => {
-  it('defaults by the OS region, metric everywhere but the inch countries', () => {
-    expect(measurementUnitForRegion('ID')).toBe('cm')
-    expect(measurementUnitForRegion('gb')).toBe('cm')
-    expect(measurementUnitForRegion('US')).toBe('in')
-    expect(measurementUnitForRegion('MM')).toBe('in')
-    expect(measurementUnitForRegion('')).toBeNull()
-    expect(measurementUnitForRegion(undefined)).toBeNull()
-    expect(measurementUnitForRegion('419')).toBeNull()
+  it('defaults by the UI language: inches for English, metric elsewhere', () => {
+    expect(defaultMeasurementUnit('en')).toBe('in')
+    expect(defaultMeasurementUnit('zh')).toBe('cm')
+    expect(defaultMeasurementUnit('pt')).toBe('cm')
   })
 
-  it('still reads a locale when no region is known', () => {
+  it('reads the region of a full locale', () => {
     expect(defaultMeasurementUnit('en-US')).toBe('in')
     expect(defaultMeasurementUnit('en-GB')).toBe('cm')
     expect(defaultMeasurementUnit('id-ID')).toBe('cm')

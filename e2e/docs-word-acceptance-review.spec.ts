@@ -47,16 +47,22 @@ test('Review > Track Changes records an insertion and a deletion; Accept and Rej
     await page.keyboard.type(' jumps')
     await selectWord(page, 'thirty ')
     await page.keyboard.press('Backspace')
-    await expect(inserted).toHaveText('jumps')
+    // typing that runs over a second boundary is recorded as two insertions side by side
+    await expect.poll(async () => (await inserted.allTextContents()).join('')).toBe(' jumps')
     await expect(deleted).toHaveText('thirty')
     await page.screenshot({ path: test.info().outputPath('tracked.png') })
     await saveFromMenu(app)
     await expect
       .poll(
         async () => [
-          /<w:ins\b[^>]*>(?:(?!<\/w:ins>)[\s\S])*jumps/.test(
-            await savedParagraph(docPath, 'The quick fox'),
-          ),
+          // across the insertions, as on the page: typed over a second boundary there are two
+          (
+            (await savedParagraph(docPath, 'The quick fox')).match(/<w:ins\b[\s\S]*?<\/w:ins>/g) ??
+            []
+          )
+            .join('')
+            .replace(/<[^>]+>/g, '')
+            .includes('jumps'),
           /<w:del\b[^>]*>(?:(?!<\/w:del>)[\s\S])*<w:delText[^>]*>thirty /.test(
             await savedBody(docPath),
           ),

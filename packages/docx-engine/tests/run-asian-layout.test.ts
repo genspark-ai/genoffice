@@ -33,7 +33,7 @@ describe('fit text and East Asian layout of a run', () => {
     const parsed = await parseDocx(await buildDocx({ bodyXml: body }))
     const [fit, two, upright, plain] = (parsed.blocks[0] as { runs: Run[] }).runs
     expect(fit.fitTextTwips).toBe(1440)
-    expect(two.eaLayout).toEqual({ combine: true, id: 3 })
+    expect(two.eaLayout).toEqual({ combine: true, brackets: 'round', id: 3 })
     expect(upright.eaLayout).toEqual({ vert: true, id: 4 })
     expect(plain.fitTextTwips).toBeUndefined()
     expect(plain.eaLayout).toBeUndefined()
@@ -62,6 +62,33 @@ describe('fit text and East Asian layout of a run', () => {
     )
     expect(xml).not.toContain('<w:fitText')
     expect(xml).not.toContain('<w:eastAsianLayout')
+  })
+
+  it('writes the brackets of two lines in one and the fitting of horizontal in vertical', async () => {
+    const xml = await resave('<w:p><w:r><w:t>ab</w:t></w:r></w:p>', (runs) => [
+      { ...runs[0], text: 'a', eaLayout: { combine: true, brackets: 'square', id: 5 } },
+      { ...runs[0], text: 'b', eaLayout: { vert: true, vertCompress: true, id: 6 } },
+    ])
+    expect(xml).toContain('<w:eastAsianLayout w:id="5" w:combine="1" w:combineBrackets="square"/>')
+    expect(xml).toContain('<w:eastAsianLayout w:id="6" w:vert="1" w:vertCompress="1"/>')
+  })
+
+  it('reads them back, and a change of brackets replaces what the file had', async () => {
+    const body =
+      '<w:p>' +
+      run(TWO_LINES, 'two') +
+      run('<w:eastAsianLayout w:id="4" w:vert="1" w:vertCompress="1"/>', '12') +
+      '</w:p>'
+    const parsed = await parseDocx(await buildDocx({ bodyXml: body }))
+    const [, upright] = (parsed.blocks[0] as { runs: Run[] }).runs
+    expect(upright.eaLayout).toEqual({ vert: true, vertCompress: true, id: 4 })
+    const xml = await resave(body, (runs) => [
+      { ...runs[0], eaLayout: { combine: true, brackets: 'curly', id: 3 } },
+      { ...runs[1], eaLayout: { vert: true, id: 4 } },
+    ])
+    expect(xml).toContain('w:combine="1" w:combineBrackets="curly"/>')
+    expect(xml).not.toContain('round')
+    expect(xml).toContain('<w:eastAsianLayout w:id="4" w:vert="1"/>')
   })
 
   it('changes the width of fitted text', async () => {

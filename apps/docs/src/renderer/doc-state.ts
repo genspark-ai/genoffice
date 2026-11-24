@@ -70,6 +70,8 @@ export interface PendingNumbering {
     name: string
     numId: string
     levels: import('@genoffice/docx-engine').CustomNumberingLevel[]
+    /** one of Word's own list styles: written without w:customStyle */
+    builtIn?: true
   }>
   /** list styles of the document that were deleted */
   removedStyles: string[]

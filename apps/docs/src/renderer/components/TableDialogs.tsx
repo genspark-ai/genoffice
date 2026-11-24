@@ -6,9 +6,11 @@ import {
   canShiftCells,
   deleteCells,
   editableOrToast,
+  insertCells,
   insertRowsOrColumns,
   splitCellsInto,
   type DeleteCellsMode,
+  type InsertCellsMode,
 } from '../editor/table-ops'
 import { useModalKeys } from './modal-keys'
 import { LengthInput } from './LengthInput'
@@ -127,7 +129,10 @@ export function SplitCellsDialog({ editor, onClose }: DialogProps) {
   )
 }
 
-type InsertWhere = 'above' | 'below' | 'left' | 'right'
+type InsertWhere = InsertCellsMode | 'above' | 'below' | 'left' | 'right'
+
+const isShift = (where: InsertWhere): where is InsertCellsMode =>
+  where === 'shiftRight' || where === 'shiftDown'
 
 export function InsertCellsDialog({
   editor,
@@ -135,9 +140,15 @@ export function InsertCellsDialog({
   sectionContentWidthPx,
 }: DialogProps & { sectionContentWidthPx: number }) {
   const { t } = useI18n()
+  const shiftAllowed: Record<InsertCellsMode, boolean> = {
+    shiftRight: canShiftCells(editor.state, 'row'),
+    shiftDown: canShiftCells(editor.state, 'column'),
+  }
   const [where, setWhere] = useState<InsertWhere>('below')
   const [count, setCount] = useState(1)
   const options: Array<[InsertWhere, string]> = [
+    ['shiftRight', t('ribbonInsertShiftRight')],
+    ['shiftDown', t('ribbonInsertShiftDown')],
     ['above', t('ribbonInsertAbove')],
     ['below', t('ribbonInsertBelow')],
     ['left', t('ribbonInsertLeft')],
@@ -149,45 +160,61 @@ export function InsertCellsDialog({
       title={t('ribbonInsertCells')}
       onClose={onClose}
       onOk={() =>
-        runAndClose(editor, insertRowsOrColumns(count, where, sectionContentWidthPx), onClose)
+        runAndClose(
+          editor,
+          isShift(where)
+            ? insertCells(where)
+            : insertRowsOrColumns(count, where, sectionContentWidthPx),
+          onClose,
+        )
       }
     >
       <div className="table-dialog-radios" role="radiogroup">
-        {options.map(([value, label]) => (
-          <label key={value}>
-            <input
-              type="radio"
-              name="insert-cells-where"
-              checked={where === value}
-              onChange={() => setWhere(value)}
-            />
-            {label}
-          </label>
-        ))}
+        {options.map(([value, label]) => {
+          const enabled = !isShift(value) || shiftAllowed[value]
+          return (
+            <label key={value} className={enabled ? '' : 'disabled'}>
+              <input
+                type="radio"
+                name="insert-cells-where"
+                disabled={!enabled}
+                checked={where === value}
+                onChange={() => setWhere(value)}
+              />
+              {label}
+            </label>
+          )
+        })}
       </div>
       <label>
         {t('ribbonInsertCount')}
+        {/* shifting inserts as many cells as are selected */}
         <input
           type="number"
           min={1}
           max={100}
           value={count}
+          disabled={isShift(where)}
           onChange={(e) =>
             setCount(Math.min(100, Math.max(1, Math.round(Number(e.target.value) || 1))))
           }
         />
       </label>
+      {!(shiftAllowed.shiftRight && shiftAllowed.shiftDown) && (
+        <p className="modal-desc">{t('ribbonShiftBlockedByMerge')}</p>
+      )}
     </Frame>
   )
 }
 
 export function DeleteCellsDialog({ editor, onClose }: DialogProps) {
   const { t } = useI18n()
-  const shiftAllowed = canShiftCells(editor.state)
-  const [mode, setMode] = useState<DeleteCellsMode>(shiftAllowed ? 'shiftLeft' : 'row')
+  const leftAllowed = canShiftCells(editor.state, 'row')
+  const upAllowed = canShiftCells(editor.state, 'column')
+  const [mode, setMode] = useState<DeleteCellsMode>(leftAllowed ? 'shiftLeft' : 'row')
   const options: Array<[DeleteCellsMode, string, boolean]> = [
-    ['shiftLeft', t('ribbonDeleteShiftLeft'), shiftAllowed],
-    ['shiftUp', t('ribbonDeleteShiftUp'), shiftAllowed],
+    ['shiftLeft', t('ribbonDeleteShiftLeft'), leftAllowed],
+    ['shiftUp', t('ribbonDeleteShiftUp'), upAllowed],
     ['row', t('ribbonDeleteEntireRow'), true],
     ['column', t('ribbonDeleteEntireColumn'), true],
   ]
@@ -212,7 +239,9 @@ export function DeleteCellsDialog({ editor, onClose }: DialogProps) {
           </label>
         ))}
       </div>
-      {!shiftAllowed && <p className="modal-desc">{t('ribbonShiftNeedsPlainGrid')}</p>}
+      {!(leftAllowed && upAllowed) && (
+        <p className="modal-desc">{t('ribbonShiftBlockedByMerge')}</p>
+      )}
     </Frame>
   )
 }

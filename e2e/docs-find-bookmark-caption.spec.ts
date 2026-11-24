@@ -142,10 +142,10 @@ test('bookmarks sort and go to, references point at headings and pages, captions
     }
     await openCrossRef()
     await expect(crossRef.locator('select[name="ref-type"]')).toHaveValue('heading')
-    await expect(crossRef.locator('option[value="numbered"]')).toHaveCount(0)
+    await expect(crossRef.locator('option[value="numbered"]')).toHaveCount(1)
     for (const kind of ['footnote', 'endnote'])
       await expect(crossRef.locator(`option[value="${kind}"]`)).not.toHaveAttribute('disabled', '')
-    await expect(crossRef.locator('input[name="ref-separator"]')).toHaveCount(0)
+    await expect(crossRef.locator('input[name="ref-separator"]')).toBeDisabled()
     await expect(crossRef.locator('input[name="ref-above-below"]')).toBeDisabled()
     await expect(crossRef.locator('.bookmark-row')).toHaveText(['Scope'])
     await crossRef.locator('input[name="ref-hyperlink"]').uncheck()
@@ -266,6 +266,15 @@ test('bookmarks sort and go to, references point at headings and pages, captions
     await expect(panel.locator('.find-hint-miss')).toHaveCount(1)
     await page.screenshot({ path: test.info().outputPath('goto-kinds.png') })
 
+    // the save takes the page layout as it stands: wait for the one of this document
+    await page.waitForFunction(
+      () =>
+        (
+          window as unknown as { __aidocs: { pagesSettled: () => boolean } }
+        ).__aidocs.pagesSettled(),
+      undefined,
+      { timeout: 30_000 },
+    )
     await saveFromMenu(app)
     await expect
       .poll(() => documentXml(docPath), { timeout: 20_000 })
@@ -291,9 +300,11 @@ test('bookmarks sort and go to, references point at headings and pages, captions
         (m) => m[1],
       ),
     ).toEqual(['I', 'II'])
-    // only the page reference is left for Word to update: its page is not computed for the file
-    expect(xml.match(/<w:fldChar[^>]*w:dirty="true"[^>]*>/g)).toHaveLength(1)
-    expect(xml).toMatch(/w:dirty="true"\/><\/w:r><w:r>[^/]*<w:instrText[^>]*>\s*PAGEREF Able /)
+    // the page reference carries what the layout shows (the bookmark is further up this page): nothing is left for Word to update
+    expect(xml).not.toContain('w:dirty')
+    expect(xml).toMatch(
+      /<w:instrText[^>]*>\s*PAGEREF Able \\p \\h\s*<\/w:instrText>(?:(?!<\/w:p>).)*?<w:t[^>]*>above<\/w:t>/,
+    )
     expect(xml).toContain('beta one beta')
     expect(xml).toContain('alpha two')
   } finally {

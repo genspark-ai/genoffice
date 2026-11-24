@@ -19,6 +19,7 @@ import {
 } from '../editor/text-style-resolve'
 import { textHasCjk } from '../line-metrics'
 import { cachedByDoc } from '../doc-cache'
+import { hasLinks } from '../editor/link-fields'
 
 /**
  * Snapshot of every editor-state read the ribbon (and its tabs) shows at render
@@ -51,6 +52,7 @@ export interface RibbonFormatState {
   hasTableOfFigures: boolean
   hasIndex: boolean
   hasTableOfAuthorities: boolean
+  hasLinks: boolean
   imageSelected: boolean
   /** the selected picture is an inline run picture (table / header cell): Size only */
   inlinePicture: boolean
@@ -150,6 +152,7 @@ export const EMPTY_FORMAT_STATE: RibbonFormatState = {
   hasTableOfFigures: false,
   hasIndex: false,
   hasTableOfAuthorities: false,
+  hasLinks: false,
   imageSelected: false,
   inlinePicture: false,
   graphicSelected: false,
@@ -410,6 +413,7 @@ export function computeFormatState(
     hasTableOfFigures: tables.figures,
     hasIndex: tables.index,
     hasTableOfAuthorities: tables.authorities,
+    hasLinks: hasLinks(editor.state.doc, blocks),
     imageSelected,
     inlinePicture: !!inlinePic,
     graphicSelected: imageSelected && graphicSelected(editor),

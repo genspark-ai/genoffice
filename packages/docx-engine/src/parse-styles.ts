@@ -20,6 +20,7 @@ import {
   indentTwipsOf,
   mergeCharIndents,
   mergedBorderLinesOf,
+  tableShdFill,
   paraBorderSidesOf,
   rowBandSizeOf,
   shdDisplayFill,
@@ -27,7 +28,7 @@ import {
   themeLangEaSlotFont,
   themedRFonts,
 } from './parse-props'
-import { w14TextOutlineOf } from './parse-drawing-geometry'
+import { textFillBeyondColor, w14TextFillOf, w14TextOutlineOf } from './parse-drawing-geometry'
 import { xmlFlagOn } from './section'
 import type {
   DocDefaults,
@@ -256,6 +257,7 @@ export async function parseStyles(
       dd.spaceAfterAuto =
         spacingAttrs['w:afterAutospacing'] === '1' || spacingAttrs['w:afterAutospacing'] === 'true'
     if (pPr && onOffOf(pPr, 'w:suppressAutoHyphens')) dd.suppressAutoHyphens = true
+    if (pPr && onOffOf(pPr, 'w:adjustRightInd') === false) dd.adjustRightInd = false
     if (pPr && onOffOf(pPr, 'w:bidi')) dd.bidi = true
     if (pPr && onOffOf(pPr, 'w:widowControl') === false) dd.widowControl = false
     const ddBorders = pPr ? paraBorderSidesOf(pPr, theme) : undefined
@@ -344,6 +346,10 @@ export async function parseStyles(
       type,
       headingLevel,
       headingOutlineOff: outlineOffIds.has(styleId) ? true : undefined,
+      collapsed:
+        type === 'paragraph'
+          ? onOffOf(findChild(styleNode, 'w:pPr') ?? {}, 'w15:collapsed')
+          : undefined,
       basedOn,
       semiHidden: onOffOf(styleNode, 'w:semiHidden'),
       qFormat: onOffOf(styleNode, 'w:qFormat'),
@@ -437,6 +443,8 @@ export async function parseStyles(
       info.headingLevel = parent.headingLevel
       info.headingLevelInherited = true
     }
+    if (info.collapsed === undefined && parent?.collapsed !== undefined)
+      info.collapsed = parent.collapsed
     if (info.type === 'paragraph' && (ownNumPrs.has(styleId) || parent?.numPr)) {
       info.numPr = mergeNumPr(ownNumPrs.get(styleId) ?? {}, parent?.numPr)
     }
@@ -505,6 +513,7 @@ export async function parseStyles(
     'bdr',
     'shading',
     'textOutline',
+    'textFill',
   ] as const
   for (const [fromId, toId] of linkedIds) {
     const a = styles.get(fromId)
@@ -598,8 +607,12 @@ function tableStyleDisplayOf(
 ): TableStyleDisplay | undefined {
   const display: TableStyleDisplay = {}
   const shdFill = (node: XNode | undefined): string | undefined => {
-    const fill = node ? attrsOf(findChild(node, 'w:shd') ?? {})['w:fill'] : undefined
-    return fill && fill !== 'auto' ? stripHash(fill) : undefined
+    const shd = node ? findChild(node, 'w:shd') : undefined
+    const a = attrsOf(shd ?? {})
+    const fill = a['w:fill'] && a['w:fill'] !== 'auto' ? stripHash(a['w:fill']) : undefined
+    // a pattern keeps its literal fill here: its ink is not part of this model
+    const plain = !a['w:val'] || a['w:val'] === 'clear' || a['w:val'] === 'nil'
+    return plain && a['w:themeFill'] ? (tableShdFill(shd, theme) ?? fill) : fill
   }
   const baseFill = shdFill(findChild(styleNode, 'w:tcPr'))
   if (baseFill) display.fill = baseFill
@@ -645,7 +658,7 @@ function tableStyleDisplayOf(
         const spc = parseInt(attrsOf(findChild(rPr, 'w:spacing') ?? {})['w:val'] ?? '', 10)
         if (!Number.isNaN(spc)) fmt.charSpacingTwips = spc
       }
-      const borders = mergedBorderLinesOf(tcPr, 'w:tcBorders', false)
+      const borders = mergedBorderLinesOf(tcPr, 'w:tcBorders', false, theme)
       if (borders) fmt.borders = borders
       const tcMar = cellMarginsOf(findChild(tcPr ?? {}, 'w:tcMar'))
       if (tcMar) fmt.cellMarTwips = tcMar
@@ -654,7 +667,7 @@ function tableStyleDisplayOf(
     } else if (type === 'band1Horz' || type === 'band2Horz') {
       if (fill) display[type === 'band1Horz' ? 'band1Fill' : 'band2Fill'] = fill
       const fmt: TableCondFormat = {}
-      const borders = mergedBorderLinesOf(tcPr, 'w:tcBorders', false)
+      const borders = mergedBorderLinesOf(tcPr, 'w:tcBorders', false, theme)
       if (borders) fmt.borders = borders
       const tcMar = cellMarginsOf(findChild(tcPr ?? {}, 'w:tcMar'))
       if (tcMar) fmt.cellMarTwips = tcMar
@@ -664,7 +677,7 @@ function tableStyleDisplayOf(
   const styleTblPr = findChild(styleNode, 'w:tblPr')
   const bandSize = rowBandSizeOf(styleTblPr)
   if (bandSize) display.rowBandSize = bandSize
-  const borders = mergedBorderLinesOf(styleTblPr, 'w:tblBorders', true)
+  const borders = mergedBorderLinesOf(styleTblPr, 'w:tblBorders', true, theme)
   if (borders) display.borders = borders
   const cellMar = cellMarginsOf(findChild(styleTblPr ?? {}, 'w:tblCellMar'))
   if (cellMar) display.cellMarTwips = cellMar
@@ -770,8 +783,9 @@ function styleDisplayOf(
     if (!Number.isNaN(spc)) display.charSpacingTwips = spc
     const kern = attrsOf(findChild(rPr, 'w:kern') ?? {})['w:val']
     if (kern !== undefined) display.kernHalfPoints = parseInt(kern, 10) || 0
-    const eaLang = attrsOf(findChild(rPr, 'w:lang') ?? {})['w:eastAsia']
-    if (eaLang) display.eastAsiaLang = eaLang
+    const langAttrs = attrsOf(findChild(rPr, 'w:lang') ?? {})
+    if (langAttrs['w:eastAsia']) display.eastAsiaLang = langAttrs['w:eastAsia']
+    if (langAttrs['w:val']) display.lang = langAttrs['w:val']
     const capsOn = onOffOf(rPr, 'w:caps')
     const smallCapsOn = onOffOf(rPr, 'w:smallCaps')
     if (capsOn) display.caps = 'all'
@@ -781,9 +795,13 @@ function styleDisplayOf(
     if (shading) display.shading = shading
     const outline = w14TextOutlineOf(rPr, theme)
     if (outline) display.textOutline = outline
+    const textFill = textFillBeyondColor(w14TextFillOf(rPr, theme), display.color)
+    if (textFill) display.textFill = textFill
     // w:specVanish marks a style separator, not hidden text
     const vanish = onOffOf(rPr, 'w:vanish')
     if (vanish !== undefined && onOffOf(rPr, 'w:specVanish') !== true) display.vanish = vanish
+    const snap = onOffOf(rPr, 'w:snapToGrid')
+    if (snap !== undefined) display.snapToGrid = snap
   }
   const pPr = findChild(styleNode, 'w:pPr')
   if (pPr) {
@@ -827,6 +845,10 @@ function styleDisplayOf(
     {
       const sah = onOffOf(pPr, 'w:suppressAutoHyphens')
       if (sah !== undefined) display.suppressAutoHyphens = sah
+    }
+    {
+      const ari = onOffOf(pPr, 'w:adjustRightInd')
+      if (ari !== undefined) display.adjustRightInd = ari
     }
     {
       // tri-state so a child style's explicit off survives the basedOn merge

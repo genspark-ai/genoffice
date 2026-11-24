@@ -103,7 +103,7 @@ test('the Document Grid shows a line grid in lines per page and pitch, and sets 
     for (const name of ['charsPerLine', 'charPitch', 'defaultCharPitch'])
       await expect(dialog.locator(`input[name="${name}"]`)).toBeDisabled()
     await expect(dialog.getByRole('button', { name: 'Set Font…' })).toBeEnabled()
-    await expect(dialog.getByRole('button', { name: 'Drawing Grid…' })).toHaveCount(0)
+    await expect(dialog.getByRole('button', { name: 'Drawing Grid…' })).toBeEnabled()
     await perPage.fill('20')
     await expect(pitch).toHaveValue('32.4')
     await page.screenshot({ path: test.info().outputPath('document-grid.png') })

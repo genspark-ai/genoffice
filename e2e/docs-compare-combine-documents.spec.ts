@@ -186,7 +186,9 @@ async function openDialog(app: ElectronApplication, page: Page, menu: string[], 
   await expect(ok).toBeDisabled()
   await expect(dialog.locator('select[name="compare-original"]')).toHaveValue('current')
   await expect(dialog.locator('button[name="compare-swap"]')).toBeDisabled()
-  await expect(dialog.locator('input[name="compare-label-original"]')).toHaveCount(0)
+  // a comparison takes the revised side's name only: the original's box is grey as in Word. Combining,
+  // it names the original's own changes, which are not renamed while they are written into the open document
+  await expect(dialog.locator('input[name="compare-label-original"]')).toBeDisabled()
   await dialog.locator('button[name="browse-revised"]').click()
   await expect(dialog.locator('select[name="compare-revised"] option:checked')).toHaveText(
     'revised.docx',
@@ -230,15 +232,7 @@ const saveAs = async (app: ElectronApplication, out: string) => {
 }
 
 const COMPARE_MENU = ['Tools', 'Track Changes', 'Compare Documents…']
-const NEW_ONLY = [
-  'moves',
-  'comments',
-  'formatting',
-  'headersFooters',
-  'notes',
-  'textBoxes',
-  'fields',
-]
+const NEW_ONLY = ['moves', 'comments', 'headersFooters', 'notes', 'textBoxes', 'fields']
 
 async function openReviewingPane(page: Page) {
   const toggle = page
@@ -293,14 +287,14 @@ test.describe('docs Compare Documents and Combine Documents', () => {
         revisedPath,
       )
       await expect(dialog.locator('h2')).toHaveText('Combine Documents')
-      // Combine writes into the open document unless told otherwise: only the text settings apply there
+      // Combine writes into the open document unless told otherwise: the text, formatting and table settings apply there
       const target = (value: string) =>
         dialog.locator(`input[name="compare-target"][value="${value}"]`)
       await expect(target('original')).toBeChecked()
       await expect(target('revised')).toBeDisabled()
       for (const name of NEW_ONLY)
         await expect(dialog.locator(`input[name="compare-${name}"]`)).toBeDisabled()
-      for (const name of ['caseChanges', 'whiteSpace', 'tables'])
+      for (const name of ['formatting', 'caseChanges', 'whiteSpace', 'tables'])
         await expect(dialog.locator(`input[name="compare-${name}"]`)).toBeChecked()
       // swapped, the open document is the revised one and the changes can go into it
       await dialog.locator('button[name="compare-swap"]').click()
@@ -312,9 +306,9 @@ test.describe('docs Compare Documents and Combine Documents', () => {
       await expect(target('original')).toBeChecked()
       await ok.click()
       await expect(dialog).toHaveCount(0)
-      await expect(status).toContainText(
-        `Combined with revised.docx: 3 inserted, 2 deleted, marked as changes by ${REVISER}.`,
-      )
+      await expect(status).toContainText('Combined with revised.docx: 3 inserted, 2 deleted, ')
+      await expect(status).toContainText(/ \d+ formatting changes, marked as changes by /)
+      await expect(status).toContainText(`marked as changes by ${REVISER}.`)
       await expect(inserted.filter({ hasText: 'brown' })).toHaveCount(1)
       await expect(deleted.filter({ hasText: 'thirty' })).toHaveCount(1)
       await expect(inserted.filter({ hasText: 'sixty' })).toHaveCount(1)
@@ -798,6 +792,627 @@ test.describe('docs Compare Documents and Combine Documents', () => {
         .poll(async () => (await documentXml(docPath)).includes('by the door'), { timeout: 30_000 })
         .toBe(true)
       expectAuthors(await documentXml(docPath))
+    } finally {
+      await closeAndSaveVideo(launched)
+    }
+  })
+
+  const inlinePicture =
+    '<w:r><w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0"><wp:extent cx="381000" cy="381000"/>' +
+    '<wp:docPr id="7" name="Picture 7"/><a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">' +
+    '<pic:pic><pic:nvPicPr><pic:cNvPr id="7" name="Picture 7"/><pic:cNvPicPr/></pic:nvPicPr>' +
+    '<pic:blipFill><a:blip r:embed="rIdImg"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill>' +
+    '<pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="381000" cy="381000"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr>' +
+    '</pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r>'
+  /** 1x1 blue PNG: another picture than the fixture's */
+  const OTHER_PNG =
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPj/HwADBwIAMCbHYQAAAABJRU5ErkJggg=='
+  const cell = (content: string) =>
+    `<w:tc><w:tcPr><w:tcW w:w="2000" w:type="dxa"/></w:tcPr>${content}</w:tc>`
+  const priceTable = (pricePPr: string, extraRow: string) =>
+    '<w:tbl><w:tblPr><w:tblW w:w="0" w:type="auto"/></w:tblPr><w:tblGrid><w:gridCol w:w="2000"/><w:gridCol w:w="2000"/></w:tblGrid>' +
+    `<w:tr>${cell(para('Item'))}${cell(`<w:p>${pricePPr ? `<w:pPr>${pricePPr}</w:pPr>` : ''}${run('Price')}</w:p>`)}</w:tr>` +
+    `<w:tr>${cell(para('Bolt'))}${cell(para('ten dollars'))}</w:tr>${extraRow}</w:tbl>`
+  const SUPPLY = 'The supplier shall deliver the goods to the address of the customer.'
+  const DAYS = 'Delivery takes place on working days only.'
+  const INSPECT = 'The customer inspects the goods on arrival.'
+  /** a pair that differs in paragraph formatting (body and cell), a table row, a picture and the place of a sentence */
+  const writeLeftoversPair = async () => {
+    const body = (parts: {
+      sentences: string[]
+      signedPPr: string
+      pricePPr: string
+      extraRow: string
+    }) =>
+      para(parts.sentences.join(' ')) +
+      `<w:p><w:pPr>${parts.signedPPr}</w:pPr>${run('Signed by both parties.')}</w:p>` +
+      priceTable(parts.pricePPr, parts.extraRow) +
+      `<w:p>${run('Logo: ')}${inlinePicture}${run(' as shown.')}</w:p>`
+    writeFileSync(
+      docPath,
+      await docxWith(
+        body({
+          sentences: [SUPPLY, DAYS, INSPECT],
+          signedPPr: '<w:keepNext/><w:jc w:val="left"/>',
+          pricePPr: '',
+          extraRow: '',
+        }),
+      ),
+    )
+    const revised = await JSZip.loadAsync(
+      await docxWith(
+        body({
+          sentences: [DAYS, SUPPLY, INSPECT],
+          signedPPr: '<w:jc w:val="center"/>',
+          pricePPr: '<w:jc w:val="right"/>',
+          extraRow: `<w:tr>${cell(para('Nut'))}${cell(para('two dollars'))}</w:tr>`,
+        }),
+      ),
+    )
+    revised.file('word/media/image1.png', Buffer.from(OTHER_PNG, 'base64'))
+    writeFileSync(
+      revisedPath,
+      await savedBy(await revised.generateAsync({ type: 'nodebuffer' }), REVISER),
+    )
+  }
+  const mediaOf = async (path: string) => {
+    const zip = await JSZip.loadAsync(readFileSync(path))
+    const names = Object.keys(zip.files).filter((name) => name.startsWith('word/media/'))
+    return Promise.all(names.map((name) => zip.file(name)!.async('base64')))
+  }
+  const BODY_RECORD = new RegExp(
+    `<w:pPr><w:jc w:val="center"/><w:pPrChange w:id="\\d+" w:author="${REVISER}" w:date="[^"]+"><w:pPr><w:keepNext/><w:jc w:val="left"/></w:pPr></w:pPrChange></w:pPr>`,
+  )
+  const CELL_RECORD =
+    /<w:tc>(?:(?!<\/w:tc>).)*<w:pPr><w:jc w:val="right"\/><w:pPrChange [^>]*><w:pPr>(?:<\/w:pPr>|\/>)?<\/w:pPrChange><\/w:pPr><w:r>(?:(?!<\/w:tc>).)*Price/
+  const ROW_RECORD = new RegExp(
+    `<w:tr><w:trPr><w:ins w:id="\\d+" w:author="${REVISER}" w:date="[^"]+"/></w:trPr>`,
+  )
+
+  test('Compare into the open document tracks formatting, a table row and a replaced picture; they save, reject and reopen', async () => {
+    test.setTimeout(300_000)
+    await writeLeftoversPair()
+    let launched = await launchShell({
+      onboardingSeen: true,
+      videoDir: 'docs-compare-leftovers-open',
+      openFile: docPath,
+    })
+    try {
+      let { app } = launched
+      let page = await waitForPageWithUrl(app, '://docs/')
+      const signedIn = (p: Page) =>
+        p.locator('.doc-page p', { hasText: 'Signed by both parties.' }).first()
+      await expect(signedIn(page)).toBeVisible({ timeout: 30_000 })
+      const { dialog, ok } = await openDialog(app, page, COMPARE_MENU, revisedPath)
+      await dialog.locator('input[name="compare-target"][value="original"]').check()
+      // written into the open document, formatting is compared too
+      await expect(dialog.locator('input[name="compare-formatting"]')).toBeEnabled()
+      await expect(dialog.locator('input[name="compare-formatting"]')).toBeChecked()
+      await expect(dialog.locator('input[name="compare-moves"]')).toBeDisabled()
+      await ok.click()
+      await expect(page.locator('.status-msg')).toContainText('Combined with revised.docx')
+      // the formatting changes are counted beside the insertions and deletions
+      await expect(page.locator('.status-msg')).toContainText(/ [1-9]\d* formatting changes, /)
+
+      const align = (p: Page) => () => signedIn(p).evaluate((el) => getComputedStyle(el).textAlign)
+      await expect(signedIn(page)).toHaveClass(/has-ppr-change/)
+      await expect.poll(align(page)).toBe('center')
+      await expect(page.locator('.doc-page table tr')).toHaveCount(3)
+      // a cell paragraph carries the record and is listed; the change bar is drawn for body paragraphs
+      await expect(page.locator('.doc-page td p', { hasText: 'Price' })).toHaveAttribute(
+        'data-ppr-change',
+        'true',
+      )
+      let pane = await openReviewingPane(page)
+      await expect(pane.locator('.review-row', { hasText: 'Paragraph formatted' })).toHaveCount(2)
+      await expect(pane.locator('.review-pane-author')).toHaveText([REVISER])
+      if (process.env.CMP_SHOTS)
+        await page.screenshot({ path: join(process.env.CMP_SHOTS, 'open-document.png') })
+
+      await saveFromMenu(app)
+      await expect
+        .poll(async () => ROW_RECORD.test(await documentXml(docPath)), { timeout: 30_000 })
+        .toBe(true)
+      let xml = await documentXml(docPath)
+      expect(xml).toMatch(BODY_RECORD)
+      expect(xml).toMatch(CELL_RECORD)
+      expect(xml).toMatch(/<w:del [^>]*><w:r>(?:<w:rPr>.*?<\/w:rPr>)?<w:drawing>/)
+      expect(xml).toMatch(/<w:ins [^>]*><w:r>(?:<w:rPr>.*?<\/w:rPr>)?<w:drawing>/)
+      const media = await mediaOf(docPath)
+      expect(media).toHaveLength(2)
+      expect(media).toContain(OTHER_PNG)
+
+      // rejecting the paragraph's change brings back its alignment and keep with next
+      const signedRow = pane
+        .locator('.review-row', { hasText: 'Paragraph formatted' })
+        .filter({ hasText: 'Signed by both parties.' })
+      await signedRow.click()
+      await signedRow.getByRole('button', { name: /Reject/ }).click()
+      await expect(signedIn(page)).not.toHaveClass(/has-ppr-change/)
+      await expect.poll(align(page)).toMatch(/^(left|start)$/)
+      await saveFromMenu(app)
+      await expect
+        .poll(async () => BODY_RECORD.test(await documentXml(docPath)), { timeout: 30_000 })
+        .toBe(false)
+      xml = await documentXml(docPath)
+      expect(xml).toMatch(
+        /<w:pPr><w:keepNext\/><w:jc w:val="left"\/><\/w:pPr><w:r>(?:(?!<\/w:p>).)*Signed by both parties\./,
+      )
+      expect(xml).toMatch(CELL_RECORD)
+
+      // reopened, what is still pending is listed again
+      await closeAndSaveVideo(launched)
+      launched = await launchShell({
+        onboardingSeen: true,
+        videoDir: 'docs-compare-leftovers-reopen',
+        openFile: docPath,
+      })
+      app = launched.app
+      page = await waitForPageWithUrl(app, '://docs/')
+      await expect(signedIn(page)).toBeVisible({ timeout: 30_000 })
+      await expect(page.locator('.doc-page table tr')).toHaveCount(3)
+      // a cell paragraph carries the record and is listed; the change bar is drawn for body paragraphs
+      await expect(page.locator('.doc-page td p', { hasText: 'Price' })).toHaveAttribute(
+        'data-ppr-change',
+        'true',
+      )
+      pane = await openReviewingPane(page)
+      await expect(pane.locator('.review-row', { hasText: 'Paragraph formatted' })).toHaveCount(1)
+      await expect(pane.locator('.review-pane-author')).toHaveText([REVISER])
+    } finally {
+      await closeAndSaveVideo(launched)
+    }
+  })
+
+  test('Compare into a new document tracks a cell paragraph format, a table row, a replaced picture and a moved sentence', async () => {
+    test.setTimeout(240_000)
+    await writeLeftoversPair()
+    const outPath = join(dir, 'redline.docx')
+    const launched = await launchShell({
+      onboardingSeen: true,
+      videoDir: 'docs-compare-leftovers-new',
+      openFile: docPath,
+    })
+    try {
+      const { app } = launched
+      const page = await waitForPageWithUrl(app, '://docs/')
+      await expect(
+        page.locator('.doc-page p', { hasText: 'Signed by both parties.' }).first(),
+      ).toBeVisible({ timeout: 30_000 })
+      const { ok } = await openDialog(app, page, COMPARE_MENU, revisedPath)
+      await ok.click()
+      await expect(page.locator('.status-msg')).toContainText('2 formatting')
+      await expect(page.locator('.status-msg')).toContainText('1 move')
+
+      const result = await resultPage(app, page)
+      const price = result.locator('.doc-page td p', { hasText: 'Price' })
+      await expect(price).toHaveAttribute('data-ppr-change', 'true')
+      await expect(result.locator('.doc-page table tr')).toHaveCount(3)
+      const pane = await openReviewingPane(result)
+      const formatted = pane.locator('.review-row', { hasText: 'Paragraph formatted' })
+      await expect(formatted).toHaveCount(2)
+      if (process.env.CMP_SHOTS)
+        await result.screenshot({ path: join(process.env.CMP_SHOTS, 'new-document.png') })
+
+      await saveAs(app, outPath)
+      let xml = await documentXml(outPath)
+      expect(xml).toMatch(BODY_RECORD)
+      expect(xml).toMatch(CELL_RECORD)
+      expect(xml).toMatch(ROW_RECORD)
+      expect(xml.match(/<w:moveFrom /g)).toHaveLength(1)
+      expect(xml.match(/<w:moveTo /g)).toHaveLength(1)
+      expect(xml).toMatch(/<w:moveFrom [^>]*><w:r>(?:(?!<\/w:moveFrom>).)*Delivery takes place/)
+      expect(xml).toMatch(/<w:del [^>]*><w:r>(?:<w:rPr>.*?<\/w:rPr>)?<w:drawing>/)
+      expect(xml).toMatch(/<w:ins [^>]*><w:r>(?:<w:rPr>.*?<\/w:rPr>)?<w:drawing>/)
+      expect(await mediaOf(outPath)).toHaveLength(2)
+
+      // the cell paragraph's change is rejected from the pane and leaves the file
+      const cellRow = formatted.filter({ hasText: 'Price' })
+      await cellRow.click()
+      await cellRow.getByRole('button', { name: /Reject/ }).click()
+      await expect(price).not.toHaveAttribute('data-ppr-change', 'true')
+      await saveFromMenu(app)
+      await expect
+        .poll(async () => CELL_RECORD.test(await documentXml(outPath)), { timeout: 30_000 })
+        .toBe(false)
+      xml = await documentXml(outPath)
+      expect(xml).not.toContain('w:val="right"')
+      expect(xml).toMatch(BODY_RECORD)
+    } finally {
+      await closeAndSaveVideo(launched)
+    }
+  })
+
+  test('a table column only the revised document has is tracked as inserted cells, in a new document and in the open one', async () => {
+    test.setTimeout(300_000)
+    const grid = (rows: string[][]) =>
+      '<w:tbl><w:tblPr><w:tblW w:w="0" w:type="auto"/></w:tblPr><w:tblGrid>' +
+      '<w:gridCol w:w="2000"/>'.repeat(rows[0].length) +
+      `</w:tblGrid>${rows.map((cells) => `<w:tr>${cells.map((text) => cell(para(text))).join('')}</w:tr>`).join('')}</w:tbl>`
+    const INTRO = 'The supplier lists the parts below.'
+    const SIGNED = 'Signed by both parties.'
+    writeFileSync(
+      docPath,
+      await docxWith(
+        para(INTRO) +
+          grid([
+            ['Item', 'Price'],
+            ['Bolt', 'ten dollars'],
+          ]) +
+          para(SIGNED),
+      ),
+    )
+    writeFileSync(
+      revisedPath,
+      await savedBy(
+        await docxWith(
+          para(INTRO) +
+            grid([
+              ['Item', 'Stock', 'Price'],
+              ['Bolt', 'many', 'ten dollars'],
+            ]) +
+            para(SIGNED),
+        ),
+        REVISER,
+      ),
+    )
+    const cellsOf = (p: Page) =>
+      p
+        .locator('.doc-page table tr')
+        .evaluateAll((rows) =>
+          rows.map((row) =>
+            Array.from(row.querySelectorAll('td, th'), (td) => (td.textContent ?? '').trim()),
+          ),
+        )
+    const WIDE = [
+      ['Item', 'Stock', 'Price'],
+      ['Bolt', 'many', 'ten dollars'],
+    ]
+    const CELL_INS = new RegExp(`<w:cellIns w:id="\\d+" w:author="${REVISER}"`, 'g')
+    const outPath = join(dir, 'columns.docx')
+    let launched = await launchShell({
+      onboardingSeen: true,
+      videoDir: 'docs-compare-columns-new',
+      openFile: docPath,
+    })
+    try {
+      let { app } = launched
+      let page = await waitForPageWithUrl(app, '://docs/')
+      await expect(page.locator('.doc-page p', { hasText: SIGNED }).first()).toBeVisible({
+        timeout: 30_000,
+      })
+      let { dialog, ok } = await openDialog(app, page, COMPARE_MENU, revisedPath)
+      await ok.click()
+      const result = await resultPage(app, page)
+      await expect.poll(() => cellsOf(result)).toEqual(WIDE)
+      await expect(result.locator('.doc-page table')).toHaveCount(1)
+      await expect(result.locator('.doc-page td.cell-rev-ins')).toHaveText(['Stock', 'many'])
+      if (process.env.CMP_SHOTS)
+        await result.screenshot({ path: join(process.env.CMP_SHOTS, 'columns-new.png') })
+      await saveAs(app, outPath)
+      let xml = await documentXml(outPath)
+      expect(xml.match(CELL_INS)).toHaveLength(2)
+      expect(xml.match(/<w:gridCol /g)).toHaveLength(3)
+      expect(xml).not.toMatch(/<w:(?:ins|del) [^>]*><w:tbl>/)
+
+      // written into the open document instead
+      await closeAndSaveVideo(launched)
+      launched = await launchShell({
+        onboardingSeen: true,
+        videoDir: 'docs-compare-columns-open',
+        openFile: docPath,
+      })
+      app = launched.app
+      page = await waitForPageWithUrl(app, '://docs/')
+      await expect(page.locator('.doc-page p', { hasText: SIGNED }).first()).toBeVisible({
+        timeout: 30_000,
+      })
+      ;({ dialog, ok } = await openDialog(app, page, COMPARE_MENU, revisedPath))
+      await dialog.locator('input[name="compare-target"][value="original"]').check()
+      await ok.click()
+      await expect(page.locator('.status-msg')).toContainText('Combined with revised.docx')
+      await expect.poll(() => cellsOf(page)).toEqual(WIDE)
+      await expect(page.locator('.doc-page td.cell-rev-ins')).toHaveText(['Stock', 'many'])
+      if (process.env.CMP_SHOTS)
+        await page.screenshot({ path: join(process.env.CMP_SHOTS, 'columns-open.png') })
+      await saveFromMenu(app)
+      await expect
+        .poll(async () => (await documentXml(docPath)).match(CELL_INS)?.length ?? 0, {
+          timeout: 30_000,
+        })
+        .toBe(2)
+
+      // rejected, the column goes and the table is as it was
+      await openReviewingPane(page)
+      await page
+        .locator('[data-ribbon-body] button:is(.rb-big, .rb-small)', { hasText: /^Reject$/ })
+        .click()
+      await page
+        .locator('[data-rb-panel] button', { hasText: /^Reject All Changes$/ })
+        .first()
+        .click()
+      await expect
+        .poll(() => cellsOf(page))
+        .toEqual([
+          ['Item', 'Price'],
+          ['Bolt', 'ten dollars'],
+        ])
+      await saveFromMenu(app)
+      await expect
+        .poll(async () => (await documentXml(docPath)).includes('w:cellIns'), { timeout: 30_000 })
+        .toBe(false)
+      xml = await documentXml(docPath)
+      expect(xml.match(/<w:gridCol /g)).toHaveLength(2)
+    } finally {
+      await closeAndSaveVideo(launched)
+    }
+  })
+  test('a column added beside merged cells is tracked as inserted cells and the merged cells stay merged, in a new document and in the open one', async () => {
+    test.setTimeout(300_000)
+    // a heading across the first two columns and a cell down the last column's two lower rows
+    const merged = (text: string, width: number, tcPr: string) =>
+      `<w:tc><w:tcPr><w:tcW w:w="${width}" w:type="dxa"/>${tcPr}</w:tcPr>${para(text)}</w:tc>`
+    const table = (extra: string[] | null) =>
+      '<w:tbl><w:tblPr><w:tblW w:w="0" w:type="auto"/></w:tblPr><w:tblGrid>' +
+      '<w:gridCol w:w="2000"/>'.repeat(extra ? 4 : 3) +
+      '</w:tblGrid>' +
+      [
+        [merged('Parts', 4000, '<w:gridSpan w:val="2"/>'), cell(para('Origin'))],
+        [
+          cell(para('Item')),
+          cell(para('Price')),
+          merged('Leeds', 2000, '<w:vMerge w:val="restart"/>'),
+        ],
+        [cell(para('Bolt')), cell(para('ten dollars')), merged('', 2000, '<w:vMerge/>')],
+      ]
+        .map((cells, r) => {
+          const added = extra ? [cell(para(extra[r]))] : []
+          return `<w:tr>${[...cells.slice(0, -1), ...added, cells[cells.length - 1]].join('')}</w:tr>`
+        })
+        .join('') +
+      '</w:tbl>'
+    const INTRO = 'The supplier lists the parts below.'
+    const SIGNED = 'Signed by both parties.'
+    writeFileSync(docPath, await docxWith(para(INTRO) + table(null) + para(SIGNED)))
+    writeFileSync(
+      revisedPath,
+      await savedBy(
+        await docxWith(para(INTRO) + table(['Kind', 'Stock', 'many']) + para(SIGNED)),
+        REVISER,
+      ),
+    )
+    /** each row's cells: text, columns covered, rows covered */
+    const cellsOf = (p: Page) =>
+      p
+        .locator('.doc-page table tr')
+        .evaluateAll((rows) =>
+          rows.map((row) =>
+            Array.from(row.querySelectorAll<HTMLTableCellElement>('td, th'), (td) => [
+              (td.textContent ?? '').trim(),
+              td.colSpan,
+              td.rowSpan,
+            ]),
+          ),
+        )
+    const NARROW = [
+      [
+        ['Parts', 2, 1],
+        ['Origin', 1, 1],
+      ],
+      [
+        ['Item', 1, 1],
+        ['Price', 1, 1],
+        ['Leeds', 1, 2],
+      ],
+      [
+        ['Bolt', 1, 1],
+        ['ten dollars', 1, 1],
+      ],
+    ]
+    const WIDE = [
+      [NARROW[0][0], ['Kind', 1, 1], NARROW[0][1]],
+      [NARROW[1][0], NARROW[1][1], ['Stock', 1, 1], NARROW[1][2]],
+      [NARROW[2][0], NARROW[2][1], ['many', 1, 1]],
+    ]
+    const CELL_INS = new RegExp(`<w:cellIns w:id="\\d+" w:author="${REVISER}"`, 'g')
+    const mergesIn = (xml: string) => [
+      xml.match(/<w:gridSpan w:val="2"\/>/g)?.length ?? 0,
+      xml.match(/<w:vMerge\b/g)?.length ?? 0,
+    ]
+    const outPath = join(dir, 'merged-columns.docx')
+    let launched = await launchShell({
+      onboardingSeen: true,
+      videoDir: 'docs-compare-merged-columns-new',
+      openFile: docPath,
+    })
+    try {
+      let { app } = launched
+      let page = await waitForPageWithUrl(app, '://docs/')
+      await expect(page.locator('.doc-page p', { hasText: SIGNED }).first()).toBeVisible({
+        timeout: 30_000,
+      })
+      let { dialog, ok } = await openDialog(app, page, COMPARE_MENU, revisedPath)
+      await ok.click()
+      const result = await resultPage(app, page)
+      await expect.poll(() => cellsOf(result)).toEqual(WIDE)
+      await expect(result.locator('.doc-page table')).toHaveCount(1)
+      await expect(result.locator('.doc-page td.cell-rev-ins')).toHaveText([
+        'Kind',
+        'Stock',
+        'many',
+      ])
+      await saveAs(app, outPath)
+      let xml = await documentXml(outPath)
+      expect(xml.match(CELL_INS)).toHaveLength(3)
+      expect(xml.match(/<w:gridCol /g)).toHaveLength(4)
+      expect(mergesIn(xml)).toEqual([1, 2])
+      expect(xml).not.toMatch(/<w:(?:ins|del) [^>]*><w:tbl>/)
+
+      // written into the open document instead
+      await closeAndSaveVideo(launched)
+      launched = await launchShell({
+        onboardingSeen: true,
+        videoDir: 'docs-compare-merged-columns-open',
+        openFile: docPath,
+      })
+      app = launched.app
+      page = await waitForPageWithUrl(app, '://docs/')
+      await expect(page.locator('.doc-page p', { hasText: SIGNED }).first()).toBeVisible({
+        timeout: 30_000,
+      })
+      ;({ dialog, ok } = await openDialog(app, page, COMPARE_MENU, revisedPath))
+      await dialog.locator('input[name="compare-target"][value="original"]').check()
+      await ok.click()
+      await expect(page.locator('.status-msg')).toContainText('Combined with revised.docx')
+      await expect.poll(() => cellsOf(page)).toEqual(WIDE)
+      await expect(page.locator('.doc-page td.cell-rev-ins')).toHaveText(['Kind', 'Stock', 'many'])
+      await saveFromMenu(app)
+      await expect
+        .poll(async () => (await documentXml(docPath)).match(CELL_INS)?.length ?? 0, {
+          timeout: 30_000,
+        })
+        .toBe(3)
+      expect(mergesIn(await documentXml(docPath))).toEqual([1, 2])
+
+      // rejected, the column goes and the table is as it was, merged cells included
+      await openReviewingPane(page)
+      await page
+        .locator('[data-ribbon-body] button:is(.rb-big, .rb-small)', { hasText: /^Reject$/ })
+        .click()
+      await page
+        .locator('[data-rb-panel] button', { hasText: /^Reject All Changes$/ })
+        .first()
+        .click()
+      await expect.poll(() => cellsOf(page)).toEqual(NARROW)
+      await saveFromMenu(app)
+      await expect
+        .poll(async () => (await documentXml(docPath)).includes('w:cellIns'), { timeout: 30_000 })
+        .toBe(false)
+      xml = await documentXml(docPath)
+      expect(xml.match(/<w:gridCol /g)).toHaveLength(3)
+      expect(mergesIn(xml)).toEqual([1, 2])
+    } finally {
+      await closeAndSaveVideo(launched)
+    }
+  })
+
+  test('a row and a column added in a table with a cell merged down are tracked in the open document, the merge running through the new row, and rejected back', async () => {
+    test.setTimeout(240_000)
+    const merged = (text: string, width: number, tcPr: string) =>
+      `<w:tc><w:tcPr><w:tcW w:w="${width}" w:type="dxa"/>${tcPr}</w:tcPr>${para(text)}</w:tc>`
+    // a heading across the first two columns and a cell down the last column's lower rows
+    const table = (extra: string[] | null) =>
+      '<w:tbl><w:tblPr><w:tblW w:w="0" w:type="auto"/></w:tblPr><w:tblGrid>' +
+      '<w:gridCol w:w="2000"/>'.repeat(extra ? 4 : 3) +
+      '</w:tblGrid>' +
+      [
+        [merged('Parts', 4000, '<w:gridSpan w:val="2"/>'), cell(para('Origin'))],
+        [
+          cell(para('Item')),
+          cell(para('Price')),
+          merged('Leeds', 2000, '<w:vMerge w:val="restart"/>'),
+        ],
+        ...(extra
+          ? [[cell(para('Nut')), cell(para('two dollars')), merged('', 2000, '<w:vMerge/>')]]
+          : []),
+        [cell(para('Bolt')), cell(para('ten dollars')), merged('', 2000, '<w:vMerge/>')],
+      ]
+        .map((cells, r) => {
+          const added = extra ? [cell(para(extra[r]))] : []
+          return `<w:tr>${[...cells.slice(0, -1), ...added, cells[cells.length - 1]].join('')}</w:tr>`
+        })
+        .join('') +
+      '</w:tbl>'
+    const INTRO = 'The supplier lists the parts below.'
+    const SIGNED = 'Signed by both parties.'
+    writeFileSync(docPath, await docxWith(para(INTRO) + table(null) + para(SIGNED)))
+    writeFileSync(
+      revisedPath,
+      await savedBy(
+        await docxWith(para(INTRO) + table(['Kind', 'Stock', 'few', 'many']) + para(SIGNED)),
+        REVISER,
+      ),
+    )
+    const cellsOf = (p: Page) =>
+      p
+        .locator('.doc-page table tr')
+        .evaluateAll((rows) =>
+          rows.map((row) =>
+            Array.from(row.querySelectorAll<HTMLTableCellElement>('td, th'), (td) => [
+              (td.textContent ?? '').trim(),
+              td.colSpan,
+              td.rowSpan,
+            ]),
+          ),
+        )
+    const NARROW = [
+      [
+        ['Parts', 2, 1],
+        ['Origin', 1, 1],
+      ],
+      [
+        ['Item', 1, 1],
+        ['Price', 1, 1],
+        ['Leeds', 1, 2],
+      ],
+      [
+        ['Bolt', 1, 1],
+        ['ten dollars', 1, 1],
+      ],
+    ]
+    // pending, the merged cell covers the new row too
+    const PENDING = [
+      [NARROW[0][0], ['Kind', 1, 1], NARROW[0][1]],
+      [NARROW[1][0], NARROW[1][1], ['Stock', 1, 1], ['Leeds', 1, 3]],
+      [
+        ['Nut', 1, 1],
+        ['two dollars', 1, 1],
+        ['few', 1, 1],
+      ],
+      [NARROW[2][0], NARROW[2][1], ['many', 1, 1]],
+    ]
+    const count = (xml: string, re: RegExp) => xml.match(re)?.length ?? 0
+    const launched = await launchShell({
+      onboardingSeen: true,
+      videoDir: 'docs-compare-merged-rows-open',
+      openFile: docPath,
+    })
+    try {
+      const { app } = launched
+      const page = await waitForPageWithUrl(app, '://docs/')
+      await expect(page.locator('.doc-page p', { hasText: SIGNED }).first()).toBeVisible({
+        timeout: 30_000,
+      })
+      const { dialog, ok } = await openDialog(app, page, COMPARE_MENU, revisedPath)
+      await dialog.locator('input[name="compare-target"][value="original"]').check()
+      await ok.click()
+      await expect(page.locator('.status-msg')).toContainText('Combined with revised.docx')
+      await expect.poll(() => cellsOf(page)).toEqual(PENDING)
+      await saveFromMenu(app)
+      await expect
+        .poll(async () => count(await documentXml(docPath), /<w:cellIns /g), { timeout: 30_000 })
+        .toBe(4)
+      let xml = await documentXml(docPath)
+      expect(count(xml, /<w:trPr><w:ins /g)).toBe(1)
+      expect(count(xml, /<w:vMerge\b/g)).toBe(3)
+
+      await openReviewingPane(page)
+      await page
+        .locator('[data-ribbon-body] button:is(.rb-big, .rb-small)', { hasText: /^Reject$/ })
+        .click()
+      await page
+        .locator('[data-rb-panel] button', { hasText: /^Reject All Changes$/ })
+        .first()
+        .click()
+      await expect.poll(() => cellsOf(page)).toEqual(NARROW)
+      await saveFromMenu(app)
+      await expect
+        .poll(async () => (await documentXml(docPath)).includes('w:cellIns'), { timeout: 30_000 })
+        .toBe(false)
+      xml = await documentXml(docPath)
+      expect(xml.match(/<w:gridCol /g)).toHaveLength(3)
+      expect(xml.match(/<w:tr[ >]/g)).toHaveLength(3)
+      expect(count(xml, /<w:vMerge\b/g)).toBe(2)
     } finally {
       await closeAndSaveVideo(launched)
     }

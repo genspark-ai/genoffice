@@ -379,8 +379,8 @@ test('Format > Paragraph: Mirror indents, hyphenation, the grid, Tabs… and Set
     await box('mirrorIndents').check()
     await expect(dialog.getByLabel('Inside')).toBeVisible()
     await expect(dialog.getByLabel('Outside')).toBeVisible()
-    // the right indent is not pulled onto a character grid here: the box is not offered
-    await expect(box('adjustRightInd')).toHaveCount(0)
+    // Word's default: on until the paragraph or its style says otherwise
+    await expect(box('adjustRightInd')).toBeChecked()
     await page.screenshot({ path: test.info().outputPath('paragraph-indents.png') })
     await ok()
     await expect
@@ -414,6 +414,11 @@ test('Format > Paragraph: Mirror indents, hyphenation, the grid, Tabs… and Set
     await expect(dialog).toBeHidden()
     const tabs = page.locator('.tabs-dialog')
     await expect(tabs).toBeVisible()
+    // the Tabs dialog keeps the focus: the page behind it does not take it a frame later
+    await page.evaluate(
+      () => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))),
+    )
+    await expect(tabs.locator(':focus')).toHaveCount(1)
     await page.keyboard.press('Escape')
     await expect(tabs).toBeHidden()
 

@@ -20,6 +20,10 @@ const twipsToPx = (twips: number) => (twips / 1440) * 96
 /** strip width, CSS px before zoom */
 export const VRULER_WIDTH = 20
 
+/** the strip with its 2px gutters: it scales with the document zoom, as the scale inside does */
+export const VRULER_BAR_UNIT = VRULER_WIDTH + 4
+export const vrulerBarWidth = (zoom: number): number => Math.ceil(VRULER_BAR_UNIT * zoom)
+
 export interface VerticalRulerDims {
   pageHeight: number
   /** magnitudes in twips; a negative w:top/w:bottom (Word's "exact" margin) keeps its sign on write-back */
@@ -268,11 +272,7 @@ export function VerticalRuler({
   )
 
   return (
-    <div
-      className="vruler-bar"
-      ref={barRef}
-      style={{ top, width: Math.ceil((VRULER_WIDTH + 4) * zoom) }}
-    >
+    <div className="vruler-bar" ref={barRef} style={{ top, width: vrulerBarWidth(zoom) }}>
       <div className="vruler-zoom" style={{ zoom }}>
         {pageTop !== null && (
           <div

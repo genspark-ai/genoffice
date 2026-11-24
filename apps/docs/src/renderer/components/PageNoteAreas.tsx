@@ -11,6 +11,7 @@ import {
 import { HyphenatedText } from './HyphenatedText'
 
 function NoteRow({
+  kind,
   marker,
   note,
   editTip,
@@ -18,6 +19,7 @@ function NoteRow({
   onEdit,
   onDelete,
 }: {
+  kind: 'footnote' | 'endnote'
   marker: string
   note: NoteInfo
   editTip: string
@@ -32,7 +34,12 @@ function NoteRow({
     if (hyphenation && rowRef.current) enforceStaticLineRules(rowRef.current)
   }, [hyphenation, note.text])
   return (
-    <div ref={rowRef} className={hyphenation ? `page-note ${STATIC_HYPH_CLASS}` : 'page-note'}>
+    <div
+      ref={rowRef}
+      className={hyphenation ? `page-note ${STATIC_HYPH_CLASS}` : 'page-note'}
+      data-note-row={kind}
+      data-note-id={note.id}
+    >
       {!note.noRefMark && <sup>{marker}</sup>}
       <span className="page-note-text">
         {pieces ? <HyphenatedText pieces={pieces[0]} /> : note.text}
@@ -83,6 +90,7 @@ export function PageFootnotes({
       {shown.map((n) => (
         <NoteRow
           key={`f${n.id}`}
+          kind="footnote"
           marker={noteMarkText(
             'footnote',
             numberOf?.(n, notes.indexOf(n)) ?? notes.indexOf(n) + 1,
@@ -131,6 +139,7 @@ export function PageEndnotes({
       {notes.map((n, i) => (
         <NoteRow
           key={`e${n.id}`}
+          kind="endnote"
           marker={noteMarkText('endnote', numberOf?.(n, i) ?? i + 1, fmtOf?.(n))}
           note={n}
           editTip={t('appEditEndnote')}

@@ -22,6 +22,8 @@ export function applyTocPageDisplays(
   tr: Transaction,
   headings: HeadingRef[],
   displays: Array<string | undefined>,
+  /** where the lines of locked tables stand: they keep the page they show */
+  locked?: ReadonlySet<number>,
 ): boolean {
   const pagesOfTitle = new Map<string, Array<string | undefined>>()
   headings.forEach((h, i) => {
@@ -51,7 +53,7 @@ export function applyTocPageDisplays(
     const nth = seen.get(key) ?? 0
     seen.set(key, nth + 1)
     const right = list[Math.min(nth, list.length - 1)]
-    if (right === undefined || (field.right ?? '') === right) return
+    if (right === undefined || (field.right ?? '') === right || locked?.has(offset)) return
     tr.setNodeMarkup(offset, undefined, {
       ...node.attrs,
       fieldDisplay: { ...field, right },

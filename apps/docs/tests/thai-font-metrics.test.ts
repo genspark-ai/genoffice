@@ -35,6 +35,21 @@ describe('GenOffice Cordia / Sarabun (Word Thai metrics)', () => {
     }
   })
 
+  it('maps the legacy Thai forms of U+F700-F71A to glyphs', () => {
+    for (const font of [cordia, cordiaBold, sarabun, sarabunBold]) {
+      for (let cp = 0xf700; cp <= 0xf71a; cp++) {
+        expect(font.cmap.get(cp), `U+${cp.toString(16)}`).toBeDefined()
+      }
+      // low tone marks are the default forms; the shifted ones are variants
+      for (let i = 0; i < 5; i++) {
+        expect(font.cmap.get(0xf70a + i)).toBe(font.cmap.get(0x0e48 + i))
+        expect(font.cmap.get(0xf705 + i)).not.toBe(font.cmap.get(0x0e48 + i))
+      }
+      expect(advanceEm(font, 0xf702)).toBe(0)
+      expect(advanceEm(font, 0xf700)).toBeGreaterThan(0.3)
+    }
+  })
+
   it('Thai letters match TH SarabunPSK', () => {
     expect(advanceEm(sarabun, 0x0e01)).toBeCloseTo(0.3859, 3)
     expect(advanceEm(sarabun, 0x0e32)).toBeCloseTo(0.3161, 3)

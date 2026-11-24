@@ -16,6 +16,9 @@ import {
 } from '../src/renderer/commands/menu-commands'
 import { setActiveSubEditor } from '../src/renderer/editor/active-editor'
 import { editorExtensions } from '../src/renderer/editor/extensions'
+import { grammarState, setGrammarFindings } from '../src/renderer/editor/grammar-marks'
+import { ignoredOnce } from '../src/renderer/editor/spell-menu'
+import { autocorrectLists } from '../src/renderer/autocorrect-pref'
 import { hfHasPageField } from '../src/renderer/editor/hf-dom'
 import { mountHfEditor } from '../src/renderer/editor/hf-editor'
 
@@ -58,6 +61,7 @@ function makeHost(over: Partial<CommandHost> = {}): CommandHost {
     listStyleNum: vi.fn(() => ({ numId: '11', kind: 'ordered' as const })),
     openListDialog: vi.fn(),
     addListStyle: vi.fn(),
+    modifyListStyle: vi.fn(),
     deleteListStyle: vi.fn(),
     applyStyle: vi.fn(),
     aiPreset: vi.fn(),
@@ -65,7 +69,9 @@ function makeHost(over: Partial<CommandHost> = {}): CommandHost {
     openChartDialog: vi.fn(),
     openTableDialog: vi.fn(),
     findStep: vi.fn(),
+    pageLayout: vi.fn(() => null),
     openMailMerge: vi.fn(),
+    labelMainDocument: false,
     pagesOf: vi.fn(() => null),
     checkSpelling: vi.fn(),
     thesaurus: vi.fn(),
@@ -79,6 +85,7 @@ function makeHost(over: Partial<CommandHost> = {}): CommandHost {
     moveFile: vi.fn(),
     toggleReadOnlyRecommended: vi.fn(),
     editNote: vi.fn(),
+    convertNote: vi.fn(),
     noNotes: vi.fn(),
     openTabsDialog: vi.fn(),
     openPhoneticGuide: vi.fn(),
@@ -88,6 +95,10 @@ function makeHost(over: Partial<CommandHost> = {}): CommandHost {
     openFitText: vi.fn(),
     openMarkCitation: vi.fn(),
     openMarkIndexEntry: vi.fn(),
+    openMarkTocEntry: vi.fn(),
+    nextMisspelling: vi.fn(),
+    showMergeFields: vi.fn(),
+    copyTextPrompt: vi.fn(),
     autoMarkIndex: vi.fn(),
     setIndexSection: vi.fn(),
     openAutoText: vi.fn(),
@@ -102,7 +113,7 @@ function makeHost(over: Partial<CommandHost> = {}): CommandHost {
     selectChartData: vi.fn(),
     showObjectFormatTab: vi.fn(),
     citationHeading: vi.fn((n: number) => `Category ${n}`),
-    toggleAsianLayout: vi.fn(),
+    openAsianLayout: vi.fn(),
     openPasteSpecial: vi.fn(),
     openPictureDialog: vi.fn(),
     pickImage: vi.fn(async () => null),
@@ -147,22 +158,39 @@ function makeHost(over: Partial<CommandHost> = {}): CommandHost {
       newWindow: vi.fn(),
       arrangeAll: vi.fn(),
       mergeWindows: vi.fn(),
+      switchWindow: vi.fn(),
+      closePane: vi.fn(),
     },
     design: {
-      setThemeFonts: vi.fn(),
-      setThemeColors: vi.fn(),
+      setTheme: vi.fn(),
       setPageColor: vi.fn(),
       setWatermark: vi.fn(),
       setParagraphSpacing: vi.fn(),
+      applyStyleSet: vi.fn(),
+      resetStyleSet: vi.fn(),
+      saveStyleSet: vi.fn(),
+      deleteStyleSet: vi.fn(),
+      savedTheme: vi.fn(),
+      openedTheme: vi.fn(),
+      browseTheme: vi.fn(),
+      saveTheme: vi.fn(),
+      deleteTheme: vi.fn(),
     },
     review: {
       revisionDisplay: 'all',
       toggleSpellcheck: vi.fn(),
       resetIgnoredWords: vi.fn(),
+      toggleGrammarMarks: vi.fn(),
       deleteComment: vi.fn(),
       openHighlightChanges: vi.fn(),
       resolveComment: vi.fn(),
+      reopenComment: vi.fn(),
       replyToComment: vi.fn(),
+      editComment: vi.fn(),
+      replaceMisspelling: vi.fn(),
+      ignoreSpelling: vi.fn(),
+      learnSpelling: vi.fn(),
+      respell: vi.fn(),
       deleteAllComments: vi.fn(),
       gotoComment: vi.fn(),
       toggleComments: vi.fn(),
@@ -186,6 +214,7 @@ function makeHost(over: Partial<CommandHost> = {}): CommandHost {
     setSectionStart: vi.fn(),
     insertSectionBreak: vi.fn(),
     insertImage: vi.fn(),
+    openLinks: vi.fn(),
     insertPageBreak: vi.fn(),
     insertBlankPage: vi.fn(),
     newComment: vi.fn(),
@@ -219,6 +248,7 @@ const ROUTES: [ActionCommandId, string | undefined, keyof CommandHost, unknown[]
   ['list-dialog', 'number', 'openListDialog', ['number', undefined]],
   ['list-dialog', 'bullet#2', 'openListDialog', ['bullet', 2]],
   ['list-dialog', 'style', 'openListDialog', ['style', undefined]],
+  ['list-dialog', 'styleModify#1ai', 'openListDialog', ['styleModify', undefined, '1ai']],
   ['ai-preset', 'Summarize this', 'aiPreset', ['Summarize this']],
   ['styles-pane', undefined, 'toggleStylesPane', []],
   ['font-dialog', undefined, 'openDialog', ['font']],
@@ -246,6 +276,7 @@ const EDITOR_ROUTES: [ActionCommandId, keyof CommandHost, unknown[]][] = [
   ['insert-link', 'openDialog', ['link']],
   ['insert-equation', 'openDialog', ['equation']],
   ['insert-image', 'insertImage', []],
+  ['edit-links', 'openLinks', []],
   ['insert-page-break', 'insertPageBreak', []],
   ['insert-blank-page', 'insertBlankPage', []],
   ['insert-chart', 'openChartDialog', [undefined]],
@@ -329,6 +360,90 @@ describe('menu command handlers', () => {
       runMenuCommand(host, mark)
       expect(editor.isActive(mark)).toBe(true)
     }
+    editor.destroy()
+  })
+
+  it('the grammar commands of the right-click menu replace, ignore and open the dialog at the finding', () => {
+    const editor = makeEditor()
+    const finding = {
+      id: 'g-test',
+      from: 1,
+      to: 6,
+      quote: 'plain',
+      message: 'wrong',
+      suggestions: ['simple'],
+      key: 'k',
+    }
+    setGrammarFindings(editor, [finding])
+    const host = makeHost({ editor })
+    runMenuCommand(host, 'grammar-dialog', 'g-test')
+    expect(host.checkSpelling).toHaveBeenLastCalledWith('g-test')
+    runMenuCommand(host, 'grammar-replace', JSON.stringify({ id: 'g-test', text: 'simple' }))
+    expect(editor.getText()).toBe('simple paragraph')
+    expect(grammarState(editor.state)!.findings).toHaveLength(0)
+    editor.commands.undo()
+    expect(editor.getText()).toBe('plain paragraph')
+
+    setGrammarFindings(editor, [finding])
+    runMenuCommand(host, 'grammar-ignore', 'g-test')
+    expect(grammarState(editor.state)!.findings).toHaveLength(0)
+    expect(grammarState(editor.state)!.ignored.has('k')).toBe(true)
+    expect(editor.getText()).toBe('plain paragraph')
+    editor.destroy()
+  })
+
+  it('a synonym pick replaces the selected word and keeps its formatting', () => {
+    const editor = makeEditor()
+    editor.chain().setTextSelection({ from: 1, to: 6 }).setMark('bold').run()
+    runMenuCommand(makeHost({ editor }), 'synonym-replace', 'simple')
+    expect(editor.getText()).toBe('simple paragraph')
+    expect(editor.state.doc.nodeAt(1)?.marks.map((m) => m.type.name)).toContain('bold')
+    expect(editor.state.doc.nodeAt(8)?.marks.map((m) => m.type.name)).not.toContain('bold')
+    // a bare caret stands for the word it is in
+    editor.commands.setTextSelection(3)
+    runMenuCommand(makeHost({ editor }), 'synonym-replace', 'plain')
+    expect(editor.getText()).toBe('plain paragraph')
+    expect(editor.state.doc.nodeAt(1)?.marks.map((m) => m.type.name)).toContain('bold')
+    // Repeat puts the same word on the next selection
+    editor.commands.setTextSelection({ from: 7, to: 16 })
+    runMenuCommand(makeHost({ editor }), 'repeat')
+    expect(editor.getText()).toBe('plain plain')
+    editor.destroy()
+  })
+
+  it('the character effects Word for Mac has keys for toggle on the selection', () => {
+    const editor = makeEditor()
+    editor.commands.selectAll()
+    const host = makeHost({ editor })
+    const style = () => editor.getAttributes('docTextStyle')
+    runMenuCommand(host, 'all-caps')
+    expect(style().caps).toBe('all')
+    runMenuCommand(host, 'small-caps')
+    expect(style().caps).toBe('small')
+    runMenuCommand(host, 'small-caps')
+    expect(style().caps).toBe('none')
+    runMenuCommand(host, 'hidden-text')
+    expect(style()).toMatchObject({ vanish: true, vanishOwn: true })
+    runMenuCommand(host, 'hidden-text')
+    expect(style()).toMatchObject({ vanish: false, vanishOwn: false })
+    runMenuCommand(host, 'double-underline')
+    expect(editor.getAttributes('underline').line).toBe('double')
+    runMenuCommand(host, 'word-underline')
+    expect(editor.getAttributes('underline').line).toBe('words')
+    runMenuCommand(host, 'word-underline')
+    expect(editor.isActive('underline')).toBe(false)
+    editor.destroy()
+  })
+
+  it('the bullet key applies the list and never takes it off', () => {
+    const editor = makeEditor()
+    const host = makeHost({ editor, listNumId: () => '7' })
+    runMenuCommand(host, 'bullets', 'on')
+    expect(editor.isActive('docListItem', { kind: 'bullet' })).toBe(true)
+    runMenuCommand(host, 'bullets', 'on')
+    expect(editor.isActive('docListItem', { kind: 'bullet' })).toBe(true)
+    runMenuCommand(host, 'bullets')
+    expect(editor.isActive('docListItem')).toBe(false)
     editor.destroy()
   })
 
@@ -834,6 +949,14 @@ describe('menu command handlers', () => {
     expect(host.openMailMerge).toHaveBeenLastCalledWith('envelopes')
     runMenuCommand(host, 'tools-labels')
     expect(host.openMailMerge).toHaveBeenLastCalledWith('labels')
+    runMenuCommand(host, 'mailings-finish-merge')
+    expect(host.openMailMerge).toHaveBeenLastCalledWith('single')
+    // a file that says it is a labels main document merges as labels
+    const labels = makeHost({ labelMainDocument: true })
+    runMenuCommand(labels, 'mailings-start')
+    expect(labels.openMailMerge).toHaveBeenLastCalledWith('labels')
+    runMenuCommand(labels, 'mailings-finish-merge')
+    expect(labels.openMailMerge).toHaveBeenLastCalledWith('labels')
     const closed = makeHost({ hasDoc: false })
     runMenuCommand(closed, 'tools-labels')
     expect(closed.openMailMerge).not.toHaveBeenCalled()
@@ -868,13 +991,13 @@ describe('menu command handlers', () => {
     runMenuCommand(host, 'format-fit-text')
     expect(host.openFitText).toHaveBeenCalledWith(editor)
     runMenuCommand(host, 'format-two-lines-in-one')
-    expect(host.toggleAsianLayout).toHaveBeenLastCalledWith(editor, 'combine')
+    expect(host.openAsianLayout).toHaveBeenLastCalledWith(editor, 'combine')
     runMenuCommand(host, 'format-horizontal-in-vertical')
-    expect(host.toggleAsianLayout).toHaveBeenLastCalledWith(editor, 'vert')
+    expect(host.openAsianLayout).toHaveBeenLastCalledWith(editor, 'vert')
     runMenuCommand(closed, 'format-fit-text')
     runMenuCommand(closed, 'format-two-lines-in-one')
     expect(closed.openFitText).not.toHaveBeenCalled()
-    expect(closed.toggleAsianLayout).not.toHaveBeenCalled()
+    expect(closed.openAsianLayout).not.toHaveBeenCalled()
     runMenuCommand(closed, 'format-phonetic-guide')
     expect(closed.openPhoneticGuide).not.toHaveBeenCalled()
     runMenuCommand(host, 'format-enclose-characters')
@@ -998,6 +1121,8 @@ describe('menu command handlers', () => {
     expect(host.view.toggleRibbon).toHaveBeenCalledTimes(1)
     runMenuCommand(host, 'tools-reset-ignored')
     expect(host.review.resetIgnoredWords).toHaveBeenCalledTimes(1)
+    runMenuCommand(host, 'tools-hide-grammar')
+    expect(host.review.toggleGrammarMarks).toHaveBeenCalledTimes(1)
     runMenuCommand(host, 'file-properties')
     expect(host.openDialog).toHaveBeenLastCalledWith('properties')
     runMenuCommand(host, 'file-always-read-only')
@@ -1125,6 +1250,100 @@ describe('menu command handlers', () => {
     editor.destroy()
   })
 
+  it('the right-click spelling items replace, ignore, learn and pair the word they were opened on', () => {
+    const editor = makeEditor()
+    editor.commands.setContent({
+      type: 'doc',
+      content: [{ type: 'docParagraph', content: [{ type: 'text', text: 'a mispeled word' }] }],
+    })
+    const host = makeHost({ editor })
+    const pick = JSON.stringify({ pos: 3, word: 'mispeled', to: 'misspelled', marked: false })
+    runMenuCommand(host, 'spell-replace', pick)
+    expect(host.review.replaceMisspelling).toHaveBeenLastCalledWith(
+      3,
+      'mispeled',
+      'misspelled',
+      false,
+    )
+
+    runMenuCommand(host, 'spell-ignore-all', 'mispeled')
+    expect(host.review.ignoreSpelling).toHaveBeenLastCalledWith('mispeled')
+    runMenuCommand(host, 'spell-add-word', 'mispeled')
+    expect(host.review.learnSpelling).toHaveBeenLastCalledWith('mispeled')
+
+    // Ignore Once: this occurrence only, and the text is looked at again
+    runMenuCommand(host, 'spell-ignore-once', JSON.stringify({ pos: 3, word: 'mispeled' }))
+    expect(ignoredOnce(editor.state, 3, 11)).toBe(true)
+    expect(host.review.respell).toHaveBeenCalledTimes(1)
+    // a word that is no longer there is left alone
+    runMenuCommand(host, 'spell-ignore-once', JSON.stringify({ pos: 13, word: 'mispeled' }))
+    expect(host.review.respell).toHaveBeenCalledTimes(1)
+
+    // AutoCorrect: the pair is in the replace table, and the word is corrected
+    localStorage.clear()
+    runMenuCommand(host, 'spell-autocorrect', pick)
+    expect(autocorrectLists().replace).toContainEqual(['mispeled', 'misspelled'])
+    expect(host.review.replaceMisspelling).toHaveBeenCalledTimes(2)
+    localStorage.clear()
+
+    // Spelling… starts the check at the word
+    runMenuCommand(host, 'tools-spelling', '3')
+    expect(editor.state.selection.from).toBe(3)
+    expect(host.checkSpelling).toHaveBeenCalledTimes(1)
+
+    // nothing that changes the text runs on a read-only document, and a broken payload is dropped
+    editor.setEditable(false)
+    runMenuCommand(host, 'spell-replace', pick)
+    runMenuCommand(host, 'spell-autocorrect', pick)
+    editor.setEditable(true)
+    runMenuCommand(host, 'spell-replace', 'not json')
+    expect(host.review.replaceMisspelling).toHaveBeenCalledTimes(2)
+    expect(autocorrectLists().replace).not.toContainEqual(['mispeled', 'misspelled'])
+    editor.destroy()
+  })
+
+  it('the right-click comment and note items reach the thread or note they name', () => {
+    const editor = makeEditor()
+    editor.commands.setContent({
+      type: 'doc',
+      content: [
+        {
+          type: 'docParagraph',
+          content: [
+            { type: 'text', text: 'one' },
+            { type: 'docNoteRef', attrs: { kind: 'footnote', id: '2', num: 1 } },
+            { type: 'text', text: ' two' },
+            { type: 'docNoteRef', attrs: { kind: 'endnote', id: '2', num: 1 } },
+          ],
+        },
+      ],
+    })
+    const host = makeHost({ editor })
+    runMenuCommand(host, 'comment-edit', 'c7')
+    expect(host.review.editComment).toHaveBeenLastCalledWith('c7')
+    runMenuCommand(host, 'comment-reopen', 'c7')
+    expect(host.review.reopenComment).toHaveBeenLastCalledWith('c7')
+    runMenuCommand(host, 'comment-reopen')
+    expect(host.review.reopenComment).toHaveBeenCalledTimes(1)
+
+    // from the note's text to its mark in the body: the mark is selected
+    runMenuCommand(host, 'note-goto', 'endnote:ref:2')
+    const { selection } = editor.state
+    expect(selection instanceof NodeSelection && selection.node.attrs.kind).toBe('endnote')
+    expect(selection.from).toBe(9)
+    // from the mark to the note's text
+    runMenuCommand(host, 'note-goto', 'footnote:text:2')
+    expect(host.editNote).toHaveBeenLastCalledWith('footnote', '2')
+
+    runMenuCommand(host, 'note-convert', 'footnote:2')
+    expect(host.convertNote).toHaveBeenLastCalledWith('footnote', '2')
+    runMenuCommand(host, 'note-convert', 'sidenote:2')
+    editor.setEditable(false)
+    runMenuCommand(host, 'note-convert', 'endnote:2')
+    expect(host.convertNote).toHaveBeenCalledTimes(1)
+    editor.destroy()
+  })
+
   it('View > Footnotes opens the note after the caret, else the first, and says when there is none', () => {
     const editor = makeEditor()
     const host = makeHost({ editor })
@@ -1198,7 +1417,7 @@ describe('menu command handlers', () => {
     editor.destroy()
   })
 
-  it('an index from the dialog gets a section for its columns; the ribbon index and an unchanged count do not', () => {
+  it('an index gets a section for its columns, from the ribbon as from the dialog; one column and an unchanged count do not', () => {
     const editor = makeEditor()
     const host = makeHost({ editor })
     const mark = (term: string) => ({ type: 'docXeMark', attrs: { term } })
@@ -1216,15 +1435,28 @@ describe('menu command handlers', () => {
     const section = { columns: 1, colEqualWidth: false } as never
 
     reset()
-    runMenuCommand(host, 'insert-index')
-    reset()
     runMenuCommand(host, 'insert-index', spec(''))
     expect(host.setIndexSection).not.toHaveBeenCalled()
+
+    // the ribbon's button is the dialog's OK on its defaults: two columns in a section of their own
+    reset()
+    runMenuCommand(host, 'insert-index')
+    expect(host.setIndexSection).toHaveBeenCalledTimes(1)
+    let [nth, change, wrap] = vi.mocked(host.setIndexSection).mock.calls[0]!
+    expect([nth, wrap]).toEqual([0, true])
+    expect(change(section)).toMatchObject({ columns: 2, colEqualWidth: true })
+    const instrs: string[] = []
+    editor.state.doc.forEach((node) => {
+      const m = /<w:instrText[^>]*>([^<]*INDEX[^<]*)</.exec(String(node.attrs.genXml ?? ''))
+      if (m) instrs.push(m[1])
+    })
+    expect(instrs).toEqual([' INDEX \\c "2" '])
+    vi.mocked(host.setIndexSection).mockClear()
 
     reset()
     runMenuCommand(host, 'insert-index', spec('\\c "3" '))
     expect(host.setIndexSection).toHaveBeenCalledTimes(1)
-    let [nth, change, wrap] = vi.mocked(host.setIndexSection).mock.calls[0]!
+    ;[nth, change, wrap] = vi.mocked(host.setIndexSection).mock.calls[0]!
     expect([nth, wrap]).toEqual([0, true])
     expect(change(section)).toMatchObject({ columns: 3, colEqualWidth: true })
 
@@ -1368,6 +1600,31 @@ describe('menu command handlers', () => {
     const closed = makeHost({ editor, hasDoc: false })
     runMenuCommand(closed, 'design-paragraph-spacing', 'double')
     expect(closed.design.setParagraphSpacing).not.toHaveBeenCalled()
+    editor.destroy()
+  })
+
+  it('a style set pick hands a known set to the design host', () => {
+    const editor = makeEditor()
+    const host = makeHost({ editor })
+    runMenuCommand(host, 'design-style-set', 'elegant')
+    expect(host.design.applyStyleSet).toHaveBeenLastCalledWith('elegant')
+    runMenuCommand(host, 'design-style-set', 'ornate')
+    expect(host.design.applyStyleSet).toHaveBeenCalledTimes(1)
+    runMenuCommand(host, 'design-style-set', 'custom:set3')
+    expect(host.design.applyStyleSet).toHaveBeenLastCalledWith({ custom: 'set3' })
+    runMenuCommand(host, 'design-style-set-reset')
+    expect(host.design.resetStyleSet).toHaveBeenCalledTimes(1)
+    // Save asks for a name first; the dialog runs the command again with it
+    runMenuCommand(host, 'design-style-set-save')
+    expect(host.openDialog).toHaveBeenLastCalledWith('saveStyleSet')
+    expect(host.design.saveStyleSet).not.toHaveBeenCalled()
+    runMenuCommand(host, 'design-style-set-save', ' Mine ')
+    expect(host.design.saveStyleSet).toHaveBeenLastCalledWith('Mine')
+    runMenuCommand(host, 'design-style-set-delete', 'set3')
+    expect(host.design.deleteStyleSet).toHaveBeenLastCalledWith('set3')
+    const closed = makeHost({ editor, hasDoc: false })
+    runMenuCommand(closed, 'design-style-set', 'elegant')
+    expect(closed.design.applyStyleSet).not.toHaveBeenCalled()
     editor.destroy()
   })
 
@@ -1533,8 +1790,48 @@ describe('menu command handlers', () => {
     const host = makeHost({ editor })
     const fonts = { major: 'Georgia', minor: 'Verdana' }
     runMenuCommand(host, 'theme-fonts', JSON.stringify({ fonts }))
-    expect(host.design.setThemeFonts).toHaveBeenCalledWith(fonts)
-    expect(host.design.setThemeColors).not.toHaveBeenCalled()
+    expect(host.design.setTheme).toHaveBeenLastCalledWith({ fonts })
+    // a pick from Word's lists goes by id: a theme carries all three parts, a scheme its own
+    runMenuCommand(host, 'document-theme', 'facet')
+    const facet = vi.mocked(host.design.setTheme).mock.lastCall![0]
+    expect(facet.fonts?.major).toBe('Trebuchet MS')
+    expect(facet.colors?.accent1).toBe('90C226')
+    expect(facet.format).toMatchObject({ name: 'Facet' })
+    runMenuCommand(host, 'theme-colors', 'blueWarm')
+    expect(vi.mocked(host.design.setTheme).mock.lastCall![0]).toEqual({
+      colors: expect.objectContaining({ name: 'Blue Warm', accent1: '4A66AC' }),
+    })
+    runMenuCommand(host, 'theme-fonts', 'georgia')
+    expect(vi.mocked(host.design.setTheme).mock.lastCall![0]).toEqual({
+      fonts: expect.objectContaining({ major: 'Georgia', minor: 'Georgia' }),
+    })
+    runMenuCommand(host, 'document-theme', 'no-such-theme')
+    expect(host.design.setTheme).toHaveBeenCalledTimes(4)
+    // a theme file of the themes folder goes by its file name; one that is gone picks nothing
+    const mine = { fonts, colors: { accent1: '112233' }, format: { name: 'Mine', xml: '<a/>' } }
+    vi.mocked(host.design.savedTheme).mockImplementation((name) =>
+      name === 'Mine.thmx' ? mine : undefined,
+    )
+    runMenuCommand(host, 'document-theme', 'custom:Mine.thmx')
+    expect(host.design.setTheme).toHaveBeenLastCalledWith(mine)
+    runMenuCommand(host, 'document-theme', 'custom:Gone.thmx')
+    expect(host.design.setTheme).toHaveBeenCalledTimes(5)
+    // a theme read from a file comes as its own values, format scheme included
+    runMenuCommand(host, 'document-theme', JSON.stringify(mine))
+    expect(host.design.setTheme).toHaveBeenLastCalledWith(mine)
+    // Reset puts back the theme from when the document was opened, once that is known
+    runMenuCommand(host, 'theme-reset')
+    expect(host.design.setTheme).toHaveBeenCalledTimes(6)
+    vi.mocked(host.design.openedTheme).mockReturnValue({ fonts })
+    runMenuCommand(host, 'theme-reset')
+    expect(host.design.setTheme).toHaveBeenLastCalledWith({ fonts })
+    runMenuCommand(host, 'theme-browse')
+    expect(host.design.browseTheme).toHaveBeenCalledTimes(1)
+    runMenuCommand(host, 'theme-save-current')
+    expect(host.design.saveTheme).toHaveBeenCalledTimes(1)
+    runMenuCommand(host, 'theme-custom-delete')
+    runMenuCommand(host, 'theme-custom-delete', 'Mine.thmx')
+    expect(vi.mocked(host.design.deleteTheme).mock.calls).toEqual([['Mine.thmx']])
     runMenuCommand(host, 'page-color', 'FFF2CC')
     runMenuCommand(host, 'page-color', NONE)
     expect(vi.mocked(host.design.setPageColor).mock.calls).toEqual([['FFF2CC'], [null]])
@@ -1828,6 +2125,9 @@ describe('menu command handlers', () => {
     for (const command of [
       'bold',
       'strikethrough',
+      'all-caps',
+      'hidden-text',
+      'double-underline',
       'superscript',
       'align-center',
       'indent-increase',
@@ -2166,6 +2466,87 @@ describe('menu command handlers', () => {
     editor.destroy()
   })
 
+  it('change picture from the icons and from the clipboard put the new bytes on the selected picture', async () => {
+    const png = (pixel: string) => `data:image/png;base64,${pixel}`
+    const old = png('AAAA')
+    const pasted = png(
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==',
+    )
+    const editor = new Editor({
+      element: document.createElement('div'),
+      extensions: editorExtensions,
+      content: {
+        type: 'doc',
+        content: [
+          {
+            type: 'docProtected',
+            attrs: { blockType: 'image', imageDataUrl: old, imageWidthPx: 200, imageHeightPx: 80 },
+          },
+          { type: 'docParagraph', content: [{ type: 'text', text: 'body' }] },
+        ],
+      },
+    })
+    const host = makeHost({ editor })
+    const picture = () => editor.state.doc.child(0).attrs
+    // jsdom loads no images: every picture reads as 40 x 20
+    const RealImage = globalThis.Image
+    class LoadedImage {
+      naturalWidth = 40
+      naturalHeight = 20
+      onload: (() => void) | null = null
+      set src(_url: string) {
+        queueMicrotask(() => this.onload?.())
+      }
+    }
+    vi.stubGlobal('Image', LoadedImage)
+    const settle = () => new Promise((resolve) => setTimeout(resolve, 20))
+
+    // no picture selected: neither asks for anything
+    editor.commands.setTextSelection(editor.state.doc.content.size - 2)
+    runMenuCommand(host, 'picture-replace-icon')
+    expect(host.openDialog).not.toHaveBeenCalledWith('changePictureIcon')
+
+    editor.view.dispatch(editor.state.tr.setSelection(NodeSelection.create(editor.state.doc, 0)))
+    runMenuCommand(host, 'picture-replace-icon')
+    expect(host.openDialog).toHaveBeenLastCalledWith('changePictureIcon')
+
+    // text on the clipboard changes nothing
+    Object.assign(navigator, {
+      clipboard: {
+        read: () =>
+          Promise.resolve([{ types: ['text/plain'], getType: async () => new Blob(['x']) }]),
+      },
+    })
+    runMenuCommand(host, 'picture-replace-clipboard')
+    await settle()
+    expect(picture().imageDataUrl).toBe(old)
+
+    const bytes = Uint8Array.from(atob(pasted.slice(pasted.indexOf(',') + 1)), (ch) =>
+      ch.charCodeAt(0),
+    )
+    const blob = new Blob([bytes], { type: 'image/png' })
+    Object.assign(navigator, {
+      clipboard: {
+        // the bitmap is taken, whatever other picture format is listed before it
+        read: () =>
+          Promise.resolve([
+            {
+              types: ['image/svg+xml', 'image/png'],
+              getType: async (type: string) =>
+                type === 'image/png' ? blob : new Blob(['<svg/>'], { type }),
+            },
+          ]),
+      },
+    })
+    runMenuCommand(host, 'picture-replace-clipboard')
+    await settle()
+    // the width stays, the height follows the new picture
+    expect(picture()).toMatchObject({ imageDataUrl: pasted, imageWidthPx: 200, imageHeightPx: 100 })
+    expect(picture().genImage).toMatchObject({ mime: 'image/png', widthPx: 200, heightPx: 100 })
+    vi.stubGlobal('Image', RealImage)
+    editor.destroy()
+  })
+
   it('wrap reaches a picture in the header, footer or text box that has the focus', () => {
     const picture = {
       type: 'docProtected',
@@ -2258,6 +2639,38 @@ describe('menu command handlers', () => {
     runMenuCommand(host, 'insert-chart-box-whisker')
     expect(host.openChartDialog).toHaveBeenLastCalledWith('boxWhisker')
     editor.destroy()
+  })
+
+  it('a command sent before the editor has read a click finds the selection the page shows', async () => {
+    const element = document.createElement('div')
+    document.body.appendChild(element)
+    const editor = new Editor({
+      element,
+      extensions: editorExtensions,
+      content: {
+        type: 'doc',
+        content: [
+          { type: 'docParagraph', content: [{ type: 'text', text: 'first' }] },
+          { type: 'docParagraph', content: [{ type: 'text', text: 'second' }] },
+        ],
+      },
+    })
+    await vi.waitFor(() => expect(editor.isInitialized).toBe(true))
+    editor.commands.setTextSelection(2)
+    editor.view.focus()
+    const second = editor.view.domAtPos(10)
+    document.getSelection()?.collapse(second.node, second.offset)
+    expect(editor.state.selection.from).toBe(2)
+
+    let seen = -1
+    const host = makeHost({ editor })
+    vi.mocked(host.openDialog).mockImplementation(() => {
+      seen = editor.state.selection.from
+    })
+    runMenuCommand(host, 'shortcuts')
+    expect(seen).toBe(10)
+    editor.destroy()
+    element.remove()
   })
 
   it('a table command outside a table tells the user and opens nothing', () => {

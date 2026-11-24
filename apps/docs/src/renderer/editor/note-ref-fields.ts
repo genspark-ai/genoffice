@@ -2,6 +2,7 @@
 import type { Mark, Node as PmNode } from '@tiptap/pm/model'
 import type { Transaction } from '@tiptap/pm/state'
 import { noteMarkText, type NoteKind } from '../note-format'
+import { isFieldLocked } from './field-codes'
 
 const NOTEREF_INSTR = /^\s*NOTEREF\s+(?:"([^"]+)"|([^\s\\]+))/i
 
@@ -59,26 +60,36 @@ export interface NoteRefWords {
   below: string
 }
 
-/** the result a NOTEREF field at `at` shows now; null when it is not one, or its note is gone */
+/** NOTEREF \\p as Word computes it: the mark, a space, then the position word */
+export const relativeNoteRef = (mark: string, where: string): string => `${mark} ${where}`
+
+/**
+ * The result a NOTEREF field at `at` shows now; null when it is not one, or its note is gone.
+ * Without `words` an above / below field keeps the word it shows (`shown`) and takes the number.
+ */
 export function noteRefFieldText(
   doc: PmNode,
   instr: string,
   at: number,
   words?: NoteRefWords,
+  shown?: string,
 ): string | null {
   const name = noteRefBookmark(instr)
   const target = name === null ? null : noteMarkAtBookmark(doc, name)
   if (!target) return null
-  if (/\\p\b/i.test(instr)) return words ? (target.pos < at ? words.above : words.below) : null
-  return noteMarkOf(target.node)
+  const mark = noteMarkOf(target.node)
+  if (!/\\p\b/i.test(instr)) return mark
+  if (words) return relativeNoteRef(mark, target.pos < at ? words.above : words.below)
+  const word = shown?.slice(shown.indexOf(' ') + 1).trim()
+  return word ? relativeNoteRef(mark, word) : null
 }
 
-/** brings every NOTEREF result in `tr` up to date; without `words` the above / below ones stay. Returns how many changed. */
+/** brings every NOTEREF result in `tr` up to date; without `words` an above / below one keeps its word. Returns how many changed. */
 export function refreshNoteRefFields(tr: Transaction, words?: NoteRefWords): number {
   const jobs: Array<{
     from: number
     to: number
-    text: string
+    instr: string
     marks: readonly Mark[]
     was: string
   }> = []
@@ -86,7 +97,7 @@ export function refreshNoteRefFields(tr: Transaction, words?: NoteRefWords): num
   tr.doc.descendants((node, pos) => {
     if (!node.isText) return true
     const mark = node.marks.find((m) => m.type.name === 'instrField')
-    if (!mark || noteRefBookmark(String(mark.attrs.instr)) === null) {
+    if (!mark || isFieldLocked(mark) || noteRefBookmark(String(mark.attrs.instr)) === null) {
       open = null
       return false
     }
@@ -96,13 +107,10 @@ export function refreshNoteRefFields(tr: Transaction, words?: NoteRefWords): num
       open.job.was += node.text ?? ''
       return false
     }
-    open = null
-    const text = noteRefFieldText(tr.doc, String(mark.attrs.instr), pos, words)
-    if (text === null) return false
     const job = {
       from: pos,
       to: pos + node.nodeSize,
-      text,
+      instr: String(mark.attrs.instr),
       marks: node.marks,
       was: node.text ?? '',
     }
@@ -110,7 +118,10 @@ export function refreshNoteRefFields(tr: Transaction, words?: NoteRefWords): num
     open = { mark, job }
     return false
   })
-  const changed = jobs.filter((j) => j.was !== j.text)
+  const changed = jobs.flatMap((j) => {
+    const text = noteRefFieldText(tr.doc, j.instr, j.from, words, j.was)
+    return text === null || text === j.was ? [] : [{ ...j, text }]
+  })
   for (const j of changed.reverse())
     tr.replaceWith(j.from, j.to, tr.doc.type.schema.text(j.text, [...j.marks]))
   return changed.length

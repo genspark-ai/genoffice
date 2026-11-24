@@ -56,18 +56,6 @@ export function defaultMeasurementUnit(locale: string): MeasurementUnit {
   return /^en\b/i.test(locale) ? 'in' : 'cm'
 }
 
-/**
- * Default for an ISO 3166 region code, e.g. the operating system's region
- * (Electron's app.getLocaleCountryCode()). That beats the UI language: an
- * English UI in Indonesia is still a metric user. null when the code is unusable.
- */
-export function measurementUnitForRegion(
-  region: string | null | undefined,
-): MeasurementUnit | null {
-  if (!region || !/^[A-Za-z]{2}$/.test(region)) return null
-  return INCH_REGIONS.has(region.toUpperCase()) ? 'in' : 'cm'
-}
-
 export const twipsPerUnit = (unit: MeasurementUnit): number => TWIPS_PER[unit]
 
 export function toUnit(twips: number, unit: MeasurementUnit): number {
@@ -172,7 +160,7 @@ export const twipsToEmu = (twips: number): number => Math.round(twips * 635)
 
 /**
  * The app-wide setting as the shell hands it out: the unit in effect, and
- * whether the user picked it (false = following the system region).
+ * whether the user picked it (false = following the UI language).
  */
 export interface MeasurementUnitState {
   unit: MeasurementUnit

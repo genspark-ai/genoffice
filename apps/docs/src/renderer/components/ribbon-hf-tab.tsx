@@ -42,6 +42,7 @@ export type HfAction =
   | { type: 'field'; instr: 'DATE' | 'TIME' }
   | { type: 'picture' }
   | { type: 'linkToPrevious'; on: boolean }
+  | { type: 'toggleLinkToPrevious' }
   | { type: 'distance'; kind: 'header' | 'footer'; twips: number }
   | { type: 'titlePg'; on: boolean }
   | { type: 'evenOddHf'; on: boolean }

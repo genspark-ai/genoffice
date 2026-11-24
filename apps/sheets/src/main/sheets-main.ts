@@ -3114,6 +3114,14 @@ export function registerSheetsIpc(): void {
   // shared with the other editor modules — last (identical) registration wins
   ipcMain.removeHandler('app:get-language')
   ipcMain.handle('app:get-language', () => getUiLang())
+  // number separators follow the OS region like Excel; a headless export is
+  // read by scripts, so it keeps canonical notation on every machine
+  ipcMain.removeHandler('sheets:get-number-locale')
+  ipcMain.handle(
+    'sheets:get-number-locale',
+    () =>
+      process.env.GENOFFICE_NUMBER_LOCALE ?? (isHeadlessMode() ? 'en-US' : app.getSystemLocale()),
+  )
 
   /** returns true once when shell opened this tab for a new blank workbook */
   ipcMain.handle('sheets:consume-new-blank', () => {

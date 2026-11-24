@@ -6,6 +6,7 @@ import {
   maxDrawingId,
   splitGroupParagraph,
   type Block,
+  type GroupCorner,
   type TextboxDisplay,
   type UngroupedMember,
 } from '@genoffice/docx-engine'
@@ -32,6 +33,7 @@ import {
   type GroupMemberSource,
 } from './object-multi-select'
 import { textboxBandBottom } from './obstacle-plan'
+import { isStraightLineKind } from './shape-svg'
 
 const EMU_PER_PX = 9525
 
@@ -58,14 +60,6 @@ export function canGroupObjects(state: EditorState): boolean {
   if (selected.length < 2 || !selected.every((pos) => canJoinGroup(state, pos))) return false
   const ids = new Set(selected.map((pos) => state.doc.nodeAt(pos)?.attrs.groupId ?? null))
   return ids.size > 1 || ids.has(null)
-}
-
-/** Ungroup: a group among the selected objects. */
-export function canUngroupObjects(state: EditorState): boolean {
-  return selectedObjectPositions(state).some((pos) => {
-    const node = state.doc.nodeAt(pos)
-    return !!node?.attrs.groupId || isFileGroupNode(node)
-  })
 }
 
 /** each member's box inside the bounds of them all, document px; null when one is not laid out */
@@ -144,15 +138,20 @@ function fileGroupMembers(
   node: PmNode,
   source: GroupMemberSource,
   nextId: number,
+  corner?: GroupCorner,
 ): PmNode[] | null {
-  const split = splitGroupParagraph(source.xml, 0, nextId)
+  const split = splitGroupParagraph(source.xml, 0, nextId, corner)
   const shown = node.attrs.textboxes as TextboxDisplay[]
   if (!split || shown.length !== source.boxes.length) return null
   // text flowing above and below one band cannot be kept in place around separate drawings
   if (shown.some((box) => textboxBandBottom(box) > 0)) return null
-  // how far the group was moved since it was read
-  const movedX = Number(node.attrs.imageOffsetXEmu ?? source.xEmu) - source.xEmu
-  const movedY = Number(node.attrs.imageOffsetYEmu ?? source.yEmu) - source.yEmu
+  // how far the group was moved since it was read; a corner taken from the page is where it is now
+  const movedX = split.fromCorner.h
+    ? 0
+    : Number(node.attrs.imageOffsetXEmu ?? source.xEmu) - source.xEmu
+  const movedY = split.fromCorner.v
+    ? 0
+    : Number(node.attrs.imageOffsetYEmu ?? source.yEmu) - source.yEmu
   const out: PmNode[] = []
   for (const [index, member] of split.members.entries()) {
     const own = source.boxes.flatMap((box, i) => (box.groupPath?.[0] === index ? [i] : []))
@@ -194,6 +193,106 @@ function fileGroupMembers(
   return out
 }
 
+/** stands for the corner while only asking whether a group placed by alignment can be taken apart */
+const ANY_CORNER: GroupCorner = { xEmu: 0, yEmu: 0 }
+
+/**
+ * The children whose drawn box says where the group's corner is, with the
+ * index of that box: one box of its own, and not a line, whose box is a band
+ * around its stroke.
+ */
+function cornerMembers(
+  members: readonly UngroupedMember[],
+  boxes: readonly TextboxDisplay[],
+): Array<{ member: UngroupedMember; at: number }> {
+  return members.flatMap((member, index) => {
+    const own = boxes.flatMap((box, i) => (box.groupPath?.[0] === index ? [i] : []))
+    return member.kind === 'group' || own.length !== 1 || isStraightLineKind(boxes[own[0]].prst)
+      ? []
+      : [{ member, at: own[0] }]
+  })
+}
+
+/**
+ * Where the page drew the corner of the file group at `pos`, from its
+ * paragraph's box: what a group placed by alignment has in place of offsets.
+ * Read off one child's drawn box; a turned box is known by its centre only.
+ */
+function drawnGroupCorner(
+  view: EditorView,
+  pos: number,
+  source: GroupMemberSource,
+): GroupCorner | null {
+  const probe = splitGroupParagraph(source.xml, 0, 1, ANY_CORNER)
+  const dom = view.nodeDOM(pos)
+  if (!probe || !(dom instanceof HTMLElement)) return null
+  const drawn = Array.from(dom.querySelectorAll<HTMLElement>('.doc-textbox')).filter(
+    (el) => !el.parentElement?.closest('.doc-textbox'),
+  )
+  if (drawn.length !== source.boxes.length) return null
+  const frame = dom.getBoundingClientRect()
+  const zoom = pageZoom()
+  let turned: GroupCorner | null = null
+  for (const { member, at } of cornerMembers(probe.members, source.boxes)) {
+    const rect = drawn[at].getBoundingClientRect()
+    if (!source.boxes[at].rotDeg) {
+      return {
+        xEmu: Math.round(((rect.left - frame.left) / zoom) * EMU_PER_PX - member.box.x),
+        yEmu: Math.round(((rect.top - frame.top) / zoom) * EMU_PER_PX - member.box.y),
+      }
+    }
+    const midX = ((rect.left + rect.right) / 2 - frame.left) / zoom
+    const midY = ((rect.top + rect.bottom) / 2 - frame.top) / zoom
+    turned ??= {
+      xEmu: Math.round(midX * EMU_PER_PX - member.box.x - member.box.cx / 2),
+      yEmu: Math.round(midY * EMU_PER_PX - member.box.y - member.box.cy / 2),
+    }
+  }
+  return turned
+}
+
+/** the children of a group placed by alignment, as far as can be told before its corner is measured */
+function alignedGroupMembers(node: PmNode, source: GroupMemberSource): PmNode[] | null {
+  const probe = splitGroupParagraph(source.xml, 0, 1, ANY_CORNER)
+  // with no child to read the corner off, Ungroup would be offered and do nothing
+  if (!probe || cornerMembers(probe.members, source.boxes).length === 0) return null
+  return fileGroupMembers(node, source, 1, ANY_CORNER)
+}
+
+let fileBlocks: readonly Block[] = []
+
+/** the open file as read: where a file group's XML is found when no caller hands it over */
+export function setGroupFileBlocks(blocks: readonly Block[]): void {
+  fileBlocks = blocks
+}
+
+const splittable = new WeakMap<readonly Block[], WeakMap<PmNode, boolean>>()
+
+/** a file group Ungroup can take apart: not one in line, or with text banded around it */
+function canSplitFileGroup(node: PmNode, blocks: readonly Block[]): boolean {
+  let known = splittable.get(blocks)
+  if (!known) splittable.set(blocks, (known = new WeakMap()))
+  let can = known.get(node)
+  if (can === undefined) {
+    const source = groupSource(node, blocks)
+    can =
+      !!source && (fileGroupMembers(node, source, 1) ?? alignedGroupMembers(node, source)) !== null
+    known.set(node, can)
+  }
+  return can
+}
+
+/** Ungroup: a group among the selected objects that can be taken apart. */
+export function canUngroupObjects(
+  state: EditorState,
+  blocks: readonly Block[] = fileBlocks,
+): boolean {
+  return selectedObjectPositions(state).some((pos) => {
+    const node = state.doc.nodeAt(pos)
+    return !!node?.attrs.groupId || (isFileGroupNode(node) && canSplitFileGroup(node!, blocks))
+  })
+}
+
 function highestDrawingId(doc: PmNode, blocks: readonly Block[]): number {
   let max = 0
   for (const block of blocks)
@@ -206,10 +305,13 @@ function highestDrawingId(doc: PmNode, blocks: readonly Block[]): number {
 }
 
 /** Takes the selected groups apart; a file group needs `blocks`, the file as read, for its XML. */
-export function ungroupSelectedObjects(editor: Editor, blocks: readonly Block[] = []): boolean {
+export function ungroupSelectedObjects(
+  editor: Editor,
+  blocks: readonly Block[] = fileBlocks,
+): boolean {
   const { view } = editor
   const { state } = view
-  if (!canUngroupObjects(state)) return false
+  if (!canUngroupObjects(state, blocks)) return false
   const selected = selectedObjectPositions(state)
   const tr = state.tr
   let nextId = highestDrawingId(state.doc, blocks) + 1
@@ -224,7 +326,11 @@ export function ungroupSelectedObjects(editor: Editor, blocks: readonly Block[] 
     }
     if (!isFileGroupNode(node)) continue
     const source = groupSource(node, blocks)
-    const members = source && fileGroupMembers(node, source, nextId)
+    const corner = source && drawnGroupCorner(view, pos, source)
+    const members =
+      source &&
+      (fileGroupMembers(node, source, nextId) ??
+        (corner ? fileGroupMembers(node, source, nextId, corner) : null))
     if (!members) continue
     nextId += members.length
     split.set(pos, members.length)

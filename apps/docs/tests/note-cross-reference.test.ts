@@ -135,7 +135,7 @@ describe('cross-reference to a footnote', () => {
     expect(fields(editor)).toEqual([
       [`NOTEREF ${name} \\h`, '2'],
       [`NOTEREF ${name} \\f`, '2'],
-      [`NOTEREF ${name} \\p \\h`, 'above'],
+      [`NOTEREF ${name} \\p \\h`, '2 above'],
     ])
     expect(anchorPos(editor.state.doc, name)).toBe(again.pos)
     // only the formatted number is raised, though the next reference went in right behind it
@@ -171,7 +171,7 @@ describe('cross-reference to a footnote', () => {
     expect(runs.filter((r) => r.instrField).map((r) => [r.instrField, r.text])).toEqual([
       [`NOTEREF ${name} \\h`, '2'],
       [`NOTEREF ${name} \\f`, '2'],
-      [`NOTEREF ${name} \\p \\h`, 'above'],
+      [`NOTEREF ${name} \\p \\h`, '2 above'],
     ])
     editor.destroy()
   })
@@ -237,20 +237,22 @@ describe('a file with a NOTEREF field', () => {
     editor.destroy()
   })
 
-  it('updates a stale result, and the above / below one only when asked with the words', async () => {
+  it('updates a stale result; the above / below one changes its word only when asked with the words', async () => {
     const stale = WORD_BODY.replace(
       field('NOTEREF _Ref100200300 \\h', '2'),
       field('NOTEREF _Ref100200300 \\h', '7') + field('NOTEREF _Ref100200300 \\p \\h', 'below'),
     )
     const { editor } = await open(stale)
     const quiet = editor.state.tr
-    expect(refreshNoteRefFields(quiet)).toBe(1)
+    // without the words the position stays as stored and takes the note's number in front
+    expect(refreshNoteRefFields(quiet)).toBe(2)
     editor.view.dispatch(quiet)
-    expect(fields(editor).map((f) => f[1])).toEqual(['2', 'below'])
+    expect(fields(editor).map((f) => f[1])).toEqual(['2', '2 below'])
     const asked = editor.state.tr
     expect(refreshNoteRefFields(asked, WORDS)).toBe(1)
     editor.view.dispatch(asked)
-    expect(fields(editor).map((f) => f[1])).toEqual(['2', 'above'])
+    // as Word shows it: the number, a space, the word
+    expect(fields(editor).map((f) => f[1])).toEqual(['2', '2 above'])
     editor.destroy()
   })
 })

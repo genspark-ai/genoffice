@@ -1,6 +1,7 @@
 import type { Editor } from '@tiptap/core'
 import type { ResolvedPos } from '@tiptap/pm/model'
 import { TextSelection, type Transaction } from '@tiptap/pm/state'
+import { pictureLinkToken, withPictureLink } from '@genoffice/docx-engine'
 import { heldPictureXml } from './convert'
 import { pictureVectorAttr } from './picture-vectors'
 
@@ -14,7 +15,13 @@ export interface NewPicture {
   heightPx: number
   label: string
   altText?: string
+  /** the outside file the picture stays linked to */
+  linkTarget?: string
 }
+
+/** a picture's drawing naming the file it is linked to, when it is */
+const heldLinked = (xml: string, picture: NewPicture): string =>
+  xml && picture.linkTarget ? withPictureLink(xml, pictureLinkToken(picture.linkTarget)) : xml
 
 function cellDepthOf($pos: ResolvedPos): number {
   for (let depth = $pos.depth; depth > 0; depth--) {
@@ -60,7 +67,10 @@ function insertPictureRuns(
               dataUrl: picture.dataUrl,
               vector: pictureVectorAttr(picture.dataUrl, picture.vectorUrl),
               ...(named && picture.altText ? { altText: picture.altText } : {}),
-              ...(held ? { xml: heldPictureXml({ ...picture, widthPx, heightPx }) } : {}),
+              ...(picture.linkTarget ? { link: picture.linkTarget } : {}),
+              ...(held
+                ? { xml: heldLinked(heldPictureXml({ ...picture, widthPx, heightPx }), picture) }
+                : {}),
               widthPx,
               heightPx,
             },
@@ -118,6 +128,7 @@ function insertPictures(editor: Editor, pictures: NewPicture[], settle: boolean)
           imageWidthPx: picture.widthPx,
           imageHeightPx: picture.heightPx,
           ...(picture.altText ? { imageAlt: picture.altText } : {}),
+          ...(picture.linkTarget ? { imageLink: picture.linkTarget } : {}),
           genImage: {
             base64: picture.base64,
             mime: picture.mime,
@@ -133,6 +144,10 @@ function insertPictures(editor: Editor, pictures: NewPicture[], settle: boolean)
     })
     .run()
 }
+
+/** a picture inserted at the selection becomes a run of a table cell's text, not a block of its own */
+export const pictureGoesInLine = (editor: Editor): boolean =>
+  cellDepthOf(editor.state.selection.$from) > 0
 
 export function insertPictureAtSelection(editor: Editor, picture: NewPicture): boolean {
   return insertPictures(editor, [picture], false)

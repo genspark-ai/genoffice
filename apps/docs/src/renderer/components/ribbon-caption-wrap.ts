@@ -17,7 +17,7 @@ export function twoLineWidth(words: number[], space: number): number {
 const widths = new Map<string, number>()
 let pen: CanvasRenderingContext2D | null = null
 
-const BIG_CAPTION = '.rb-big > span:not(.rb-big-icon)'
+const BIG_CAPTION = '.rb-big > span:not(.rb-big-icon, .rb-group-menu-name)'
 
 export function wrapBigCaptions(root: HTMLElement, captions = BIG_CAPTION): void {
   // nothing is laid out (a hidden ribbon, a test DOM): there is nothing to measure against

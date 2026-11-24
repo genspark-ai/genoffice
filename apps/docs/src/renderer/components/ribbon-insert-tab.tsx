@@ -19,6 +19,7 @@ import { isPlanned, type ActionCommandId } from '../../shared/commands'
 import { NONE } from '../commands/menu-commands'
 import { RbCommand, useCommandGreyed, useRibbonCommand, useRunCommand } from './ribbon-command'
 import { useModalKeys } from './modal-keys'
+import { RbGroupMenu } from './ribbon-group-menu'
 export { LinkInsertModal } from './LinkDialog'
 import {
   IconBlankPage,
@@ -31,6 +32,7 @@ import {
   IconFooter,
   IconHeader,
   IconLink,
+  IconPageBreak,
   IconPageBreakSmall,
   IconPageNumber,
   IconChart,
@@ -452,7 +454,10 @@ export function InsertTab({
   return (
     <>
       {/* Word: Pages (cover page / blank page / page break) sits leftmost */}
-      <div className="ribbon-group">
+      <div className="ribbon-group" data-menu="4">
+        <RbGroupMenu name={t('ribbonGroupPages')}>
+          <IconPageBreak size={BIG} />
+        </RbGroupMenu>
         <div className="ribbon-group-items">
           <div className="rb-col" data-wide="2">
             <div className="rb-split-wrap">
@@ -622,7 +627,10 @@ export function InsertTab({
       <div className="ribbon-sep" />
 
       {/* Word: Link/Bookmark/Cross-reference are small vertical buttons */}
-      <div className="ribbon-group">
+      <div className="ribbon-group" data-menu="3">
+        <RbGroupMenu name={t('ribbonGroupLinks')}>
+          <IconLink size={BIG} />
+        </RbGroupMenu>
         <div className="ribbon-group-items">
           <div className="rb-col" data-wide="1">
             <RbCommand cmd="insert-link" look="small">
@@ -664,7 +672,10 @@ export function InsertTab({
 
       <div className="ribbon-sep" />
 
-      <div className="ribbon-group">
+      <div className="ribbon-group" data-menu="5">
+        <RbGroupMenu name={t('ribbonGroupHeaderFooter')}>
+          <IconHeader size={BIG} />
+        </RbGroupMenu>
         <div className="ribbon-group-items">
           <div className="rb-split-wrap">
             <button
@@ -755,7 +766,10 @@ export function InsertTab({
       <div className="ribbon-sep" />
 
       {/* Text group: text box + WordArt + drop cap */}
-      <div className="ribbon-group">
+      <div className="ribbon-group" data-menu="4">
+        <RbGroupMenu name={t('ribbonGroupText')}>
+          <IconTextBox size={BIG} />
+        </RbGroupMenu>
         <div className="ribbon-group-items">
           <div className="rb-split-wrap">
             <button
@@ -930,7 +944,10 @@ export function InsertTab({
 
       <div className="ribbon-sep" />
 
-      <div className="ribbon-group">
+      <div className="ribbon-group" data-menu="6">
+        <RbGroupMenu name={t('ribbonGroupSymbols')}>
+          <IconSymbol size={BIG} />
+        </RbGroupMenu>
         <div className="ribbon-group-items">
           <div className="rb-split-wrap">
             <button

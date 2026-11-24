@@ -1,10 +1,10 @@
 /**
- * An index inserted from the References tab keeps its entries and their page
+ * An index with right-aligned page numbers keeps its entries and their page
  * numbers apart after the file is saved and opened again: the entry on the
  * left, the page right aligned behind the leader, on the page and in the
  * exported PDF.
  */
-import { test, expect, type Page } from '@playwright/test'
+import { test, expect, type ElectronApplication, type Page } from '@playwright/test'
 import JSZip from 'jszip'
 import { mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -74,7 +74,24 @@ async function pdfText(path: string): Promise<string> {
   return out
 }
 
-test('an index from the References tab reopens with entry and page apart, on the page and in the PDF', async () => {
+/** clicks a menu bar item once the renderer has told the menu it is available */
+async function clickMenu(app: ElectronApplication, path: string[]) {
+  const click = () =>
+    app.evaluate(({ Menu }, path) => {
+      let items = Menu.getApplicationMenu()?.items
+      let item: Electron.MenuItem | undefined
+      for (const label of path) {
+        item = items?.find((candidate) => candidate.label === label)
+        items = item?.submenu?.items
+      }
+      if (!item?.enabled) return false
+      item.click()
+      return true
+    }, path)
+  await expect.poll(click, { timeout: 15_000 }).toBe(true)
+}
+
+test('an index with right-aligned pages reopens with entry and page apart, on the page and in the PDF', async () => {
   test.setTimeout(240_000)
   const dir = realpathSync(mkdtempSync(join(tmpdir(), 'genoffice-e2e-index-reopen-')))
   const docPath = join(dir, 'index.docx')
@@ -105,10 +122,14 @@ test('an index from the References tab reopens with entry and page apart, on the
     await expect(last).toBeVisible({ timeout: 30_000 })
     await last.click()
     await page.keyboard.press('End')
-    await page.locator('.ribbon-tab', { hasText: /^References$/ }).click()
-    await page
-      .locator('[data-ribbon-body] button:is(.rb-big, .rb-small)', { hasText: 'Insert Index' })
-      .click()
+    // one column, the pages right aligned behind dots
+    await clickMenu(launched.app, ['Insert', 'Index and Tables…'])
+    const dialog = page.locator('.index-tables-dialog')
+    await dialog.getByRole('tab', { name: 'Index', exact: true }).click()
+    await dialog.locator('[data-it="columns"]').fill('1')
+    await dialog.locator('[data-it="right-align"]').check()
+    await dialog.locator('button.primary').click()
+    await expect(dialog).toBeHidden()
     // the main entry of a subentry has no page of its own
     await expect
       .poll(() => shown(page))
@@ -119,7 +140,7 @@ test('an index from the References tab reopens with entry and page apart, on the
     await expect
       .poll(async () => /INDEX\b/.test(await documentXml(docPath)), { timeout: 30_000 })
       .toBe(true)
-    expect(await documentXml(docPath)).toContain(' INDEX \\e "\t" \\c "2" ')
+    expect(await documentXml(docPath)).toContain(' INDEX \\e "\t" ')
   } finally {
     await closeAndSaveVideo(launched, VIDEO_DIR)
   }

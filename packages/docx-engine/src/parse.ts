@@ -1,3 +1,4 @@
+import { drawingRelSizeOf } from './relative-size'
 import JSZip from 'jszip'
 import { isEastAsianLangTag } from './char-class'
 import type { JSZipObject } from 'jszip'
@@ -8,6 +9,7 @@ import { parseChartPartXml } from './chart'
 import { findInkRuns, stripInkRuns } from './ink'
 import { isMetafileMime, metafileToDataUrl } from './metafile'
 import { isTiffMime, tiffToDataUrlAsync } from './tiff'
+import { readKeyCustomizations } from './key-customizations'
 import { ommlEndsWithBreak, ommlFragmentsOf, ommlToLatex, ommlToMathML } from './math'
 import { isMathTypeProgId, oleBytesToOmml } from './mtef'
 import { readMathPr, type MathLimits, type MathPr } from './math-pr'
@@ -20,6 +22,7 @@ import {
   type NoteParagraphReader,
 } from './notes'
 import { scanBody, type BodyElement } from './scan'
+import { LINK_SOURCE_PREFIX, linkFieldRewrites, pictureLinkTarget } from './link-fields'
 import {
   hfReferenceRId,
   hfReferenceTags,
@@ -40,7 +43,13 @@ import { emptyDocumentProperties, readDocumentProperties } from './doc-propertie
 import { computeListMarkerInfos, type ListItemRef } from './list-markers'
 import { FONT_TABLE_PART_PATH, parseFontTable, readEmbeddedFonts } from './font-table'
 import { DEFAULT_THEME_COLORS, THEME_PART_PATH, readThemeColors, readThemeFonts } from './theme'
-import { PAGE_MARK, SECTION_PAGES_MARK, TEXTBOX_VERTS, TOTAL_PAGES_MARK } from './types'
+import {
+  COMBINE_BRACKETS,
+  PAGE_MARK,
+  SECTION_PAGES_MARK,
+  TEXTBOX_VERTS,
+  TOTAL_PAGES_MARK,
+} from './types'
 import { assertZipWithinLimits, loadDocxZip } from './zip-load'
 import { altChunkToDocx, hasAltChunkHtmlConverter } from './alt-chunk'
 import type {
@@ -59,6 +68,7 @@ import type {
   NoteRun,
   NoteProps,
   HfImage,
+  HfLinkedPicture,
   PictureWatermarkInfo,
   HfTextBox,
   HfParagraph,
@@ -94,6 +104,9 @@ import type {
   ThemeColors,
   EqLayout,
   ThemeFonts,
+  KinsokuCustom,
+  MailMergeMainType,
+  DrawingGrid,
 } from './types'
 import {
   isPictureWatermarkShape,
@@ -169,6 +182,7 @@ import {
   placeGroupedBox,
   drawingAnchorMeta,
   gradFillApproxHex,
+  applyXfrmFlips,
   lineBoxOf,
   resolveAnchorPagePos,
   resolveAnchorPageYEmu,
@@ -176,7 +190,9 @@ import {
   w14GlowOf,
   w14ReflectionOf,
   w14ShadowOf,
+  textFillBeyondColor,
   w14TextFillHex,
+  w14TextFillOf,
   w14TextOutlineOf,
   type DrawingAnchorMeta,
   type ExtractTextboxOpts,
@@ -190,8 +206,10 @@ import {
   MERGE_RULE_INSTR_RE,
   MERGE_CONTROL_FIELD_RE,
   NO_FIELD_RESULT,
+  ranRuleFields,
   CITATION_FIELD_RE,
   SIMPLE_INLINE_FIELD_RE,
+  LINK_MARK_INSTR_RE,
   FORMULA_FIELD_RE,
   bareMergeFieldName,
   ZOTERO_INLINE_FIELD_RE,
@@ -222,6 +240,7 @@ import {
   mergeCharIndents,
   mergeRuns,
   mergedBorderLinesOf,
+  tableShdFill,
   onlyOleFields,
   onlyXeFields,
   paraBorderSidesOf,
@@ -454,6 +473,7 @@ export async function parseDocx(
   const { sources, style: citationStyle } = await parseSources(zip)
   // a damaged docProps/custom.xml must not keep the document from opening
   const zoteroDocumentData = await readZoteroDocumentData(zip).catch(() => '')
+  const keyCustomizations = await readKeyCustomizations(zip).catch(() => undefined)
   // the same goes for the other docProps parts: a broken one is simply empty
   const properties = await readDocumentProperties(zip).catch(() => emptyDocumentProperties())
   const fontTableFile = zip.file(FONT_TABLE_PART_PATH)
@@ -491,6 +511,8 @@ export async function parseDocx(
   const elements: BodyElement[] = []
   const blocks: Block[] = []
   const zoteroFieldParagraphs = crossParagraphZoteroFields(scan.elements, documentXml)
+  const linkRewrites = linkFieldRewrites(scan.elements, documentXml)
+  const linkMarked = new Map<number, BodyElement>()
   const chartParts: Record<string, string> = {}
   const compatibilityMode = await parseCompatibilityMode(zip)
   const layoutSettings = await parseLayoutSettings(zip)
@@ -573,6 +595,9 @@ export async function parseDocx(
       : {}),
     nextZoteroFieldId:
       Math.max(0, ...[...zoteroFieldParagraphs.values()].map((field) => field.id)) + 1,
+    ...(documentXml.includes(`w:name="${LINK_SOURCE_PREFIX}`)
+      ? { linkSourceBookmarks: linkSourceBookmarkIds(documentXml) }
+      : {}),
     // explicit breaks in any attribute order, plus Word's rendered-page hint
     // (catches natural pages in single-section docs); a false positive only
     // turns page-pinning off, which is the conservative direction
@@ -665,12 +690,39 @@ export async function parseDocx(
     const i = elements.length
     elements.push(el)
     buildCtx.inIndexField = inIndexField(xml)
-    const block = await buildBlock(el, i, xml, buildCtx, zoteroFieldParagraphs.get(el.start))
+    const marked = linkRewrites.get(el.start)
+    const block = await buildBlock(
+      el,
+      i,
+      marked ?? xml,
+      buildCtx,
+      zoteroFieldParagraphs.get(el.start),
+    )
+    if (marked) {
+      block.originalXml = xml
+      linkMarked.set(i, el)
+    }
     await attachImageVector(block, xml, buildCtx)
+    if (block.type === 'image') {
+      const link = pictureLinkTarget(xml, rels)
+      if (link) block.imageLink = link
+    }
     if (el.name === 'w:p') attachInlineContentControls(block, xml)
     if (permRanges?.paragraphs.has(el.start)) block.permEditable = true
     blocks.push(block)
     buildCtx.floatTableAhead = floatTableColumnSpan(block, sectionAt(el.start))
+  }
+  // a link field keeps its two markers only when both of its paragraphs stayed editable
+  for (let pass = 0; linkMarked.size > 0 && pass <= linkMarked.size; pass++) {
+    const loose = unpairedLinkMarkBlocks(blocks, linkMarked)
+    if (loose.length === 0) break
+    for (const i of loose) {
+      const el = linkMarked.get(i)!
+      linkMarked.delete(i)
+      buildCtx.inIndexField = false
+      buildCtx.floatTableAhead = undefined
+      blocks[i] = await buildBlock(el, i, documentXml.slice(el.start, el.end), buildCtx)
+    }
   }
   foldFieldCodeParagraphs(blocks, buildCtx)
   applyTocEntryNumbers(blocks, numbering)
@@ -702,8 +754,10 @@ export async function parseDocx(
   const titlePg = xmlFlagOn(documentXml, 'w:titlePg')
   const evenAndOddHeaders = await parseSettingsFlag(zip, 'w:evenAndOddHeaders')
   const mirrorMargins = await parseSettingsFlag(zip, 'w:mirrorMargins')
+  const hideGrammaticalErrors = await parseSettingsFlag(zip, 'w:hideGrammaticalErrors')
   const trackRevisions = await parseSettingsFlag(zip, 'w:trackRevisions')
   const doNotTrackMoves = await parseSettingsFlag(zip, 'w:doNotTrackMoves')
+  const mailMergeMainType = await parseMailMergeMainType(zip)
   const hfParts = await parseAllHfParts(
     zip,
     rels,
@@ -752,6 +806,7 @@ export async function parseDocx(
   return {
     blocks,
     zoteroDocumentData,
+    ...(keyCustomizations ? { keyCustomizations } : {}),
     properties,
     comments,
     protection,
@@ -761,6 +816,9 @@ export async function parseDocx(
     endnotes,
     ...(footnoteSeparator ? { footnoteSeparator } : {}),
     ...(endnoteSeparator ? { endnoteSeparator } : {}),
+    ...([...rels.values()].some((rel) => rel.type.endsWith('/glossaryDocument'))
+      ? { hasGlossary: true as const }
+      : {}),
     ...(footnoteProps ? { footnoteProps } : {}),
     ...(endnoteProps ? { endnoteProps } : {}),
     noteNumbers: Object.fromEntries(noteNumbers),
@@ -786,9 +844,11 @@ export async function parseDocx(
     titlePg,
     evenAndOddHeaders,
     ...(mirrorMargins ? { mirrorMargins } : {}),
+    ...(hideGrammaticalErrors ? { hideGrammaticalErrors } : {}),
     ...(trackRevisions ? { trackRevisions } : {}),
     ...(doNotTrackMoves ? { doNotTrackMoves } : {}),
     ...(gutterAtTop ? { gutterAtTop } : {}),
+    ...(mailMergeMainType ? { mailMergeMainType } : {}),
     compatibilityMode,
     ...layoutSettings,
     headerFirst: hfPartInfo(headerFirst),
@@ -887,6 +947,25 @@ interface BuildContext {
   vmlShapeTypes?: ReadonlyMap<string, Record<string, string>>
   /** Per-document identity source for editable Zotero fields. */
   nextZoteroFieldId?: number
+  /** w:id -> name of the bookmarks Paste link made (LINK_SOURCE_PREFIX), whose ends are read as runs */
+  linkSourceBookmarks?: ReadonlyMap<string, string>
+}
+
+function linkSourceBookmarkIds(documentXml: string): Map<string, string> {
+  const ids = new Map<string, string>()
+  const named = new RegExp(`\\bw:name="(${LINK_SOURCE_PREFIX}\\d+)"`)
+  const ended = new Set<string>()
+  for (const m of documentXml.matchAll(/<w:bookmarkEnd\b[^>]*>/g)) {
+    const id = /\bw:id="(\d+)"/.exec(m[0])?.[1]
+    if (id) ended.add(id)
+  }
+  // the attributes in any order, and whatever else the tags carry
+  for (const m of documentXml.matchAll(/<w:bookmarkStart\b[^>]*>/g)) {
+    const name = named.exec(m[0])?.[1]
+    const id = /\bw:id="(\d+)"/.exec(m[0])?.[1]
+    if (name && id && ended.has(id)) ids.set(id, name)
+  }
+  return ids
 }
 
 /** numbering reference of a paragraph: direct w:numPr, falling back to the pStyle's
@@ -1190,6 +1269,13 @@ async function buildBlock(
       ? xml.replace(/<mc:Fallback[^>]*>[\s\S]*?<\/mc:Fallback>/g, '')
       : xml,
   )
+  // a drawingIndex counts drawings of the saved bytes: void when detection hid some (ink runs)
+  const ownDrawings = (boxes: TextboxDisplay[]): TextboxDisplay[] => {
+    if (detect === xml || !boxes.some((b) => b.drawingIndex !== undefined)) return boxes
+    if (topLevelDrawings(detect).length === topLevelDrawings(xml).length) return boxes
+    for (const box of boxes) delete box.drawingIndex
+    return boxes
+  }
 
   // Paragraph: certain constructs are protected as whole passthrough blocks.
   // Regenerating them would silently drop structure (section breaks, fields,
@@ -1405,26 +1491,28 @@ async function buildBlock(
         hostXml.includes('<w:drawing') &&
         (hostXml.includes('<pic:pic') || hostXml.includes('<a:blip'))
       if (anchoredPics || VML_PICT_RID_RE.test(hostXml)) await resolveBlipMedia(detect, ctx)
-      const textboxes = extractTextboxes(
-        detect,
-        ctx,
-        anchoredPics
-          ? {
-              shapes: true,
-              pictures: true,
-              section: ctx.sectionAt?.(el.start),
-              docOffset: el.start,
-              firstPage:
-                index > 0 &&
-                (ctx.firstPageBreakAt === undefined || el.start < ctx.firstPageBreakAt),
-            }
-          : {
-              docOffset: el.start,
-              ...(hasFloatingVmlGeometry(detect) ? { shapes: true } : {}),
-              // pure VML paragraphs resolve mso-position keywords against the
-              // section; a DrawingML twin keeps the section-free legacy placement
-              ...(hostXml.includes('<w:drawing') ? {} : { section: ctx.sectionAt?.(el.start) }),
-            },
+      const textboxes = ownDrawings(
+        extractTextboxes(
+          detect,
+          ctx,
+          anchoredPics
+            ? {
+                shapes: true,
+                pictures: true,
+                section: ctx.sectionAt?.(el.start),
+                docOffset: el.start,
+                firstPage:
+                  index > 0 &&
+                  (ctx.firstPageBreakAt === undefined || el.start < ctx.firstPageBreakAt),
+              }
+            : {
+                docOffset: el.start,
+                ...(hasFloatingVmlGeometry(detect) ? { shapes: true } : {}),
+                // pure VML paragraphs resolve mso-position keywords against the
+                // section; a DrawingML twin keeps the section-free legacy placement
+                ...(hostXml.includes('<w:drawing') ? {} : { section: ctx.sectionAt?.(el.start) }),
+              },
+        ),
       )
       const strayText = plainText(stripTextboxes(detect)).trim()
       // paragraphs mixing an inline VML picture with real text stay on the
@@ -1618,12 +1706,14 @@ async function buildBlock(
           }
         }
         await resolveBlipMedia(detect, ctx)
-        siblingBoxes = extractTextboxes(detect, ctx, {
-          shapes: true,
-          pictures: true,
-          section: ctx.sectionAt?.(el.start),
-          docOffset: el.start,
-        })
+        siblingBoxes = ownDrawings(
+          extractTextboxes(detect, ctx, {
+            shapes: true,
+            pictures: true,
+            section: ctx.sectionAt?.(el.start),
+            docOffset: el.start,
+          }),
+        )
       }
       return {
         ...base,
@@ -1762,17 +1852,19 @@ async function buildBlock(
     // shapes on: textless preset shapes (stars, triangles, block arrows,
     // anchored connectors) render instead of degrading to a chip; pictures on:
     // grouped/sibling pic:pic drawings render as photo boxes
-    const textboxes = extractTextboxes(detect, ctx, {
-      shapes: true,
-      pictures: true,
-      section: ctx.sectionAt?.(el.start),
-      docOffset: el.start,
-      // page-pinning needs content ABOVE the anchor paragraph to matter: a
-      // first-block anchor is already exact under the paragraph-origin path
-      // (and stays aligned with the body text around it)
-      firstPage:
-        index > 0 && (ctx.firstPageBreakAt === undefined || el.start < ctx.firstPageBreakAt),
-    })
+    const textboxes = ownDrawings(
+      extractTextboxes(detect, ctx, {
+        shapes: true,
+        pictures: true,
+        section: ctx.sectionAt?.(el.start),
+        docOffset: el.start,
+        // page-pinning needs content ABOVE the anchor paragraph to matter: a
+        // first-block anchor is already exact under the paragraph-origin path
+        // (and stays aligned with the body text around it)
+        firstPage:
+          index > 0 && (ctx.firstPageBreakAt === undefined || el.start < ctx.firstPageBreakAt),
+      }),
+    )
     const boxTexts = textboxes.flatMap((t) =>
       t.paras.map((p) => p.runs.map((r) => r.text).join('')),
     )
@@ -1906,6 +1998,28 @@ async function buildBlock(
   return buildTextParagraph(base, xml, ctx, false, el.start, zoteroField)
 }
 
+/** the blocks read with link markers whose markers do not pair up, or that did not stay paragraphs */
+function unpairedLinkMarkBlocks(blocks: Block[], marked: Map<number, BodyElement>): number[] {
+  const loose = new Set<number>()
+  const open: number[] = []
+  for (const i of [...marked.keys()].sort((a, b) => a - b)) {
+    const block = blocks[i]
+    if (block.type !== 'paragraph') {
+      loose.add(i)
+      continue
+    }
+    for (const run of block.runs ?? []) {
+      if (run.linkBegin !== undefined) open.push(i)
+      else if (run.linkEnd) {
+        const begin = open.pop()
+        if (begin === undefined || loose.has(begin)) loose.add(i)
+      }
+    }
+  }
+  for (const i of open) loose.add(i)
+  return [...loose]
+}
+
 type ZoteroFieldPart = NonNullable<Run['zoteroFieldPart']>
 
 interface ZoteroFieldParagraph {
@@ -1970,6 +2084,42 @@ function crossParagraphZoteroFields(
  * w:outlineLvl wins (9 = body text), then the style's level, then a built-in
  * HeadingN styleId the document never defined.
  */
+/** the tracked paragraph-property change (w:pPrChange) a paragraph's w:pPr holds: who, when, and the modeled old properties */
+function pPrChangeInfoOf(pPr: XNode | undefined, ctx: BuildContext): Block['pPrChangeInfo'] {
+  const pPrChangeEl = pPr ? findChild(pPr, 'w:pPrChange') : undefined
+  if (!pPrChangeEl) return undefined
+  const attrs = attrsOf(pPrChangeEl)
+  const info: NonNullable<Block['pPrChangeInfo']> = { author: attrs['w:author'] ?? '' }
+  if (attrs['w:date']) info.date = attrs['w:date']
+  if (attrs['w16du:dateUtc']) info.dateUtc = attrs['w16du:dateUtc']
+  if (attrs['w:id']) info.id = attrs['w:id']
+  const oldPPr = findChild(pPrChangeEl, 'w:pPr')
+  if (!oldPPr) return info
+  const old: NonNullable<NonNullable<Block['pPrChangeInfo']>['old']> = {
+    ...(extractParaFormat(oldPPr) ?? {}),
+  }
+  const oldStyleId = attrsOf(findChild(oldPPr, 'w:pStyle') ?? {})['w:val']
+  if (oldStyleId) old.styleId = oldStyleId
+  const oldNumPr = findChild(oldPPr, 'w:numPr')
+  const oldNumId = oldNumPr ? attrsOf(findChild(oldNumPr, 'w:numId') ?? {})['w:val'] : undefined
+  if (oldNumId) {
+    old.type = 'docListItem'
+    old.numId = oldNumId
+    old.ilvl = parseInt(attrsOf(findChild(oldNumPr!, 'w:ilvl') ?? {})['w:val'] ?? '0', 10) || 0
+    old.kind = listKindOf(ctx, oldNumId, old.ilvl)
+  } else {
+    const oldLevel = headingLevelOf(oldPPr, oldStyleId, ctx)
+    if (oldLevel) {
+      old.type = 'docHeading'
+      old.level = oldLevel
+    } else if (oldStyleId) {
+      old.type = 'docParagraph'
+    }
+  }
+  if (Object.keys(old).length > 0) info.old = old
+  return info
+}
+
 function headingLevelOf(
   pPr: XNode | undefined,
   styleId: string | undefined,
@@ -2207,6 +2357,19 @@ function markSizeOf(eff: EffectivePPr, pPr: XNode | undefined): number | undefin
   const markRPr = pPr ? findChild(pPr, 'w:rPr') : undefined
   if (eff.bidi || (markRPr && onOffOf(markRPr, 'w:rtl') === true)) return eff.mark.sizeHalfPoints
   return undefined
+}
+
+/** Colour and highlight the paragraph mark itself declares: a list marker is drawn with them */
+function markPaintOf(
+  eff: EffectivePPr,
+  pPr: XNode | undefined,
+): Pick<ParaFormat, 'markColor' | 'markHighlight'> {
+  const markRPr = pPr ? findChild(pPr, 'w:rPr') : undefined
+  const highlight = markRPr ? attrsOf(findChild(markRPr, 'w:highlight') ?? {})['w:val'] : undefined
+  return {
+    ...(eff.mark.source.color === 'direct' && eff.mark.color ? { markColor: eff.mark.color } : {}),
+    ...(highlight && highlight !== 'none' ? { markHighlight: highlight } : {}),
+  }
 }
 
 /**
@@ -2611,48 +2774,7 @@ function buildTextParagraph(
   if (/<w:moveFrom[\s/>]/.test(xml)) moveRevision = 'from'
   else if (/<w:moveTo[\s/>]/.test(xml)) moveRevision = 'to'
 
-  // --- pPrChange info extraction ---
-  // When the paragraph has a pPrChange (tracked format change), extract the
-  // revision author/date/id for the review badge and navigation.
-  let pPrChangeInfo: Block['pPrChangeInfo']
-  if (pPr) {
-    const pPrChangeEl = findChild(pPr, 'w:pPrChange')
-    if (pPrChangeEl) {
-      const attrs = attrsOf(pPrChangeEl)
-      pPrChangeInfo = { author: attrs['w:author'] ?? '' }
-      if (attrs['w:date']) pPrChangeInfo.date = attrs['w:date']
-      if (attrs['w16du:dateUtc']) pPrChangeInfo.dateUtc = attrs['w16du:dateUtc']
-      if (attrs['w:id']) pPrChangeInfo.id = attrs['w:id']
-      const oldPPr = findChild(pPrChangeEl, 'w:pPr')
-      if (oldPPr) {
-        const old: NonNullable<NonNullable<Block['pPrChangeInfo']>['old']> = {
-          ...(extractParaFormat(oldPPr) ?? {}),
-        }
-        const oldStyleId = attrsOf(findChild(oldPPr, 'w:pStyle') ?? {})['w:val']
-        if (oldStyleId) old.styleId = oldStyleId
-        const oldNumPr = findChild(oldPPr, 'w:numPr')
-        const oldNumId = oldNumPr
-          ? attrsOf(findChild(oldNumPr, 'w:numId') ?? {})['w:val']
-          : undefined
-        if (oldNumId) {
-          old.type = 'docListItem'
-          old.numId = oldNumId
-          old.ilvl =
-            parseInt(attrsOf(findChild(oldNumPr!, 'w:ilvl') ?? {})['w:val'] ?? '0', 10) || 0
-          old.kind = listKindOf(ctx, oldNumId, old.ilvl)
-        } else {
-          const oldLevel = headingLevelOf(oldPPr, oldStyleId, ctx)
-          if (oldLevel) {
-            old.type = 'docHeading'
-            old.level = oldLevel
-          } else if (oldStyleId) {
-            old.type = 'docParagraph'
-          }
-        }
-        if (old && Object.keys(old).length > 0) pPrChangeInfo.old = old
-      }
-    }
-  }
+  const pPrChangeInfo = pPrChangeInfoOf(pPr, ctx)
 
   // --- deleted / inserted paragraph mark (w:pPr/w:rPr/w:del, w:pPr/w:rPr/w:ins) ---
   const paraMarkRevision = (tag: string): Block['paraMarkDel'] => {
@@ -2693,6 +2815,7 @@ function buildTextParagraph(
   format = foldEffectiveFormat(format, pPr, eff)
   const markSz = listRef ? markSizeOf(eff, pPr) : undefined
   if (markSz) format.markSizeHalfPoints = markSz
+  if (listRef) Object.assign(format, markPaintOf(eff, pPr))
   /** extra revision fields shared across all return paths */
   const revExtras = {
     ...(moveRevision ? { moveRevision } : {}),
@@ -3241,6 +3364,7 @@ function extractTextboxes(
       }
       const rot = parseInt(attrsOf(xfrm ?? {})['rot'] ?? '', 10)
       if (Number.isFinite(rot) && rot !== 0) box.rotDeg = Math.round(rot / 60000)
+      applyXfrmFlips(box, attrsOf(xfrm ?? {}))
       const ext = findChild(xfrm ?? {}, 'a:ext')
       const cx = ext ? parseInt(attrsOf(ext)['cx'] ?? '', 10) : NaN
       if (Number.isFinite(cx) && cx > 0) box.widthPx = Math.round((cx * scaleX) / EMU_PER_PX)
@@ -3606,6 +3730,7 @@ function extractTextboxes(
     let wspCount = 0
     const extentCy = parseInt(/<wp:extent[^>]*cy="(\d+)"/.exec(frag)?.[1] ?? '', 10)
     const inlineExtentPx = !meta.anchored && extentCy > 0 ? emuToPx(extentCy) : 0
+    const fragRelSize = drawingRelSizeOf(frag)
     const groupPath: number[] = []
     const pushShape = (
       shape: XNode,
@@ -3630,6 +3755,9 @@ function extractTextboxes(
         box.grouped = true
         if (groupPath.length > 0) box.groupPath = [...groupPath]
         if (inlineExtentPx > 0) box.inlineExtentPx = inlineExtentPx
+      } else if (!nested) {
+        box.drawingIndex = fragIndex
+        if (meta.anchored && fragRelSize) box.sizeRel = fragRelSize
       }
       applyAnchor(box, meta, pagePos, ctm !== null)
       out.push(box)
@@ -3666,6 +3794,7 @@ function extractTextboxes(
         insetLeftPx: 0,
       }
       if (Number.isFinite(rot) && rot !== 0) box.rotDeg = Math.round(rot / 60000)
+      applyXfrmFlips(box, attrsOf(xfrm ?? {}))
       if (ctm) {
         const off = attrsOf(findChild(xfrm ?? {}, 'a:off') ?? {})
         const x = parseInt(off['x'] ?? '', 10)
@@ -3742,6 +3871,7 @@ function extractTextboxes(
           readOnly: true,
           picture: true,
           ...(picId ? { shapeId: picId } : {}),
+          drawingIndex: fragIndex,
           fillImageDataUrl: dataUrl,
           widthPx: emuToPx(extCx),
           heightPx: emuToPx(extCy),
@@ -3755,6 +3885,8 @@ function extractTextboxes(
         const picXfrm = /<a:xfrm([^>]*)>/.exec(picSpPr)?.[1]
         const rot = parseInt(/\brot="(-?\d+)"/.exec(picXfrm ?? '')?.[1] ?? '', 10)
         if (Number.isFinite(rot) && rot !== 0) box.rotDeg = Math.round(rot / 60000)
+        if (/\bflipH="(?:1|true)"/.test(picXfrm ?? '')) box.flipH = true
+        if (/\bflipV="(?:1|true)"/.test(picXfrm ?? '')) box.flipV = true
         // Word clips the photo to its preset geometry (rounded, flowchart...)
         const picPrst = /<a:prstGeom\b[^>]*\bprst="([^"]+)"/.exec(picSpPr)?.[1]
         if (picPrst && picPrst !== 'rect') box.prst = picPrst
@@ -4347,7 +4479,10 @@ function unresolvedFlags(pPr: XNode, format: ParaFormat): void {
   if (sah !== undefined) format.suppressAutoHyphens = sah
   const mi = onOffOf(pPr, 'w:mirrorIndents')
   if (mi !== undefined) format.mirrorIndents = mi
-  if (onOffOf(pPr, 'w:adjustRightInd') === false) format.adjustRightInd = false
+  const ari = onOffOf(pPr, 'w:adjustRightInd')
+  if (ari !== undefined) format.adjustRightInd = ari
+  const collapsed = onOffOf(pPr, 'w15:collapsed')
+  if (collapsed !== undefined) format.collapsed = collapsed
 }
 
 /** the w:pPr keys the resolver does not model (shading, borders, tab stops, frames, flow) */
@@ -4586,11 +4721,14 @@ const RESULT_FORMAT_SKIP = new Set([
   'taInstr',
   'taRuns',
   'tcInstr',
+  'linkBegin',
+  'linkEnd',
   'refField',
   'refInstr',
   'instrField',
   'fldBeginXml',
   'fldDirty',
+  'fldLock',
   'sdtCheckboxXml',
   'commentIds',
   'ins',
@@ -4678,6 +4816,13 @@ function extractRuns(
     (onMarks ??= hasDeepChild(pNode, new Set(['w:bookmarkStart']))
       ? noteMarkBookmarks(serializeXNode(pNode))
       : new Map())
+  // the paragraph's SET / ASK fields Word has run, by their place among its rule fields
+  let ranRules: Set<number> | undefined
+  let ruleFields = 0
+  const ruleHasRun = (nth: number) =>
+    (ranRules ??= hasDeepChild(pNode, new Set(['w:bookmarkStart']))
+      ? ranRuleFields(serializeXNode(pNode)).fields
+      : new Set<number>()).has(nth)
   const activeComments = new Set<string>()
   type RevCtx = { ins?: RevisionInfo; del?: RevisionInfo }
   // inline field state: XE folds into Run.xeTerm, REF (cross-reference) into Run.refField
@@ -4698,6 +4843,7 @@ function extractRuns(
   /** the runs of the field being read, begin to end */
   let fieldRunNodes: XNode[] = []
   let fieldDirty = false
+  let fieldLock = false
   const eqField = (instr: string) => (/^\s*EQ\b/i.test(instr) ? eqFieldToOmml(instr) : null)
   // formatting of the field result: the first cached run, else the field code's rPr
   const resultFormat = (): Partial<Run> => {
@@ -4778,6 +4924,7 @@ function extractRuns(
           fieldCachedRuns = []
           fieldBeginRun = node
           fieldDirty = /^(?:true|1)$/.test(String(attrsOf(fldChar)['w:dirty'] ?? ''))
+          fieldLock = /^(?:true|1)$/.test(String(attrsOf(fldChar)['w:fldLock'] ?? ''))
         }
       } else if (type === 'separate') {
         if (fieldDepth === 1) fieldSeparated = true
@@ -4795,7 +4942,20 @@ function extractRuns(
           const tc = TC_INSTR_RE.exec(fieldInstr)
           const ref = REF_INSTR_RE.exec(fieldInstr)
           const hyper = convertibleHyperlink(fieldInstr)
-          if (xe) pushRun(xeRun(xe), rev)
+          const linkMark = LINK_MARK_INSTR_RE.exec(fieldInstr)
+          if (linkMark) {
+            pushRun(
+              linkMark[1] === 'END'
+                ? { text: '', xeTerm: '', linkEnd: true }
+                : {
+                    text: '',
+                    xeTerm: '',
+                    linkBegin: linkMark[2] ?? '',
+                    ...(fieldLock ? { fldLock: true } : {}),
+                  },
+              rev,
+            )
+          } else if (xe) pushRun(xeRun(xe), rev)
           else if (ta) {
             const taRuns = taLongRuns(fieldInstrRuns)
             pushRun({ text: '', xeTerm: '', taInstr: ta[1], ...(taRuns ? { taRuns } : {}) }, rev)
@@ -4808,6 +4968,7 @@ function extractRuns(
                 refField: name,
                 refInstr: fieldInstr,
                 ...(fieldDirty ? { fldDirty: true } : {}),
+                ...(fieldLock ? { fldLock: true } : {}),
               },
               rev,
             )
@@ -4865,6 +5026,7 @@ function extractRuns(
                 text: fieldCached || `«${merge[1] ?? merge[2]}»`,
                 instrField: fieldInstr.trim(),
                 ...(fieldDirty ? { fldDirty: true } : {}),
+                ...(fieldLock ? { fldLock: true } : {}),
                 ...(link ? { link } : {}),
               },
               rev,
@@ -4876,15 +5038,18 @@ function extractRuns(
                 text: fieldCached || (/^\s*IF\b/.test(mergeIf) ? ' ' : NO_FIELD_RESULT),
                 instrField: mergeIf.trim(),
                 ...(fieldDirty ? { fldDirty: true } : {}),
+                ...(fieldLock ? { fldLock: true } : {}),
                 ...(link ? { link } : {}),
               },
               rev,
             )
           } else if (!fieldNested && MERGE_CONTROL_FIELD_RE.test(fieldInstr)) {
+            const held = ruleHasRun(ruleFields++)
             pushRun(
               {
                 ...resultFormat(),
-                text: fieldCached || NO_FIELD_RESULT,
+                text: held ? NO_FIELD_RESULT : fieldCached || NO_FIELD_RESULT,
+                ...(held ? { fldBookmarkText: fieldCached } : {}),
                 instrField: fieldInstr.trim(),
                 ...(link ? { link } : {}),
               },
@@ -4902,6 +5067,7 @@ function extractRuns(
                 text: fieldCached || ' ',
                 instrField: fieldInstr.trim(),
                 ...(fieldDirty ? { fldDirty: true } : {}),
+                ...(fieldLock ? { fldLock: true } : {}),
                 ...(link ? { link } : {}),
               },
               rev,
@@ -5093,6 +5259,7 @@ function extractRuns(
       ? Object.fromEntries(Object.entries(cached[0]).filter(([k]) => !RESULT_FORMAT_SKIP.has(k)))
       : {}
     const dirty = /^(?:true|1)$/.test(String(attrsOf(node)['w:dirty'] ?? ''))
+    const locked = /^(?:true|1)$/.test(String(attrsOf(node)['w:fldLock'] ?? ''))
     if (xe) pushRun(xeRun(xe), rev)
     else if (ta) pushRun({ text: '', xeTerm: '', taInstr: ta[1] }, rev)
     else if (tc) pushRun({ text: '', xeTerm: '', tcInstr: tc[1] }, rev)
@@ -5105,6 +5272,7 @@ function extractRuns(
           refField: name,
           refInstr: ` ${instr.trim()} `,
           ...(dirty ? { fldDirty: true } : {}),
+          ...(locked ? { fldLock: true } : {}),
           ...(link ? { link } : {}),
         },
         rev,
@@ -5116,6 +5284,7 @@ function extractRuns(
           text: text || `«${merge[1] ?? merge[2]}»`,
           instrField: instr.trim(),
           ...(dirty ? { fldDirty: true } : {}),
+          ...(locked ? { fldLock: true } : {}),
           ...(link ? { link } : {}),
         },
         rev,
@@ -5127,6 +5296,7 @@ function extractRuns(
           text: text || ' ',
           instrField: instr.trim(),
           ...(dirty ? { fldDirty: true } : {}),
+          ...(locked ? { fldLock: true } : {}),
           ...(link ? { link } : {}),
         },
         rev,
@@ -5142,6 +5312,17 @@ function extractRuns(
           if (name === 'w:commentRangeStart') activeComments.add(id)
           else activeComments.delete(id)
         }
+      } else if (
+        ctx.linkSourceBookmarks &&
+        (name === 'w:bookmarkStart' || name === 'w:bookmarkEnd')
+      ) {
+        const range = ctx.linkSourceBookmarks.get(attrsOf(node)['w:id'] ?? '')
+        if (range)
+          runs.push({
+            text: '',
+            xeTerm: '',
+            rangeMark: { name: range, ...(name === 'w:bookmarkEnd' ? { end: true as const } : {}) },
+          })
       } else if (name === 'w:ins' || name === 'w:del') {
         const attrs = attrsOf(node)
         const info: RevisionInfo = { author: attrs['w:author'] ?? '' }
@@ -5330,10 +5511,14 @@ function buildRun(
     const drawing = findChild(rNode, 'w:drawing') ?? (choice && findChild(choice, 'w:drawing'))
     if (drawing) {
       const drawingXml = serializeXNode(drawing)
-      const rId = /<a:blip[^>]*r:(?:embed|link)\s*=\s*["']([^"']+)["']/.exec(drawingXml)?.[1]
+      // a picture that is embedded and linked shows its own bytes; the link only names the file
+      const linkRId = /<a:blip[^>]*\br:link\s*=\s*["']([^"']+)["']/.exec(drawingXml)?.[1]
+      const rId = /<a:blip[^>]*\br:embed\s*=\s*["']([^"']+)["']/.exec(drawingXml)?.[1] ?? linkRId
       const dataUrl = rId ? mediaByRid.get(rId) : undefined
       if (dataUrl) {
         image = { dataUrl, xml: drawingXml }
+        const linkTarget = linkRId ? mediaByRid.get(linkRId) : undefined
+        if (linkTarget && !linkTarget.startsWith('data:')) image.linkTarget = linkTarget
         const svgRId = svgBlipRIdOf(drawingXml)
         const vectorUrl = svgRId ? mediaByRid.get(svgRId) : undefined
         if (vectorUrl) image.vectorUrl = vectorUrl
@@ -5442,6 +5627,7 @@ function buildRun(
   run.effective = eff
   if (eff.cs) run.cs = true
   if (eff.vanish) run.vanish = true
+  if (eff.snapToGrid === false) run.offGrid = true
   if (eff.bdr) run.bdr = eff.bdr
   const cs = eff.cs
   if (rPr) {
@@ -5451,6 +5637,8 @@ function buildRun(
     // w:specVanish (style separator) keeps the run visible
     const vanishOwn = onOffOf(rPr, 'w:specVanish') === true ? undefined : onOffOf(rPr, 'w:vanish')
     if (vanishOwn !== undefined) run.vanishOwn = vanishOwn
+    const snapOwn = onOffOf(rPr, 'w:snapToGrid')
+    if (snapOwn !== undefined) run.snapToGridOwn = snapOwn
     const ownBdr = findChild(rPr, 'w:bdr')
     if (ownBdr) run.bdrOwn = runBorderOf(ownBdr) ?? null
     const fitText = findChild(rPr, 'w:fitText')
@@ -5460,9 +5648,12 @@ function buildRun(
       const ea = attrsOf(eaLayout)
       const on = (v: string | undefined) => v === '1' || v === 'true' || v === 'on'
       const id = parseInt(ea['w:id'] ?? '', 10)
+      const brackets = COMBINE_BRACKETS.find((b) => b === ea['w:combineBrackets'])
       run.eaLayout = {
         ...(on(ea['w:combine']) ? { combine: true as const } : {}),
+        ...(on(ea['w:combine']) && brackets ? { brackets } : {}),
         ...(on(ea['w:vert']) ? { vert: true as const } : {}),
+        ...(on(ea['w:vert']) && on(ea['w:vertCompress']) ? { vertCompress: true as const } : {}),
         ...(Number.isFinite(id) ? { id } : {}),
       }
     }
@@ -5527,6 +5718,8 @@ function buildRun(
     if (shdDisplay && shdDisplay !== run.shading) run.shadingDisplay = shdDisplay
     const outline = w14TextOutlineOf(rPr, theme)
     if (outline) run.textOutline = outline
+    const textFill = textFillBeyondColor(w14TextFillOf(rPr, theme), colorFrom(rPr, theme))
+    if (textFill) run.textFill = textFill
     const effect = TEXT_EFFECTS.find((e) => onOffOf(rPr, `w:${e}`))
     if (effect) run.textEffect = effect
     const dstrike = onOffOf(rPr, 'w:dstrike')
@@ -5587,6 +5780,8 @@ function buildRun(
         const ovanish =
           onOffOf(oldRPr, 'w:specVanish') === true ? undefined : onOffOf(oldRPr, 'w:vanish')
         if (ovanish !== undefined) old.vanishOwn = ovanish
+        const osnap = onOffOf(oldRPr, 'w:snapToGrid')
+        if (osnap !== undefined) old.snapToGridOwn = osnap
         const okern = attrsOf(findChild(oldRPr, 'w:kern') ?? {})['w:val']
         if (okern !== undefined) old.kernHalfPoints = parseInt(okern, 10) || 0
         const opos = parseInt(attrsOf(findChild(oldRPr, 'w:position') ?? {})['w:val'] ?? '', 10)
@@ -5804,7 +5999,7 @@ function extractTableModel(
     legacy: (ctx.compatibilityMode ?? 0) < 15,
     tblSpacing,
   })
-  const tblBorders = mergedBorderLinesOf(tblPrNode, 'w:tblBorders', true)
+  const tblBorders = mergedBorderLinesOf(tblPrNode, 'w:tblBorders', true, ctx.themeColors)
   const tblJc = attrsOf(findChild(tblPrNode ?? {}, 'w:jc') ?? {})['w:val']
   const tblAlign =
     tblJc === 'center' ? 'center' : tblJc === 'right' || tblJc === 'end' ? 'right' : undefined
@@ -5867,7 +6062,7 @@ function extractTableModel(
   }
 
   let cellSpacing = tblSpacing
-  const tblFill = shdDisplayFill(findChild(tblPrNode ?? {}, 'w:shd'))
+  const tblFill = tableShdFill(findChild(tblPrNode ?? {}, 'w:shd'), ctx.themeColors)
   const tableStyleId = attrsOf(findChild(tblPrNode ?? {}, 'w:tblStyle') ?? {})['w:val']
 
   const rows: TableCell[][] = []
@@ -5929,7 +6124,7 @@ function extractTableModel(
       rows.push(cells)
       rowTcws.push(tcws)
       rowEdges.push(rowGridEdges(tr))
-      rowExceptions.push(tablePropExceptionsOf(findChild(tr, 'w:tblPrEx')))
+      rowExceptions.push(tablePropExceptionsOf(findChild(tr, 'w:tblPrEx'), ctx.themeColors))
       const trPr = findChild(tr, 'w:trPr')
       cellSpacing = cellSpacing ?? spacingOf(trPr)
       const trH = trPr ? attrsOf(findChild(trPr, 'w:trHeight') ?? {}) : {}
@@ -6134,14 +6329,17 @@ interface RowPropExceptions {
   fill?: string
 }
 
-function tablePropExceptionsOf(tblPrEx: XNode | undefined): RowPropExceptions | null {
+function tablePropExceptionsOf(
+  tblPrEx: XNode | undefined,
+  theme?: ThemeColors | null,
+): RowPropExceptions | null {
   if (!tblPrEx) return null
   const out: RowPropExceptions = {}
-  const borders = mergedBorderLinesOf(tblPrEx, 'w:tblBorders', true)
+  const borders = mergedBorderLinesOf(tblPrEx, 'w:tblBorders', true, theme)
   if (borders) out.borders = borders
   const mar = cellMarginsOf(findChild(tblPrEx, 'w:tblCellMar'))
   if (mar) out.cellMarTwips = mar
-  const fill = shdDisplayFill(findChild(tblPrEx, 'w:shd'))
+  const fill = tableShdFill(findChild(tblPrEx, 'w:shd'), theme)
   if (fill) out.fill = fill
   return Object.keys(out).length > 0 ? out : null
 }
@@ -6270,6 +6468,37 @@ export function hfMovablePictureFrag(frag: string): boolean {
   )
 }
 
+/** a HF_DRAWING_RE match that is one picture and nothing else: the link of its blip is the picture's */
+export function hfSinglePictureFrag(frag: string): boolean {
+  return (
+    (frag.match(/<a:blip[\s>]/g) ?? []).length === 1 &&
+    (frag.match(/<pic:pic[\s>]/g) ?? []).length === 1 &&
+    !/<(?:wps:|wpg:|w:txbxContent[\s>])/.test(frag)
+  )
+}
+
+const drawingDocPr = (frag: string): string | undefined =>
+  /<wp:docPr\s[^>]*\bid="([^"]+)"/.exec(frag)?.[1]
+
+/** the pictures of a header/footer part that are linked to files, by the ordinal of their drawing */
+export function hfLinkedPictures(
+  partXml: string,
+  rels: ReadonlyMap<string, { target: string; targetMode?: string }>,
+): HfLinkedPicture[] {
+  if (!/\br:link\s*=/.test(partXml)) return []
+  const frags = partXml.match(HF_DRAWING_RE) ?? []
+  const ids = frags.map(drawingDocPr)
+  const out: HfLinkedPicture[] = []
+  frags.forEach((frag, drawing) => {
+    const target = hfSinglePictureFrag(frag) ? pictureLinkTarget(frag, rels) : null
+    if (target === null) return
+    const docPr = ids[drawing]
+    const unique = docPr !== undefined && ids.indexOf(docPr) === ids.lastIndexOf(docPr)
+    out.push({ drawing, target, ...(unique ? { docPr } : {}) })
+  })
+  return out
+}
+
 /** wp:docPr ids of the anchored drawings in a layout-table row / on a cell-run image (binds HfImage.anchorPara) */
 const hfRowAnchorIds = new WeakMap<HfParagraph, string[]>()
 const hfImageAnchorId = new WeakMap<HfImage, string>()
@@ -6334,7 +6563,7 @@ function extractCell(
     if (vMerge) {
       cell.vMerge = attrsOf(vMerge)['w:val'] === 'restart' ? 'restart' : 'continue'
     }
-    const fill = shdDisplayFill(findChild(tcPr, 'w:shd'))
+    const fill = tableShdFill(findChild(tcPr, 'w:shd'), ctx.themeColors)
     if (fill) cell.fill = fill
     const vAlign = attrsOf(findChild(tcPr, 'w:vAlign') ?? {})['w:val']
     if (vAlign === 'center' || vAlign === 'bottom' || vAlign === 'top') cell.vAlign = vAlign
@@ -6350,7 +6579,7 @@ function extractCell(
     if (attrsOf(findChildren(tcPr, 'w:tcW').at(-1) ?? {})['w:type'] === 'pct') cell.widthPct = true
     const hMerge = findChild(tcPr, 'w:hMerge')
     if (hMerge) cell.hMerge = attrsOf(hMerge)['w:val'] === 'restart' ? 'restart' : 'continue'
-    const borders = mergedBorderLinesOf(tcPr, 'w:tcBorders', false)
+    const borders = mergedBorderLinesOf(tcPr, 'w:tcBorders', false, ctx.themeColors)
     if (borders) cell.borders = borders
     for (const kind of ['ins', 'del'] as const) {
       const node = findChild(tcPr, kind === 'ins' ? 'w:cellIns' : 'w:cellDel')
@@ -6415,6 +6644,18 @@ function extractCell(
             ...(cell.anchoredBoxAnchors ?? []),
             ...boxes.map(() => cell.paras.length),
           ]
+          const drawings = topLevelDrawings(pXml)
+          const anchored = drawings.filter(
+            (f) => f.includes('<wp:anchor') && (pictures || !f.includes('<pic:pic')),
+          )
+          // VML boxes and shapes in line have no anchored drawing of their own to be saved from
+          const lifts =
+            !/<w:pict[\s>]/.test(pXml) &&
+            drawings.every((f) => anchored.includes(f) || !/<wps:wsp[\s>]|<wpg:wgp[\s>]/.test(f))
+          const source = lifts
+            ? `<w:p>${anchored.map((f) => `<w:r>${f}</w:r>`).join('')}</w:p>`
+            : null
+          cell.anchoredBoxXml = [...(cell.anchoredBoxXml ?? []), ...boxes.map(() => source)]
           // the boxes now display separately: drop the anchored drawings (and
           // textbox picts) from the paragraph node so their inner text/offsets
           // don't leak into the cell's own runs; inline drawings stay for images
@@ -6481,8 +6722,10 @@ function extractCell(
     const cellBookmarkNames = hasDeepChild(p, new Set(['w:bookmarkStart']))
       ? bookmarkNamesOf(stripTextboxes(serializeXNode(p)))
       : { bookmarks: undefined, hiddenBookmarks: undefined }
+    const cellPPrChange = pPrChangeInfoOf(pPr, ctx)
     richParas.push({
       ...format,
+      ...(cellPPrChange ? { pPrChange: JSON.stringify(cellPPrChange) } : {}),
       ...(cellStyleId ? { styleId: cellStyleId } : {}),
       ...(cellBookmarkNames.bookmarks ? { bookmarks: cellBookmarkNames.bookmarks } : {}),
       ...(cellBookmarkNames.hiddenBookmarks
@@ -6491,6 +6734,7 @@ function extractCell(
       ...(emptySz ? { emptyRunSizeHalfPoints: emptySz } : {}),
       ...(emptyFont ? { emptyRunFontFamily: emptyFont } : {}),
       ...(markSz ? { markSizeHalfPoints: markSz } : {}),
+      ...(cellRef ? markPaintOf(eff, pPr) : {}),
       ...(list ? { list } : {}),
       runs,
     })
@@ -6676,6 +6920,16 @@ async function hfImages(
       if (image.posXPx != null && image.posHRel === 'margin' && onCellRun(m.index!)) {
         image.posXPx += hfCellColumnLeftPx(partXml, m.index!)
       }
+      // layoutInCell: Word measures page / margin offsets from the cell's corner
+      if (onCellRun(m.index!) && !/\blayoutInCell="(?:0|false)"/.test(anchorTag)) {
+        if (image.posXPx != null && image.posHRel === 'page') {
+          image.posHRel = 'margin'
+          image.posXPx += hfCellColumnLeftPx(partXml, m.index!)
+        }
+        if (image.posYPx != null && (image.posVRel === 'page' || image.posVRel === 'margin')) {
+          image.posVRel = 'paragraph'
+        }
+      }
       if (image.posVRel === 'paragraph' && image.posYPx != null && onCellRun(m.index!)) {
         const id = /<wp:docPr\s[^>]*\bid="([^"]+)"/.exec(frag)?.[1]
         if (id) hfImageAnchorId.set(image, id)
@@ -6684,6 +6938,8 @@ async function hfImages(
       const align = paraAlignAt(m.index!)
       if (align) image.align = align
     }
+    if (hfSinglePictureFrag(frag) && pictureLinkTarget(frag, rels) !== null)
+      image.linkDrawing = drawingOrdinal
     recordProduced(m.index!)
     out.push(image)
   }
@@ -7066,7 +7322,8 @@ async function hfTableMedia(
   for (const [start, end] of ranges) {
     const slice = partXml.slice(start, end)
     const refs = [
-      ...slice.matchAll(/<a:blip[^>]*r:(?:embed|link)\s*=\s*["']([^"']+)["']/g),
+      ...slice.matchAll(/<a:blip[^>]*r:embed\s*=\s*["']([^"']+)["']/g),
+      ...slice.matchAll(/<a:blip[^>]*r:link\s*=\s*["']([^"']+)["']/g),
       ...slice.matchAll(/<v:imagedata[^>]*r:id\s*=\s*["']([^"']+)["']/g),
     ]
     for (const m of refs) {
@@ -7100,6 +7357,44 @@ async function parseCompatibilityMode(zip: JSZip): Promise<number> {
 }
 
 /** settings.xml w:autoHyphenation + w:defaultTabStop (absent = Word's 720 twips) */
+function readKinsokuCustom(xml: string): KinsokuCustom | undefined {
+  const read = (name: string) => {
+    const tag = new RegExp(`<w:${name}\\b[^>]*>`).exec(xml)?.[0]
+    if (!tag) return null
+    return {
+      lang: /\sw:lang="([^"]*)"/.exec(tag)?.[1] ?? '',
+      val: decodeEntities(/\sw:val="([^"]*)"/.exec(tag)?.[1] ?? ''),
+    }
+  }
+  const before = read('noLineBreaksBefore')
+  const after = read('noLineBreaksAfter')
+  if (!before && !after) return undefined
+  return {
+    lang: before?.lang || after?.lang || '',
+    before: before?.val ?? '',
+    after: after?.val ?? '',
+  }
+}
+
+function readDrawingGrid(xml: string): DrawingGrid | undefined {
+  const num = (name: string) => {
+    const val = new RegExp(`<w:${name}\\b[^>]*\\sw:val="(-?\\d+)"`).exec(xml)?.[1]
+    return val === undefined ? undefined : parseInt(val, 10)
+  }
+  const grid: DrawingGrid = {
+    horizontalSpacing: num('drawingGridHorizontalSpacing'),
+    verticalSpacing: num('drawingGridVerticalSpacing'),
+    displayHorizontalEvery: num('displayHorizontalDrawingGridEvery'),
+    displayVerticalEvery: num('displayVerticalDrawingGridEvery'),
+    ownOrigin: xmlFlagOn(xml, 'w:doNotUseMarginsForDrawingGridOrigin') || undefined,
+    horizontalOrigin: num('drawingGridHorizontalOrigin'),
+    verticalOrigin: num('drawingGridVerticalOrigin'),
+  }
+  for (const key of Object.keys(grid) as Array<keyof DrawingGrid>)
+    if (grid[key] === undefined) delete grid[key]
+  return Object.keys(grid).length > 0 ? grid : undefined
+}
+
 async function parseLayoutSettings(zip: JSZip): Promise<{
   autoHyphenation?: boolean
   hyphenationZoneTwips?: number
@@ -7109,7 +7404,10 @@ async function parseLayoutSettings(zip: JSZip): Promise<{
   balanceDbcsSpacing?: boolean
   useFELayout?: boolean
   compressPunctuation?: boolean
+  compressKana?: boolean
   strictFirstAndLastChars?: boolean
+  kinsokuCustom?: KinsokuCustom
+  drawingGrid?: DrawingGrid
   adjustLineHeightInTable?: boolean
   indentNotNumberingTabStop?: boolean
   doNotExpandShiftReturn?: boolean
@@ -7130,6 +7428,8 @@ async function parseLayoutSettings(zip: JSZip): Promise<{
   const hyphenLimit = /<w:consecutiveHyphenLimit[^>]*w:val="(\d+)"/.exec(xml)
   const csc = /<w:characterSpacingControl[^>]*w:val="(\w+)"/.exec(xml)
   const mathPr = readMathPr(xml)
+  const kinsokuCustom = readKinsokuCustom(xml)
+  const drawingGrid = readDrawingGrid(xml)
   return {
     ...(mathPr ? { mathPr } : {}),
     ...(xmlFlagOn(xml, 'w:autoHyphenation') ? { autoHyphenation: true } : {}),
@@ -7140,7 +7440,10 @@ async function parseLayoutSettings(zip: JSZip): Promise<{
     ...(xmlFlagOn(xml, 'w:balanceSingleByteDoubleByteWidth') ? { balanceDbcsSpacing: true } : {}),
     ...(xmlFlagOn(xml, 'w:useFELayout') ? { useFELayout: true } : {}),
     ...(csc && csc[1].startsWith('compressPunctuation') ? { compressPunctuation: true } : {}),
+    ...(csc && csc[1] === 'compressPunctuationAndJapaneseKana' ? { compressKana: true } : {}),
     ...(xmlFlagOn(xml, 'w:strictFirstAndLastChars') ? { strictFirstAndLastChars: true } : {}),
+    ...(kinsokuCustom ? { kinsokuCustom } : {}),
+    ...(drawingGrid ? { drawingGrid } : {}),
     ...(xmlFlagOn(xml, 'w:adjustLineHeightInTable') ? { adjustLineHeightInTable: true } : {}),
     ...(xmlFlagOn(xml, 'w:doNotUseIndentAsNumberingTabStop')
       ? { indentNotNumberingTabStop: true }
@@ -7276,6 +7579,22 @@ function liveSectPrAt(xml: string, at: number): [string, number] {
 }
 
 /** settings.xml on/off flag such as <w:evenAndOddHeaders/> (w:val="0|false" counts as off) */
+const MAIL_MERGE_MAIN_TYPES: readonly MailMergeMainType[] = [
+  'catalog',
+  'envelopes',
+  'mailingLabels',
+  'formLetters',
+  'email',
+  'fax',
+]
+
+/** settings.xml w:mailMerge w:mainDocumentType, when the document is a mail-merge main document */
+async function parseMailMergeMainType(zip: JSZip): Promise<MailMergeMainType | undefined> {
+  const xml = (await zip.file('word/settings.xml')?.async('string')) ?? ''
+  const val = /<w:mailMerge[\s>][\s\S]*?<w:mainDocumentType\b[^>]*\bw:val="([^"]*)"/.exec(xml)?.[1]
+  return MAIL_MERGE_MAIN_TYPES.find((type) => type === val)
+}
+
 async function parseSettingsFlag(zip: JSZip, tag: string): Promise<boolean> {
   const file = zip.file('word/settings.xml')
   if (!file) return false
@@ -7376,6 +7695,9 @@ function renderFieldRegion(
   return text + xml.slice(pos, to)
 }
 
+/** stands for `w:fldChar` in a field that is kept as a field while the others are flattened */
+const KEPT_FLD_CHAR = 'w:keptFldChar'
+
 /**
  * The display text of one field: a page-number marker for a PAGE/NUMPAGES
  * field, its cached result for anything else. A field's instruction is field
@@ -7397,6 +7719,15 @@ function renderField(xml: string, field: FieldFrame, page: { hasPageNumber: bool
   // the replacement closes/reopens the enclosing w:r to stay balanced
   // (the leftover edge runs end up empty and are dropped later)
   const emit = (inner: string) => `</w:r>${inner}<w:r>`
+  // a locked page field shows the number it was saved with, not the page it stands on:
+  // it stays a field with its result (Word's Lock Fields), its markers set aside from the strip below
+  if (
+    /^\s*(?:PAGE|NUMPAGES|SECTIONPAGES)\b/.test(field.instr) &&
+    field.children.length === 0 &&
+    field.separateEnd >= 0 &&
+    /\bw:fldLock\s*=\s*["'](?:true|1)["']/.test(/^<w:fldChar\b[^>]*>/.exec(span)?.[0] ?? '')
+  )
+    return span.replace(/<(\/?)w:fldChar\b/g, `<$1${KEPT_FLD_CHAR}`)
   // classify by the leading keyword: a nested child field's PAGE inside a
   // DOCPROPERTY instruction must not make the parent a PAGE field
   // (genoffice#2458 — the span is matched by nesting depth, so the parent's
@@ -7500,7 +7831,9 @@ function hfContentFromXml(
     watermarkPicture: kind === 'header' ? readPictureWatermark(xml) : null,
     // strip leftover field chars so the page marker parses as plain text
     paras: hfParagraphs(
-      cleaned.replace(/<w:fldChar[^>]*?(?:\/>|>\s*<\/w:fldChar>)/g, ''),
+      cleaned
+        .replace(/<w:fldChar[^>]*?(?:\/>|>\s*<\/w:fldChar>)/g, '')
+        .replaceAll(KEPT_FLD_CHAR, 'w:fldChar'),
       theme,
       styles,
       tableMedia,
@@ -7588,7 +7921,8 @@ async function parseAllHfParts(
     if (!path) continue
     const file = zip.file(path)
     if (!file) continue
-    const xml = stripHfDeletions(await file.async('string'))
+    const raw = await file.async('string')
+    const xml = stripHfDeletions(raw)
     const content = hfContentFromXml(
       xml,
       kind,
@@ -7600,11 +7934,17 @@ async function parseAllHfParts(
       resolver,
     )
     const images = bindHfImageAnchors(await hfImages(zip, path, xml, content.paras), content.paras)
+    // a drawing dropped with a tracked deletion would shift the ordinals the save counts
+    const linked =
+      xml === raw && /\br:link\s*=/.test(xml)
+        ? hfLinkedPictures(xml, await parseRels(zip, path.replace(/([^/]+)$/, '_rels/$1.rels')))
+        : []
     out[rId] = {
       text: content.text,
       hasPageNumber: content.hasPageNumber,
       paras: content.paras,
       ...(images.length > 0 ? { images } : {}),
+      ...(linked.length > 0 ? { linkedPictures: linked } : {}),
     }
   }
   return out
@@ -8117,7 +8457,8 @@ function hfCellContent(
   let fill = shd && shd !== 'auto' ? stripHash(shd) : undefined
   let sawNested = false
   const rctx = cellResolverOf(ctx, tableStyleId, [])
-  for (const node of childrenThroughSdt(tc, ['w:p', 'w:tbl'])) {
+  const nodes = childrenThroughSdt(tc, ['w:p', 'w:tbl'])
+  for (const node of nodes) {
     if (nameOf(node) === 'w:tbl') {
       sawNested = true
       const nestedStyle = attrsOf(findChild(findChild(node, 'w:tblPr') ?? {}, 'w:tblStyle') ?? {})[
@@ -8150,6 +8491,9 @@ function hfCellContent(
     const pPr = findChild(node, 'w:pPr')
     const eff = resolveParagraphProps(pPr, rctx)
     const sp = effectiveSpacingTwips(eff, rctx.compat)
+    // Word drops HTML auto spacing at the cell's top and bottom edge
+    if (node === nodes[0] && eff.spacing.beforeAuto) sp.before = 0
+    if (node === nodes[nodes.length - 1] && eff.spacing.afterAuto) sp.after = 0
     // the paragraph / table style's run size: runs without their own w:sz
     // inherit it, docDefaults stay with the strip base size
     const styleSize =
@@ -8621,19 +8965,32 @@ function groupPictureLayers(
     const cx = parseInt(ext['cx'] ?? '', 10)
     const cy = parseInt(ext['cy'] ?? '', 10)
     if (!(cx > 0) || !(cy > 0)) return null
+    const src = attrsOf(findChild(findChild(pic, 'pic:blipFill') ?? {}, 'a:srcRect') ?? {})
+    const side = (name: string): number => {
+      const v = parseFloat(src[name] ?? '')
+      return Number.isFinite(v) ? v / 100000 : 0
+    }
+    const crop = { l: side('l'), t: side('t'), r: side('r'), b: side('b') }
+    // an outset (negative side) shows nothing more of the bitmap: left to the plain stretch
+    const cropped =
+      Object.values(crop).every((v) => v >= 0) &&
+      Object.values(crop).some((v) => v > 0) &&
+      crop.l + crop.r < 1 &&
+      crop.t + crop.b < 1
     layers.push({
       dataUrl,
       x: frac((ctm.tx + (parseInt(off['x'] ?? '', 10) || 0) * ctm.sx) / extCx),
       y: frac((ctm.ty + (parseInt(off['y'] ?? '', 10) || 0) * ctm.sy) / extCy),
       w: frac((cx * ctm.sx) / extCx),
       h: frac((cy * ctm.sy) / extCy),
+      ...(cropped ? { crop, aspect: frac((cx * ctm.sx) / (cy * ctm.sy)) } : {}),
     })
   }
   return layers
 }
 
 /** rotation/flip live on the pic's own xfrm (an anchored textbox sibling has its own wps xfrm) */
-function picTransformOf(xml: string): { rotDeg?: number; flipH?: boolean; flipV?: boolean } {
+export function picTransformOf(xml: string): { rotDeg?: number; flipH?: boolean; flipV?: boolean } {
   const picXfrm = /<pic:spPr[^>]*>[\s\S]*?<a:xfrm([^>]*)>/.exec(xml)?.[1]
   if (!picXfrm) return {}
   const out: { rotDeg?: number; flipH?: boolean; flipV?: boolean } = {}
@@ -8660,6 +9017,7 @@ export type RunPictureAnchor = Pick<
   | 'wrapDistRightEmu'
   | 'lineCenterV'
   | 'noOverlap'
+  | 'zOrder'
 >
 
 /**
@@ -8692,6 +9050,7 @@ export function runPictureAnchorOf(drawingXml: string): RunPictureAnchor {
   )
     anchor.lineCenterV = true
   if (meta.imageNoOverlap) anchor.noOverlap = true
+  if (meta.imageZOrder !== undefined) anchor.zOrder = meta.imageZOrder
   return anchor
 }
 
@@ -9118,8 +9477,9 @@ async function tableBlipMedia(
       if (from === -1) continue
       slice = slice.slice(from, slice.lastIndexOf('</w:tbl>') + '</w:tbl>'.length)
     }
-    for (const m of slice.matchAll(/<a:blip[^>]*r:(?:embed|link)\s*=\s*["']([^"']+)["']/g))
-      rIds.add(m[1])
+    // embed and link apart: a blip carrying both names two relationships
+    for (const m of slice.matchAll(/<a:blip[^>]*r:embed\s*=\s*["']([^"']+)["']/g)) rIds.add(m[1])
+    for (const m of slice.matchAll(/<a:blip[^>]*r:link\s*=\s*["']([^"']+)["']/g)) rIds.add(m[1])
     for (const m of slice.matchAll(SVG_BLIP_RE)) rIds.add(m[1])
     // legacy VML pictures and OLE previews inside cells (w:pict / w:object)
     for (const m of slice.matchAll(/<v:imagedata[^>]*r:id\s*=\s*["']([^"']+)["']/g)) rIds.add(m[1])

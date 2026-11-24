@@ -82,7 +82,7 @@ test('Mark Entry, Insert Index, Display for Review and the spacing boxes change 
     await big('Insert Index').click()
     await expect
       .poll(() => page.locator('.doc-page').first().innerText())
-      .toMatch(/Granite[\s\S]+Granite\.{5,}/)
+      .toMatch(/Granite[\s\S]+Granite, 1/)
     await page.screenshot({ path: test.info().outputPath('references.png') })
 
     // Layout: the spacing boxes answer to their names
@@ -101,18 +101,21 @@ test('Mark Entry, Insert Index, Display for Review and the spacing boxes change 
     const after = page.getByRole('spinbutton', { name: 'Space After', exact: true })
     await before.fill('18')
     await before.press('Enter')
+    // Enter hands the focus back to the page a frame later, and would take it from the next box mid-entry
+    await expect(page.locator('.ProseMirror.doc-page').first()).toBeFocused()
     await after.fill('6')
     await after.press('Enter')
     await expect.poll(async () => (await gap()) - gapBefore).toBeGreaterThan(10)
     await page.screenshot({ path: test.info().outputPath('layout.png') })
 
+    // the index's section was saved when it went in: wait for this save by what was changed since
     await saveFromMenu(app)
     await expect
-      .poll(async () => /XE\s+"Granite"/.test(await documentXml(docPath)), { timeout: 20_000 })
-      .toBe(true)
+      .poll(() => documentXml(docPath), { timeout: 20_000 })
+      .toMatch(/<w:spacing[^>]*w:before="360"[^>]*w:after="120"/)
     const saved = await documentXml(docPath)
+    expect(saved).toMatch(/XE\s+"Granite"/)
     expect(saved).toMatch(/<w:instrText[^>]*>\s*INDEX\b/)
-    expect(saved).toMatch(/<w:spacing[^>]*w:before="360"[^>]*w:after="120"/)
     // the view is not part of the document: both changes are still tracked
     expect(saved).toContain('<w:ins ')
     expect(saved).toContain('<w:del ')

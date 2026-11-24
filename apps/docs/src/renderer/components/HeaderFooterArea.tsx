@@ -19,6 +19,7 @@ import { spellcheckEnabled } from '../spellcheck-pref'
 import {
   hfCellGeometry,
   hfAnchoredImgStyle,
+  hfRowBoxLeftPx,
   hfCellParaBox,
   hfImageHangsOnPara,
   hfCellSegStyle,
@@ -59,6 +60,7 @@ import { hfEditablePara, mountHfEditor, type HfEditorHandle } from '../editor/hf
 import { dkStyleProps } from '../editor/dark-page'
 import { INLINE_RULE_CLASS, inlineRuleStyle } from '../editor/inline-rule'
 import { textColorValue } from '../editor/text-color'
+import { declStyle, textFillDecls } from '../editor/text-effects'
 import { textOutlineCssValue } from '../editor/text-outline'
 import { fontKerningCss, runLetterSpacingCss } from '../line-metrics'
 import { cssRunFontFamily } from '../text-layout/font-rules'
@@ -95,6 +97,7 @@ function runStyle(run: Run): React.CSSProperties {
   if (kerning) style.fontKerning = kerning
   if (face.font || face.fontAscii) style.fontFamily = cssRunFontFamily(face.fontAscii, face.font)
   if (run.textOutline) style.WebkitTextStroke = textOutlineCssValue(run.textOutline)
+  if (run.textFill) Object.assign(style, declStyle(textFillDecls(run.textFill)))
   if (run.caps === 'all') style.textTransform = 'uppercase'
   else if (run.caps === 'small') style.fontVariantCaps = 'small-caps'
   else if (run.caps === 'none') {
@@ -590,7 +593,15 @@ export function HfContent({
         src={img.dataUrl}
         alt=""
         draggable={false}
-        style={hfAnchoredImgStyle(img, boxGeom)}
+        style={hfAnchoredImgStyle(
+          img,
+          boxGeom,
+          hfRowBoxLeftPx(
+            paras[img.anchorPara!].row,
+            hfRowGeomOf(kind, boxGeom),
+            img.posHRel === 'margin',
+          ),
+        )}
       />
     )
     hostedBy.set(img.anchorPara!, [...(hostedBy.get(img.anchorPara!) ?? []), node])

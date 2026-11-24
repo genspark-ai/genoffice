@@ -330,6 +330,8 @@ export interface ListMarkerInfo {
   font?: string
   /** the item's own counter value (numbered levels only) */
   value?: number
+  /** the numbers of `text` without the words before and after them ("Chapter 2." -> "2") */
+  number?: string
 }
 
 /** Word symbol bullets with no glyph on this platform: Liberation Sans' U+25CF through a
@@ -455,17 +457,20 @@ export function computeListMarkerInfos(
     }
     c.length = lvl + 1
 
-    const marker = level.lvlText.replace(/%(\d)/g, (_, d: string) => {
-      const refLvl = Number(d) - 1
-      const refDef = def.levels[refLvl]
-      const value = c[refLvl] ?? refDef?.start ?? 1
-      const fmt = refDef?.numFmt ?? 'decimal'
-      if (level.isLgl && !ARABIC_FORMATS.has(fmt)) return String(value)
-      return formatNumber(value, fmt, refDef?.customFormat)
-    })
+    const fill = (template: string): string =>
+      template.replace(/%(\d)/g, (_, d: string) => {
+        const refLvl = Number(d) - 1
+        const refDef = def.levels[refLvl]
+        const value = c[refLvl] ?? refDef?.start ?? 1
+        const fmt = refDef?.numFmt ?? 'decimal'
+        if (level.isLgl && !ARABIC_FORMATS.has(fmt)) return String(value)
+        return formatNumber(value, fmt, refDef?.customFormat)
+      })
+    const marker = fill(level.lvlText)
+    const numbers = /%\d(?:[\s\S]*%\d)?/.exec(level.lvlText)?.[0]
     // numFmt "none" or an empty lvlText: an explicit empty marker (Word shows
     // nothing) so renderer counter fallbacks don't kick in on the null
-    return { text: marker, value: c[lvl] }
+    return { text: marker, value: c[lvl], ...(numbers ? { number: fill(numbers) } : {}) }
   })
 }
 
@@ -479,6 +484,100 @@ export function computeListMarkers(
   defs: Map<string, NumberingDef>,
 ): (string | null)[] {
   return computeListMarkerInfos(items, defs).map((m) => m?.text ?? null)
+}
+
+/** a list item as a cross-reference to its number reads it */
+export interface ListNumberSite {
+  /** the number the page shows; empty for a bullet */
+  text: string
+  ilvl: number
+  /** index of the item it sits under in the same list; -1 at the top */
+  parent: number
+  /** the shallowest level whose number the text already carries */
+  from: number
+  /** the numbers of `text` without the words before and after them */
+  number?: string
+}
+
+export function computeListNumberSites(
+  items: ListItemRef[],
+  defs: Map<string, NumberingDef>,
+): (ListNumberSite | null)[] {
+  const infos = computeListMarkerInfos(items, defs)
+  const open = new Map<string, number[]>()
+  return items.map((item, i) => {
+    const def = item.numId !== null ? defs.get(item.numId) : undefined
+    const ilvl = Math.max(0, item.ilvl)
+    const level = def?.levels[ilvl]
+    if (!def || !level) return null
+    const path = open.get(def.abstractNumId) ?? []
+    open.set(def.abstractNumId, path)
+    path.length = ilvl
+    let parent = -1
+    for (let l = ilvl - 1; l >= 0 && parent < 0; l--) parent = path[l] ?? -1
+    path[ilvl] = i
+    const numbered = level.numFmt !== 'bullet'
+    const shown = [...level.lvlText.matchAll(/%(\d)/g)].map((m) => Number(m[1]) - 1)
+    return {
+      text: numbered ? (infos[i]?.text ?? '') : '',
+      ilvl,
+      parent,
+      from: numbered && shown.length > 0 ? Math.min(ilvl, ...shown) : ilvl,
+      ...(numbered && infos[i]?.number ? { number: infos[i]!.number } : {}),
+    }
+  })
+}
+
+/** REF \r, \n and \w: the number relative to the paragraph of the field, alone, or with every level above it */
+export type ParagraphNumberContext = 'relative' | 'none' | 'full'
+
+const withoutFinalPeriod = (text: string): string => text.trim().replace(/\.$/, '')
+
+/**
+ * The number of item `target` as Word's REF field shows it: one final period dropped,
+ * the levels above put in front where the number does not carry them itself.
+ * `separator` (REF \d) goes between the levels in place of their own punctuation.
+ */
+export function paragraphNumberText(
+  sites: ReadonlyArray<ListNumberSite | null>,
+  target: number,
+  context: ParagraphNumberContext,
+  options: { from?: number; separator?: string; bare?: boolean } = {},
+): string | null {
+  const site = sites[target]
+  if (!site || !site.text.trim()) return null
+  if (context === 'none') return withoutFinalPeriod(site.text)
+  const pathOf = (index: number): number[] => {
+    const path: number[] = []
+    for (let at = index; at >= 0 && sites[at]; at = sites[at]!.parent) path.unshift(at)
+    return path
+  }
+  let floor = 0
+  if (context === 'relative' && options.from !== undefined && sites[options.from]) {
+    const mine = pathOf(target)
+    const theirs = pathOf(options.from)
+    let shared = 0
+    while (shared < mine.length && mine[shared] === theirs[shared]) shared++
+    floor = shared < mine.length ? sites[mine[shared]]!.ilvl : site.ilvl
+  }
+  const pieces: string[] = []
+  const bare: Array<string | undefined> = []
+  for (let at = target; ;) {
+    const here = sites[at]!
+    if (here.text.trim()) {
+      pieces.unshift(here.text.trim())
+      bare.unshift(here.number)
+    }
+    let up = here.parent
+    while (up >= 0 && sites[up] && sites[up]!.ilvl >= here.from) up = sites[up]!.parent
+    if (here.from <= 0 || up < 0 || !sites[up] || sites[up]!.ilvl < floor) break
+    at = up
+  }
+  // STYLEREF \t: what stands between the numbers of two levels is not known to be kept
+  if (options.bare) return bare.length === 1 ? (bare[0] ?? null) : null
+  return options.separator !== undefined
+    ? pieces.map(withoutFinalPeriod).join(options.separator)
+    : withoutFinalPeriod(pieces.join(''))
 }
 
 /**

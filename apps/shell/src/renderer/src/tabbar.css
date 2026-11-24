@@ -67,6 +67,12 @@ body.overlay-title-bar .tab-bar-drag-spacer {
   margin-right: 2px;
 }
 
+/* a full strip scrolls instead of leaving blank space, so this band is the
+   one place that always drags the window */
+.tab-bar-drag-gutter {
+  flex: 0 0 48px;
+}
+
 /* scrollable middle section; empty space stays part of the window drag region.
  * Horizontal padding keeps the edge tabs' feet inside the scroll clip. */
 .tab-strip {

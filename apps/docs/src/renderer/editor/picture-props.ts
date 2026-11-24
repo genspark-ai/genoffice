@@ -2,6 +2,7 @@ import type { Editor } from '@tiptap/core'
 import { NodeSelection } from '@tiptap/pm/state'
 import { runPictureAltOf } from '@genoffice/docx-engine'
 import { autoCropDataUrl } from './auto-crop'
+import { heldPictureToken } from './convert'
 import { replaceSelectedPictureBytes } from './picture-bytes'
 
 const EMU_PER_PX = 9525
@@ -162,9 +163,12 @@ export function setSelectedPictureAlt(editor: Editor, alt: string): boolean {
  */
 export async function autoCropSelectedPicture(editor: Editor): Promise<boolean> {
   const picked = selectedPicture(editor)
-  if (!picked || picked.inline || !editor.isEditable) return false
-  const src = String(picked.attrs.imageDataUrl ?? '')
+  if (!picked || !editor.isEditable) return false
+  const srcOf = (p: Selected) => String((p.inline ? p.attrs.dataUrl : p.attrs.imageDataUrl) ?? '')
+  const src = srcOf(picked)
   if (!src) return false
+  const drawing = picked.inline ? inlineDrawingForNewBytes(picked.attrs) : ''
+  if (drawing === null) return false
   let cropped: Awaited<ReturnType<typeof autoCropDataUrl>>
   try {
     cropped = await autoCropDataUrl(src)
@@ -174,13 +178,43 @@ export async function autoCropSelectedPicture(editor: Editor): Promise<boolean> 
   if (!cropped) return false
   // the decode took a moment: only the picture that was asked about is cropped
   const now = selectedPicture(editor)
-  if (!now || now.pos !== picked.pos || now.attrs.imageDataUrl !== picked.attrs.imageDataUrl)
+  if (!now || now.pos !== picked.pos || srcOf(now) !== src) return true
+  const shownW = Number(picked.inline ? picked.attrs.widthPx : picked.attrs.imageWidthPx)
+  const shownH = Number(picked.inline ? picked.attrs.heightPx : picked.attrs.imageHeightPx)
+  const shown = {
+    widthPx: ((shownW || cropped.width) * cropped.box.w) / cropped.width,
+    heightPx: ((shownH || cropped.height) * cropped.box.h) / cropped.height,
+  }
+  if (!picked.inline) {
+    await replaceSelectedPictureBytes(editor, cropped.dataUrl, shown)
     return true
-  const shownW = Number(picked.attrs.imageWidthPx) || cropped.width
-  const shownH = Number(picked.attrs.imageHeightPx) || cropped.height
-  await replaceSelectedPictureBytes(editor, cropped.dataUrl, {
-    widthPx: (shownW * cropped.box.w) / cropped.width,
-    heightPx: (shownH * cropped.box.h) / cropped.height,
+  }
+  const { state, view } = editor
+  const tr = state.tr.setNodeMarkup(picked.pos, undefined, {
+    ...now.attrs,
+    dataUrl: cropped.dataUrl,
+    vector: null,
+    xml: drawing,
+    widthPx: Math.max(1, Math.round(shown.widthPx)),
+    heightPx: Math.max(1, Math.round(shown.heightPx)),
   })
+  view.dispatch(tr.setSelection(NodeSelection.create(tr.doc, picked.pos)))
   return true
+}
+
+const BLIP_EMBED = /(<a:blip\b[^>]*\br:embed=")[^"]*(")/
+
+/**
+ * The drawing a picture in a line of text saves once its bytes are others:
+ * the file's own drawing pointed at them, '' for one the save draws itself.
+ * Null when the drawing cannot take them: a rule, a vector picture, a picture
+ * the file already crops, or more than one picture.
+ */
+function inlineDrawingForNewBytes(attrs: Record<string, unknown>): string | null {
+  if (attrs.rule || attrs.vector || attrs.layers) return null
+  const xml = String(attrs.xml ?? '')
+  if (!xml) return ''
+  if ((xml.match(/<pic:pic[\s>]/g) ?? []).length !== 1 || !BLIP_EMBED.test(xml)) return null
+  if (/svgBlip\b/.test(xml) || /<a:srcRect\b[^>]*\b[ltrb]="/.test(xml)) return null
+  return xml.replace(BLIP_EMBED, `$1${heldPictureToken()}$2`)
 }

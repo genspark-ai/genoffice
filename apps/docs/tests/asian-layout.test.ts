@@ -7,9 +7,9 @@ import {
   fitTextDecls,
   fitTextOf,
   parseEaLayoutAttr,
+  setEaLayout,
   setFitText,
   textStretch,
-  toggleEaLayout,
   twoLinesWidthEm,
 } from '../src/renderer/editor/asian-layout'
 
@@ -38,7 +38,7 @@ describe('asian layout of selected text', () => {
     expect(textStretch(editor.state)).toEqual({ from: 6, to: 11, text: 'abcde' })
     editor.commands.setTextSelection(6)
     expect(textStretch(editor.state)).toBeNull()
-    expect(toggleEaLayout(editor, 'combine')).toBe(false)
+    expect(setEaLayout(editor, { kind: 'combine', brackets: null })).toBe(false)
     expect(setFitText(editor, 1440)).toBe(false)
     editor.commands.setTextSelection({ from: 6, to: 20 })
     expect(textStretch(editor.state)).toBeNull()
@@ -46,21 +46,48 @@ describe('asian layout of selected text', () => {
 
   it('turns two lines in one on, sized to half the text, and off again as an explicit none', () => {
     selectWord()
-    expect(toggleEaLayout(editor, 'combine')).toBe(true)
+    expect(setEaLayout(editor, { kind: 'combine', brackets: null })).toBe(true)
     expect(layout()).toMatchObject({ combine: true, w: 3 })
+    expect(layout()!.brackets).toBeUndefined()
     expect(layout()!.id).toBeGreaterThan(0)
     selectWord()
-    toggleEaLayout(editor, 'combine')
+    setEaLayout(editor, null)
     expect(layout()).toEqual({})
+  })
+
+  it('puts brackets around two lines in one, changes them, and keeps the region id', () => {
+    selectWord()
+    setEaLayout(editor, { kind: 'combine', brackets: 'square' })
+    const { id } = layout()!
+    expect(layout()).toMatchObject({ combine: true, brackets: 'square' })
+    expect(editor.view.dom.querySelector('[data-ea-brackets="square"]')?.textContent).toBe('abcde')
+    selectWord()
+    setEaLayout(editor, { kind: 'combine', brackets: 'curly' })
+    expect(layout()).toMatchObject({ combine: true, brackets: 'curly', id })
+    selectWord()
+    setEaLayout(editor, { kind: 'combine', brackets: null })
+    expect(editor.view.dom.querySelector('[data-ea-brackets]')).toBeNull()
   })
 
   it('horizontal in vertical replaces two lines in one: the two exclude each other', () => {
     selectWord()
-    toggleEaLayout(editor, 'combine')
+    setEaLayout(editor, { kind: 'combine', brackets: 'round' })
     selectWord()
-    toggleEaLayout(editor, 'vert')
-    expect(layout()).toMatchObject({ vert: true })
+    setEaLayout(editor, { kind: 'vert', fit: true })
+    expect(layout()).toMatchObject({ vert: true, vertCompress: true })
     expect(layout()!.combine).toBeUndefined()
+    expect(layout()!.brackets).toBeUndefined()
+    // the run is marked for the stylesheet, fitted or not, and carries no drawing of its own
+    const run = () => editor.view.dom.querySelector<HTMLElement>('[data-ea-vert]')
+    expect(run()?.textContent).toBe('abcde')
+    expect(run()!.getAttribute('style') ?? '').not.toMatch(/writing-mode|text-combine/)
+    selectWord()
+    setEaLayout(editor, { kind: 'vert', fit: false })
+    expect(layout()!.vertCompress).toBeUndefined()
+    expect(run()?.textContent).toBe('abcde')
+    selectWord()
+    setEaLayout(editor, { kind: 'combine', brackets: null })
+    expect(run()).toBeNull()
   })
 
   it('fits the text into a width, changes it and takes it off', () => {
@@ -83,7 +110,9 @@ describe('asian layout of selected text', () => {
       expect.arrayContaining(['display:inline-block', 'font-size:6pt', 'width:3em']),
     )
     expect(eaLayoutDecls({ combine: true, w: 2 }, null)).toContain('font-size:50%')
-    expect(eaLayoutDecls({ vert: true }, null)).toEqual(['text-combine-upright:all'])
+    // horizontal in vertical is the stylesheet's: fitted or not, no inline drawing
+    expect(eaLayoutDecls({ vert: true, vertCompress: true }, null)).toEqual([])
+    expect(eaLayoutDecls({ vert: true }, null)).toEqual([])
     expect(eaLayoutDecls({}, null)).toEqual([])
     expect(twoLinesWidthEm('abcde')).toBe(3)
     expect(twoLinesWidthEm('')).toBe(1)

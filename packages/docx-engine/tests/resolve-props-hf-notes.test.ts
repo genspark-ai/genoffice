@@ -101,17 +101,19 @@ describe('header/footer paragraphs through the resolver', () => {
       '<w:p><w:pPr><w:spacing w:before="100" w:beforeAutospacing="1" w:after="100" w:afterAutospacing="1"/></w:pPr>' +
       '<w:r><w:t>Page</w:t></w:r></w:p>' +
       '<w:tbl><w:tblGrid><w:gridCol w:w="4000"/></w:tblGrid><w:tr><w:tc>' +
+      // not the cell's first paragraph: auto spacing at the cell edge is dropped
+      '<w:p><w:r><w:t>lead</w:t></w:r></w:p>' +
       '<w:p><w:pPr><w:spacing w:before="100" w:beforeAutospacing="1"/></w:pPr><w:r><w:t>cell</w:t></w:r></w:p>' +
       '</w:tc></w:tr></w:tbl>'
     const html = await hfDoc({ footer })
     expect(html.footerParas![0]).toMatchObject({ spaceBefore: 280, spaceAfter: 280 })
-    expect(html.footerParas![1].cells![0].paraProps![0]?.spaceBefore).toBe(280)
+    expect(html.footerParas![1].cells![0].paraProps![1]?.spaceBefore).toBe(280)
     expect(html.footerParas![1].row?.additiveSpacing).toBeUndefined()
 
     const additive = await hfDoc({ footer, settings: '<w:doNotUseHTMLParagraphAutoSpacing/>' })
     expect(additive.footerParas![0].spaceBefore).toBeUndefined()
     expect(additive.footerParas![0].spaceAfter).toBeUndefined()
-    expect(additive.footerParas![1].cells![0].paraProps![0]?.spaceBefore).toBeUndefined()
+    expect(additive.footerParas![1].cells![0].paraProps![1]?.spaceBefore).toBeUndefined()
     expect(additive.footerParas![1].row?.additiveSpacing).toBe(true)
   })
 })

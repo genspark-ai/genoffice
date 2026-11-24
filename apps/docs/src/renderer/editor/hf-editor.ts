@@ -6,7 +6,7 @@
  * stay display-only and are spliced back around the edited paragraphs.
  */
 import { Editor, Extension, Node } from '@tiptap/core'
-import { Plugin, PluginKey, TextSelection, type EditorState } from '@tiptap/pm/state'
+import { Plugin, TextSelection, type EditorState } from '@tiptap/pm/state'
 import type { ResolvedPos } from '@tiptap/pm/model'
 import type { EditorView } from '@tiptap/pm/view'
 import { Decoration, DecorationSet } from '@tiptap/pm/view'
@@ -30,17 +30,14 @@ import { inlineToRuns, runsToInline, type PmNode } from './convert'
 import { setDkBackground, setDkBackgroundImage, setDkBorder } from './dark-page'
 import { TextboxParagraph, textboxSubExtensions } from './extensions'
 import { TWIPS_PER_PX } from './anchor-geometry'
+import {
+  hfFieldNumbersKey,
+  liveHfFieldOf,
+  type HfFieldKind,
+  type HfFieldNumbers,
+} from './hf-field-lock'
 import { hfCellGeometry, hfRowStyle } from './hf-dom'
 import { hfIsBlank, hfParasOf } from './hf-text'
-
-export type HfFieldKind = 'PAGE' | 'NUMPAGES' | 'SECTIONPAGES'
-
-interface HfFieldNumbers {
-  page: string
-  total: string
-  /** page count of the edited page's section (SECTIONPAGES) */
-  section: string
-}
 
 const FIELD_MARKS: Record<HfFieldKind, string> = {
   PAGE: PAGE_MARK,
@@ -74,8 +71,6 @@ const HfFieldNode = Node.create({
     ]
   },
 })
-
-const hfFieldNumbersKey = new PluginKey<HfFieldNumbers>('hfFieldNumbers')
 
 /** live page / total numbers on the field atoms (set per mount through a transaction meta) */
 const HfFieldNumbersExtension = Extension.create({
@@ -610,14 +605,6 @@ export function insertHfPicture(
     .run()
 }
 
-const HF_FIELD_KINDS: readonly HfFieldKind[] = ['PAGE', 'NUMPAGES', 'SECTIONPAGES']
-
-/** the live header/footer field a bare instruction names; one with switches keeps its cached form */
-export function liveHfFieldOf(instr: string): HfFieldKind | null {
-  const bare = instr.trim().toUpperCase()
-  return HF_FIELD_KINDS.find((kind) => kind === bare) ?? null
-}
-
 export function insertHfField(editor: Editor, kind: HfFieldKind): void {
   editor.chain().focus().insertContent({ type: 'hfField', attrs: { kind } }).run()
 }
@@ -777,3 +764,5 @@ export function mountHfEditor(
   editor.commands.focus('end')
   return { editor, changed, exit, discard: () => close(false) }
 }
+
+export { liveHfFieldOf, type HfFieldKind }

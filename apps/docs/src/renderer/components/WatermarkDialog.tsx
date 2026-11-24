@@ -122,6 +122,14 @@ async function pictureFromDocImage(
   return spec
 }
 
+/** the document's own watermark shape as a spec that writes it again; null when it cannot be read */
+export async function watermarkOfDocImage(
+  img: HfImage,
+  box: WatermarkPageBox | null,
+): Promise<Watermark | null> {
+  return textFromDocImage(img) ?? (img.watermark ? pictureFromDocImage(img, box ?? LETTER) : null)
+}
+
 /** the page the preview draws: the section's paper and the area inside its margins */
 export function watermarkPageBoxOf(
   section: SectionSettings | null | undefined,

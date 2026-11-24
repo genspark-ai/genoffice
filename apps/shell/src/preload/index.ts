@@ -194,6 +194,9 @@ const homeApi: HomeApi = {
   async kbRead(path, offset) {
     return ipcRenderer.invoke('kb:read', { path, offset })
   },
+  async kbGrantMention(path) {
+    return ipcRenderer.invoke('kb:grant-mention', path)
+  },
   async kbCreateDocument(request) {
     return ipcRenderer.invoke('kb:create-document', request)
   },

@@ -45,6 +45,7 @@ import {
 import type { PmNode } from '../editor/convert'
 import { TABLE_TRAILING_SKIP } from '../editor/extensions'
 import { PERM_REGIONS_LOAD } from '../editor/perm-regions'
+import { SECTION_GUARD_PASS } from '../editor/section-edit-guard'
 import { countWords, findNumId, type NumIds } from './protocol'
 import { DOC_NAV_SCHEME, navigateToBlock, parseDocNavHref } from './doc-nav'
 import {
@@ -1362,6 +1363,7 @@ export function AiPanel({
       .chain()
       .setMeta(TABLE_TRAILING_SKIP, true)
       .setMeta(PERM_REGIONS_LOAD, true)
+      .setMeta(SECTION_GUARD_PASS, true)
       .setContent(snapshot as never)
       .run()
     // The document rewound to before this turn, so this and every later

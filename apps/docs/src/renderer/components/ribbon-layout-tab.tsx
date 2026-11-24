@@ -535,7 +535,7 @@ export function LayoutTab({
               </div>
             )}
           </div>
-          <div className="rb-col rb-pair">
+          <div className="rb-col rb-pair" data-collapse="2">
             <div className="rb-split-wrap">
               <button
                 className={`rb-small ${section?.lineNumbers ? 'active' : ''}`}

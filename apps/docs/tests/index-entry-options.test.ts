@@ -11,6 +11,7 @@ import {
   type IndexEntry,
 } from '../src/renderer/editor/index-entry'
 import { indexLines, insertIndex } from '../src/renderer/commands/reference-commands'
+import { pmDocToSavePlan, type PmNode } from '../src/renderer/editor/convert'
 
 const entry = (over: Partial<IndexEntry>): IndexEntry => ({
   main: 'Fruit',
@@ -84,6 +85,79 @@ describe('index lines', () => {
       { text: '9', italic: true },
     ])
     expect(indexLines([{ term: 'Fruit', page: 2 }], false)[0]!.pageRuns).toBeUndefined()
+  })
+})
+
+describe('a page range entry', () => {
+  it('reads first page, en dash, last page; a range on one page is that page', () => {
+    const lines = indexLines(
+      [
+        { term: 'Orchards', page: 3, pageTo: 5 },
+        { term: 'Orchards', page: 9 },
+        { term: 'Pears', page: 4 },
+        { term: 'Orchards', page: 3 },
+      ],
+      false,
+    )
+    expect(lines.map((l) => [l.text, l.pageNo])).toEqual([
+      ['Orchards', '3, 3\u20135, 9'],
+      ['Pears', '4'],
+    ])
+  })
+
+  it('runs from the page its bookmark opens on to the page the bookmark closes on', () => {
+    const para = (docxIndex: number, text: string, bookmarks?: string[]) => ({
+      type: 'docParagraph',
+      attrs: { docxIndex, ...(bookmarks ? { bookmarks } : {}) },
+      content: [{ type: 'text', text }],
+    })
+    const editor = new Editor({
+      element: document.createElement('div'),
+      extensions: editorExtensions,
+      content: {
+        type: 'doc',
+        content: [
+          para(0, 'Apples grow.', ['Orchard']),
+          para(1, 'Apples fall.'),
+          para(2, 'Apples keep.'),
+          para(3, 'Pears too.', ['Row']),
+          para(4, 'end'),
+        ],
+      },
+    })
+    const p = (inner: string) => `<w:p>${inner}<w:r><w:t>x</w:t></w:r></w:p>`
+    const blocks = [
+      p('<w:bookmarkStart w:id="7" w:name="Orchard"/>'),
+      p(''),
+      `<w:p><w:r><w:t>x</w:t></w:r><w:bookmarkEnd w:id="7"/></w:p>`,
+      // the bookmark closes ahead of the next paragraph's text: it ends with this one
+      p('<w:bookmarkStart w:id="8" w:name="Row"/>'),
+      p('<w:bookmarkEnd w:id="8"/>'),
+    ].map((originalXml, docxIndex) => ({ type: 'paragraph', docxIndex, originalXml }))
+    markIndexEntries(editor, [occurrenceEnds(editor, 'fall')[0]!], 'Orchards', '\\r Orchard')
+    markIndexEntries(editor, [occurrenceEnds(editor, 'too')[0]!], 'Rows', '\\r Row')
+    editor.commands.setTextSelection(editor.state.doc.content.size - 1)
+    const indexOf = (pos: number) => {
+      let at = 0
+      editor.state.doc.forEach((_, offset, index) => {
+        if (offset === pos) at = index
+      })
+      return at
+    }
+    // a block starts on page 2n+1 and ends on the page after it
+    const pagesOf = (positions: number[], edge?: 'top' | 'bottom') =>
+      positions.map((pos) => indexOf(pos) * 2 + (edge === 'bottom' ? 2 : 1))
+    insertIndex(editor, blocks as never, pagesOf)
+    const lines: Array<[string, string]> = []
+    editor.state.doc.forEach((node) => {
+      const shown = node.attrs.fieldDisplay as { left: string; right: string } | undefined
+      if (shown && /Index\d/.test(String(node.attrs.genXml))) lines.push([shown.left, shown.right])
+    })
+    expect(lines).toEqual([
+      ['Orchards', '1\u20136'],
+      ['Rows', '7\u20138'],
+    ])
+    editor.destroy()
   })
 })
 
@@ -162,5 +236,13 @@ describe('marking in the document', () => {
     const xml: string[] = []
     editor.state.doc.forEach((node) => xml.push(String(node.attrs.genXml ?? '')))
     expect(xml.join('')).toMatch(/<w:b\/><w:noProof\/><\/w:rPr><w:t xml:space="preserve">3<\/w:t>/)
+    // saved, the bold page stays a run of its own behind one separator
+    const saved = pmDocToSavePlan(editor.getJSON() as PmNode, [])
+      .saveBlocks.map((block) => (block.kind === 'xml' ? block.xml : ''))
+      .join('')
+    expect(saved).toMatch(
+      />Apples<\/w:t><\/w:r><w:r><w:rPr><w:noProof\/><\/w:rPr><w:t xml:space="preserve">, <\/w:t><\/w:r><w:r><w:rPr><w:b\/><w:noProof\/><\/w:rPr><w:t xml:space="preserve">3<\/w:t>/,
+    )
+    expect(saved).toContain('>, 1</w:t>')
   })
 })

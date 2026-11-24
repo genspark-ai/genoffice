@@ -2,6 +2,7 @@ import type { LocalMarkup } from './annotations'
 import type { LocalDrawing } from './DrawLayer'
 import type { LocalImageEdit } from './ImageEditLayer'
 import type { SavedNoteAnnot } from './note-threads'
+import type { SavedShapeAnnot } from './shape-hit'
 import type { HeaderFooterConfig, WatermarkConfig } from './stamps'
 import type { LocalTextEdit, LocalTextInsert } from './text-edit-preview'
 import type {
@@ -40,10 +41,12 @@ export interface SavedMarkupAnnot {
   rect: [number, number, number, number]
 }
 
-/** Pending deletion of a saved markup or note annotation */
+export type SavedAnnot = SavedMarkupAnnot | SavedNoteAnnot | SavedShapeAnnot
+
+/** Pending deletion of a saved markup, note or drawn shape annotation */
 export interface LocalAnnotDelete {
   id: string
-  annot: SavedMarkupAnnot | SavedNoteAnnot
+  annot: SavedAnnot
 }
 
 /** Pending in-place content edit of a note comment saved in the file.
@@ -123,5 +126,6 @@ export type AnnotSelection =
       y: number
     }
   | { kind: 'savedMarkup'; annot: SavedMarkupAnnot; x: number; y: number }
+  | { kind: 'savedShape'; annot: SavedShapeAnnot; x: number; y: number }
   | { kind: 'pageImage'; ref: PageImageRef; x: number; y: number }
   | { kind: 'stamp'; x: number; y: number }

@@ -1,16 +1,24 @@
 /** The Bookmark, Cross-reference and Caption dialogs. */
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { NodeSelection } from '@tiptap/pm/state'
 import type { Editor } from '@tiptap/core'
 import {
+  CHAPTER_SEPARATORS,
   SEQ_NUMBER_FORMATS,
-  formatSeqNumber,
+  captionNumberingOfXml,
   generateCaptionXml,
   type Block,
+  type CaptionNumbering,
   type SeqNumberFormat,
 } from '@genoffice/docx-engine'
 import { captionLabels, collectCaptions } from '../commands/reference-commands'
-import { renumberAfterInsert, unreliableSeqLabelsOf } from '../editor/field-results'
+import {
+  captionPreview,
+  numberingContextOf,
+  renumberAfterInsert,
+  textOfXml,
+  unreliableSeqLabelsOf,
+} from '../editor/field-results'
 import {
   AUTO_CAPTION_KINDS,
   autoCaptionRules,
@@ -22,6 +30,7 @@ import {
   collectBookmarks,
   goToBookmark,
   insertCrossReference,
+  isParaNumber,
   listRefTargets,
   removeBookmark,
   sortBookmarks,
@@ -35,7 +44,6 @@ import { xmlOfNode } from '../editor/toc-update'
 import { useI18n, type StringKey } from '../i18n/locale'
 import { PromptModal } from './PromptModal'
 import { useModalKeys } from './modal-keys'
-import { Unavailable } from './Unavailable'
 
 /** Word's Bookmark dialog: name, list, Hidden bookmarks, Sort by, Add / Delete / Go To */
 export function BookmarkModal({ editor, onClose }: { editor: Editor; onClose: () => void }) {
@@ -155,9 +163,56 @@ export function BookmarkModal({ editor, onClose }: { editor: Editor; onClose: ()
 const REF_CONTENTS: RefContent[] = ['text', 'page', 'aboveBelow']
 // Word's order for a note: its number, its page, where it is, its number as a reference mark
 const NOTE_REF_CONTENTS: RefContent[] = ['noteNumber', 'page', 'aboveBelow', 'noteNumberFormatted']
+const NUMBERED_REF_CONTENTS: RefContent[] = [
+  'page',
+  'paraNumber',
+  'paraNumberNoContext',
+  'paraNumberFullContext',
+  'text',
+  'aboveBelow',
+]
+
+// Word's order for a heading: its number comes after its page
+const HEADING_REF_CONTENTS: RefContent[] = [
+  'text',
+  'page',
+  'paraNumber',
+  'paraNumberNoContext',
+  'paraNumberFullContext',
+  'aboveBelow',
+]
+
+const refContentsOf = (kind: RefType['kind']): RefContent[] =>
+  kind === 'numbered'
+    ? NUMBERED_REF_CONTENTS
+    : kind === 'heading'
+      ? HEADING_REF_CONTENTS
+      : kind === 'footnote' || kind === 'endnote'
+        ? NOTE_REF_CONTENTS
+        : REF_CONTENTS
+
+/** what Word's dialog picks first for the type */
+const firstRefContent = (kind: RefType['kind']): RefContent =>
+  kind === 'numbered' ? 'paraNumber' : refContentsOf(kind)[0]
+
+const PARA_NUMBER_KEYS: Partial<Record<RefContent, StringKey>> = {
+  paraNumber: 'ribbonCrossRefParaNumber',
+  paraNumberNoContext: 'ribbonCrossRefParaNumberNoContext',
+  paraNumberFullContext: 'ribbonCrossRefParaNumberFullContext',
+}
+
+const HEADING_NUMBER_KEYS: Partial<Record<RefContent, StringKey>> = {
+  paraNumber: 'ribbonCrossRefHeadingNumber',
+  paraNumberNoContext: 'ribbonCrossRefHeadingNumberNoContext',
+  paraNumberFullContext: 'ribbonCrossRefHeadingNumberFullContext',
+}
 
 const refTypeOf = (value: string): RefType =>
-  value === 'bookmark' || value === 'heading' || value === 'footnote' || value === 'endnote'
+  value === 'numbered' ||
+  value === 'bookmark' ||
+  value === 'heading' ||
+  value === 'footnote' ||
+  value === 'endnote'
     ? { kind: value }
     : { kind: 'caption', label: value.slice('caption:'.length) }
 
@@ -182,10 +237,13 @@ export function CrossRefModal({
   const [content, setContent] = useState<RefContent>('text')
   const [hyperlink, setHyperlink] = useState(true)
   const [aboveBelow, setAboveBelow] = useState(false)
+  const [separate, setSeparate] = useState(false)
+  const [separator, setSeparator] = useState('')
   const [pick, setPick] = useState(0)
   const type = refTypeOf(typeValue)
-  const onNote = type.kind === 'footnote' || type.kind === 'endnote'
-  const contents = onNote ? NOTE_REF_CONTENTS : REF_CONTENTS
+  const contents = refContentsOf(type.kind)
+  const takesAboveBelow = content === 'page' || isParaNumber(content)
+  const takesSeparator = content === 'paraNumberFullContext'
   const targets = listRefTargets(editor, blocks, type, notes)
   const target = targets[pick] as RefTarget | undefined
   const labels = [
@@ -201,11 +259,15 @@ export function CrossRefModal({
       ? 'ribbonCrossRefBookmarkText'
       : type.kind === 'heading'
         ? 'ribbonCrossRefHeadingText'
-        : 'ribbonCrossRefEntireCaption'
+        : type.kind === 'numbered'
+          ? 'ribbonCrossRefParaText'
+          : 'ribbonCrossRefEntireCaption'
   const contentKey = (c: RefContent): StringKey => {
     if (c === 'text') return textKey
     if (c === 'page') return 'ribbonPageNumber'
     if (c === 'aboveBelow') return 'ribbonCrossRefAboveBelow'
+    const paraNumber = (type.kind === 'heading' ? HEADING_NUMBER_KEYS : PARA_NUMBER_KEYS)[c]
+    if (paraNumber) return paraNumber
     const endnote = type.kind === 'endnote'
     if (c === 'noteNumber')
       return endnote ? 'ribbonCrossRefEndnoteNumber' : 'ribbonCrossRefFootnoteNumber'
@@ -227,7 +289,9 @@ export function CrossRefModal({
       target,
       content,
       hyperlink,
-      includeAboveBelow: content === 'page' && aboveBelow,
+      includeAboveBelow: takesAboveBelow && aboveBelow,
+      heading: type.kind === 'heading',
+      ...(takesSeparator && separate && separator ? { separator } : {}),
       pages: found && found.length === 2 ? { target: found[0], here: found[1] } : null,
       words: {
         above: t('ribbonCrossRefAbove'),
@@ -255,18 +319,13 @@ export function CrossRefModal({
               value={typeValue}
               onChange={(e) => {
                 const next = refTypeOf(e.target.value).kind
-                const toNote = next === 'footnote' || next === 'endnote'
                 setTypeValue(e.target.value)
                 setPick(0)
-                // a note has no text to show and the others no note number: the first choice of the new type
-                if (toNote !== onNote) setContent(toNote ? 'noteNumber' : 'text')
+                // another set of choices opens on the one Word picks first
+                if (refContentsOf(next) !== contents) setContent(firstRefContent(next))
               }}
             >
-              <Unavailable id="cross-reference.numbered-item">
-                <option value="numbered" disabled>
-                  {t('ribbonCrossRefNumbered')}
-                </option>
-              </Unavailable>
+              <option value="numbered">{t('ribbonCrossRefNumbered')}</option>
               <option value="heading">{t('appGoToHeading')}</option>
               <option value="bookmark">{t('ribbonBookmark')}</option>
               <option value="footnote">{t('appGoToFootnote')}</option>
@@ -306,18 +365,32 @@ export function CrossRefModal({
           <input
             type="checkbox"
             name="ref-above-below"
-            checked={content === 'page' && aboveBelow}
-            disabled={content !== 'page'}
+            checked={takesAboveBelow && aboveBelow}
+            disabled={!takesAboveBelow}
             onChange={(e) => setAboveBelow(e.target.checked)}
           />
           {t('ribbonCrossRefIncludeAboveBelow')}
         </label>
-        <Unavailable id="cross-reference.separate-numbers">
+        <div className="ref-separator">
           <label className="ref-check">
-            <input type="checkbox" name="ref-separator" checked={false} disabled readOnly />
+            <input
+              type="checkbox"
+              name="ref-separator"
+              checked={takesSeparator && separate}
+              disabled={!takesSeparator}
+              onChange={(e) => setSeparate(e.target.checked)}
+            />
             {t('ribbonCrossRefSeparate')}
           </label>
-        </Unavailable>
+          <input
+            type="text"
+            name="ref-separator-text"
+            aria-label={t('ribbonCrossRefSeparate')}
+            value={takesSeparator && separate ? separator : ''}
+            disabled={!takesSeparator || !separate}
+            onChange={(e) => setSeparator(e.target.value)}
+          />
+        </div>
         <div className="bookmark-list" role="listbox" aria-label={t('ribbonCrossRef')}>
           {targets.length === 0 && (
             <div className="bookmark-empty">
@@ -393,8 +466,6 @@ function storedLabels(): string[] {
     return []
   }
 }
-
-const SEQ_FORMAT = /<w:instrText[^>]*>\s*SEQ\s+(?:"[^"]+"|[^\s\\<]+)\s*\\\*\s*([A-Za-z]+)/
 
 const FORMAT_SAMPLES: Record<SeqNumberFormat, string> = {
   ARABIC: '1, 2, 3, …',
@@ -512,6 +583,106 @@ function AutoCaptionModal({ labels, onClose }: { labels: string[]; onClose: () =
   )
 }
 
+/** Word's Caption Numbering: the number format of a label's captions, and the chapter number in front of it */
+function CaptionNumberingModal({
+  numbering,
+  onSubmit,
+  onClose,
+}: {
+  numbering: CaptionNumbering
+  onSubmit: (numbering: CaptionNumbering) => void
+  onClose: () => void
+}) {
+  const { t } = useI18n()
+  const keys = useModalKeys(onClose)
+  const [format, setFormat] = useState(numbering.format)
+  const [on, setOn] = useState(numbering.chapter !== null)
+  // kept while the box is unticked, so ticking it again brings the same choices back
+  const [shown, setShown] = useState(numbering.chapter ?? { style: 1, sep: 'hyphen' })
+  const chapter = on ? shown : null
+  return (
+    <div
+      className="modal-backdrop"
+      ref={keys.ref}
+      onKeyDown={keys.onKeyDown}
+      onMouseDown={(e) => e.target === e.currentTarget && onClose()}
+    >
+      <div
+        className="modal caption-dialog"
+        role="dialog"
+        aria-label={t('ribbonCaptionNumberingTitle')}
+      >
+        <h2>{t('ribbonCaptionNumberingTitle')}</h2>
+        <div className="modal-row">
+          <label>
+            {t('appNumberFormat')}
+            <select
+              name="caption-numbering-format"
+              value={format}
+              onChange={(e) => setFormat(e.target.value as SeqNumberFormat)}
+            >
+              {SEQ_NUMBER_FORMATS.map((f) => (
+                <option key={f} value={f}>
+                  {FORMAT_SAMPLES[f]}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+        <label className="ref-check">
+          <input
+            type="checkbox"
+            name="caption-chapter"
+            checked={chapter !== null}
+            onChange={(e) => setOn(e.target.checked)}
+          />
+          {t('appPgNumIncludeChapter')}
+        </label>
+        <div className="modal-row">
+          <label>
+            {t('appPgNumChapterStyle')}
+            <select
+              name="caption-chapter-style"
+              disabled={!chapter}
+              value={shown.style}
+              onChange={(e) => setShown({ ...shown, style: Number(e.target.value) })}
+            >
+              {[1, 2, 3, 4, 5, 6, 7, 8, 9].map((level) => (
+                <option key={level} value={level}>
+                  {t('ribbonStyleHeadingN', { n: level })}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            {t('appPgNumSeparator')}
+            <select
+              name="caption-chapter-sep"
+              disabled={!chapter}
+              value={shown.sep}
+              onChange={(e) => setShown({ ...shown, sep: e.target.value })}
+            >
+              {Object.entries(CHAPTER_SEPARATORS).map(([name, glyph]) => (
+                <option key={name} value={name}>
+                  {glyph}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+        <div className="modal-actions">
+          <button className="btn-ghost" onClick={onClose}>
+            {t('ribbonCancel')}
+          </button>
+          <button className="btn-primary" name="ok" onClick={() => onSubmit({ format, chapter })}>
+            {t('ribbonOk')}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 /** Caption dialog: label, position, number format and an optional description, numbered by existing SEQ fields */
 export function CaptionModal({
   editor,
@@ -529,10 +700,11 @@ export function CaptionModal({
   const [label, setLabel] = useState<string>(() => t(CAPTION_LABEL_KEYS[0]))
   const [text, setText] = useState('')
   const [position, setPosition] = useState<'above' | 'below'>('below')
-  const [formatOf, setFormatOf] = useState<Record<string, SeqNumberFormat>>({})
+  const [picked, setPicked] = useState<Record<string, CaptionNumbering>>({})
   const [excludeLabel, setExcludeLabel] = useState(false)
   const [naming, setNaming] = useState(false)
   const [auto, setAuto] = useState(false)
+  const [formatting, setFormatting] = useState(false)
   const captions = collectCaptions(editor, blocks)
   const labels = [...new Set([...builtIn, ...captions.map((c) => c.label), ...custom])]
   const objectSelected = editor.state.selection instanceof NodeSelection
@@ -542,37 +714,57 @@ export function CaptionModal({
     localStorage.setItem(CUSTOM_LABELS_KEY, JSON.stringify(list))
   }
 
-  /** the format picked here, else the one the label's last caption already uses */
-  const format = ((): SeqNumberFormat => {
-    if (formatOf[label]) return formatOf[label]
+  /** the numbering set here, else the one the label's last caption already has */
+  const numbering = ((): CaptionNumbering => {
+    if (picked[label]) return picked[label]
     const last = captions.filter((c) => c.label === label).pop()
     const node = last ? editor.state.doc.nodeAt(last.pos) : null
-    const used = node ? SEQ_FORMAT.exec(xmlOfNode(node as never, blocks))?.[1] : undefined
-    return SEQ_NUMBER_FORMATS.find((f) => f === used) ?? 'ARABIC'
+    const used = node ? captionNumberingOfXml(xmlOfNode(node as never, blocks), label) : null
+    return used?.numbering ?? { format: 'ARABIC', chapter: null }
   })()
+  const { format, chapter } = numbering
+  const setNumbering = (next: CaptionNumbering) => setPicked({ ...picked, [label]: next })
 
-  const number = captions.filter((c) => c.label === label).length + 1
-  const shown = `${excludeLabel ? '' : `${label} `}${formatSeqNumber(number, format)}`
+  const blockOf = (tail: string) => {
+    // a label this editor cannot number reliably keeps Word's own update for the new caption
+    const dirty = unreliableSeqLabelsOf(blocks, editor.schema, numberingContextOf(editor)).has(
+      label,
+    )
+    const number = captions.filter((c) => c.label === label).length + 1
+    const xml = generateCaptionXml(label, number, tail, { format, chapter, excludeLabel, dirty })
+    return {
+      docxIndex: null,
+      blockType: 'passthrough',
+      label: t('ribbonCaption'),
+      genXml: xml,
+      fieldDisplay: { kind: 'text', left: textOfXml(xml) },
+    }
+  }
+  /** Word applies a label's numbering to the captions it already has */
+  const applied = picked[label] ? { label, ...picked[label] } : undefined
+  const shown = useMemo(
+    () => captionPreview(editor, blocks, blockOf(''), applied),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- the document does not change while the dialog is open
+    [label, format, chapter?.style, chapter?.sep, excludeLabel],
+  )
 
   const insert = () => {
-    const tail = text.trim()
-    // a label this editor cannot number reliably keeps Word's own update for the new caption
-    const dirty = unreliableSeqLabelsOf(blocks, editor.schema).has(label)
-    const xml = generateCaptionXml(label, number, tail, { format, excludeLabel, dirty })
-    insertCaptionBlock(
-      editor,
-      {
-        docxIndex: null,
-        blockType: 'passthrough',
-        label: t('ribbonCaption'),
-        genXml: xml,
-        fieldDisplay: { kind: 'text', left: `${shown}${tail ? ` ${tail}` : ''}` },
-      },
-      objectSelected ? position : 'below',
-    )
-    renumberAfterInsert(editor, blocks)
+    insertCaptionBlock(editor, blockOf(text.trim()), objectSelected ? position : 'below')
+    renumberAfterInsert(editor, blocks, applied)
     onClose()
   }
+
+  if (formatting)
+    return (
+      <CaptionNumberingModal
+        numbering={numbering}
+        onSubmit={(next) => {
+          setNumbering(next)
+          setFormatting(false)
+        }}
+        onClose={() => setFormatting(false)}
+      />
+    )
 
   if (auto) return <AutoCaptionModal labels={labels} onClose={() => setAuto(false)} />
 
@@ -612,7 +804,7 @@ export function CaptionModal({
             onChange={(e) => setText(e.target.value)}
             placeholder={t('ribbonCaptionPh', {
               label: excludeLabel ? '' : label,
-              n: formatSeqNumber(number, format),
+              n: excludeLabel ? shown : shown.slice(label.length).trim(),
             }).trim()}
             onKeyDown={(e) => e.key === 'Enter' && insert()}
           />
@@ -649,7 +841,7 @@ export function CaptionModal({
               name="caption-format"
               value={format}
               onChange={(e) =>
-                setFormatOf({ ...formatOf, [label]: e.target.value as SeqNumberFormat })
+                setNumbering({ ...numbering, format: e.target.value as SeqNumberFormat })
               }
             >
               {SEQ_NUMBER_FORMATS.map((f) => (
@@ -659,6 +851,11 @@ export function CaptionModal({
               ))}
             </select>
           </label>
+          <div className="modal-actions caption-numbering-action">
+            <button name="caption-numbering" onClick={() => setFormatting(true)}>
+              {t('ribbonCaptionNumberingFormat')}
+            </button>
+          </div>
         </div>
         <label className="ref-check">
           <input

@@ -134,3 +134,24 @@ export function bindUnboundPrefixes(xml: string, donors: Record<string, string> 
   const at = rootMatch.index + root.length - 1
   return xml.slice(0, at) + declarations + xml.slice(at)
 }
+
+/**
+ * List a prefix in the root's mc:Ignorable, so a reader that does not know its
+ * namespace skips the elements instead of refusing the part. A root that lists
+ * it already keeps its bytes.
+ */
+export function ignorePrefix(xml: string, prefix: string): string {
+  const rootMatch = rootOf(xml)
+  if (!rootMatch) return xml
+  const root = rootMatch[0]
+  const listed = /\smc:Ignorable\s*=\s*(?:"([^"]*)"|'([^']*)')/.exec(root)
+  let next: string
+  if (listed) {
+    const tokens = (listed[1] ?? listed[2] ?? '').split(/\s+/).filter(Boolean)
+    if (tokens.includes(prefix)) return xml
+    next = root.replace(listed[0], ` mc:Ignorable="${[...tokens, prefix].join(' ')}"`)
+  } else {
+    next = `${root.slice(0, -1)} mc:Ignorable="${prefix}">`
+  }
+  return xml.slice(0, rootMatch.index) + next + xml.slice(rootMatch.index + root.length)
+}

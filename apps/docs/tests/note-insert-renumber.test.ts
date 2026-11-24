@@ -333,6 +333,42 @@ describe('converting notes', () => {
     editor.destroy()
   })
 
+  it('converts one note and leaves the others what they are', () => {
+    const editor = makeEditor()
+    const lists = {
+      footnote: [
+        { id: '3', text: 'first note' },
+        { id: '5', text: 'second note' },
+      ] as NoteInfo[],
+      endnote: [] as NoteInfo[],
+    }
+    const ctx = {
+      editor,
+      get footnotes() {
+        return lists.footnote
+      },
+      get endnotes() {
+        return lists.endnote
+      },
+      setFootnotes: (value: NoteInfo[]) => (lists.footnote = value),
+      setEndnotes: (value: NoteInfo[]) => (lists.endnote = value),
+      setNotesDirty: () => undefined,
+    } as unknown as ReviewContext
+
+    expect(convertNotes(ctx, 'toEndnotes', { kind: 'footnote', id: '5' })).toBe(1)
+    expect(marks(editor, 'footnote')).toEqual([{ id: '3', num: 1 }])
+    expect(marks(editor, 'endnote')).toEqual([{ id: '1', num: 1 }])
+    expect(lists.footnote).toEqual([{ id: '3', text: 'first note' }])
+    expect(lists.endnote).toEqual([
+      { id: '1', text: 'second note', origin: { kind: 'footnote', id: '5' } },
+    ])
+    // a note of the other kind with the same id is not the one asked for
+    expect(convertNotes(ctx, 'toFootnotes', { kind: 'endnote', id: '3' })).toBe(0)
+    expect(convertNotes(ctx, 'toFootnotes', { kind: 'endnote', id: '1' })).toBe(1)
+    expect(marks(editor, 'footnote').map((m) => m.num)).toEqual([1, 2])
+    editor.destroy()
+  })
+
   it('a note added in this session never takes the bytes of a deleted note whose id it reuses', () => {
     const editor = makeEditor()
     const lists = {

@@ -453,6 +453,10 @@
           "tag": "button"
         },
         {
+          "name": "Style Sets",
+          "tag": "button"
+        },
+        {
           "name": "Colors",
           "tag": "button"
         },

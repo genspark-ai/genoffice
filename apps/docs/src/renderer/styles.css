@@ -906,7 +906,8 @@ html.genoffice-popover-open .ribbon-tabs {
  * flow. display: none here would strip the accessible name and break the
  * getByRole('button', { name }) selectors across the e2e suite. */
 .ribbon-compact .rb-big > span:not(.rb-big-icon),
-.rb-group-tight .rb-big > span:not(.rb-big-icon) {
+.rb-group-tight .rb-big > span:not(.rb-big-icon),
+.rb-big.rb-big-tight > span:not(.rb-big-icon) {
   position: absolute;
   width: 1px;
   height: 1px;
@@ -1193,8 +1194,74 @@ html.genoffice-popover-open .ribbon-tabs {
   gap: 6px;
 }
 
-.rb-group-tight .rb-big {
+.rb-group-tight .rb-big,
+.rb-big.rb-big-tight {
   position: relative;
+}
+
+.rb-fit-gone,
+.rb-group-menu-button,
+.rb-group-menu > .ribbon-group-items,
+.ribbon-group-styles:not(:has(.rb-fit-gone)) .style-gallery-pane {
+  display: none;
+}
+
+/* Word: a group the window has no room for is one button, and its controls drop down from it */
+.rb-group-menu > .rb-group-menu-button {
+  display: flex;
+}
+
+/* the placeholder the fit measures has the button's box: .rb-big, with the name on one line */
+span.rb-group-menu-button {
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 3px 7px;
+  font-size: 12px;
+}
+
+span.rb-group-menu-button::after {
+  content: attr(data-name);
+}
+
+span.rb-group-menu-button::after,
+.rb-big > .rb-group-menu-name {
+  min-height: 26px;
+  line-height: 13px;
+  white-space: nowrap;
+}
+
+.rb-group-menu {
+  anchor-name: --rb-group-menu;
+  anchor-scope: --rb-group-menu;
+}
+
+.rb-group-menu.rb-group-open > .ribbon-group-items {
+  display: flex;
+  flex: none;
+  position: fixed;
+  position-anchor: --rb-group-menu;
+  top: calc(anchor(bottom) + 4px);
+  /* under the button, pulled back inside a window too narrow for that */
+  left: clamp(4px, anchor(left), 100vw - 4px - var(--rb-menu-width, 0px));
+  width: max-content;
+  max-width: calc(100vw - 8px);
+  overflow-x: auto;
+  z-index: 60;
+  min-height: 72px;
+  padding: 6px 8px;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  box-shadow: var(--docs-shadow-menu);
+}
+
+.rb-group-menu.rb-group-open > .ribbon-group-items:dir(rtl) {
+  left: clamp(
+    4px,
+    anchor(right) - var(--rb-menu-width, 0px),
+    100vw - 4px - var(--rb-menu-width, 0px)
+  );
 }
 
 .rb-big-glyph {
@@ -2434,6 +2501,52 @@ tr:not([style*='height']):not(
   padding: 0;
 }
 
+/* an exact-height vertical cell is as wide as its cell: the lines that do not
+   fit are cut at the far side instead of spilling over the neighbour */
+.cell-clip[style*='writing-mode'] {
+  max-width: 100%;
+}
+
+/* a paragraph's spacing and indents turn with the text of a vertical cell
+   (vertical-cell-boxes.ts reads them from the horizontal layout): the space
+   after it parts it from the next paragraph and leaves the line its length */
+.cell-flow-probe {
+  writing-mode: horizontal-tb !important;
+}
+:is(.cell-vert, .cell-clip[style*='writing-mode']):not(.cell-flow-probe) > [data-vbox] {
+  margin: var(--vb-mt) var(--vb-mr) var(--vb-mb) var(--vb-ml) !important;
+  padding: var(--vb-pt) var(--vb-pr) var(--vb-pb) var(--vb-pl) !important;
+}
+
+/* Horizontal in Vertical (w:eastAsianLayout w:vert): Word turns the run a
+   quarter left of its line and keeps its size, so in vertical text it stands
+   upright and in horizontal text it reads upwards and makes the line taller.
+   Vertical containers say how that turn looks inside them. */
+[data-doc-style][data-ea-vert] {
+  display: inline-block;
+  writing-mode: var(--ea-vert-wm, sideways-lr);
+  rotate: var(--ea-vert-rot, none);
+  vertical-align: var(--ea-vert-va, middle);
+  white-space: nowrap;
+  text-indent: 0;
+}
+[style*='writing-mode:vertical-rl'],
+[style*='writing-mode: vertical-rl'],
+.doc-page:not(.measuring-columns) :is(.doc-vert-tbRl, .doc-vert-tbRlV),
+.doc-textbox:is(.doc-textbox-vert, .doc-textbox-mongolianvert) {
+  --ea-vert-wm: horizontal-tb;
+  --ea-vert-rot: none;
+  --ea-vert-va: baseline;
+}
+[style*='writing-mode:sideways-lr'],
+[style*='writing-mode: sideways-lr'],
+.doc-page:not(.measuring-columns) .doc-vert-btLr,
+.doc-textbox.doc-textbox-vert270 {
+  --ea-vert-wm: horizontal-tb;
+  --ea-vert-rot: 180deg;
+  --ea-vert-va: baseline;
+}
+
 /* table row/cell revisions: Word's cell highlighting (inserted light blue, deleted pink,
    merged light yellow; Track Changes Options can repaint them) */
 tr.row-rev-ins > td,
@@ -2672,6 +2785,270 @@ th[data-rev-fmt] {
 .color-swatch.selected {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
+}
+
+/* Design: the style sets take what room the window leaves, a whole card at a time */
+.style-set-group {
+  flex-shrink: 1;
+  min-width: 0;
+}
+
+.style-set-group .ribbon-group-items > :not(.style-set-wrap) {
+  flex-shrink: 0;
+}
+
+/* Word frames the gallery, opener included */
+.style-set-wrap {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  min-width: 0;
+  padding: 2px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.style-set-wrap > .rb-styles-more {
+  margin-inline-start: auto;
+}
+
+.style-set-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+  height: 62px;
+  max-width: 888px;
+  overflow: hidden;
+}
+
+.ribbon-compact .style-set-strip {
+  display: none;
+}
+
+.style-set-menu {
+  position: fixed;
+  position-anchor: --rb-drop-wrap;
+  top: calc(anchor(bottom) + 4px);
+  left: anchor(left);
+  position-try-fallbacks: flip-inline;
+  position-visibility: anchors-visible;
+  z-index: 60;
+  max-height: 70vh;
+  overflow-y: auto;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  box-shadow: var(--docs-shadow-menu);
+  padding: 4px 8px 6px;
+}
+
+.style-set-menu .layout-menu-head {
+  padding-inline: 0;
+}
+
+.style-set-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 96px);
+  gap: 4px;
+}
+
+.style-set-foot button,
+.style-set-ctx button {
+  display: block;
+  width: 100%;
+  border: none;
+  background: none;
+  padding: 7px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  color: var(--text);
+  font-size: 13px;
+  text-align: start;
+}
+
+.style-set-foot button:hover,
+.style-set-ctx button:hover {
+  background: var(--hover);
+}
+
+.style-set-ctx-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+}
+
+.style-set-ctx {
+  position: fixed;
+  z-index: 71;
+  min-width: 120px;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  box-shadow: var(--docs-shadow-menu);
+  padding: 4px;
+}
+
+/* Design: the Themes gallery, a card per theme in its own faces and colours */
+.theme-gallery {
+  position: fixed;
+  position-anchor: --rb-drop-wrap;
+  top: calc(anchor(bottom) + 4px);
+  left: anchor(left);
+  position-try-fallbacks: flip-inline;
+  position-visibility: anchors-visible;
+  z-index: 60;
+  max-height: 70vh;
+  overflow-y: auto;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  box-shadow: var(--docs-shadow-menu);
+  padding: 8px;
+}
+
+.theme-gallery .layout-menu-head {
+  padding-inline: 0;
+}
+
+.theme-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 88px);
+  gap: 6px;
+}
+
+.theme-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  padding: 3px;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  background: none;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.theme-card:hover {
+  background: var(--hover);
+}
+
+.theme-card.active {
+  border-color: var(--accent);
+  background: var(--active-bg);
+}
+
+.theme-card:focus-visible,
+.style-set-card:focus-visible,
+.theme-foot button:focus-visible,
+.theme-list button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.theme-thumb {
+  position: relative;
+  display: block;
+  width: 78px;
+  height: 52px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  font-size: 22px;
+  line-height: 34px;
+  text-align: start;
+  padding-inline-start: 7px;
+}
+
+.theme-strip {
+  display: flex;
+  height: 10px;
+}
+
+.theme-strip > span {
+  flex: 1;
+}
+
+.theme-thumb .theme-strip {
+  position: absolute;
+  inset: auto 6px 6px;
+}
+
+.theme-name {
+  max-width: 100%;
+  font-size: 11px;
+  line-height: 1.2;
+  text-align: center;
+}
+
+.theme-list {
+  max-height: 70vh;
+  overflow-y: auto;
+}
+
+.theme-list button {
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+  white-space: nowrap;
+}
+
+.theme-list .theme-strip {
+  width: 104px;
+  height: 14px;
+  border: 1px solid var(--border);
+}
+
+.theme-list .theme-font-sample {
+  width: 34px;
+  font-size: 20px;
+  color: var(--text);
+}
+
+.theme-list .theme-font-names {
+  display: flex;
+  flex-direction: column;
+  font-size: 13px;
+  color: var(--text);
+}
+
+.style-set-card {
+  position: relative;
+  flex: none;
+  width: 96px;
+  height: 62px;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: none;
+  cursor: pointer;
+}
+
+.style-set-card:hover {
+  border-color: var(--border-strong);
+}
+
+.style-set-card.active {
+  border-color: var(--accent);
+  cursor: default;
+}
+
+/* a page in miniature: laid out at document sizes, then scaled to the card */
+.style-set-page {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: flex;
+  flex-direction: column;
+  width: 320px;
+  height: 210px;
+  padding: 14px 18px;
+  box-sizing: border-box;
+  text-align: left;
+  transform: scale(0.3);
+  transform-origin: 0 0;
+  pointer-events: none;
 }
 
 /* style gallery: a Word-style Styles button whose menu holds the cards */
@@ -3252,6 +3629,12 @@ th[data-rev-fmt] {
 }
 /* the full-width restore rule is injected by App.tsx with the variables; a
    run-level w:spacing (inline letter-spacing) keeps winning over the grid */
+/* a run with w:snapToGrid off keeps its natural advances and the runs around
+   it keep the grid (Word probe 2026-11-21). With no --doc-char-space in scope
+   the declaration is invalid and the run inherits as before. */
+.doc-page .doc-off-grid {
+  letter-spacing: calc(var(--doc-char-space) * 0);
+}
 /* per-page header/footer strips are page-gap widgets inside the editor root,
    but Word does not grid header/footer text (scope probe) */
 .doc-page .page-gap-hf {
@@ -3304,6 +3687,23 @@ th[data-rev-fmt] {
 }
 .doc-page:not(.measuring-columns) .doc-vert-btLr {
   writing-mode: sideways-lr;
+}
+/* a table of a vertical section stays upright (Word): it hangs from the line
+   start at the flow position and gives its height back to the flow, in the
+   measuring state too, so the blocks after it are measured beside it; those
+   start their lines past it (a border, so the measured line length drops) */
+.doc-page:not(.measuring-columns) .doc-vert-table {
+  margin-bottom: var(--vert-mb, 0px) !important;
+  transform: translate(
+    var(--pv-vdx, calc(var(--col-dx, 0px) + var(--page-cx, 0px))),
+    var(--pv-vdy, var(--col-dy, 0px))
+  );
+}
+.doc-page.measuring-columns .doc-vert-table {
+  margin-bottom: calc(-1 * var(--vert-tbl-h, 0px)) !important;
+}
+.doc-page .doc-vert-inset {
+  border-inline-start: var(--vert-inset, 0px) solid transparent;
 }
 
 /* w:framePr paragraph frame: fixed box beside which body text wraps (see para-frame.ts) */
@@ -5274,8 +5674,9 @@ th[data-rev-fmt] {
   position: relative;
 }
 
+/* the strip widens with the zoom (--vruler-w, App.tsx): the view keeps 16px clear of it */
 .editor-area.with-rulers .editor-scroll {
-  padding-left: 40px;
+  padding-left: calc(var(--vruler-w, 24px) + 16px);
 }
 
 .vruler-bar {
@@ -5285,6 +5686,12 @@ th[data-rev-fmt] {
   overflow: hidden;
   z-index: 5;
   background: var(--canvas);
+}
+
+/* the strip runs to the bottom of the editor area: the split pane paints over it */
+.editor-area.with-rulers .split-pane {
+  position: relative;
+  z-index: 6;
 }
 
 .vruler-zoom {
@@ -5688,6 +6095,11 @@ th[data-rev-fmt] {
     color: var(--dk-c) !important;
   }
 
+  /* a solid w14:textFill is the glyph colour Word shows: its twin follows the text colour's */
+  :where(.page-dark) [style*='--dk-tf:']:where(:not(.doc-textbox-filled, .doc-textbox-filled *)) {
+    -webkit-text-fill-color: var(--dk-tf) !important;
+  }
+
   :where(.page-dark) [style*='--dk-bg:']:where(:not(.doc-textbox-filled, .doc-textbox-filled *)) {
     background-color: var(--dk-bg) !important;
   }
@@ -5924,10 +6336,27 @@ th[data-rev-fmt] {
 .page-gap-notes::before {
   content: '';
   display: block;
-  width: min(2in, 100%);
+  width: min(2in, var(--note-col-w, 100%));
   height: var(--note-sep-rule, 11px);
   border-bottom: 1px solid var(--docs-paper-ink-faint);
   margin-bottom: calc(var(--note-sep-h, 16px) - var(--note-sep-rule, 11px) - 1px);
+}
+
+/* a footnote area in columns (w15:footnoteColumns, or as many as the section has):
+   filled column after column to the height set inline, a note continuing in the
+   next column between two lines with two lines kept on either side, like Word */
+.note-columns {
+  column-fill: auto;
+  widows: 2;
+  orphans: 2;
+}
+
+.note-columns-rule {
+  column-rule: 1px solid currentColor;
+}
+
+.note-columns > .pv-footnote {
+  overflow: visible;
 }
 
 /* rows are min-height (App.tsx): a long entry grows past its reserved height
@@ -5985,7 +6414,7 @@ th[data-rev-fmt] {
 .pv-footnotes::before {
   content: '';
   display: block;
-  width: min(2in, 100%);
+  width: min(2in, var(--note-col-w, 100%));
   height: var(--note-sep-rule, 11px);
   border-bottom: 1px solid var(--docs-paper-ink-faint);
   margin-bottom: calc(var(--note-sep-h, 16px) - var(--note-sep-rule, 11px) - 1px);
@@ -6624,6 +7053,8 @@ th[data-rev-fmt] {
   vertical-align: var(--li-marker-va, baseline);
   /* w:lvl rPr color; the --dk-li-mc twin recolors it on the dark page */
   color: var(--li-marker-color, inherit);
+  /* the paragraph mark's w:highlight runs under the number and its tab */
+  background-color: var(--li-marker-bg, transparent);
   font-weight: var(--li-marker-weight, inherit);
   font-style: var(--li-marker-style, inherit);
 }
@@ -6631,6 +7062,10 @@ th[data-rev-fmt] {
 .page-dark .doc-li[style*='--dk-li-mc:']::before,
 .page-dark [data-stray-marker][style*='--dk-li-mc:'] .doc-li-stray::before {
   color: var(--dk-li-mc);
+}
+
+.page-dark .doc-li[style*='--dk-li-mbg:']::before {
+  background-color: var(--dk-li-mbg);
 }
 
 .doc-li-bullet::before {
@@ -9192,6 +9627,14 @@ body.docs-run-pic-dragging .doc-run-pic-frame {
   white-space: pre-wrap;
 }
 
+.doc-field-code-open::before {
+  content: '{';
+}
+
+.doc-field-code-open::after {
+  content: '}';
+}
+
 .doc-ref-field[data-instr-field='FORMCHECKBOX'],
 .doc-checkbox-control {
   cursor: pointer;
@@ -9225,6 +9668,16 @@ body.docs-run-pic-dragging .doc-run-pic-frame {
   overflow-y: auto;
   border: 1px solid var(--border);
   border-radius: 4px;
+}
+
+.link-address-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+.link-address-row label {
+  flex: 1;
 }
 
 .link-places {
@@ -9334,6 +9787,21 @@ body.docs-run-pic-dragging .doc-run-pic-frame {
   margin: 0;
 }
 
+.modal .ref-separator {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 6px;
+}
+
+.modal .ref-separator .ref-check {
+  margin: 0;
+}
+
+.modal .ref-separator input[type='text'] {
+  width: 64px;
+}
+
 /* w:tcFitText: a paragraph is one line as wide as its cell */
 .doc-fit-line {
   white-space: nowrap !important;
@@ -9389,6 +9857,11 @@ body.docs-run-pic-dragging .doc-run-pic-frame {
 .modal-actions.caption-label-actions {
   justify-content: flex-start;
   margin: 8px 0 0;
+}
+
+.modal-row .modal-actions.caption-numbering-action {
+  align-self: flex-end;
+  margin: 0 0 8px;
 }
 
 .bookmark-preview {
@@ -13126,6 +13599,12 @@ body.docs-crop-active
   max-width: 220px;
 }
 
+.find-highlight-all {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
 .find-select {
   height: 28px;
   border: 1px solid var(--border-strong);
@@ -13521,6 +14000,13 @@ body.docs-crop-active
     display: none;
   }
 
+  /* own PDF transparency group: pdfium picks a page's text direction from its
+     top-level text objects, and a balloon column beside short body lines reads
+     as vertical text, which puts every body glyph on its own line */
+  .pv-markup {
+    opacity: 0.999;
+  }
+
   /* forced breaks are disabled inside the clone, and page-break fields keep placeholders matching canvas measurement */
   .pv-clip .page-break-before {
     break-before: auto;
@@ -13755,6 +14241,44 @@ body.docs-crop-active
   pointer-events: none;
 }
 
+/* the style area: window chrome beside the page, in the scroller's own left padding */
+.editor-scroll.has-style-area {
+  padding-left: calc(var(--scroll-pad-x) + var(--style-area-w));
+}
+
+.style-area {
+  position: sticky;
+  left: calc(-1 * (var(--scroll-pad-x) + var(--style-area-w)));
+  height: 0;
+  margin-left: calc(-1 * (var(--scroll-pad-x) + var(--style-area-w)));
+  /* above the page, which paints its own paper */
+  z-index: 2;
+  pointer-events: none;
+}
+
+.style-area-band {
+  position: absolute;
+  left: 0;
+  width: var(--style-area-w);
+  box-sizing: border-box;
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+}
+
+.style-area-name {
+  position: absolute;
+  left: 0;
+  width: var(--style-area-w);
+  box-sizing: border-box;
+  padding: 0 8px;
+  overflow: hidden;
+  color: var(--text-dim);
+  font-size: 11px;
+  line-height: 16px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .draft-break {
   position: absolute;
   left: 0;
@@ -13764,6 +14288,72 @@ body.docs-crop-active
 
 .view-draft:not(.show-marks) .doc-fmt-glyph {
   display: none;
+}
+
+/* ---- Collapsed headings: the body is hidden on screen and in print ---- */
+
+.doc-collapsed-body {
+  display: none !important;
+}
+
+/* zero-height spacer after a collapsed body; flow-root keeps its own margins apart */
+.doc-fold-gap {
+  display: flow-root;
+  height: 0;
+}
+
+.heading-toggle {
+  width: 0.6em;
+  height: 0.6em;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+}
+
+/* the triangle is drawn inside: a clipped box would only take clicks on the drawn half */
+.heading-toggle::before {
+  content: '';
+  display: block;
+  width: 100%;
+  height: 100%;
+  background: var(--text-dim);
+  clip-path: polygon(100% 0, 100% 100%, 0 100%);
+}
+
+.heading-toggle.is-collapsed {
+  position: absolute;
+  margin-left: -1em;
+  margin-top: 0.4em;
+  text-indent: 0;
+}
+
+.heading-toggle.is-collapsed::before {
+  clip-path: polygon(0 0, 100% 50%, 0 100%);
+}
+
+.heading-toggle-hover {
+  position: fixed;
+  z-index: 30;
+}
+
+.heading-toggle:hover::before {
+  background: var(--accent);
+}
+
+/* Outline view folds its own rows: a body folded on the page still lists its headings there */
+.view-outline .doc-page > :is(h1, h2, h3, h4, h5, h6).doc-collapsed-body {
+  display: revert !important;
+}
+
+.view-outline .heading-toggle {
+  display: none;
+}
+
+@media print {
+  .heading-toggle {
+    display: none !important;
+  }
 }
 
 /* ---- Outline view: headings only, still editable ---- */
@@ -14027,12 +14617,17 @@ body.docs-crop-active
 
 /* ---- Gridlines: alignment grid inside the text area (content-box = inside margins) ---- */
 
+/* a document that states a drawing grid sets the --docs-grid-* variables (gridlinesCss) */
 .show-grid .doc-page {
   background-image:
-    linear-gradient(to right, var(--docs-paper-grid) 1px, transparent 1px),
+    var(
+      --docs-grid-columns,
+      linear-gradient(to right, var(--docs-paper-grid) 1px, transparent 1px)
+    ),
     linear-gradient(to bottom, var(--docs-paper-grid) 1px, transparent 1px);
-  background-size: 24px 24px;
-  background-origin: content-box;
+  background-size: var(--docs-grid-x, 24px) var(--docs-grid-y, 24px);
+  background-position: var(--docs-grid-at, 0 0);
+  background-origin: var(--docs-grid-box, content-box);
   background-clip: content-box;
 }
 
@@ -14102,23 +14697,6 @@ body.docs-crop-active
   overflow: hidden;
   pointer-events: none;
   user-select: none;
-}
-
-/* ---- Design → Themes/Colors: accent color preview dots in dropdowns ---- */
-
-.theme-accent-row {
-  display: inline-flex;
-  gap: 2px;
-  margin-right: 8px;
-  vertical-align: middle;
-}
-
-.theme-accent-dot {
-  display: inline-block;
-  width: 10px;
-  height: 10px;
-  border-radius: 2px;
-  border: 1px solid var(--docs-swatch-outline);
 }
 
 /* ---- References → Footnotes/Endnotes: reference marker + page-bottom notes area ---- */
@@ -14405,6 +14983,10 @@ ruby.doc-ruby[data-ruby-align='right'] > rt {
   content: 'TC ' attr(data-tc);
 }
 
+.show-marks .doc-link-mark::before {
+  content: attr(data-link-code);
+}
+
 .ProseMirror-focused .doc-xe-mark.ProseMirror-selectednode {
   outline: 2px solid var(--word-blue);
 }
@@ -14497,6 +15079,12 @@ ruby.doc-ruby[data-ruby-align='right'] > rt {
 
 .ctx-item-strong .ctx-label {
   font-weight: 600;
+}
+
+/* what is wrong with the marked words, above the suggestions */
+.ctx-item.ctx-item-note {
+  max-width: 320px;
+  white-space: normal;
 }
 
 .ctx-submenu-scroll {
@@ -14675,6 +15263,26 @@ ruby.doc-ruby[data-ruby-align='right'] > rt {
   margin: 0;
 }
 
+.typography-custom {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 8px 0 0 22px;
+}
+
+.typography-custom label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.typography-custom textarea {
+  resize: none;
+  font: inherit;
+  line-height: 1.5;
+  word-break: break-all;
+}
+
 .para-asian-options {
   margin-top: 10px;
 }
@@ -14723,6 +15331,12 @@ ruby.doc-ruby[data-ruby-align='right'] > rt {
   flex-direction: column;
   gap: 6px;
   margin: 12px 0 4px;
+}
+
+.prefs-length {
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .prefs-field select {
@@ -16613,6 +17227,20 @@ tr > .page-gap-cut {
   gap: 4px;
 }
 
+.draw-grid-dialog .draw-grid-fields {
+  grid-template-columns: minmax(150px, auto) 120px;
+}
+
+.draw-grid-dialog .draw-grid-fields .tco-check {
+  margin: 0;
+}
+
+.draw-grid-dialog .doc-dialog-pitch {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
 .columns-dialog .columns-dialog-cols {
   display: grid;
   grid-template-columns: auto 1fr 1fr;
@@ -17363,6 +17991,34 @@ tr > .page-gap-cut {
 
 .spelling-none {
   color: var(--text-muted);
+}
+
+.spelling-context.grammar b {
+  color: var(--docs-grammar-mark);
+}
+
+.spelling-check-grammar {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  margin-right: auto;
+  font-size: 13px;
+}
+
+.spelling-grammar-note {
+  margin: 8px 0 0;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+@media screen {
+  ::highlight(docs-grammar) {
+    text-decoration: underline double var(--docs-grammar-mark);
+  }
+
+  ::highlight(docs-spelling) {
+    text-decoration: underline wavy var(--docs-spelling-mark);
+  }
 }
 
 .modal-actions.spelling-buttons {
@@ -18983,6 +19639,78 @@ img.doc-inline-img.doc-multi-selected,
   color: var(--text);
 }
 
+/* two lines in one, in brackets: a full-size bracket on either side of the half-size lines */
+span[data-ea-brackets] {
+  position: relative;
+  margin-inline: 0.7em;
+}
+
+span[data-ea-brackets]::before,
+span[data-ea-brackets]::after {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 200%;
+  line-height: 1;
+}
+
+span[data-ea-brackets]::before {
+  inset-inline-end: 100%;
+}
+
+span[data-ea-brackets]::after {
+  inset-inline-start: 100%;
+}
+
+span[data-ea-brackets='round']::before {
+  content: '(';
+}
+
+span[data-ea-brackets='round']::after {
+  content: ')';
+}
+
+span[data-ea-brackets='square']::before {
+  content: '[';
+}
+
+span[data-ea-brackets='square']::after {
+  content: ']';
+}
+
+span[data-ea-brackets='angle']::before {
+  content: '<';
+}
+
+span[data-ea-brackets='angle']::after {
+  content: '>';
+}
+
+span[data-ea-brackets='curly']::before {
+  content: '{';
+}
+
+span[data-ea-brackets='curly']::after {
+  content: '}';
+}
+
+.eq-layout-dialog .ea-two-lines-sample {
+  display: inline-block;
+  font-size: 50%;
+  line-height: 1.1;
+  word-break: break-all;
+  text-align: start;
+}
+
+.eq-layout-dialog .ea-hiv-preview {
+  writing-mode: vertical-rl;
+  min-height: 96px;
+}
+
+.eq-layout-dialog .ea-hiv-sample {
+  writing-mode: horizontal-tb;
+}
+
 /* ---- Vertical text boxes: the text runs down the box, lines stacking right to left ---- */
 
 .doc-textbox.doc-textbox-vert {
@@ -19027,6 +19755,32 @@ img.doc-inline-img.doc-multi-selected,
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
+}
+
+.text-fx-dialog .text-fx-label {
+  align-self: center;
+  color: var(--text-dim);
+  font-size: 12px;
+}
+
+.text-fx-dialog .text-fx-group[data-fx='fill'] .text-fx-choices {
+  margin-top: 8px;
+}
+
+.text-fx-dialog .text-fx-transparency {
+  align-items: center;
+}
+
+.text-fx-dialog .text-fx-transparency input[type='range'] {
+  flex: 1;
+  min-width: 0;
+  height: auto;
+  border: none;
+  padding: 0;
+}
+
+.text-fx-dialog .text-fx-transparency input.wm-pct {
+  width: 56px;
 }
 
 .text-fx-dialog .text-fx-choice {
@@ -19169,6 +19923,112 @@ img.doc-inline-img.doc-multi-selected,
 .insert-file-range-dialog .insert-file-range select {
   flex: 1;
   min-width: 0;
+}
+
+.insert-file-range-dialog .insert-file-link {
+  margin: 0 0 12px;
+}
+
+.tco-dialog.links-dialog {
+  width: min(640px, calc(100vw - 48px));
+}
+
+.links-dialog .links-body {
+  display: flex;
+  gap: 12px;
+}
+
+.links-dialog .links-list {
+  flex: 1;
+  min-width: 0;
+  height: 180px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--surface);
+}
+
+.links-dialog .links-row {
+  display: grid;
+  grid-template-columns: 2fr 1fr 1fr 1.4fr;
+  gap: 8px;
+  width: 100%;
+  padding: 4px 8px;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  color: var(--text);
+  font-size: 12px;
+  text-align: start;
+}
+
+.links-dialog .links-row span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.links-dialog .links-head {
+  position: sticky;
+  top: 0;
+  color: var(--text-dim);
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+
+.links-dialog button.links-row:hover {
+  background: var(--hover);
+}
+
+.links-dialog button.links-row.selected {
+  background: var(--accent-soft);
+}
+
+.links-dialog .links-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 150px;
+}
+
+.links-dialog .links-source {
+  min-height: 16px;
+  margin: 8px 0;
+  font-size: 12px;
+  color: var(--text-dim);
+  overflow-wrap: anywhere;
+}
+
+.links-dialog .links-options {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin: 0 0 12px;
+  font-size: 13px;
+}
+
+.links-dialog .links-options .tco-check {
+  margin: 0;
+}
+
+.links-dialog .links-actions button {
+  height: 30px;
+  padding: 0 12px;
+  border: 1px solid var(--color-border-default);
+  border-radius: 10px;
+  background: var(--color-bg-page);
+  color: var(--color-text-primary);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.links-dialog .links-actions button:hover:not(:disabled) {
+  background: var(--color-bg-subtle);
+}
+
+.links-dialog .links-actions button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 
 .tco-dialog.template-gallery-dialog {
@@ -19322,6 +20182,16 @@ img.doc-inline-img.doc-multi-selected,
 
 .protect-dialog .protect-sections:disabled {
   opacity: 0.5;
+}
+
+.modal.protect-sections-dialog {
+  width: 300px;
+}
+
+.protect-sections-list {
+  max-height: 240px;
+  margin-bottom: 12px;
+  overflow-y: auto;
 }
 
 .modal label.pgnum-check {

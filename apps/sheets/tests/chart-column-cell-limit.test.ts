@@ -8,6 +8,7 @@ import { parseRange, columnLabel } from '@genoffice/xlsx-gateway/domain/cell-add
 import { buildChartVisual, chartCellLimitError } from '@genoffice/xlsx-gateway/domain/chart-visual'
 import { InMemoryWorkbookAdapter } from '@genoffice/xlsx-gateway/domain/in-memory-workbook'
 import type { WorkbookSnapshot } from '@genoffice/xlsx-gateway/domain/workbook.types'
+import { readNamedChartColumns } from '../src/renderer/chart-column-read'
 
 const ROWS = 251 // header + 250 data rows
 const COLS = 10 // A..J, so the whole rectangle is 2510 cells
@@ -128,5 +129,33 @@ describe('add_chart with named columns on a wide range', () => {
         ],
       }),
     ).toThrow(/dataRange covers more than 2000 cells/)
+  })
+})
+
+describe('readNamedChartColumns', () => {
+  /** the app's reader: refuses any single read over 2000 cells */
+  const reads: string[] = []
+  const gatedRead = async (rangeText: string): Promise<(string | number)[][]> => {
+    reads.push(rangeText)
+    const b = parseRange(rangeText)
+    if ((b.endRow - b.startRow + 1) * (b.endColumn - b.startColumn + 1) > 2000) {
+      throw new Error(`${rangeText} exceeds 2000 cells`)
+    }
+    return wideGrid()
+      .slice(b.startRow, b.endRow + 1)
+      .map((row) => row.slice(b.startColumn, b.endColumn + 1))
+  }
+
+  it('reads a range the plan accepts without reading the whole rectangle', async () => {
+    reads.length = 0
+    const values = await readNamedChartColumns(parseRange(range), ['A', 'j'], gatedRead)
+    expect(reads).toEqual([`A1:A${ROWS}`, `J1:J${ROWS}`])
+    const fromColumns = buildChartVisual({ ...chart(['A', 'J']), values })
+    expect(fromColumns.chart).toEqual(buildChartVisual(chart(['A', 'J'])).chart)
+  })
+
+  it('leaves a column outside the range to the builder, which names it', async () => {
+    const values = await readNamedChartColumns(parseRange(range), ['A', 'K'], gatedRead)
+    expect(() => buildChartVisual({ ...chart(['A', 'K']), values })).toThrow(/column K/)
   })
 })

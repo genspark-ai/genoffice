@@ -24,6 +24,8 @@ export interface OpenFileNeedsPassword {
   needsPassword: true
   path: string
   name: string
+  /** a template to start a document from: the retry is openTemplateDecrypt */
+  template?: boolean
 }
 
 export type OpenDocxResult = OpenFileResult | OpenFileNeedsPassword | null
@@ -35,6 +37,23 @@ export interface TemplateEntry {
   /** the preview picture the template carries, as a data URL */
   thumbnail?: string
 }
+
+/** an Office theme file of the themes folder, as the Themes gallery shows it */
+export interface SavedThemeEntry {
+  /** file name inside the themes folder */
+  name: string
+  /** its theme part */
+  xml: string
+}
+
+export interface SaveThemeResult {
+  ok: boolean
+  path?: string
+  error?: string
+}
+
+/** a picked theme file, document or template: `xml` is its theme part, null when it has none; null when canceled */
+export type PickThemeResult = { name: string; xml: string | null } | null
 
 /** where the first page is on screen (CSS px of the window), for a template's preview picture */
 export interface TemplatePreviewRect {
@@ -48,7 +67,28 @@ export interface TemplatePreviewRect {
 /** the Styles Organizer's other file: its bytes, and the path changes are written back to */
 export type OrganizerFileResult =
   { name: string; path: string; dataUrl: string } | { needsPassword: true } | null
-export type PickDocxResult = { name: string; dataUrl: string } | { needsPassword: true } | null
+export type PickDocxResult =
+  { name: string; path: string; dataUrl: string } | { needsPassword: true } | null
+/** a local file picked as a hyperlink target: its file: URL and its name */
+export type PickLinkFileResult = { url: string; name: string; path: string } | null
+
+/**
+ * Paste link: what a copy made in a saved document that is still open can be linked to.
+ * `path` is that document's file; `bookmark` names the copied range once it has been asked for.
+ */
+export type LinkSourceClaim = { path: string; bookmark?: string } | null
+
+/** the source of a link read again: a document's bytes or a picture's, or why it could not be read */
+export type LinkSourceResult =
+  | { ok: true; kind: 'document'; name: string; dataUrl: string }
+  | {
+      ok: true
+      kind: 'picture'
+      name: string
+      base64: string
+      mime: 'image/png' | 'image/jpeg' | 'image/gif'
+    }
+  | { ok: false; reason: 'missing' | 'tooLarge' | 'unsupported' | 'password' | 'failed' }
 
 /** result of an openDocxDecrypt attempt; wrong-password keeps the prompt open */
 export type DecryptOpenResult =
@@ -60,6 +100,9 @@ export interface PickImageResult {
   base64: string
   mime: 'image/png' | 'image/jpeg' | 'image/gif'
   name: string
+  /** where the file is, and that place as a file: URL (what a linked picture names) */
+  path: string
+  url: string
 }
 
 // ---- mail merge (genoffice#2097) ----
@@ -401,7 +444,7 @@ export interface DesktopApi {
   onDocumentThemeChanged(handler: (theme: DocTheme) => void): () => void
   /** app-wide measurement unit (Settings ▸ General); the raw shell answer, validated by units.ts */
   getMeasurementUnit?(): Promise<unknown>
-  /** pick the app-wide unit (null = follow the system region) */
+  /** pick the app-wide unit (null = follow the UI language) */
   setMeasurementUnit?(
     unit: import('@genoffice/ui/measurement').MeasurementUnit | null,
   ): Promise<unknown>
@@ -476,15 +519,6 @@ export interface DesktopApi {
   writeRecoveryCopy(path: string, data: ArrayBuffer): Promise<{ ok: boolean }>
   /** tab closed but webContents kept alive (shell freeze workaround) — stop background timers */
   onTeardown(handler: () => void): () => void
-  /** one trusted space keystroke into this webContents — the only thing that
-   *  makes Blink respell existing text after the spellcheck attribute turns
-   *  back on (r168); the caller pauses the PM DOM observer and removes the
-   *  space again by script */
-  respellKick(): Promise<void>
-  /** append one line to userData/spell-diag.log (size-capped) — field
-   *  spellcheck failures are intermittent and platform-bound, so the
-   *  toggle/kick lifecycle keeps a trace support can ask users for */
-  spellDiag(line: string): void
   /** opt this renderer into claiming right-clicks: claimed clicks get no native menu */
   armContextMenu(): void
   /** synchronous, from the DOM contextmenu handler: the React menu answers this
@@ -509,11 +543,23 @@ export interface DesktopApi {
     defaultName: string,
     data: ArrayBuffer,
     preview?: TemplatePreviewRect,
+    /** the gallery picture as a JPEG, when the first page is not whole on screen */
+    thumbnail?: ArrayBuffer,
   ): Promise<{ ok: boolean; path?: string; error?: string }>
   /** a template to start a new document from: the named one of the templates folder, or one the user picks */
   openTemplate(fromGallery?: string): Promise<OpenDocxResult>
+  /** the protected template openTemplate just reported, opened with its password */
+  openTemplateDecrypt(password: string): Promise<DecryptOpenResult>
   /** the templates folder's templates */
   listTemplates(): Promise<TemplateEntry[]>
+  /** the themes folder's theme files */
+  listThemes(): Promise<SavedThemeEntry[]>
+  /** asks where to keep `themeXml` as an Office theme file (the themes folder by default) and writes it */
+  saveTheme(defaultName: string, themeXml: string): Promise<SaveThemeResult>
+  /** removes a theme file of the themes folder */
+  deleteTheme(name: string): Promise<boolean>
+  /** asks for a theme file, a document or a template and reads its theme part */
+  pickTheme(): Promise<PickThemeResult>
   /** sourcePath: the document's current path — Save As uses its desired next-save
    *  password and commits that state to the chosen path only after success */
   saveDocxAs(
@@ -552,6 +598,22 @@ export interface DesktopApi {
   getRecentFiles(): Promise<string[]>
   pickImage(): Promise<PickImageResult | null>
   pickDocx(): Promise<PickDocxResult>
+  pickLinkFile(): Promise<PickLinkFileResult>
+  /** Edit > Links: read the file a link names (a path or file: URL as the document states it) */
+  readLinkSource(source: string, kind: 'document' | 'picture'): Promise<LinkSourceResult>
+  /** Edit > Links > Open Source: false when there is no such local file */
+  openLinkSource(source: string): Promise<boolean>
+  /** a copy was made here: its range can be linked to under this token until the next copy (null withdraws it) */
+  offerLinkSource(token: string | null): void
+  /**
+   * Paste link: whether the copy with this token can still be linked to; with `commit` the
+   * document it was made in bookmarks the range and the bookmark's name comes back
+   */
+  claimLinkSource(token: string, commit: boolean): Promise<LinkSourceClaim>
+  /** another document asks for the range copied under `token` to be bookmarked */
+  onLinkSourceMark(handler: (token: string) => void): () => void
+  /** the answer: the bookmark's name, or null when the range is gone */
+  linkSourceMarked(token: string, bookmark: string | null): void
   organizerOpen(): Promise<OrganizerFileResult>
   organizerSave(path: string, data: ArrayBuffer): Promise<{ ok: boolean; error?: string }>
   /** show a document made here (a comparison result) in a new tab, untitled and unsaved */
@@ -762,6 +824,8 @@ export interface DesktopApi {
   getKeyOverrides(): Promise<KeyOverrides>
   setKeyOverrides(overrides: KeyOverrides): Promise<KeyOverrides>
   onKeyOverridesChanged(handler: (overrides: KeyOverrides) => void): () => void
+  /** the keys in force while the open document carries its own, for the menu bar; null when it has none */
+  setDocumentKeyOverrides?(overrides: KeyOverrides | null): void
   /** the skills the user installed (userData/skills), for the AI panel's skills skill */
   skillsList(): Promise<UserSkillEntry[]>
   /** the body of one installed skill, by name — the main process resolves the path */

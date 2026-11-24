@@ -2870,17 +2870,22 @@ async function validateTextEditsInner(
  */
 function isolatedPageObjectText(m: Pdfium, page: number, objects: readonly number[]): string {
   let out = ''
-  for (const target of objects) {
-    const others = objects.filter((obj) => obj !== target)
-    for (const obj of others) m._FPDFPage_RemoveObject(page, obj)
-    let isolatedTextPage = 0
-    try {
-      isolatedTextPage = m._FPDFText_LoadPage(page)
-      if (isolatedTextPage) out += readTextObject(m, target, isolatedTextPage)
-    } finally {
-      if (isolatedTextPage) m._FPDFText_ClosePage(isolatedTextPage)
-      for (const obj of others) m._FPDFPage_InsertObject(page, obj)
+  // empty the page once and put one object back at a time: removing the
+  // others around each target is quadratic, seconds on a per-glyph page
+  for (const obj of objects) m._FPDFPage_RemoveObject(page, obj)
+  try {
+    for (const target of objects) {
+      m._FPDFPage_InsertObject(page, target)
+      const isolatedTextPage = m._FPDFText_LoadPage(page)
+      try {
+        if (isolatedTextPage) out += readTextObject(m, target, isolatedTextPage)
+      } finally {
+        if (isolatedTextPage) m._FPDFText_ClosePage(isolatedTextPage)
+        m._FPDFPage_RemoveObject(page, target)
+      }
     }
+  } finally {
+    for (const obj of objects) m._FPDFPage_InsertObject(page, obj)
   }
   return out
 }

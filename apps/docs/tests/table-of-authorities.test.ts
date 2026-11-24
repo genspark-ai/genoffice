@@ -109,6 +109,51 @@ describe('table of authorities', () => {
     expect(tableLines()).toContainEqual(['RCW 4.16.080 (2019)', '1, 2'])
   })
 
+  it('puts the number of a sequence before each page (\\s), joined by \\d, and the pages apart by \\l', () => {
+    const chapter = (n: number) => ({
+      type: 'docProtected',
+      attrs: {
+        blockType: 'passthrough',
+        genXml:
+          '<w:p><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText> SEQ Chapter </w:instrText></w:r>' +
+          `<w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>${n}</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r></w:p>`,
+      },
+    })
+    // chapter 1 opens before the second paragraph, chapter 2 before the third
+    editor.commands.insertContentAt(editor.state.doc.child(0).nodeSize, chapter(1) as never)
+    const third =
+      editor.state.doc.child(0).nodeSize +
+      editor.state.doc.child(1).nodeSize +
+      editor.state.doc.child(2).nodeSize
+    editor.commands.insertContentAt(third, chapter(2) as never)
+    editor.commands.setTextSelection(editor.state.doc.content.size - 1)
+    const pagesOf = (positions: number[]) => positions.map((_, i) => i + 4)
+    insertTableOfAuthorities(editor, [], pagesOf, heading, undefined, {
+      instr: ' TOA \\h \\s Chapter \\d ":" \\l "; " ',
+      leader: 'dot',
+    })
+    expect(tableLines()).toEqual([
+      ['Heading 1', ''],
+      // the first citation stands ahead of the first chapter number
+      ['Baldwin v. Alberti', '4; 2:5'],
+      ['Heading 2', ''],
+      ['RCW 4.16', '1:4'],
+    ])
+    // without \\d the two are joined by a hyphen
+    expect(updateTableOfAuthorities(editor, [], pagesOf, heading)).toBe(true)
+    editor.commands.setTextSelection(editor.state.doc.content.size - 1)
+    insertTableOfAuthorities(editor, [], pagesOf, heading, undefined, {
+      instr: ' TOA \\c "2" \\s chapter ',
+      leader: 'dot',
+    })
+    expect(tableLines()).toContainEqual(['RCW 4.16', '1-4']) // a sequence the document does not have numbers nothing: the pages are in page order
+    insertTableOfAuthorities(editor, [], () => [9, 5], heading, undefined, {
+      instr: ' TOA \\c "1" \\s Part ',
+      leader: 'dot',
+    })
+    expect(tableLines()).toContainEqual(['Baldwin v. Alberti', '5, 9'])
+  })
+
   it('rebuilds the table in place for the category it lists', () => {
     insertTableOfAuthorities(editor, [], () => null, heading, 2)
     markCitation(editor, 5, { long: 'Another Act', category: 2 })

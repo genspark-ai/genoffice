@@ -63,6 +63,11 @@ describe('bmpToPng header bounds', () => {
     expect(bmpToPng(indexedBmp({ clrUsed: 5, pixelIndex: 4 }))).toBeNull()
   })
 
+  it('does not read pixel bytes as palette entries', () => {
+    // claims three entries; the third would come from the pixel row
+    expect(bmpToPng(indexedBmp({ clrUsed: 3, pixelIndex: 2 }))).toBeNull()
+  })
+
   it('still accepts a 24-bit BMP with no palette', () => {
     const bytes = new Uint8Array(54 + 4)
     const view = new DataView(bytes.buffer)

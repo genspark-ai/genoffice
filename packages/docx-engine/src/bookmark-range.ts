@@ -123,7 +123,8 @@ export async function docxBookmarkRange(
   if (!part || !xml) return null
   const mark = bookmarksIn(xml).find((b) => b.name === name)
   if (!mark) return null
-  const endRe = new RegExp(`<w:bookmarkEnd\\b[^>]*\\bw:id="${mark.id}"[^>]*>`, 'g')
+  const id = mark.id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const endRe = new RegExp(`<w:bookmarkEnd\\b[^>]*\\bw:id="${id}"[^>]*>`, 'g')
   endRe.lastIndex = mark.at
   const end = endRe.exec(xml)
   if (!end) return null

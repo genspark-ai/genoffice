@@ -84,7 +84,8 @@ export interface AuthoritiesOptions {
 export const DEFAULT_SPECS: Record<IndexTablesKind, TableSpec> = {
   toc: { instr: ' TOC \\o "1-3" \\h \\z \\u ', leader: 'dot' },
   figures: { instr: ' TOC \\h \\z \\c "Figure" ', leader: 'dot' },
-  index: { instr: ' INDEX ', leader: 'dot' },
+  // two columns, as Word's dialog opens
+  index: { instr: ' INDEX \\c "2" ', leader: 'dot' },
   authorities: { instr: ' TOA \\h \\p ', leader: 'dot' },
 }
 
@@ -292,7 +293,7 @@ export function captionBody(text: string, label: string): string {
   if (label && rest.toLowerCase().startsWith(label.toLowerCase()))
     rest = rest.slice(label.length).trimStart()
   const number =
-    /^(?:\d+[-.\u2013:])*(?:\d+|[ivxlcdm]+|[IVXLCDM]+|[a-z]|[A-Z])(?=$|[\s.:\u2013\u2014-])/.exec(
+    /^(?:[\dA-Za-z]+[-.\u2011\u2013\u2014:])*(?:\d+|[ivxlcdm]+|[IVXLCDM]+|[a-z]|[A-Z])(?=$|[\s.:\u2013\u2014-])/.exec(
       rest,
     )
   if (!number) return rest

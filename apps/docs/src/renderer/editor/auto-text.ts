@@ -1,4 +1,11 @@
 import type { Editor } from '@tiptap/core'
+import {
+  docxAutoTextBody,
+  docxAutoTextEntries,
+  docxRootNamespaces,
+  parseDocx,
+} from '@genoffice/docx-engine'
+import { insertFileBody, type InsertFileNotes } from './insert-file'
 import { pastePayload } from './paste-actions'
 
 const KEY = 'aidocs.autoText'
@@ -9,6 +16,8 @@ export interface AutoTextEntry {
   /** the saved selection as the clipboard would carry it, so it goes back in as a paste does */
   html: string
   text: string
+  /** kept in the open document's glossary part, not on this computer; its content is read on insert */
+  from?: 'document'
 }
 
 const isEntry = (value: unknown): value is AutoTextEntry =>
@@ -75,4 +84,31 @@ export function deleteAutoText(name: string): void {
 /** Put an entry in at the selection, the way pasting it would */
 export function insertAutoText(editor: Editor, entry: AutoTextEntry): boolean {
   return pastePayload(editor, { html: entry.html, text: entry.text, image: null })
+}
+
+/** the AutoText entries the document's own glossary part holds (a document made from a template keeps the template's) */
+export async function documentAutoText(bytes: Uint8Array): Promise<AutoTextEntry[]> {
+  try {
+    return (await docxAutoTextEntries(bytes)).map((e) => ({ ...e, html: '', from: 'document' }))
+  } catch {
+    return []
+  }
+}
+
+/** Put an entry of the document's glossary part in at the selection, with its formatting */
+export async function insertDocumentAutoText(
+  editor: Editor,
+  bytes: Uint8Array,
+  name: string,
+  notes: InsertFileNotes,
+): Promise<boolean> {
+  try {
+    const body = await docxAutoTextBody(bytes, name)
+    if (!body) return false
+    const namespaces = await docxRootNamespaces(body.bytes)
+    const parsed = await parseDocx(body.bytes)
+    return insertFileBody(editor, { parsed, namespaces, inline: body.inline }, notes) !== null
+  } catch {
+    return false
+  }
 }
