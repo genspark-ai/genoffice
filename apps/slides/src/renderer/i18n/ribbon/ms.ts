@@ -175,7 +175,7 @@ export const ms = {
   ribbonBulletHangNarrow: 'Sempit',
   ribbonBulletHangNormal: 'Biasa',
   ribbonBulletHangWide: 'Lebar',
-  ribbonBulletHangCustomTip: 'Inden bulet tersuai (px, Enter untuk gunakan)',
+  ribbonBulletHangCustomTip: 'Inden bulet tersuai ({unit}, Enter untuk gunakan)',
   ribbonBulletSize: 'Saiz bulet',
   ribbonBulletColor: 'Warna bulet',
   ribbonNumberStyle: 'Gaya penomboran',

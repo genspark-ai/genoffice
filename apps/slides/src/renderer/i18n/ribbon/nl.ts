@@ -176,7 +176,8 @@ export const nl = {
   ribbonBulletHangNarrow: 'Smal',
   ribbonBulletHangNormal: 'Normaal',
   ribbonBulletHangWide: 'Breed',
-  ribbonBulletHangCustomTip: 'Aangepaste inspringing opsommingsteken (px, Enter om toe te passen)',
+  ribbonBulletHangCustomTip:
+    'Aangepaste inspringing opsommingsteken ({unit}, Enter om toe te passen)',
   ribbonBulletSize: 'Grootte opsommingsteken',
   ribbonBulletColor: 'Kleur opsommingsteken',
   ribbonNumberStyle: 'Nummeringsstijl',

@@ -3551,6 +3551,9 @@ export interface DesktopApi {
   getTheme(): Promise<UiTheme>
   /** theme switched from the shell home page */
   onThemeChanged(handler: (theme: UiTheme) => void): () => void
+  /** app-wide measurement unit (Settings ▸ General), a MeasurementUnitState from the shell */
+  getMeasurementUnit?(): Promise<unknown>
+  onMeasurementUnitChanged?(handler: (state: unknown) => void): () => void
   /** current document page theme preference (genoffice#1811, persisted by the shell in app-settings.json) */
   getDocumentTheme(): Promise<DocTheme>
   /** document page theme switched from the shell home page */

@@ -174,7 +174,7 @@ export const hi = {
   ribbonBulletHangNarrow: 'संकीर्ण',
   ribbonBulletHangNormal: 'सामान्य',
   ribbonBulletHangWide: 'चौड़ा',
-  ribbonBulletHangCustomTip: 'कस्टम बुलेट इंडेंट (px, लागू करने के लिए Enter)',
+  ribbonBulletHangCustomTip: 'कस्टम बुलेट इंडेंट ({unit}, लागू करने के लिए Enter)',
   ribbonBulletSize: 'बुलेट आकार',
   ribbonBulletColor: 'बुलेट रंग',
   ribbonNumberStyle: 'क्रमांकन शैली',
