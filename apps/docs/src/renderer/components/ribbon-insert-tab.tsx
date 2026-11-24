@@ -21,15 +21,17 @@ import { RbCommand, useCommandGreyed, useRibbonCommand, useRunCommand } from './
 import { useModalKeys } from './modal-keys'
 export { LinkInsertModal } from './LinkDialog'
 import {
+  IconBlankPage,
   IconBook,
   IconCaret,
   IconComment,
+  IconCoverPage,
   IconDoc,
   IconEquation,
   IconFooter,
   IconHeader,
   IconLink,
-  IconPageBreak,
+  IconPageBreakSmall,
   IconPageNumber,
   IconChart,
   IconPicture,
@@ -460,7 +462,7 @@ export function InsertTab({
                 data-tip={t('ribbonCoverPageTip')}
                 onClick={() => toggleDropdown(setDropdown, 'cover')}
               >
-                <IconDoc size={14} />
+                <IconCoverPage size={14} />
                 <span className="rb-small-label">{t('ribbonCoverPage')}</span>
                 <IconCaret />
               </button>
@@ -488,10 +490,10 @@ export function InsertTab({
               )}
             </div>
             <RbCommand cmd="insert-blank-page" look="small">
-              <IconDoc size={14} />
+              <IconBlankPage size={14} />
             </RbCommand>
             <RbCommand cmd="insert-page-break" look="small">
-              <IconPageBreak size={14} />
+              <IconPageBreakSmall size={14} />
             </RbCommand>
           </div>
         </div>

@@ -163,6 +163,38 @@ export function builtInHeadingStyleUpsert(
   }
 }
 
+/**
+ * Word's built-in "header" / "footer" for a document that defines none, as Word
+ * for Mac 16 writes it the first time a header is used (probe 2026-11-20): based
+ * on the default paragraph style, a center stop at 4680 and a right stop at 9360
+ * twips whatever the page width, no space after and single line spacing. Not a
+ * quick style.
+ */
+export function builtInHfStyleUpsert(
+  kind: 'header' | 'footer',
+  defaultParagraphStyleId: string | undefined,
+): StyleUpsert {
+  return {
+    styleId: kind === 'header' ? 'Header' : 'Footer',
+    type: 'paragraph',
+    name: kind,
+    ...(defaultParagraphStyleId ? { basedOn: defaultParagraphStyleId } : {}),
+    quickFormat: false,
+    builtIn: true,
+    pPr: {
+      tabStops: [...BUILT_IN_HF_TAB_STOPS],
+      spaceAfterTwips: 0,
+      lineSpacing: 1,
+    },
+  }
+}
+
+/** the stops Word's built-in Header and Footer styles carry */
+export const BUILT_IN_HF_TAB_STOPS: readonly TabStop[] = [
+  { pos: 4680, val: 'center' },
+  { pos: 9360, val: 'right' },
+]
+
 const STYLE_CHILD_ORDER = [
   'w:name',
   'w:aliases',

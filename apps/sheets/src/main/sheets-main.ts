@@ -81,6 +81,8 @@ import {
   configuredAuthorName,
   readLegacyImportSkip,
   writeLegacyImportSkip,
+  isBesideDocument,
+  sharedPathGrants,
 } from '@genoffice/electron-utils'
 import { createMainProcessProxyDispatcher } from '@genoffice/electron-utils/main-proxy'
 import { fetchRemoteTable } from '@genoffice/electron-utils/remote-table'
@@ -128,6 +130,7 @@ import {
   imageSearchTool,
   generateImageTool,
   localMediaRoots,
+  isLocalMediaPathAllowed,
 } from '@genoffice/ai-search'
 import { parseFileToText } from '@genoffice/file-parse'
 import type { CellEdit, SheetStructuralOps } from '@genoffice/xlsx-gateway/gateway/xlsx-gateway'
@@ -194,6 +197,8 @@ import {
   workbookExportPdfRequestSchema,
   printerInfoSchema,
   workbookRangeRequestSchema,
+  workbookFilterRequestSchema,
+  workbookFilterResultSchema,
   workbookRangeResultSchema,
   workbookSaveEditsAbortSchema,
   workbookSaveEditsBeginSchema,
@@ -2126,6 +2131,21 @@ function sheetsMediaRoots(wcId: number): string[] {
   return localMediaRoots(...workbookDirs, join(app.getPath('temp'), 'genoffice-pasted'))
 }
 
+/** Chat-attachment reads verify against what this view's user put in front of
+ *  the app: dialog picks, OS drops and clipboard file pastes land in the
+ *  shared grant ledger, and files sitting beside an open workbook are its own
+ *  neighbors. Everything else is refused — without this the extension
+ *  whitelist was the only bar between a compromised renderer and arbitrary
+ *  file reads. */
+function canReadAttachment(wcId: number, filePath: string): boolean {
+  if (sharedPathGrants().has(wcId, filePath)) return true
+  const tab = sheetsTabs.get(wcId)
+  if (!tab) return false
+  for (const session of tab.sessions.values())
+    if (isBesideDocument(session.path, filePath)) return true
+  return false
+}
+
 /// A save request referencing a chunked edit transfer gets the accumulated
 /// edits spliced back in; the transfer is consumed either way.
 function resolveTransferredEdits(
@@ -3338,6 +3358,9 @@ export function registerSheetsIpc(): void {
     const priorSession = [...sessionFor(event).sessions.values()].find(
       (session) => session.path === validated || session.restoreTarget === validated,
     )
+    // a crash re-open reopens THIS view's own workbook — the path was issued
+    // by main at open time; anything else is an arbitrary open attempt
+    if (!priorSession) throw new Error('Workbook is not open in this view.')
     return openSelectedWorkbook(event, validated, priorSession?.password)
   })
 
@@ -3419,6 +3442,13 @@ export function registerSheetsIpc(): void {
   const MERGE_SOURCE_EXTS = WORKBOOK_EXTS
   ipcMain.handle(IPC_CHANNELS.openWorkbooksForMerge, async (event, input: unknown) => {
     const paths = z.array(z.string().min(1)).min(1).max(20).parse(input)
+    // merge sources arrive as this view's chat attachments (pick/drop/paste —
+    // all ledger-recorded); a path outside the ledger is not a merge source
+    // this view's user put in front of the app
+    for (const path of paths) {
+      if (!sharedPathGrants().has(event.sender.id, path))
+        throw new Error('Merge source is not attached to this view.')
+    }
     for (const path of paths) {
       const ext = path.slice(path.lastIndexOf('.') + 1).toLowerCase()
       if (!MERGE_SOURCE_EXTS.has(ext)) throw new Error(`Unsupported merge source: ${ext}`)
@@ -3441,6 +3471,13 @@ export function registerSheetsIpc(): void {
     if (!entry.sessions.has(request.sessionId)) throw new Error('Unknown workbook session.')
     const result = await entry.client.readFormulaCells(request)
     return workbookFormulaCellsResultSchema.parse(result)
+  })
+
+  ipcMain.handle(IPC_CHANNELS.filterWorkbookRows, async (event, input: unknown) => {
+    const entry = sessionFor(event)
+    const request = workbookFilterRequestSchema.parse(input)
+    if (!entry.sessions.has(request.sessionId)) throw new Error('Unknown workbook session.')
+    return workbookFilterResultSchema.parse(await entry.client.filterRows(request))
   })
 
   ipcMain.handle(IPC_CHANNELS.findWorkbookCells, async (event, input: unknown) => {
@@ -3680,6 +3717,16 @@ export function registerSheetsIpc(): void {
       ? join(app.getPath('home'), request.path.slice(2))
       : request.path
     if (!isAbsolute(resolved)) throw new Error(tm('errImgAbsPath'))
+    // model-supplied add_image paths are bounded to this tab's own media
+    // roots (open workbook directories + the pasted-image store — the same
+    // roots the analyze/generate tools use) or to attachments the user
+    // actually attached; anything else is refused
+    if (
+      !isLocalMediaPathAllowed(resolved, sheetsMediaRoots(event.sender.id)) &&
+      !sharedPathGrants().has(event.sender.id, resolved)
+    ) {
+      throw new Error(tm('errImgNotFound', { path: request.path }))
+    }
     const info = await stat(resolved).catch(() => null)
     if (!info?.isFile()) throw new Error(tm('errImgNotFound', { path: request.path }))
     if (info.size > 20 * 1024 * 1024) throw new Error(tm('errImgTooLarge20'))
@@ -4397,12 +4444,18 @@ export function registerSheetsIpc(): void {
       properties: ['openFile', 'multiSelections'],
     })
     if (selection.canceled || selection.filePaths.length === 0) return null
+    sharedPathGrants().grant(event.sender.id, selection.filePaths)
     return collectAttachments(selection.filePaths)
   })
 
   ipcMain.handle(IPC_CHANNELS.filesAdd, (event, paths: unknown): AttachmentAddResult => {
     sessionFor(event)
-    return collectAttachments(z.array(z.string().min(1).max(1024)).max(50).parse(paths))
+    const validated = z.array(z.string().min(1).max(1024)).max(50).parse(paths)
+    // panel drops and clipboard file pastes are recorded by the preload
+    // bridge before this runs, so the ledger already holds every path a
+    // real drop carried; minting a grant for renderer-named paths here
+    // would let a compromised renderer read whatever it names
+    return collectAttachments(validated)
   })
 
   ipcMain.handle(
@@ -4415,6 +4468,8 @@ export function registerSheetsIpc(): void {
     ): Promise<AttachmentReadResult> => {
       sessionFor(event)
       const validatedPath = z.string().min(1).max(1024).parse(filePath)
+      if (!canReadAttachment(event.sender.id, validatedPath))
+        return { ok: false, error: 'sheets: path not granted to this view' }
       const name = basename(validatedPath)
       const ext = name.split('.').pop()?.toLowerCase() ?? ''
       if (!ATTACHMENT_EXTS.has(ext)) return { ok: false, error: tm('errUnsupportedExt', { ext }) }
@@ -4443,6 +4498,8 @@ export function registerSheetsIpc(): void {
   ipcMain.handle(IPC_CHANNELS.filesReadImage, (event, filePath: unknown): AttachmentImageResult => {
     sessionFor(event)
     const validatedPath = z.string().min(1).max(1024).parse(filePath)
+    if (!canReadAttachment(event.sender.id, validatedPath))
+      return { ok: false, error: 'sheets: path not granted to this view' }
     const name = basename(validatedPath)
     const ext = name.split('.').pop()?.toLowerCase() ?? ''
     const mime = ATTACHMENT_IMAGE_MIME[ext]
@@ -4465,6 +4522,7 @@ export function registerSheetsIpc(): void {
     (event, data: unknown, ext: unknown): AttachmentAddResult => {
       sessionFor(event)
       const filePath = savePastedImage(data, ext)
+      if (filePath) sharedPathGrants().grant(event.sender.id, [filePath])
       return filePath
         ? collectAttachments([filePath])
         : { accepted: [], rejected: [tm('errNotImage')] }

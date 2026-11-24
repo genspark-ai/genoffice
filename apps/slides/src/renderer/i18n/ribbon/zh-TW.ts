@@ -170,7 +170,7 @@ export const zhTW = {
   ribbonBulletHangNarrow: '窄',
   ribbonBulletHangNormal: '標準',
   ribbonBulletHangWide: '寬',
-  ribbonBulletHangCustomTip: '自訂符號縮排（px，Enter 套用）',
+  ribbonBulletHangCustomTip: '自訂符號縮排（{unit}，Enter 套用）',
   ribbonBulletSize: '符號大小',
   ribbonBulletColor: '符號色彩',
   ribbonNumberStyle: '編號樣式',

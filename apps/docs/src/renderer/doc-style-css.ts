@@ -145,7 +145,11 @@ export function docThemeCss(
     // docDefaults names one (a declared body font supersedes the theme, and
     // docStyleCss already resolved theme references into it)
     // .pv-page too: preview header/footer strips live outside the body clone
-    rules.push(`.doc-page, .pv-page { font-family:${cssFontFamily(fonts.minor)} }`)
+    // .page-wrap > .page-hf too: the first page's header and the last page's
+    // footer are .doc-page siblings and would take the app's UI font
+    rules.push(
+      `.doc-page, .pv-page, .page-wrap > .page-hf { font-family:${cssFontFamily(fonts.minor)} }`,
+    )
     // .page-wrap too: header/footer areas are .doc-page siblings inside it
     rules.push(
       `.page-wrap, .doc-page, .pv-page { --doc-latin-chain:${docLatinChainCss(fonts.minor)} }`,
@@ -669,6 +673,10 @@ export function docStyleCss(parsed: ParsedDocFull, live?: { typedGrid?: boolean 
     // .pv-page too: preview header/footer strips must wrap with the same
     // document font/line-height the canvas strips inherit inside .doc-page
     rules.push(`.doc-page, .pv-page { ${decls.join(';')} }`)
+    // the first page's header and the last page's footer sit beside .doc-page:
+    // they take the document's face, not the app's UI font (their size and
+    // line rules come from the --hf-* and .page-wrap variables above)
+    rules.push(`.page-wrap > .page-hf { font-family:${baseFamily} }`)
     if (typedGrid) {
       // Word's typed line grid governs the body flow only: header/footer strip
       // lines keep their natural heights (prod-sas 003/004 Word baselines:
@@ -1062,11 +1070,30 @@ export function docStyleCss(parsed: ParsedDocFull, live?: { typedGrid?: boolean 
     // marks them for measureBlocks, which must not divide an inherited document
     // auto multiple out of their full-height line box (breakOnlyLineH)
     // (atLeast includes the line="0" natural-height form, like extensions.ts)
-    if ((d.lineRule === 'exact' && d.lineRawTwips) || d.lineRule === 'atLeast') {
+    if (d.lineRule === 'exact' && d.lineRawTwips) {
+      // An exact rule is a hard cap: every run sits on the fixed line box.
       decls.push('--doc-line-fixed:1')
       rules.push(
         `.doc-page [data-style="${CSS.escape(info.styleId)}"]:not(.doc-lh-fixed) span { line-height:inherit }`,
       )
+    } else if (d.lineRule === 'atLeast') {
+      // A minimum rule is not a cap: let each run keep its natural font-relative
+      // box (the same policy .doc-lh-fixed span uses for a direct atLeast rule)
+      // so a large run still grows the line. Inheriting the paragraph's absolute
+      // line-height here made a style-level 14pt minimum render shorter than the
+      // identical rule declared directly (genoffice#2806).
+      decls.push('--doc-line-fixed:1')
+      if (!d.lineRawTwips) {
+        // line="0" atLeast is the natural-height form: its spans must still be
+        // pinned to the paragraph box so they do not re-snap to the grid.
+        rules.push(
+          `.doc-page [data-style="${CSS.escape(info.styleId)}"]:not(.doc-lh-fixed) span { line-height:inherit }`,
+        )
+      } else {
+        rules.push(
+          `.doc-page [data-style="${CSS.escape(info.styleId)}"]:not(.doc-lh-fixed) span { line-height:min(calc(var(--doc-line-factor, 1.2) * 1em), var(--doc-lh-cap, 9999px)) }`,
+        )
+      }
     }
     // CJK stretches (.doc-run-lf) re-resolve the style's line rule with their
     // own factor; the style rule beats the document-level .doc-run-lf rule

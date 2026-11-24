@@ -4,6 +4,7 @@
  * with openPptx and assert on the parsed model (true roundtrip, no mocks).
  */
 import { describe, it, expect } from 'vitest'
+import { parseLenientJson } from '../src/slides/lenient-json'
 import { openPptx, type TextElement, type PictureElement } from '@genoffice/pptx-engine'
 import { HeuristicMetrics } from '@genoffice/pptx-render'
 import { parsePageSpec, buildPagePptx, type PageSpec } from '../src/slides/page-spec'
@@ -51,6 +52,22 @@ describe('parsePageSpec', () => {
     if (!r.ok) return
     expect(r.spec.background).toBe('#0E1A2B')
     expect(r.spec.elements).toHaveLength(1)
+  })
+
+  it('repairs a low-9 opening quote closed with a plain " (Hungarian copy)', () => {
+    // Shape measured from glm-5.3-flash: „…" with an ASCII closer, followed by : or ,
+    const raw = JSON.stringify({
+      background: '#0E1A2B',
+      elements: [textSpec('Kiemelt: a „hónap meglepetése": füzet, az „EcoLine", a sláger')],
+    }).replace(/\\"/g, '"')
+    expect(() => JSON.parse(raw)).toThrow()
+    const r = parsePageSpec(raw)
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+    const el = r.spec.elements[0] as { paragraphs: Array<{ runs: Array<{ text: string }> }> }
+    expect(el.paragraphs[0]!.runs[0]!.text).toBe(
+      'Kiemelt: a „hónap meglepetése": füzet, az „EcoLine", a sláger',
+    )
   })
 
   it('rejects output without a usable JSON object', () => {
@@ -474,5 +491,14 @@ describe('buildPagePptx shape flip', () => {
     ) as TextElement | undefined
     expect(el?.transform.flipV).toBe(true)
     expect(el?.anchor.originalXml).toContain('flipV="1"')
+  })
+})
+
+describe('parseLenientJson', () => {
+  it('rejects a quote repair that merges two members', () => {
+    expect(parseLenientJson('{"k0":"y"z",","k1":"„Minta", aalma"}').ok).toBe(false)
+  })
+  it('keeps a plain-quoted value intact after a low-9 quote closed in the previous member', () => {
+    expect(parseLenientJson('{"a":"„x","b":"y "q" z"}')).toEqual({ ok: true, value: { a: '„x', b: 'y "q" z' } })
   })
 })

@@ -723,6 +723,12 @@ export interface ToolExecution {
   display?: ToolDisplay
 }
 
+export const PROTECTED_DOC_ERROR =
+  'Nothing was changed: the document is protected (Restrict Editing) and only its editable regions can be changed. ' +
+  'This edit fell outside them. Put the content inside an editable region, or tell the user the document is locked there.'
+export const PROTECTED_DOC_PARTIAL =
+  'Part of this edit fell outside the editable regions of this protected document and was not applied; check the result with get_document_context before reporting it.'
+
 const fail = (summary: string, output: string): ToolExecution => ({
   output,
   isError: true,
@@ -1228,7 +1234,19 @@ export function executeTool(
   const scope = frozen && frozen.doc === editor.state.doc ? frozen.scope : null
   const staleSummary = staleSummaryOf(call)
   if (staleSummary && editedExternally(editor)) return fail(staleSummary(), STALE_DOC_ERROR)
+  // A read-only protected document turns away edits outside its open regions
+  // in a transaction filter, which the editing helpers cannot see: the tool
+  // would still report its change, and the model would tell the user it was
+  // made. The filter's counter tells a blocked edit apart.
+  const perm = editor.storage.permRegions
+  const blockedBefore = perm?.blocked ?? 0
+  const docBefore = editor.state.doc
   const settle = (exec: ToolExecution): ToolExecution => {
+    if (exec.mutated && !exec.isError && (perm?.blocked ?? 0) > blockedBefore) {
+      if (editor.state.doc === docBefore)
+        return fail(t('aiSumProtectedBlocked'), PROTECTED_DOC_ERROR)
+      exec = { ...exec, output: `${exec.output}\n${PROTECTED_DOC_PARTIAL}` }
+    }
     const readsDoc = call.name === 'get_document_context' || call.name === 'read_blocks'
     if (exec.mutated || (readsDoc && !exec.isError)) markDocSeen(editor)
     return exec

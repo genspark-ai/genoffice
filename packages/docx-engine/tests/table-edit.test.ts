@@ -293,6 +293,23 @@ describe('generateTableModelXml', () => {
     expect(generateTableModelXml({ rows })).toContain('<w:tblBorders>')
   })
 
+  it('replaces or drops the imported w:tblInd only when the model carries an indent', () => {
+    const template =
+      '<w:tbl><w:tblPr><w:tblW w:w="8800" w:type="dxa"/><w:tblInd w:w="-108" w:type="dxa"/>' +
+      '<w:tblLayout w:type="fixed"/></w:tblPr><w:tblGrid><w:gridCol w:w="8800"/></w:tblGrid>' +
+      '<w:tr><w:tc><w:p/></w:tc></w:tr></w:tbl>'
+    const rows = [[{ paras: ['a'] }]]
+    expect(generateTableModelXml({ rows }, template)).toContain(
+      '<w:tblInd w:w="-108" w:type="dxa"/>',
+    )
+    const reset = generateTableModelXml({ rows, autoFit: 'window', indentTwips: 0 }, template)
+    expect(reset).not.toContain('w:tblInd')
+    expect(reset).toContain('<w:tblW w:w="5000" w:type="pct"/>')
+    expect(generateTableModelXml({ rows, indentTwips: 360 }, template)).toContain(
+      '<w:tblW w:w="8800" w:type="dxa"/><w:tblInd w:w="360" w:type="dxa"/>',
+    )
+  })
+
   it('writes repeating header rows without disturbing other trPr children', () => {
     const xml = generateTableModelXml({
       rows: [[{ paras: ['Header'] }], [{ paras: ['Body'] }]],

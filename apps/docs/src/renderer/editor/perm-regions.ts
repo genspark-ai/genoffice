@@ -27,6 +27,9 @@ import { PHASED_APPEND } from './streaming-tail-guard'
 export interface PermRegionsStorage {
   /** the document is read-only protected and has open regions */
   enabled: boolean
+  /** edits the protection turned away so far; a caller compares it around a
+   *  change it made to tell a blocked edit from one that went through */
+  blocked: number
 }
 
 declare module '@tiptap/core' {
@@ -228,7 +231,7 @@ function regionDecorations(doc: PmNode): DecorationSet {
 export const PermRegionsExtension = Extension.create<object, PermRegionsStorage>({
   name: 'permRegions',
   addStorage() {
-    return { enabled: false }
+    return { enabled: false, blocked: 0 }
   },
   addProseMirrorPlugins() {
     const storage = this.storage
@@ -248,7 +251,11 @@ export const PermRegionsExtension = Extension.create<object, PermRegionsStorage>
         props: {
           decorations: (state) => pluginKey.getState(state),
         },
-        filterTransaction: (tr) => !storage.enabled || permRegionsAllow(tr),
+        filterTransaction: (tr) => {
+          if (!storage.enabled || permRegionsAllow(tr)) return true
+          storage.blocked += 1
+          return false
+        },
         // paragraphs an allowed edit creates at the top level (Enter, a paste of
         // several paragraphs) belong to the open region they were made in
         appendTransaction: (trs, _oldState, newState) => {

@@ -671,6 +671,12 @@ export const ms = {
   appLatexPlaceholder: 'cth. x = \\frac{-b \\pm \\sqrt{b^2-4ac}}{2a}',
   appLatexPreviewHint: 'Taip LaTeX untuk melihat pratonton',
   appPreviewUnavailable: 'Tidak dapat menjana pratonton',
+  appMathTypeConvertNote:
+    'Persamaan MathType — menyimpan akan menukarkannya kepada persamaan Word asli (OMML).',
+  appMathTypeConvertOnlyNote:
+    'Persamaan MathType ini menggunakan struktur di luar subset LaTeX. Anda boleh menukarkannya terus kepada persamaan Word asli (OMML) sambil mengekalkan susun aturnya.',
+  appMathTypeConvertAction: 'Tukar & Kemas Kini',
+  appMathTypeEditHint: 'Persamaan MathType (dwiklik untuk edit atau tukar)',
   appInlineEquationToggle: 'Persamaan sebaris (disisipkan pada kursor, mengalir dengan teks)',
   appInsertNewEquation: 'π Sisipkan Persamaan Baharu (LaTeX)…',
   appEqCircleArea: 'Luas Bulatan',

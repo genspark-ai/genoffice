@@ -655,6 +655,11 @@ export const he = {
   appLatexPlaceholder: 'לדוגמה x = \\frac{-b \\pm \\sqrt{b^2-4ac}}{2a}',
   appLatexPreviewHint: 'הקלידו LaTeX לתצוגה מקדימה',
   appPreviewUnavailable: 'לא ניתן ליצור תצוגה מקדימה',
+  appMathTypeConvertNote: 'משוואת MathType — שמירה תמיר אותה למשוואת Word מובנית (OMML).',
+  appMathTypeConvertOnlyNote:
+    'משוואת MathType זו כוללת מבנים שמחוץ לתת-הקבוצה של LaTeX. ניתן להמיר אותה ישירות למשוואת Word מובנית (OMML) תוך שמירה על הפריסה.',
+  appMathTypeConvertAction: 'המר ועדכן',
+  appMathTypeEditHint: 'משוואת MathType (לחיצה כפולה לעריכה או המרה)',
   appInlineEquationToggle: 'משוואה בתוך השורה (מוכנסת במיקום הסמן וזורמת עם הטקסט)',
   appInsertNewEquation: 'π הוספת משוואה חדשה (LaTeX)…',
   appEqCircleArea: 'שטח עיגול',

@@ -210,6 +210,7 @@ import {
   IconPasteMerge,
   IconPasteSource,
   IconPasteText,
+  IconPicture,
   IconPilcrow,
   IconRemoveBg,
   IconReplacePicture,
@@ -1888,7 +1889,7 @@ function RibbonInner({
     setDropdown(null)
   }
 
-  const pasteAs = (mode?: PasteMode) => {
+  const pasteAs = (mode?: PasteMode | 'picture') => {
     setDropdown(null)
     runCommand('paste-as', mode)
   }
@@ -2001,6 +2002,9 @@ function RibbonInner({
                 >
                   {t('ribbonNameWithAi')}
                 </button>
+                <RbMenuCommand cmd="print" onRun={() => setDropdown(null)}>
+                  {t('appPrintTitle')} <span className="file-menu-key">Ctrl+P</span>
+                </RbMenuCommand>
                 <div className="file-menu-sep" />
                 {convertItems}
               </div>
@@ -3404,6 +3408,16 @@ function RibbonInner({
                       <button role="menuitem" onClick={() => pasteAs('text')}>
                         <IconPasteText size={16} />
                         {t('appPasteTextOnly')}
+                      </button>
+                      <button
+                        role="menuitem"
+                        onClick={() => {
+                          setDropdown(null)
+                          runCommand('paste-as', 'picture')
+                        }}
+                      >
+                        <IconPicture size={16} />
+                        {t('ribbonPasteFormatPicture')}
                       </button>
                       <div className="spacing-menu-sep" />
                       <button role="menuitem" onClick={() => pick('edit-paste-special')}>

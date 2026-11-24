@@ -147,10 +147,9 @@ export function HeaderFooterArea({
   sectionPages,
   style,
   boxGeom,
-  linked,
-  sectionLabel,
   editRequest,
   onEditingChange,
+  blank,
 }: {
   kind: 'header' | 'footer'
   value: HfValue
@@ -158,10 +157,6 @@ export function HeaderFooterArea({
   images?: HfImage[]
   readOnly?: boolean
   onCommit: (next: HfValue) => void
-  /** Word's "Same as Previous" tag: this section inherits the strip from the previous one */
-  linked?: boolean | null
-  /** "Header -Section 2-" style label shown while editing */
-  sectionLabel?: string | null
   /** bump to enter editing from outside (ribbon Edit Header / Go to Footer) */
   editRequest?: number | null
   /** editing mode changes, with the live editor handle while open */
@@ -172,6 +167,8 @@ export function HeaderFooterArea({
   pageTotal?: number
   /** Page count of this page's section shown for SECTION_PAGES_MARK (SECTIONPAGES field), defaults to pageTotal */
   sectionPages?: number
+  /** the paragraph a blank part starts editing with (Word: the Header / Footer style) */
+  blank?: HfParagraph
   /** geometry override: on differing-width sections the strip is pinned to its own section's box */
   style?: React.CSSProperties
   /** page geometry: floating textboxes render at their anchor position (absent: stacked) */
@@ -206,8 +203,16 @@ export function HeaderFooterArea({
   // The editor host is a standalone element React never populates: the nested
   // editor owns its children and the whole element unmounts on exit, so no
   // stale DOM survives section/variant switches
-  const latest = useRef({ value, onCommit, onEditingChange, pageNo, pageTotal, sectionPages })
-  latest.current = { value, onCommit, onEditingChange, pageNo, pageTotal, sectionPages }
+  const latest = useRef({
+    value,
+    onCommit,
+    onEditingChange,
+    pageNo,
+    pageTotal,
+    sectionPages,
+    blank,
+  })
+  latest.current = { value, onCommit, onEditingChange, pageNo, pageTotal, sectionPages, blank }
   useEffect(() => {
     if (!editing) return
     const el = editRef.current
@@ -219,6 +224,7 @@ export function HeaderFooterArea({
       pageTotal: String(pt ?? 1),
       sectionPages: String(sp ?? pt ?? 1),
       spellcheck: spellcheckEnabled(),
+      blank: latest.current.blank,
       onCommit: (next) => latest.current.onCommit(next),
       onExit: () => {
         latest.current.onEditingChange?.(false, null)
@@ -261,7 +267,7 @@ export function HeaderFooterArea({
         ...style,
       }}
       data-tip={
-        readOnly
+        readOnly || editing
           ? undefined
           : t(kind === 'header' ? 'appDblclickEditHeader' : 'appDblclickEditFooter') +
             (value.pageNumber
@@ -326,12 +332,6 @@ export function HeaderFooterArea({
         </>
       ) : (
         <HfContent kind={kind} paras={paras} images={images} display={display} boxGeom={boxGeom} />
-      )}
-      {editing && (sectionLabel || linked) && (
-        <div className="page-hf-tags" contentEditable={false}>
-          {sectionLabel && <span className="page-hf-tag">{sectionLabel}</span>}
-          {linked && <span className="page-hf-tag">{t('appHfSameAsPrevious')}</span>}
-        </div>
       )}
     </div>
   )

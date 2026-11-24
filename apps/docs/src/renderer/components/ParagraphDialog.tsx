@@ -10,6 +10,7 @@ import { textHasCjk } from '../line-metrics'
 import { runUiOps } from '../ai/ops'
 import { useModalKeys } from './modal-keys'
 import { LengthInput } from './LengthInput'
+import { useMeasurement } from '../use-measurement'
 import {
   pickByUnit,
   pickSpecial,
@@ -141,6 +142,7 @@ export function ParagraphDialog({
   onSetDefault?: (pPr: StyleParaProps) => void
 }) {
   const { t } = useI18n()
+  const measure = useMeasurement()
   const modalKeys = useModalKeys(onClose)
   const attrs = activeParaAttrs(editor)
   const [tab, setTab] = useState<Tab>('indents')
@@ -448,7 +450,8 @@ export function ParagraphDialog({
                     ariaLabel={t('appParaUnitChars')}
                     disabled={special.special !== 'firstLine'}
                     options={[
-                      { value: 'cm', label: 'cm' },
+                      // the absolute length, in the app-wide unit (an inch mark alone reads poorly)
+                      { value: 'cm', label: measure.unit === 'in' ? 'in' : measure.suffix },
                       { value: 'chars', label: t('appParaUnitChars') },
                     ]}
                     onPick={(u) => setSpecial((prev) => pickByUnit(prev, u as SpecialByUnit))}

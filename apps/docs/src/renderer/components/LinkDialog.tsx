@@ -143,7 +143,7 @@ export function LinkInsertModal({ editor, onClose }: { editor: Editor; onClose: 
         return href.length > 1
       })
     }
-    const attrs = () => ({ href, rId: null, tooltip })
+    const attrs = () => ({ href, rId: null, anchor: null, history: null, tooltip })
     if (linkAtOpen) {
       if (text === linkAtOpen.text.trim()) {
         // target-only change: re-mark the existing run so character

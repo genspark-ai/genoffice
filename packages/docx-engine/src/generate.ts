@@ -3116,6 +3116,12 @@ function tableModelXml(
       `<w:tblLayout w:type="${effectiveAutoFit === 'fixed' ? 'fixed' : 'autofit'}"/>`,
     )
   }
+  // an edited indent replaces the original w:tblInd; AutoFit Window resets it to
+  // zero, and Word then drops the element (probe 2026-11-23)
+  if (originalTblPr && model.indentTwips !== undefined) {
+    const ind = Math.round(model.indentTwips)
+    tblPr = setTblPrChild(tblPr, 'w:tblInd', ind ? `<w:tblInd w:w="${ind}" w:type="dxa"/>` : null)
+  }
   if (model.cellMarTwips !== undefined) {
     tblPr = setTblPrChild(tblPr, 'w:tblCellMar', cellMar || null)
   }
@@ -3863,8 +3869,14 @@ function runsXml(
         const group: Run[] = []
         const groupStart = i
         const href = run.link.href
+        const { anchor, history } = run.link
         let rId = run.link.rId
-        while (i < to && runs[i].link && runs[i].link!.href === href) {
+        while (
+          i < to &&
+          runs[i].link?.href === href &&
+          runs[i].link?.anchor === anchor &&
+          runs[i].link?.history === history
+        ) {
           const next = runs[i].link!.rId
           if (group.length > 0 && next !== undefined && rId !== undefined && next !== rId) break
           rId = rId ?? next
@@ -3883,9 +3895,12 @@ function runsXml(
         } else {
           const finalRId = rId ?? allocate?.(href)
           if (finalRId) {
+            const anchorAttr = anchor === undefined ? '' : ` w:anchor="${escapeXmlAttr(anchor)}"`
+            const historyAttr =
+              history === undefined ? '' : ` w:history="${escapeXmlAttr(history)}"`
             const inner = group.map((r) => fragment(r, true)).join('')
             parts.push(
-              `<w:hyperlink r:id="${escapeXmlAttr(finalRId)}"${tipAttr}>${inner}</w:hyperlink>`,
+              `<w:hyperlink r:id="${escapeXmlAttr(finalRId)}"${anchorAttr}${tipAttr}${historyAttr}>${inner}</w:hyperlink>`,
             )
           } else {
             parts.push(group.map((r) => fragment(r, false)).join(''))
@@ -4009,9 +4024,13 @@ function splitGlyphRuns(
 }
 
 function runFragmentXml(run: Run, insideLink: boolean): string {
-  // atomic inline formula: the stored <m:oMath> fragment is already valid
-  // paragraph content (patch.ts adds the xmlns:m declaration when missing)
+  // atomic inline formula: a MathType OLE equation decoded to OMML keeps its
+  // original <w:object> bytes verbatim until the user converts/edits it; a
+  // native <m:oMath> fragment is emitted directly (patch.ts adds xmlns:m)
   if (run.math) {
+    if (run.math.oleXml) {
+      return `<w:r>${run.math.oleRawRPr ?? ''}${run.math.oleXml}</w:r>`
+    }
     return run.math.display ? `<m:oMathPara>${run.math.omml}</m:oMathPara>` : run.math.omml
   }
   // atomic phonetic guide: the <w:ruby> fragment re-wrapped in a run

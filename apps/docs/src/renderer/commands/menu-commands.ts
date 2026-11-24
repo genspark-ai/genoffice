@@ -71,7 +71,7 @@ import { groupSelectedObjects, ungroupSelectedObjects } from '../editor/object-g
 import { nextNoteRefPos, noteRefNear } from '../editor/note-nav'
 import { applyCase, type CaseMode } from '../editor/case-transform'
 import { COVER_PRESETS, insertCoverPage, removeCoverPage } from '../editor/cover-pages'
-import { setParagraphDirection, setSelectionAlign } from '../editor/direction'
+import { alignSelectionOrTable, setParagraphDirection } from '../editor/direction'
 import {
   bringForward,
   bringToFront,
@@ -128,7 +128,7 @@ import {
 } from '../editor/table-properties'
 import { applyTableStyle, restyleTable } from '../editor/table-style-apply'
 import { textToTableScope } from '../editor/table-convert'
-import { distributeSelectedColumns } from '../editor/table-sizing'
+import { distributeSelectedColumns, pinRenderedColumnWidths } from '../editor/table-sizing'
 import { parseRunBorderAttr } from '../editor/run-border'
 import {
   borderAttrsOf,
@@ -528,7 +528,7 @@ const align =
   (value: 'left' | 'center' | 'right' | 'justify' | 'distribute'): Handler =>
   (host) => {
     const target = formatTarget(host)
-    if (target) setSelectionAlign(target, value)
+    if (target) alignSelectionOrTable(target, value)
   }
 
 const TEXTBOX_INDENT_STEP_TWIPS = 720
@@ -1620,7 +1620,7 @@ export const MENU_COMMAND_HANDLERS: Record<ActionCommandId, Handler> = {
     if (target)
       void pasteFromClipboard(
         target,
-        PASTE_MODES.find((m) => m === payload),
+        payload === 'picture' ? 'picture' : PASTE_MODES.find((m) => m === payload),
       )
   },
   'styles-pane': (host) => host.toggleStylesPane(),
@@ -2089,7 +2089,11 @@ export const MENU_COMMAND_HANDLERS: Record<ActionCommandId, Handler> = {
   'table-merge-cells': tableCommand(() => mergeCells),
   'table-split-cells': tableDialog('splitCells'),
   'table-split-table': tableCommand(() => splitTableAtSelection()),
-  'table-autofit-contents': tableCommand((_, w) => setTableAutoFit('contents', w)),
+  'table-autofit-contents': tableCommand((editor, w) => {
+    // laid out synchronously by the dispatch, so the fitted columns can be read back
+    if (setTableAutoFit('contents', w)(editor.state, editor.view.dispatch))
+      pinRenderedColumnWidths(editor.view)
+  }),
   'table-autofit-window': tableCommand((_, w) => setTableAutoFit('window', w)),
   'table-autofit-fixed': tableCommand((_, w) => setTableAutoFit('fixed', w)),
   'table-distribute-rows': tableCommand((editor) => {

@@ -709,7 +709,7 @@ export function pinnedCloneCss(pageCount: number): string {
 
 /** the live editor root the preview snapshots */
 export function canvasEditorEl(): HTMLElement | null {
-  return document.querySelector('.editor-scroll .ProseMirror') as HTMLElement | null
+  return document.querySelector('.editor-scroll .ProseMirror.doc-page') as HTMLElement | null
 }
 
 /**

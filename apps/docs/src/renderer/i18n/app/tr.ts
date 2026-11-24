@@ -668,6 +668,12 @@ export const tr = {
   appLatexPlaceholder: 'örn. x = \\frac{-b \\pm \\sqrt{b^2-4ac}}{2a}',
   appLatexPreviewHint: 'Önizleme için LaTeX yazın',
   appPreviewUnavailable: 'Önizleme oluşturulamıyor',
+  appMathTypeConvertNote:
+    'MathType denklemi — kaydetmek bunu yerel bir Word denklemine (OMML) dönüştürür.',
+  appMathTypeConvertOnlyNote:
+    'Bu MathType denklemi LaTeX alt kümesinin dışındaki yapıları kullanır. Düzenini koruyarak doğrudan yerel bir Word denklemine (OMML) dönüştürebilirsiniz.',
+  appMathTypeConvertAction: 'Dönüştür ve Güncelle',
+  appMathTypeEditHint: 'MathType denklemi (düzenlemek veya dönüştürmek için çift tıklayın)',
   appInlineEquationToggle: 'Satır içi denklem (imlece eklenir, metinle akar)',
   appInsertNewEquation: 'π Yeni Denklem Ekle (LaTeX)…',
   appEqCircleArea: 'Daire Alanı',

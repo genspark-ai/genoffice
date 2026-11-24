@@ -86,6 +86,10 @@ export function setTableAutoFit(mode: TableAutoFitMode, contentWidthPx: number):
     } else if (mode === 'window') {
       tablePatch.widthPx = null
       tablePatch.widthPct = 100
+      // Word's AutoFit Window also drops w:tblInd: the table spans the text column
+      // from margin to margin, whatever indent it had (probe 2026-11-23, tblInd -108)
+      tablePatch.indentTwips = null
+      tablePatch.tblIndentEdited = true
     } else {
       const widths = fixedGridWidths(table, rect.map.width, contentWidthPx)
       const total = widths.reduce((sum, width) => sum + width, 0)

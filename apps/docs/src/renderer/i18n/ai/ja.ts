@@ -155,6 +155,7 @@ export const ja = {
     '{blocks} ブロックを受信した時点で作成が中断しました。この部分を採用しますか、破棄しますか？',
   aiPartialAdopt: '採用',
   aiPartialDiscard: '破棄',
+  aiSumProtectedBlocked: '適用されませんでした: 文書は編集可能な範囲以外が保護されています',
   aiSumInsertedBlocks: '{count} 個のブロックを挿入',
   aiSumCreateDocument: '新規ドキュメントを作成',
   aiSumCreatedDocument: '{name} を作成しました',

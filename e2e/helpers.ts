@@ -77,15 +77,19 @@ export async function launchShell(options: LaunchOptions): Promise<LaunchedApp> 
       ...hostEnv,
       GENOFFICE_USER_DATA: userDataDir,
       GENOFFICE_NO_SPARE_VIEW: '1',
+      // e2e drives open-path channels with fixture paths that were never
+      // picked or listed: production read/open checks key off this flag
+      GENOFFICE_E2E: '1',
       GENOFFICE_LANG: options.lang ?? 'en',
       ...(options.env ?? {}),
       ...(process.platform === 'linux' ? { ELECTRON_DISABLE_SANDBOX: '1' } : {}),
     },
-    // Playwright's Electron screencast wedges the page CDP session on Linux
-    // (page.url() stays empty, no lifecycle events, evaluate hangs) — record
-    // only where it works
+    // Playwright's Electron screencast wedges the page CDP session on Linux,
+    // and since Playwright 1.62 on macOS too (page.url() stays empty, no
+    // lifecycle events, evaluate hangs, so every spec times out at launch) —
+    // record only where it works
     recordVideo:
-      process.platform === 'linux'
+      process.platform === 'linux' || process.platform === 'darwin'
         ? undefined
         : {
             dir: join(ARTIFACTS_DIR, options.videoDir),

@@ -3718,13 +3718,16 @@ function Ribbon({
             </button>
             <button
               data-tip={t('appUnderline')}
-              className={selectionFormat?.underline ? 'is-active' : ''}
+              className={
+                selectionFormat?.underline && !selectionFormat.doubleUnderline ? 'is-active' : ''
+              }
               onClick={() => onCommand('underline')}
             >
               <u>U</u>
             </button>
             <button
               data-tip={t('appDoubleUnderline')}
+              className={selectionFormat?.doubleUnderline ? 'is-active' : ''}
               onClick={() => onCommand('underline:double')}
             >
               <u style={{ textDecorationStyle: 'double' }}>D</u>

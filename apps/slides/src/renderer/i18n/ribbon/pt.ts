@@ -177,7 +177,7 @@ export const pt = {
   ribbonBulletHangNarrow: 'Estreito',
   ribbonBulletHangNormal: 'Normal',
   ribbonBulletHangWide: 'Largo',
-  ribbonBulletHangCustomTip: 'Recuo do marcador personalizado (px, Enter para aplicar)',
+  ribbonBulletHangCustomTip: 'Recuo do marcador personalizado ({unit}, Enter para aplicar)',
   ribbonBulletSize: 'Tamanho do marcador',
   ribbonBulletColor: 'Cor do marcador',
   ribbonNumberStyle: 'Estilo de numeração',

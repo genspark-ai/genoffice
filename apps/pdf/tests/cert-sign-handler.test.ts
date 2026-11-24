@@ -127,6 +127,21 @@ describe('certificate signing handlers', () => {
     })
   })
 
+  it('stops a released file certificate from resolving for inspect and sign', async () => {
+    const s = await setup()
+    expect(await s.call(PDF_CHANNELS.inspectCertificate, s.certId, PASSWORD)).toMatchObject({
+      ok: true,
+    })
+    s.call(PDF_CHANNELS.releaseCertificate, s.certId)
+    expect(await s.call(PDF_CHANNELS.inspectCertificate, s.certId, PASSWORD)).toEqual({
+      ok: false,
+      error: 'cert-invalid',
+    })
+    pickSave.mockResolvedValue({ canceled: false, filePath: s.signedCopy })
+    expect(await s.sign()).toEqual({ ok: false, error: 'cert-invalid' })
+    expect(pickSave).not.toHaveBeenCalled()
+  })
+
   it('writes a signed copy, leaves the original untouched and moves the view to the copy', async () => {
     const s = await setup()
     const hook = vi.fn()
@@ -238,7 +253,7 @@ describe('certificate signing handlers', () => {
       expect(pickSave).not.toHaveBeenCalled()
     })
 
-    it('unlocks the store again when a released identity has to be re-exported for signing', async () => {
+    it('stops a released system identity from resolving, key material included', async () => {
       const s = await setup()
       vi.mocked(listSystemCertificates).mockResolvedValue({ certs: [listed], issues: [] })
       vi.mocked(openSystemSigner).mockClear()
@@ -251,11 +266,16 @@ describe('certificate signing handlers', () => {
         await s.call(PDF_CHANNELS.inspectCertificate, certs[0].certId, '', 'store-pw'),
       ).toMatchObject({ ok: true })
       s.call(PDF_CHANNELS.releaseCertificate, certs[0].certId)
+      expect(
+        await s.call(PDF_CHANNELS.inspectCertificate, certs[0].certId, '', 'store-pw'),
+      ).toEqual({ ok: false, error: 'cert-invalid' })
       pickSave.mockResolvedValue({ canceled: false, filePath: s.signedCopy })
       expect(
         await s.sign({ certId: certs[0].certId, password: '', storePassword: 'store-pw' }),
-      ).toEqual({ ok: true, path: s.signedCopy })
-      expect(openSystemSigner).toHaveBeenCalledTimes(2)
+      ).toEqual({ ok: false, error: 'cert-invalid' })
+      // The release dropped the exported key with the id — nothing re-exports it
+      expect(openSystemSigner).toHaveBeenCalledTimes(1)
+      expect(pickSave).not.toHaveBeenCalled()
     })
 
     it('forgets ids from an earlier listing when the store is listed again', async () => {

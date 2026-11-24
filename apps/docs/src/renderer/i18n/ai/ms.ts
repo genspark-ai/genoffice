@@ -155,6 +155,7 @@ export const ms = {
     '{blocks} blok diterima sebelum penulisan terhenti. Simpan bahagian ini atau buang?',
   aiPartialAdopt: 'Simpan',
   aiPartialDiscard: 'Buang',
+  aiSumProtectedBlocked: 'Tidak digunakan: dokumen dilindungi di luar kawasan yang boleh disunting',
   aiSumInsertedBlocks: '{count} blok disisipkan',
   aiSumCreateDocument: 'Cipta dokumen baharu',
   aiSumCreatedDocument: '{name} dicipta',

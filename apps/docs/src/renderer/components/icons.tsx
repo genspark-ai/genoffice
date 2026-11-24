@@ -926,6 +926,41 @@ export function IconComments(props: IconProps) {
   )
 }
 
+/** The page of the small Pages buttons: a 10-unit page reads as a narrow
+ *  sliver at 14px beside the square small glyphs (Link, Bookmark), so these
+ *  take a taller, wider sheet, as Word's 16px Cover Page / Blank Page do */
+const SMALL_PAGE = <path d="M3.9 2.2h5.9l2.3 2.3v9.3h-8.2z" />
+const SMALL_PAGE_FOLD = <path d="M9.8 2.2v2.3h2.3" />
+
+export function IconCoverPage(props: IconProps) {
+  return (
+    <Svg {...props}>
+      {SMALL_PAGE}
+      <path d="M3.9 4.5h8.2v3.6h-8.2z" fill="currentColor" stroke="none" opacity="0.55" />
+      <path d="M5.6 10.2h4.8M5.6 11.9h3.2" />
+    </Svg>
+  )
+}
+
+export function IconBlankPage(props: IconProps) {
+  return (
+    <Svg {...props}>
+      {SMALL_PAGE}
+      {SMALL_PAGE_FOLD}
+    </Svg>
+  )
+}
+
+/** Page Break on the small Pages row: the halves take SMALL_PAGE's width */
+export function IconPageBreakSmall(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M3.9 6.3V2.2h8.2v4.1M3.9 9.7v4.1h8.2V9.7" />
+      <path d="M2.4 8h1.8M5.4 8h1.8M8.4 8h1.8M11.4 8h2.2" />
+    </Svg>
+  )
+}
+
 export function IconPageBreak(props: IconProps) {
   return (
     <Svg {...props}>

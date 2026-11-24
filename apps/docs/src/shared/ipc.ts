@@ -399,6 +399,13 @@ export interface DesktopApi {
   getDocumentTheme(): Promise<DocTheme>
   /** document page theme switched from the shell home page */
   onDocumentThemeChanged(handler: (theme: DocTheme) => void): () => void
+  /** app-wide measurement unit (Settings ▸ General); the raw shell answer, validated by units.ts */
+  getMeasurementUnit?(): Promise<unknown>
+  /** pick the app-wide unit (null = follow the system region) */
+  setMeasurementUnit?(
+    unit: import('@genoffice/ui/measurement').MeasurementUnit | null,
+  ): Promise<unknown>
+  onMeasurementUnitChanged?(handler: (state: unknown) => void): () => void
   /** shell-wide AutoSave default (see useAutoSavePref) */
   getAutoSaveDefault(): Promise<AutoSaveDefault>
   onAutoSaveDefaultChanged(handler: (value: AutoSaveDefault) => void): () => void
@@ -737,6 +744,10 @@ export interface DesktopApi {
   onAiStream(handler: (chunk: AiStreamChunk) => void): () => void
   /** subscribe to native menu commands; returns unsubscribe */
   onMenuCommand(handler: (command: MenuCommand, payload?: string) => void): () => void
+  /** the menu is about to run a paste-and-match-style paste: the next paste
+   *  event must insert the clipboard text literally (no Markdown parsing);
+   *  returns unsubscribe */
+  onPastePlain(handler: () => void): () => void
   /** Close guard: main process queries pre-close state (dirty flag + autosave switch; if autosave is on, save silently without a dialog) */
   onCloseCheck(handler: () => void): () => void
   reportCloseCheck(state: { dirty: boolean; autoSave: boolean; filePath?: string | null }): void

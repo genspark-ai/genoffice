@@ -440,13 +440,15 @@ export async function insertImageFromDataUrl(
   editor: Editor,
   dataUrl: string,
   label = t('ribbonPicture'),
+  /** the size to draw it at, when its pixels are denser than the page's (a 2× render) */
+  displaySize?: { width: number; height: number },
 ): Promise<boolean> {
   const m = /^data:([^;]+);base64,(.*)$/s.exec(dataUrl)
   if (!m) return false
   const mime = m[1]
   if (!/^image\/(png|jpeg|gif)$/.test(mime)) return false
   try {
-    const natural = await imageSizeOf(dataUrl)
+    const natural = displaySize ?? (await imageSizeOf(dataUrl))
     const scale = Math.min(1, MAX_IMAGE_WIDTH_PX / natural.width)
     insertPictureAtSelection(editor, {
       dataUrl,

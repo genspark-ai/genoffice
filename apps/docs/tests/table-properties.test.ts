@@ -22,6 +22,7 @@ import {
 } from '../src/renderer/editor/table-properties'
 import {
   setSelectedColumnPreferredWidth,
+  pinRenderedColumnWidths,
   shareColumnWidths,
 } from '../src/renderer/editor/table-sizing'
 
@@ -130,6 +131,75 @@ describe('editable table properties', () => {
     expect(table.attrs).toMatchObject({ tblAutoFit: 'fixed', widthPct: null })
     expect(table.content![0].content![0].attrs?.colwidth).toEqual([300])
     expect(pmTableToModel(table as PmNode).autoFit).toBe('fixed')
+    editor.destroy()
+  })
+
+  it("AutoFit Window drops the table's indent, as Word does", async () => {
+    // Word probe 2026-11-23: a fixed 8800-twip table with tblInd -108 on a 9638
+    // column becomes pct 5000 with no w:tblInd, its border on both margins
+    const indented = TABLE.replace(
+      '<w:tblW w:w="5000" w:type="pct"/><w:tblLayout w:type="autofit"/>',
+      '<w:tblW w:w="6000" w:type="dxa"/><w:tblInd w:w="-108" w:type="dxa"/>' +
+        '<w:tblLayout w:type="fixed"/>',
+    )
+    const parsed = await parseDocx(await buildDocx({ bodyXml: indented }))
+    const editor = new Editor({
+      element: document.createElement('div'),
+      extensions: editorExtensions,
+      content: blocksToPmDoc(parsed.blocks) as never,
+    })
+    const before = editor.getJSON().content![0] as unknown as PmNode
+    expect(before.attrs).toMatchObject({ indentTwips: -108, tblIndentEdited: false })
+    expect(pmTableToModel(before).indentTwips).toBeUndefined()
+    editor.view.dispatch(
+      editor.state.tr.setSelection(TextSelection.near(editor.state.doc.resolve(4))),
+    )
+
+    expect(setTableAutoFit('window', 600)(editor.state, editor.view.dispatch)).toBe(true)
+    const table = editor.getJSON().content![0] as unknown as PmNode
+    expect(table.attrs).toMatchObject({ indentTwips: null, tblIndentEdited: true, widthPct: 100 })
+    expect(editor.view.dom.querySelector('table')!.getAttribute('style')).not.toContain(
+      'margin-left',
+    )
+    const model = pmTableToModel(table)
+    expect(model).toMatchObject({ autoFit: 'window', indentTwips: 0 })
+    const xml = generateTableModelXml(model, indented)
+    expect(xml).not.toContain('w:tblInd')
+    expect(xml).toContain('<w:tblW w:w="5000" w:type="pct"/>')
+    editor.destroy()
+  })
+
+  it('AutoFit Contents keeps the fitted columns for the save', async () => {
+    const editor = await openTable()
+    expect(setTableAutoFit('contents', 600)(editor.state, editor.view.dispatch)).toBe(true)
+    // jsdom lays nothing out: the browser's fitted widths are stood in per column
+    const fitted = new Map([
+      ['A', 75],
+      ['B', 190],
+      ['C', 75],
+      ['D', 190],
+    ])
+    const spy = vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get').mockImplementation(function (
+      this: HTMLElement,
+    ) {
+      return fitted.get(this.textContent ?? '') ?? 0
+    })
+    try {
+      expect(pinRenderedColumnWidths(editor.view)).toBe(true)
+    } finally {
+      spy.mockRestore()
+    }
+    const table = editor.getJSON().content![0] as unknown as PmNode
+    expect(table.attrs).toMatchObject({ tblAutoFit: 'contents', widthPx: null })
+    expect(table.content!.map((row) => row.content!.map((cell) => cell.attrs?.colwidth))).toEqual([
+      [[75], [190]],
+      [[75], [190]],
+    ])
+    const model = pmTableToModel(table)
+    expect(model).toMatchObject({ autoFit: 'contents', colWidthsTwips: [1125, 2850] })
+    const xml = generateTableModelXml(model, TABLE)
+    expect(xml).toContain('<w:tblW w:w="0" w:type="auto"/>')
+    expect(xml).toContain('<w:gridCol w:w="1125"/><w:gridCol w:w="2850"/>')
     editor.destroy()
   })
 

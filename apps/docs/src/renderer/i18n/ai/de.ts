@@ -159,6 +159,8 @@ export const de = {
     '{blocks} Blöcke sind angekommen, bevor das Schreiben abbrach. Diesen Teil behalten oder verwerfen?',
   aiPartialAdopt: 'Behalten',
   aiPartialDiscard: 'Verwerfen',
+  aiSumProtectedBlocked:
+    'Nicht angewendet: Das Dokument ist außerhalb der bearbeitbaren Bereiche geschützt',
   aiSumInsertedBlocks: '{count} Block/Blöcke eingefügt',
   aiSumCreateDocument: 'Neues Dokument erstellen',
   aiSumCreatedDocument: '{name} erstellt',

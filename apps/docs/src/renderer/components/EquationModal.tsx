@@ -3,7 +3,12 @@ import type { Editor } from '@tiptap/core'
 import { latexToOmml, ommlToMathML } from '@genoffice/docx-engine'
 import { t, useI18n, type StringKey } from '../i18n/locale'
 import { autoCaptionInserted } from '../editor/auto-caption'
-import { equationBlockJson, inlineEquationNodeJson } from '../editor/equation'
+import {
+  equationBlockFromOmml,
+  equationBlockJson,
+  inlineEquationNodeFromOmml,
+  inlineEquationNodeJson,
+} from '../editor/equation'
 import { mathLimits } from '../editor/math-defaults'
 import { equationAutoCorrect } from './equation-autocorrect'
 import { useModalKeys } from './modal-keys'
@@ -64,6 +69,10 @@ export interface MathEditTarget {
   pos: number
   latex: string
   kind: 'inline' | 'block'
+  /** true when the equation came from a MathType OLE embed (saving converts it to native OMML) */
+  isMathType?: boolean
+  /** decoded <m:oMath> fallback when the MathType equation is outside the LaTeX subset */
+  omml?: string
 }
 
 /** MathML preview (returns null with an error message when the LaTeX is invalid) */
@@ -76,6 +85,12 @@ function previewOf(latex: string): { mathml: string } | { error: string } | null
   } catch (e) {
     return { error: e instanceof Error ? e.message : String(e) }
   }
+}
+
+/** MathML preview for a decoded <m:oMath> fragment (used in convert-only MathType mode) */
+function previewOmmlOf(omml: string): { mathml: string } | { error: string } {
+  const mathml = ommlToMathML(omml, mathLimits())
+  return mathml ? { mathml } : { error: t('appPreviewUnavailable') }
 }
 
 /** Insert Equation dialog: LaTeX input + live MathML preview, shared by the ribbon and the native menu */
@@ -91,9 +106,13 @@ export function EquationModal({
 }) {
   const { t } = useI18n()
   const modalKeys = useModalKeys(onClose)
+  const convertOnly = Boolean(editTarget?.isMathType && !editTarget.latex && editTarget.omml)
   const [latex, setLatex] = useState(editTarget?.latex ?? '')
   const [inline, setInline] = useState(editTarget?.kind === 'inline')
-  const preview = useMemo(() => previewOf(latex), [latex])
+  const preview = useMemo(() => {
+    if (convertOnly && editTarget?.omml) return previewOmmlOf(editTarget.omml)
+    return previewOf(latex)
+  }, [convertOnly, editTarget?.omml, latex])
   const canInsert = preview !== null && 'mathml' in preview
 
   const insert = () => {
@@ -101,12 +120,24 @@ export function EquationModal({
     if (editTarget) {
       const node = editor.state.doc.nodeAt(editTarget.pos)
       if (editTarget.kind === 'inline' && node?.type.name === 'docInlineMath') {
-        const next = inlineEquationNodeJson(latex)
-        editor.view.dispatch(editor.state.tr.setNodeMarkup(editTarget.pos, undefined, next.attrs))
+        const next =
+          convertOnly && editTarget.omml
+            ? inlineEquationNodeFromOmml(editTarget.omml)
+            : inlineEquationNodeJson(latex)
+        const tr = editor.state.tr.setNodeMarkup(editTarget.pos, undefined, {
+          ...next.attrs,
+          sizeHalfPoints: node.attrs.sizeHalfPoints ?? null,
+          display: Boolean(node.attrs.display),
+        })
+        editor.view.dispatch(tr)
       } else if (editTarget.kind === 'block' && node?.type.name === 'docProtected') {
-        // rebuilt from LaTeX: the block loses its original anchor and saves as
-        // freshly generated OMML (that is the point of a full re-edit)
-        const next = editor.schema.nodeFromJSON(equationBlockJson(latex))
+        // rebuilt from LaTeX (or converted directly from decoded MathType OMML):
+        // the block loses its original anchor and saves as native OMML
+        const nextJson =
+          convertOnly && editTarget.omml
+            ? equationBlockFromOmml(editTarget.omml)
+            : equationBlockJson(latex)
+        const next = editor.schema.nodeFromJSON(nextJson)
         editor.view.dispatch(
           editor.state.tr.replaceWith(editTarget.pos, editTarget.pos + node.nodeSize, next),
         )
@@ -128,16 +159,23 @@ export function EquationModal({
     >
       <div className="modal equation-modal">
         <h2>{t('appInsertEquation')}</h2>
-        <label>
-          LaTeX
-          <input
-            value={latex}
-            onChange={(e) => setLatex(equationAutoCorrect(latex, e.target.value))}
-            placeholder={t('appLatexPlaceholder')}
-            onKeyDown={(e) => e.key === 'Enter' && insert()}
-            autoFocus
-          />
-        </label>
+        {editTarget?.isMathType && (
+          <div className="equation-mathtype-note">
+            {convertOnly ? t('appMathTypeConvertOnlyNote') : t('appMathTypeConvertNote')}
+          </div>
+        )}
+        {!convertOnly && (
+          <label>
+            LaTeX
+            <input
+              value={latex}
+              onChange={(e) => setLatex(equationAutoCorrect(latex, e.target.value))}
+              placeholder={t('appLatexPlaceholder')}
+              onKeyDown={(e) => e.key === 'Enter' && insert()}
+              autoFocus
+            />
+          </label>
+        )}
         <div className="equation-preview">
           {preview === null && (
             <span className="equation-preview-hint">{t('appLatexPreviewHint')}</span>
@@ -160,7 +198,11 @@ export function EquationModal({
             {t('appCancel')}
           </button>
           <button className="btn-primary" disabled={!canInsert} onClick={insert}>
-            {editTarget ? t('appUpdate') : t('appInsert')}
+            {editTarget?.isMathType
+              ? t('appMathTypeConvertAction')
+              : editTarget
+                ? t('appUpdate')
+                : t('appInsert')}
           </button>
         </div>
       </div>

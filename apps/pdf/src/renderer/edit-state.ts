@@ -15,13 +15,8 @@ import type {
   PageImageRef,
 } from '../shared/ipc'
 
-/** pdf.js AnnotationType codes for the markup subtypes we can delete */
-export const MARKUP_TYPE_BY_ANNOT: Record<number, MarkupType> = {
-  9: 'highlight',
-  10: 'underline',
-  11: 'squiggly',
-  12: 'strikeout',
-}
+/** Shared pdf.js subtype mapping for saved markups and their comments. */
+export { PDFJS_MARKUP_TYPE_BY_ANNOT as MARKUP_TYPE_BY_ANNOT } from './note-threads'
 
 export const rectsNear = (a: readonly number[], b: readonly number[], tolerance = 2): boolean =>
   a.length === 4 &&

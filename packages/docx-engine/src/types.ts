@@ -254,7 +254,14 @@ export interface Run {
   otf?: RunOpenType
   /** hyperlink info; rId references an existing relationship in the original docx.
    *  plain: unstyled run of a bookmark link (Word shows it in the paragraph's ink) */
-  link?: { href: string; rId?: string; tooltip?: string; plain?: boolean }
+  link?: {
+    href: string
+    rId?: string
+    anchor?: string
+    history?: string
+    tooltip?: string
+    plain?: boolean
+  }
   /**
    * ids of comments whose range covers this run. Only set when the whole
    * commentRangeStart..End pair lives inside the same paragraph, so an edited
@@ -354,13 +361,22 @@ export interface Run {
   /**
    * The run is an atomic inline formula. `text` holds the flat OMML token
    * strip (previews / word count); `omml` is the exact <m:oMath> fragment,
-   * emitted verbatim when the paragraph regenerates.
+   * emitted verbatim when the paragraph regenerates. When decoded from a
+   * MathType OLE embed, `oleXml` / `oleRawRPr` carry the original <w:object>
+   * and <w:rPr> so untouched saves round-trip the OLE embed verbatim until the
+   * user explicitly converts/edits it into native OMML.
    */
   math?: {
     omml: string
     display?: boolean
     /** the fragment ends in a <w:br/> run: Word starts the next m:oMath on a new line */
     breakAfter?: boolean
+    /** original <w:object> fragment for a MathType OLE equation decoded to OMML */
+    oleXml?: string
+    /** original <w:rPr> XML of the OLE run, re-emitted verbatim with oleXml */
+    oleRawRPr?: string
+    /** original o:OLEObject ProgID (e.g. "Equation.DSMT4") */
+    oleProgId?: string
   }
   /**
    * The run is a single symbol-font glyph (w:sym). `text` holds the display
@@ -992,6 +1008,10 @@ export interface SectionInfo {
 
 /** one rich paragraph of a header / footer part */
 export interface HfParagraph extends ParaFormat {
+  /** w:pStyle (a style the document defines): written back on save, so Word keeps
+   *  the paragraph in its Header / Footer style. Its properties are already
+   *  resolved into this format; the reference only names the style. */
+  styleId?: string
   /** w:framePr w:xAlign — text frame floated at the margin edge; the line
    *  overlays the following paragraph's flow line instead of stacking (Word) */
   frameXAlign?: 'left' | 'center' | 'right'
@@ -1524,6 +1544,8 @@ export interface FormulaDisplay {
   indentRightTwips?: number
   indentFirstLineTwips?: number
   additiveSpacing?: boolean
+  /** true when decoded from a MathType OLE embed (originalXml is <w:object>, not <m:oMath>) */
+  oleMathType?: boolean
 }
 
 /** One axis of an embedded chart (c:catAx / c:valAx / c:dateAx) */

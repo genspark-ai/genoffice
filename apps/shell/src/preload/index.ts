@@ -1,6 +1,11 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import type { IpcRendererEvent } from 'electron'
 import {
+  MEASUREMENT_UNIT_CHANNELS,
+  isMeasurementUnit,
+  isMeasurementUnitState,
+} from '@genoffice/ui/measurement'
+import {
   AI_MEDIA_PROVIDERS,
   AI_PROVIDERS,
   AI_SEARCH_PROVIDERS,
@@ -425,6 +430,17 @@ const homeApi: HomeApi = {
     if (theme !== 'light' && theme !== 'dark' && theme !== 'follow')
       throw new Error('Invalid document theme.')
     await ipcRenderer.invoke(HOME_CHANNELS.setDocumentTheme, theme)
+  },
+  async getMeasurementUnit() {
+    const result: unknown = await ipcRenderer.invoke(MEASUREMENT_UNIT_CHANNELS.get)
+    if (!isMeasurementUnitState(result)) throw new Error('Invalid measurement unit state.')
+    return result
+  },
+  async setMeasurementUnit(unit) {
+    if (unit !== null && !isMeasurementUnit(unit)) throw new Error('Invalid measurement unit.')
+    const result: unknown = await ipcRenderer.invoke(MEASUREMENT_UNIT_CHANNELS.set, unit)
+    if (!isMeasurementUnitState(result)) throw new Error('Invalid measurement unit state.')
+    return result
   },
   async getAutoSaveDefault() {
     const result: unknown = await ipcRenderer.invoke(HOME_CHANNELS.getAutoSaveDefault)

@@ -663,6 +663,11 @@ export const th = {
   appLatexPlaceholder: 'เช่น x = \\frac{-b \\pm \\sqrt{b^2-4ac}}{2a}',
   appLatexPreviewHint: 'พิมพ์ LaTeX เพื่อดูตัวอย่าง',
   appPreviewUnavailable: 'ไม่สามารถสร้างตัวอย่างได้',
+  appMathTypeConvertNote: 'สมการ MathType — การบันทึกจะแปลงเป็นสมการ Word ดั้งเดิม (OMML)',
+  appMathTypeConvertOnlyNote:
+    'สมการ MathType นี้มีโครงสร้างนอกเหนือจากชุดย่อย LaTeX คุณสามารถแปลงเป็นสมการ Word ดั้งเดิม (OMML) ได้โดยตรงพร้อมคงรูปแบบไว้',
+  appMathTypeConvertAction: 'แปลงและอัปเดต',
+  appMathTypeEditHint: 'สมการ MathType (ดับเบิลคลิกเพื่อแก้ไขหรือแปลง)',
   appInlineEquationToggle: 'สมการในบรรทัด (แทรกที่เคอร์เซอร์ เลื่อนไปพร้อมข้อความ)',
   appInsertNewEquation: 'π แทรกสมการใหม่ (LaTeX)…',
   appEqCircleArea: 'พื้นที่วงกลม',

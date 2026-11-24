@@ -106,3 +106,25 @@ export function unionBounds(a: CellBounds | undefined, b: CellBounds): CellBound
     endColumn: Math.max(a.endColumn, b.endColumn),
   }
 }
+
+export interface FormulaResultEventLike {
+  readonly id: string
+  readonly options?: { fromFormula?: boolean } | undefined
+  readonly params?: { subUnitId?: string; cellValue?: unknown } | undefined
+}
+
+/// Engine result mutations are not user edits, but the cells they write can
+/// sit inside a chart series ref and must be dirtied for the live sync. Without
+/// this, editing a formula's precedent leaves the chart cache stale until the
+/// result cells are edited directly (genspark-ai/genoffice#2647).
+export function formulaResultSyncBounds(
+  event: FormulaResultEventLike,
+  isSetRangeValues: (id: string) => boolean,
+  boundsOf: (cellValue: unknown) => CellBounds | null,
+): { sheetId: string; bounds: CellBounds } | null {
+  if (event.options?.fromFormula !== true || !isSetRangeValues(event.id)) return null
+  const sheetId = event.params?.subUnitId
+  if (sheetId === undefined) return null
+  const bounds = boundsOf(event.params?.cellValue)
+  return bounds ? { sheetId, bounds } : null
+}

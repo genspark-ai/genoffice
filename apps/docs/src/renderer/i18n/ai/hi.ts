@@ -154,6 +154,7 @@ export const hi = {
   aiPartialBody: 'लिखना रुकने से पहले {blocks} ब्लॉक मिले। इस हिस्से को रखें या छोड़ दें?',
   aiPartialAdopt: 'रखें',
   aiPartialDiscard: 'छोड़ें',
+  aiSumProtectedBlocked: 'लागू नहीं हुआ: संपादन योग्य क्षेत्रों के बाहर दस्तावेज़ सुरक्षित है',
   aiSumInsertedBlocks: '{count} ब्लॉक सम्मिलित किए गए',
   aiSumCreateDocument: 'नया दस्तावेज़ बनाएँ',
   aiSumCreatedDocument: '{name} बनाया गया',

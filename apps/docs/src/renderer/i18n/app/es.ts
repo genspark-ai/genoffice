@@ -674,6 +674,12 @@ export const es = {
   appLatexPlaceholder: 'p. ej., x = \\frac{-b \\pm \\sqrt{b^2-4ac}}{2a}',
   appLatexPreviewHint: 'Escriba LaTeX para ver una vista previa',
   appPreviewUnavailable: 'No se puede generar la vista previa',
+  appMathTypeConvertNote:
+    'Ecuación de MathType — al guardar se convertirá en una ecuación nativa de Word (OMML).',
+  appMathTypeConvertOnlyNote:
+    'Esta ecuación de MathType utiliza estructuras fuera del subconjunto de LaTeX. Puede convertirla directamente a una ecuación nativa de Word (OMML) conservando su diseño.',
+  appMathTypeConvertAction: 'Convertir y actualizar',
+  appMathTypeEditHint: 'Ecuación de MathType (doble clic para editar o convertir)',
   appInlineEquationToggle: 'Ecuación en línea (se inserta en el cursor y fluye con el texto)',
   appInsertNewEquation: 'π Insertar nueva ecuación (LaTeX)…',
   appEqCircleArea: 'Área del círculo',

@@ -688,6 +688,11 @@ export const ko = {
   appLatexPlaceholder: '예: x = \\frac{-b \\pm \\sqrt{b^2-4ac}}{2a}',
   appLatexPreviewHint: 'LaTeX를 입력하면 미리 보기가 표시됩니다',
   appPreviewUnavailable: '미리 보기를 생성할 수 없습니다',
+  appMathTypeConvertNote: 'MathType 수식 — 저장하면 기본 Word 수식(OMML)으로 변환됩니다.',
+  appMathTypeConvertOnlyNote:
+    '이 MathType 수식에는 LaTeX 하위 집합 밖의 구조가 포함되어 있습니다. 레이아웃을 유지한 채 기본 Word 수식(OMML)으로 바로 변환할 수 있습니다.',
+  appMathTypeConvertAction: '변환 및 업데이트',
+  appMathTypeEditHint: 'MathType 수식(두 번 클릭하여 편집 또는 변환)',
   appInlineEquationToggle: '인라인 수식(커서 위치에 삽입, 텍스트와 함께 이동)',
   appInsertNewEquation: 'π 새 수식 삽입(LaTeX)…',
   appEqCircleArea: '원의 넓이',

@@ -29,6 +29,11 @@ export const COMMANDS = {
   cut: { menuKey: 'menuCut', role: 'cut' },
   copy: { menuKey: 'menuCopy', role: 'copy' },
   paste: { menuKey: 'menuPaste', role: 'paste' },
+  // not built as a native role item: the main process arms the renderer's
+  // plain-paste flag before running the role's own paste, so the editor
+  // inserts the text literally instead of parsing it as Markdown (#2856).
+  // The role still keeps the command out of the Customize Keyboard catalog
+  // and out of the command ids sent to the renderer.
   'paste-match-style': { menuKey: 'menuPasteMatch', role: 'pasteAndMatchStyle' },
   'select-all': { menuKey: 'menuSelectAll', role: 'selectAll' },
   'zoom-in': { menuKey: 'menuZoomIn', accelerator: 'CmdOrCtrl+=' },

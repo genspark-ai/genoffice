@@ -12,6 +12,7 @@ import type { EditorState, Transaction } from '@tiptap/pm/state'
 import { TextSelection } from '@tiptap/pm/state'
 import { editorExtensions } from '../src/renderer/editor/extensions'
 import {
+  armPlainPaste,
   beginForeignPaste,
   capturePasteRestore,
   caretParaFormat,
@@ -25,6 +26,7 @@ import {
   setDefaultPasteMode,
   stashPastePayload,
   takePastePayload,
+  takePlainPaste,
   takeTextReroute,
   type PasteMode,
   type PasteRestore,
@@ -120,6 +122,25 @@ describe('per-paste handshake', () => {
     beginForeignPaste(FOREIGN)
     expect(lastForeignPasteMode()).toBeNull()
     expect(takeTextReroute()).toBe(false)
+  })
+})
+
+describe('paste and match style flag (#2856)', () => {
+  it('arms a one-shot plain paste for the next paste event', () => {
+    armPlainPaste()
+    expect(takePlainPaste()).toBe(true)
+    expect(takePlainPaste()).toBe(false)
+  })
+
+  it('the armed flag expires, leaving a later paste to its own semantics', () => {
+    vi.useFakeTimers()
+    try {
+      armPlainPaste()
+      vi.advanceTimersByTime(501)
+      expect(takePlainPaste()).toBe(false)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })
 

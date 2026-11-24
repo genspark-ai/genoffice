@@ -258,8 +258,8 @@ export function buildThemeXml(fonts: ThemeFonts, colors: ThemeColors): string {
     c('accent4') +
     c('accent5') +
     c('accent6') +
-    `<a:hlink><a:srgbClr val="${DEFAULT_THEME_COLORS.hlink}"/></a:hlink>` +
-    `<a:folHlink><a:srgbClr val="${DEFAULT_THEME_COLORS.folHlink}"/></a:folHlink>` +
+    `<a:hlink><a:srgbClr val="${colors.hlink ?? DEFAULT_THEME_COLORS.hlink}"/></a:hlink>` +
+    `<a:folHlink><a:srgbClr val="${colors.folHlink ?? DEFAULT_THEME_COLORS.folHlink}"/></a:folHlink>` +
     '</a:clrScheme>' +
     `<a:fontScheme name="Office">${font('a:majorFont', fonts.major)}${font('a:minorFont', fonts.minor)}</a:fontScheme>` +
     '<a:fmtScheme name="Office">' +
