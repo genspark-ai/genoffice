@@ -8393,10 +8393,11 @@ body.docs-run-pic-dragging .doc-run-pic-frame {
   clear: both;
 }
 
-/* a column break ending a paragraph is one line in Word (the mark opens the
-   next column); the trailing-break phantom after it would add a second */
+/* Keep the trailing break as the browser's caret anchor: hiding it sends
+   native typing before the column break. It must not add another line. */
 .doc-page br.doc-col-br + br.ProseMirror-trailingBreak {
-  display: none;
+  font-size: 0;
+  line-height: 0;
 }
 
 /* a column break leading a paragraph with text (.doc-lead-col-br) has no
