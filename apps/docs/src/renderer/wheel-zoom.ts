@@ -1,10 +1,4 @@
-import {
-  clampZoom,
-  createZoomWheelClassifier,
-  NOTCH,
-  notchStep,
-  type ZoomWheelIntent,
-} from '@genoffice/ui'
+import { clampZoom, notchStep, type ZoomWheelIntent } from '@genoffice/ui'
 
 export const DOCS_ZOOM_MIN = 10
 export const DOCS_ZOOM_MAX = 500
@@ -27,25 +21,6 @@ export function nextDocsZoom(
   if (intent === 'pinch') return clampDocsZoom(zoom - deltaY * 0.6)
   const dir = intent === 'zoom-in' ? 1 : -1
   return Math.round(notchStep(zoom / 100, dir, DOCS_ZOOM_MIN / 100, DOCS_ZOOM_MAX / 100) * 100)
-}
-
-/** Fast Ctrl+mouse notches are independent zoom requests, not a paging gesture's tail. */
-export function createDocsZoomWheelClassifier(): ReturnType<typeof createZoomWheelClassifier> {
-  const classifier = createZoomWheelClassifier()
-  return {
-    feed(event, now) {
-      if (
-        event.deltaMode === 0 &&
-        event.ctrlKey &&
-        !event.metaKey &&
-        Number.isInteger(event.deltaY) &&
-        Math.abs(event.deltaY) >= NOTCH
-      ) {
-        return event.deltaY > 0 ? 'zoom-out' : 'zoom-in'
-      }
-      return classifier.feed(event, now)
-    },
-  }
 }
 
 export type ZoomFitMode = 'width' | 'text' | 'page' | 'multi'

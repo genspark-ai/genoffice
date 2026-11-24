@@ -117,7 +117,10 @@ it('ignores ordinary scrolling, events outside the document and zero delta', () 
   expect(h.zoom()).toBe(100)
   expect(h.anchor.current).toBeNull()
 })
-it('keeps Cmd+trackpad gesture tail suppression', () => {
+it.each([
+  { ctrlKey: true, metaKey: false },
+  { ctrlKey: false, metaKey: true },
+])('keeps trackpad gesture tail suppression with %j', (modifier) => {
   const h = harness()
   for (const [delta, t] of [
     [-10, 0],
@@ -126,6 +129,6 @@ it('keeps Cmd+trackpad gesture tail suppression', () => {
     [-120, 48],
     [-80, 64],
   ])
-    h.wheel(delta, t, { ctrlKey: false, metaKey: true })
+    h.wheel(delta, t, modifier)
   expect(h.zoom()).toBe(110)
 })
