@@ -23,7 +23,7 @@ export interface CanvasSnapshot {
  * their position: their absolutely placed children carry the paint.
  */
 export function snapshotCanvas(wrap: HTMLElement, zoom: number): CanvasSnapshot | null {
-  const pm = wrap.querySelector<HTMLElement>('.ProseMirror')
+  const pm = wrap.querySelector<HTMLElement>('.ProseMirror.doc-page')
   if (!pm || zoom <= 0) return null
   const wr = wrap.getBoundingClientRect()
   if (wr.width === 0) return null

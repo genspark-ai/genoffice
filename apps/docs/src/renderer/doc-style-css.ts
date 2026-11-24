@@ -145,7 +145,11 @@ export function docThemeCss(
     // docDefaults names one (a declared body font supersedes the theme, and
     // docStyleCss already resolved theme references into it)
     // .pv-page too: preview header/footer strips live outside the body clone
-    rules.push(`.doc-page, .pv-page { font-family:${cssFontFamily(fonts.minor)} }`)
+    // .page-wrap > .page-hf too: the first page's header and the last page's
+    // footer are .doc-page siblings and would take the app's UI font
+    rules.push(
+      `.doc-page, .pv-page, .page-wrap > .page-hf { font-family:${cssFontFamily(fonts.minor)} }`,
+    )
     // .page-wrap too: header/footer areas are .doc-page siblings inside it
     rules.push(
       `.page-wrap, .doc-page, .pv-page { --doc-latin-chain:${docLatinChainCss(fonts.minor)} }`,
@@ -669,6 +673,10 @@ export function docStyleCss(parsed: ParsedDocFull, live?: { typedGrid?: boolean 
     // .pv-page too: preview header/footer strips must wrap with the same
     // document font/line-height the canvas strips inherit inside .doc-page
     rules.push(`.doc-page, .pv-page { ${decls.join(';')} }`)
+    // the first page's header and the last page's footer sit beside .doc-page:
+    // they take the document's face, not the app's UI font (their size and
+    // line rules come from the --hf-* and .page-wrap variables above)
+    rules.push(`.page-wrap > .page-hf { font-family:${baseFamily} }`)
     if (typedGrid) {
       // Word's typed line grid governs the body flow only: header/footer strip
       // lines keep their natural heights (prod-sas 003/004 Word baselines:

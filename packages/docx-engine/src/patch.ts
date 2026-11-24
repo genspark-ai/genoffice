@@ -114,6 +114,7 @@ import { patchParagraphTexts } from './text-patch'
 import { balanceFieldChars } from './field-balance'
 import {
   builtInHeadingStyleUpsert,
+  builtInHfStyleUpsert,
   mergeDefaultFontsXml,
   dropStyleRefsXml,
   hasStyleXml,
@@ -901,6 +902,33 @@ function defaultParagraphStyleId(styles: ReadonlyMap<string, StyleInfo>): string
 }
 
 /**
+ * Word's built-in Header / Footer styles a saved header or footer paragraph
+ * names while the document defines neither them nor a pending upsert of them.
+ */
+export function missingHfStyles(
+  options: SaveOptions,
+  styles: ReadonlyMap<string, StyleInfo>,
+  pending: readonly StyleUpsert[] = [],
+): Array<'header' | 'footer'> {
+  const parts = [
+    options.header,
+    options.footer,
+    options.headerFirst,
+    options.footerFirst,
+    options.headerEven,
+    options.footerEven,
+    ...(options.sectionHf ?? []).map((e) => e.hf),
+  ]
+  const named = new Set<string>()
+  for (const hf of parts) for (const p of hf?.paras ?? []) if (p.styleId) named.add(p.styleId)
+  const defined = (id: string) => styles.has(id) || pending.some((u) => u.styleId === id)
+  return (['header', 'footer'] as const).filter((kind) => {
+    const id = kind === 'header' ? 'Header' : 'Footer'
+    return named.has(id) && !defined(id)
+  })
+}
+
+/**
  * Heading levels the generated body uses that the document has no heading
  * style for. An explicit styleId (a custom heading style) and an outline-only
  * heading (written as w:outlineLvl) carry themselves.
@@ -1081,7 +1109,12 @@ export async function saveDocx(
     headingUpserts.push(up)
     headingStyleIds.set(level, up.styleId)
   }
-  const styleUpserts = [...(options.styleUpserts ?? []), ...headingUpserts]
+  // a new header/footer paragraph names Word's built-in Header / Footer style:
+  // a document without it gets Word's definition, as Word adds it on first use
+  const hfUpserts = missingHfStyles(options, parsed.styles, options.styleUpserts).map((kind) =>
+    builtInHfStyleUpsert(kind, defaultParagraphStyleId(parsed.styles)),
+  )
+  const styleUpserts = [...(options.styleUpserts ?? []), ...headingUpserts, ...hfUpserts]
 
   // Pre-rendered xml blocks (a rebuilt table's model xml) carry bookmark ids an
   // editor-side allocator minted above the original document's: seed past those
@@ -3085,6 +3118,13 @@ function hfOriginalXml(hf: HeaderFooter, originalXml: string | null): string | n
   return applyRevisionResolutions(originalXml, hf.revisionsResolved)
 }
 
+/** a rebuilt pPr with the paragraph's style reference first (CT_PPr order) */
+function withPStyle(pPr: string, styleId: string | undefined): string {
+  if (!styleId) return pPr
+  const ref = `<w:pStyle w:val="${escapeXmlAttr(styleId)}"/>`
+  return pPr ? pPr.replace(/^<w:pPr>/, `<w:pPr>${ref}`) : `<w:pPr>${ref}</w:pPr>`
+}
+
 /** `watermarkXml`: undefined keeps the part's own watermark child, '' drops it, otherwise replaces it */
 function headerFooterPartXml(
   kind: 'header' | 'footer',
@@ -3183,7 +3223,7 @@ function headerFooterPartXml(
         if (para.cells) return originalXml ? '' : rowParas(para)
         // the parsed format, not just w:jc: hand-building it here dropped w:bidi and wrote
         // the visual align back as the logical one, flipping RTL headers to LTR
-        const pPr = mergePPrFormat('<w:pPr/>', para)
+        const pPr = withPStyle(mergePPrFormat('<w:pPr/>', para), para.styleId)
         return `<w:p>${pPr}${hfRunsXml(para.runs)}</w:p>`
       })
       .join('')
