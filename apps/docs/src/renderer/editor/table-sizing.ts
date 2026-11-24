@@ -1,5 +1,6 @@
 import type { Node as PmNode } from '@tiptap/pm/model'
 import type { Command, EditorState, Transaction } from '@tiptap/pm/state'
+import type { EditorView } from '@tiptap/pm/view'
 import { TableMap, isInTable, selectedRect } from '@tiptap/pm/tables'
 
 export const MIN_TABLE_COLUMN_PX = 40
@@ -336,4 +337,47 @@ export function setTableGridAtCell(cellPos: number, widths: number[]): Command {
     dispatch?.(writeGridWidths(state, state.tr, target, rounded))
     return true
   }
+}
+
+/**
+ * After AutoFit Contents: keep the columns the browser just sized to their
+ * content as the cells' own widths. Word saves its fitted widths as w:tcW the
+ * same way; without them the save wrote the old equal grid, and the reopened
+ * (or autosaved) table spread back over the whole column, past its margin.
+ */
+export function pinRenderedColumnWidths(view: EditorView): boolean {
+  const target = targetFromSelection(view.state)
+  if (!target) return false
+  const { map, table, tableStart } = target
+  const dom = view.nodeDOM(tableStart - 1)
+  if (!(dom instanceof HTMLElement)) return false
+  const widths: number[] = []
+  for (let col = 0; col < map.width; col++) {
+    let width = 0
+    // a single-column cell gives the column's width; offsetWidth ignores CSS zoom
+    for (let row = 0; row < map.height && !width; row++) {
+      const cellPos = map.map[row * map.width + col]
+      const rect = map.findCell(cellPos)
+      if (rect.right - rect.left !== 1) continue
+      const cell = view.nodeDOM(tableStart + cellPos)
+      if (cell instanceof HTMLElement) width = cell.offsetWidth
+    }
+    if (!(width > 0)) return false
+    widths.push(width)
+  }
+  let tr = view.state.tr
+  const seen = new Set<number>()
+  for (const cellPos of map.map) {
+    if (seen.has(cellPos)) continue
+    seen.add(cellPos)
+    const cell = table.nodeAt(cellPos)
+    if (!cell) continue
+    const rect = map.findCell(cellPos)
+    tr = tr.setNodeMarkup(tableStart + cellPos, undefined, {
+      ...cell.attrs,
+      colwidth: widths.slice(rect.left, rect.right),
+    })
+  }
+  view.dispatch(tr)
+  return true
 }

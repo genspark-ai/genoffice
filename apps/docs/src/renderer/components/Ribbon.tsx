@@ -2038,6 +2038,9 @@ function RibbonInner({
                 >
                   {t('ribbonNameWithAi')}
                 </button>
+                <RbMenuCommand cmd="print" onRun={() => setDropdown(null)}>
+                  {t('appPrintTitle')} <span className="file-menu-key">Ctrl+P</span>
+                </RbMenuCommand>
                 <div className="file-menu-sep" />
                 {convertItems}
               </div>

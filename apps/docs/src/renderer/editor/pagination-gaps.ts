@@ -1618,7 +1618,7 @@ export function pageFramesFromGaps(
         }
       })
       .sort((a, b) => a.top - b.top)
-  const pm = wrap.querySelector<HTMLElement>('.ProseMirror')
+  const pm = wrap.querySelector<HTMLElement>('.ProseMirror.doc-page')
   const fromCuts = (): GapGeom[] | null => {
     if (!cuts || !pm) return null
     const off = (pm.getBoundingClientRect().top - wr.top) / zoomFactor

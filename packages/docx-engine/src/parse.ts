@@ -5216,6 +5216,7 @@ function extractRuns(
         pushRun({ ...(base ?? {}), text: control.glyph, sdtCheckboxXml: control.sdtPrXml }, rev)
       } else if (
         name === 'w:smartTag' ||
+        name === 'w:customXml' ||
         name === 'w:sdt' ||
         name === 'w:sdtContent' ||
         name === 'w:dir' ||
@@ -7823,6 +7824,7 @@ function hfParagraphs(
       ...(frameXAlign ? { frameXAlign } : {}),
       ...(emptySz ? { emptyRunSizeHalfPoints: emptySz } : {}),
       ...(emptyFont ? { emptyRunFont: emptyFont } : {}),
+      ...(styleId && styles?.has(styleId) ? { styleId } : {}),
       runs,
     })
     out.push(...anchoredBoxes)

@@ -117,6 +117,10 @@
   --docs-paper-mark: #2b7cd3;
   --docs-paper-grid: rgb(43 124 211 / 13%);
   --docs-paper-hf-line: #d0d0d0;
+  /* Word for Mac's header/footer boundary line and its "Header" tag */
+  --docs-paper-hf-edge: #9fbcfa;
+  --docs-paper-hf-tag-bg: #dbe7f4;
+  --docs-paper-hf-tag-ink: #224186;
   --docs-paper-crop-mark: #b4b4b4;
   --docs-paper-chip-bg: #fafafa;
   --docs-paper-select-bg: #e8f1fb;
@@ -3787,9 +3791,6 @@ th[data-rev-fmt] {
 }
 
 .page-hf-editing {
-  outline: 2px solid var(--word-blue);
-  outline-offset: 2px;
-  border-radius: 2px;
   background: var(--docs-paper);
   color: var(--docs-paper-ink);
   overflow: visible;
@@ -3806,10 +3807,6 @@ th[data-rev-fmt] {
   outline: none;
 }
 
-.page-hf-editor .doc-textbox-para {
-  min-height: 1.3em;
-}
-
 /* PAGE / NUMPAGES atoms show the live number (decoration attribute); a selected field takes the selection tint */
 .hf-field {
   border-radius: 2px;
@@ -3823,34 +3820,47 @@ th[data-rev-fmt] {
   background: var(--selection-soft, var(--hover));
 }
 
-/* Word's "Header -Section 2-" / "Same as Previous" tags hang off the strip edge while editing */
-.page-hf-tags {
+/* Word marks the part being edited with a line across the page where the body
+   starts (header) or ends (footer) and a tag on the body side of it: "Header",
+   "Header -Section 2-", "Same as Previous" at the far end (App.hfBoundary) */
+.hf-boundary {
   position: absolute;
   left: 0;
-  display: flex;
-  gap: 6px;
-  font-size: 9px;
-  line-height: 1;
+  right: 0;
+  height: 0;
+  border-top: 1px solid var(--docs-paper-hf-edge);
+  z-index: 2;
   pointer-events: none;
   user-select: none;
 }
 
-.page-hf-header .page-hf-tags {
-  top: 100%;
-  margin-top: 3px;
-}
-
-.page-hf-footer .page-hf-tags {
-  bottom: 100%;
-  margin-bottom: 3px;
-}
-
-.page-hf-tag {
-  padding: 2px 6px;
-  border-radius: 2px 2px 0 0;
-  background: var(--word-blue);
-  color: var(--docs-on-accent);
+.hf-boundary-tag {
+  position: absolute;
+  left: 4px;
+  padding: 3px 8px;
+  border: 1px solid var(--docs-paper-hf-edge);
+  border-radius: 3px;
+  background: var(--docs-paper-hf-tag-bg);
+  color: var(--docs-paper-hf-tag-ink);
+  font:
+    12px/1.2 -apple-system,
+    BlinkMacSystemFont,
+    'Segoe UI',
+    sans-serif;
   white-space: nowrap;
+}
+
+.hf-boundary-header .hf-boundary-tag {
+  top: -1px;
+}
+
+.hf-boundary-footer .hf-boundary-tag {
+  bottom: 0;
+}
+
+.hf-boundary-tag-end {
+  left: auto;
+  right: 4px;
 }
 
 /* Word dims the body while a header/footer is being edited; the gap widgets (which host
@@ -3871,15 +3881,10 @@ th[data-rev-fmt] {
   padding-top: 2px;
 }
 
-/* Word's print layout: the header/footer boundary shows only while editing it,
-   and strips at rest are drawn washed out (per child: an opacity on the strip
-   itself would trap behindDoc boxes in its stacking context) */
-.page-hf-header.page-hf-editing,
-.page-hf-footer.page-hf-editing {
-  border-color: var(--docs-paper-hf-line);
-}
-
-.page-hf:not(.page-hf-editing) > :not(.page-hf-tags) {
+/* Word's print layout: strips at rest are drawn washed out (per child: an
+   opacity on the strip itself would trap behindDoc boxes in its stacking
+   context); the boundary while editing is the page-wide .hf-boundary */
+.page-hf:not(.page-hf-editing) > * {
   opacity: 0.5;
 }
 
@@ -3975,7 +3980,7 @@ th[data-rev-fmt] {
 }
 
 /* preview/export clones carry full ink (selector outranks the washout above) */
-.pv-page .page-hf:not(.page-hf-editing) > :not(.page-hf-tags) {
+.pv-page .page-hf:not(.page-hf-editing) > * {
   opacity: 1;
 }
 
@@ -5576,6 +5581,9 @@ th[data-rev-fmt] {
     --docs-paper-mark: #468edb;
     --docs-paper-grid: rgb(70 142 219 / 13%);
     --docs-paper-hf-line: #474747;
+    --docs-paper-hf-edge: #2c467c;
+    --docs-paper-hf-tag-bg: #28323e;
+    --docs-paper-hf-tag-ink: #94afec;
     --docs-paper-crop-mark: #606060;
     --docs-paper-chip-bg: #222222;
     --docs-paper-select-bg: #222a32;
@@ -6007,10 +6015,6 @@ th[data-rev-fmt] {
 .page-gap-hf:hover:not(.page-hf-editing) {
   outline: 1px dashed var(--docs-paper-hf-line);
   outline-offset: 2px;
-}
-
-.page-gap-hf .page-hf-tags {
-  display: none;
 }
 
 /* floating textbox in a header/footer part: drawn at its anchor's page position
@@ -8393,10 +8397,11 @@ body.docs-run-pic-dragging .doc-run-pic-frame {
   clear: both;
 }
 
-/* a column break ending a paragraph is one line in Word (the mark opens the
-   next column); the trailing-break phantom after it would add a second */
+/* Keep the trailing break as the browser's caret anchor: hiding it sends
+   native typing before the column break. It must not add another line. */
 .doc-page br.doc-col-br + br.ProseMirror-trailingBreak {
-  display: none;
+  font-size: 0;
+  line-height: 0;
 }
 
 /* a column break leading a paragraph with text (.doc-lead-col-br) has no

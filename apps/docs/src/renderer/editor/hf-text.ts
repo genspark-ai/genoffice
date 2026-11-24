@@ -6,6 +6,7 @@
  * keep their original content.
  */
 import {
+  BUILT_IN_HF_TAB_STOPS,
   PAGE_MARK,
   SECTION_PAGES_MARK,
   TOTAL_PAGES_MARK,
@@ -13,6 +14,7 @@ import {
   type HfImage,
   type HfParagraph,
   type Run,
+  type StyleInfo,
 } from '@genoffice/docx-engine'
 
 export const PAGE_TOKEN = '{PAGE}'
@@ -29,6 +31,48 @@ export function hfParasOf(value: HeaderFooter, images?: HfImage[] | null): HfPar
   // Word reserves exactly the picture height for a picture-only part: no text line
   if (runs.length === 0 && images?.some((im) => !im.floating)) return []
   return [{ align: 'center', runs }]
+}
+
+/**
+ * The line a new header or footer starts with in Word: one paragraph in the
+ * document's Header / Footer style, left-aligned with a center and a right tab
+ * stop, or in Word's built-in definition when the document has none (the save
+ * adds it). Its properties are resolved here like a parsed strip paragraph's.
+ */
+export function hfBlankPara(
+  kind: 'header' | 'footer',
+  styles?: ReadonlyMap<string, StyleInfo>,
+): HfParagraph {
+  const id = kind === 'header' ? 'Header' : 'Footer'
+  const own =
+    styles?.get(id) ??
+    [...(styles?.values() ?? [])].find((s) => s.type === 'paragraph' && s.name === kind)
+  if (!own)
+    return {
+      styleId: id,
+      tabStops: [...BUILT_IN_HF_TAB_STOPS],
+      spaceAfter: 0,
+      lineSpacing: 1,
+      lineRule: 'auto',
+      lineRawTwips: 240,
+      runs: [],
+    }
+  const d = own.display ?? {}
+  return {
+    styleId: own.styleId,
+    ...(d.align ? { align: d.align } : {}),
+    ...(d.tabStops ? { tabStops: d.tabStops } : {}),
+    ...(d.spaceAfterTwips !== undefined ? { spaceAfter: d.spaceAfterTwips } : {}),
+    ...(d.lineSpacing !== undefined ? { lineSpacing: d.lineSpacing } : {}),
+    ...(d.lineRule ? { lineRule: d.lineRule } : {}),
+    ...(d.lineRawTwips !== undefined ? { lineRawTwips: d.lineRawTwips } : {}),
+    runs: [],
+  }
+}
+
+/** a part with nothing in it yet: no paragraph, text or page number */
+export function hfIsBlank(value: HeaderFooter): boolean {
+  return !value.paras?.length && !value.text && !value.pageNumber
 }
 
 /** Pictures are not editable: they leave the text runs and return to the

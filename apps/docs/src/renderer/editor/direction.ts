@@ -106,22 +106,25 @@ export function setSelectionAlign(
     .chain()
     .focus()
     .command(({ state, tr, dispatch }) => {
-      const { from, to } = state.selection
       let changed = false
-      state.doc.nodesBetween(from, to, (node, pos) => {
-        if (DIR_BLOCKS.has(node.type.name)) {
-          const value = alignAttrFor(align, effectiveBidi(node.attrs))
-          tr.setNodeMarkup(pos, undefined, { ...node.attrs, align: value })
-          changed = true
-        } else if (node.type.name === 'docProtected') {
-          // alignment also applies to selected images (w:jc on the image paragraph)
-          tr.setNodeMarkup(pos, undefined, {
-            ...node.attrs,
-            imageAlign: alignAttrFor(align, false),
-          })
-          changed = true
-        }
-      })
+      // every range: a table cell selection (a row picked from the margin, a
+      // column, a block of cells) is one range per cell, and Word aligns them all
+      const visit = (from: number, to: number) =>
+        state.doc.nodesBetween(from, to, (node, pos) => {
+          if (DIR_BLOCKS.has(node.type.name)) {
+            const value = alignAttrFor(align, effectiveBidi(node.attrs))
+            tr.setNodeMarkup(pos, undefined, { ...node.attrs, align: value })
+            changed = true
+          } else if (node.type.name === 'docProtected') {
+            // alignment also applies to selected images (w:jc on the image paragraph)
+            tr.setNodeMarkup(pos, undefined, {
+              ...node.attrs,
+              imageAlign: alignAttrFor(align, false),
+            })
+            changed = true
+          }
+        })
+      for (const range of state.selection.ranges) visit(range.$from.pos, range.$to.pos)
       if (changed && dispatch) dispatch(tr)
       return changed
     })
