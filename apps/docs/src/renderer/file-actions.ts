@@ -5,6 +5,7 @@
  * fresh per call (wrapped in useCallback with the original dependency lists)
  * so state never goes stale.
  */
+import { collabCoordinator, ensureCollabCoordinator } from './collab/coordinator'
 import {
   appRootEl,
   firstPaperOnScreen,
@@ -651,6 +652,13 @@ export async function loadFile(
     resetEditorHistory(ctx.editor)
     if (tier !== 'readOnly') focusDocumentStart(ctx.editor)
     noteDocumentSwapped()
+    // the collaboration room for this document: a session that works alone
+    // keeps the editor exactly as it was, a shared room takes over
+    const collab = ensureCollabCoordinator()
+    if (collab) {
+      void collab.openDocument(result.path ?? '')
+      collab.documentReady()
+    }
     ctx.setDoc({
       parsed,
       filePath: result.template ? null : result.path,
@@ -1709,7 +1717,9 @@ async function saveOnce(
       /* unrepresentable → rewrite */
     }
     // Equal doc: skip the rewrite so undo history, caret and scroll survive.
-    if (!unchanged) {
+    // in a shared room the editor holds the merged state: rewriting it with
+    // the saved bytes would drop whatever arrived while the save was running
+    if (!unchanged && !collabCoordinator()?.isShared) {
       // The caret's marks — the ribbon's font/size live here as storedMarks and
       // apply to whatever is typed next. setContent replaces the doc, so they
       // have to travel with the selection or an autosave silently drops the

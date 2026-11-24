@@ -12,10 +12,17 @@ import { describe, expect, it } from 'vitest'
 const SRC = join(__dirname, '../src/renderer')
 const fileActions = (): string => readFileSync(join(SRC, 'file-actions.ts'), 'utf8')
 
+/**
+ * The branch that rewrites the editor with the saved bytes. In a shared room
+ * the editor holds the merged state instead, so the rewrite is skipped there —
+ * the branch still holds the same steps, in the same order.
+ */
+const REWRITE_BRANCH = 'if (!unchanged && !collabCoordinator()?.isShared) {'
+
 describe('saveOnce caret-mark wiring', () => {
   it('snapshots the caret marks live, right before the doc is replaced', () => {
     const src = fileActions()
-    const rewrite = src.indexOf('if (!unchanged) {', src.indexOf('async function saveOnce('))
+    const rewrite = src.indexOf(REWRITE_BRANCH, src.indexOf('async function saveOnce('))
     const snapshot = src.indexOf('const caretMarks = caretMarksSnapshot(editor)', rewrite)
     const setContent = src.indexOf('.setContent(rebasedPm', rewrite)
     expect(snapshot).toBeGreaterThan(rewrite)
@@ -30,7 +37,7 @@ describe('saveOnce caret-mark wiring', () => {
     // that formatting onto text the user left
     const src = fileActions()
     const saveOnce = src.indexOf('async function saveOnce(')
-    const rewrite = src.indexOf('if (!unchanged) {', saveOnce)
+    const rewrite = src.indexOf(REWRITE_BRANCH, saveOnce)
     const pos = src.indexOf('const selectionPos = editor.state.selection.from', saveOnce)
     expect(pos).toBeGreaterThan(rewrite)
     expect(src.indexOf('const selectionPos = editor.state.selection.from', pos + 1)).toBe(-1)
@@ -38,7 +45,7 @@ describe('saveOnce caret-mark wiring', () => {
 
   it('restores the marks after setContent, inside the rewrite branch only', () => {
     const src = fileActions()
-    const rewrite = src.indexOf('if (!unchanged) {')
+    const rewrite = src.indexOf(REWRITE_BRANCH)
     const setContent = src.indexOf('.setContent(rebasedPm', rewrite)
     const restore = src.indexOf('restoreMarksAfterDocRewrite(editor, caretMarks)', rewrite)
     expect(rewrite).toBeGreaterThan(-1)

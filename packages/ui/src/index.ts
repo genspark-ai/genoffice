@@ -1,5 +1,7 @@
 export { shortFileError } from './file-error'
 export { AiPanelSideButton } from './AiPanelSideButton'
+export { WebShareChip } from './WebShareChip'
+export { WEB_SHARE_LABELS, type WebShareLabels } from './strings-web-share'
 export { AiComposer } from './AiComposer'
 export { AiQueueStrip } from './AiQueueStrip'
 export { useChatRunQueue, type ChatRunQueue, type QueuedChatMessage } from './chat-run-queue'

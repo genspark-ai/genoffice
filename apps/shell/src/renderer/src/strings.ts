@@ -2821,6 +2821,10 @@ export const strings = {
     intgSkillsRemoveConfirm:
       'Eltávolítod ezt a képességet: {name}? A mappája törlődik a GenOffice-ból.',
     intgSkillsRemoved: 'Eltávolítva: {name}',
+    skillDetailClose: 'Bezárás',
+    skillDetailLoading: 'Útmutató betöltése…',
+    skillDetailEmpty: 'Ennek a készségnek nincs útmutatója.',
+    skillDetailCopy: 'Útmutató másolása',
     intgSkillsRead: 'Részletek',
     intgSkillsMine: 'Saját képességek',
     intgSkillsRecommended: 'Ajánlott',
@@ -2878,10 +2882,6 @@ export const strings = {
       'Érvénytelen fejlécformátum: minden sornak „Név: Érték” alakúnak kell lennie.',
     setAiEndpointModelsBad:
       'Érvénytelen modellmegadás: JSON-tömb kell legyen, pl. [{ "id": "m" }].',
-    skillDetailClose: 'Bezárás',
-    skillDetailLoading: 'Útmutató betöltése…',
-    skillDetailEmpty: 'Ehhez a készséghez nincs útmutató.',
-    skillDetailCopy: 'Útmutató másolása',
   },
   ja: {
     addFolderRoot: 'フォルダーを追加…',

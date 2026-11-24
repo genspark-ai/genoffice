@@ -1,0 +1,31 @@
+/* Status-bar web-share chip: shares the host app's .status-btn chrome; only
+   the on-state accent and the port/stop split are its own. */
+
+.web-share-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.web-share-chip-on {
+  border: 1px solid color-mix(in srgb, var(--accent, #2563eb) 45%, transparent);
+  border-radius: 999px;
+  padding: 0 2px 0 6px;
+  background: color-mix(in srgb, var(--accent, #2563eb) 10%, transparent);
+}
+
+.web-share-port {
+  font-variant-numeric: tabular-nums;
+}
+
+.web-share-stop {
+  padding: 0 6px;
+  font-size: 13px;
+  line-height: 1;
+  opacity: 0.75;
+}
+
+.web-share-stop:hover {
+  opacity: 1;
+  color: var(--red, #dc2626);
+}

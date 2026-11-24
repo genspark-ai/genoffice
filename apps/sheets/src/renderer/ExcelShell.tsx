@@ -11,6 +11,7 @@ import {
   rememberAiPanelOpen,
   useAiSidebarEnabled,
   type AiTokenUsageView,
+  WebShareChip,
 } from '@genoffice/ui'
 
 import {
@@ -589,7 +590,7 @@ export function ExcelShell({
   onFillSeries,
   onGetFillSeriesContext,
 }: ExcelShellProps): React.JSX.Element {
-  const { t } = useI18n()
+  const { lang, t } = useI18n()
   const [activeTab, setActiveTab] = useState<RibbonTab>('Home')
   const collapse = useRibbonCollapse('ai-sheets-ribbon-collapsed', {
     collapse: t('appRibbonCollapse'),
@@ -1121,6 +1122,7 @@ export function ExcelShell({
               <span className="status-msg">{statusMessage}</span>
             </div>
             <div className="status-right">
+              <WebShareChip lang={lang} />
               {/* One-of-N view switcher, so it is a radiogroup rather than a
                   second set of buttons named like the View tab's. */}
               <div

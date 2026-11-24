@@ -2347,6 +2347,12 @@ export const strings = {
     ...certSignStringsFor('hu'),
     ...protectStringsFor('hu'),
     ...redactFindStringsFor('hu'),
+    ocrRecognize: 'Szövegfelismerés',
+    ocrRecognizeTip:
+      'Futtassa az OCR-t a dokumentum minden beolapott oldalára (oldalkorlát nélkül)',
+    ocrNothing: 'Nincs több beolapott oldal a felismeréshez.',
+    texteditReveal:
+      'Szerkesztés után jelenítse meg a szöveget az oldalon; kikapcsolva a láthatatlan keresési rétegen marad',
     ribbonTabHome: 'Kezdőlap',
     ribbonTabAnnotate: 'Széljegyzetek',
     ribbonTabEdit: 'Szerkesztés',
@@ -2793,11 +2799,6 @@ export const strings = {
     propProducer: 'Készítő',
     propCreated: 'Létrehozva',
     propModified: 'Módosítva',
-    ocrRecognize: 'Szöveg felismerése',
-    ocrRecognizeTip: 'OCR futtatása a dokumentum minden beolvasott oldalán (oldalkorlát nélkül)',
-    ocrNothing: 'Nincs több felismerendő beolvasott oldal.',
-    texteditReveal:
-      'A szöveg megjelenítése az oldalon szerkesztés után; kikapcsolva a láthatatlan keresőrétegben marad',
   },
   ja: {
     ...fillFormStringsFor('ja'),
