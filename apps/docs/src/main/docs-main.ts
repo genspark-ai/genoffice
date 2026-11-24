@@ -23,7 +23,7 @@ import {
   writeFile,
 } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { basename, dirname, extname, isAbsolute, join, relative, resolve } from 'node:path'
+import { basename, dirname, extname, isAbsolute, join } from 'node:path'
 import { moveFile, renamedDocPath } from './doc-move'
 import { pathToFileURL } from 'node:url'
 import {

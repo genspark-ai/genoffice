@@ -154,7 +154,12 @@ export {
   writeJsonAtomic,
   restrictFileToOwner,
 } from './atomic-write'
-export { createPathGrants, isBesideDocument, sharedPathGrants, type PathGrants } from './path-grants'
+export {
+  createPathGrants,
+  isBesideDocument,
+  sharedPathGrants,
+  type PathGrants,
+} from './path-grants'
 export {
   PRINT_READY_SCRIPT,
   printHtmlDocument,
