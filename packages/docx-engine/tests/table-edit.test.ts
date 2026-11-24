@@ -278,6 +278,21 @@ describe('generateTableModelXml', () => {
     expect(out).toContain('<w:right w:w="108" w:type="dxa"/>')
   })
 
+  it("an empty border set drops the table's own w:tblBorders (a table style draws them)", () => {
+    const template =
+      '<w:tbl><w:tblPr><w:tblStyle w:val="TableGrid"/><w:tblW w:w="4000" w:type="dxa"/>' +
+      '<w:tblBorders><w:top w:val="single" w:sz="12" w:space="0" w:color="FF0000"/></w:tblBorders>' +
+      '</w:tblPr><w:tblGrid><w:gridCol w:w="4000"/></w:tblGrid><w:tr><w:tc><w:p/></w:tc></w:tr></w:tbl>'
+    const rows = [[{ paras: ['a'] }]]
+    expect(generateTableModelXml({ rows }, template)).toContain('<w:tblBorders>')
+    expect(generateTableModelXml({ rows, borders: {} }, template)).not.toContain('w:tblBorders')
+    // a new table written fresh gets none either
+    expect(generateTableModelXml({ rows, borders: {}, tblStyleId: 'GridTable4' })).not.toContain(
+      'w:tblBorders',
+    )
+    expect(generateTableModelXml({ rows })).toContain('<w:tblBorders>')
+  })
+
   it('replaces or drops the imported w:tblInd only when the model carries an indent', () => {
     const template =
       '<w:tbl><w:tblPr><w:tblW w:w="8800" w:type="dxa"/><w:tblInd w:w="-108" w:type="dxa"/>' +

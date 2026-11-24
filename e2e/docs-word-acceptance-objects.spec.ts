@@ -92,9 +92,11 @@ test('Insert > Table makes a 3 x 3 table that Tab walks and extends; Table Layou
 
     await ribbonTab(page, 'Table Design')
     await cell(page, 'b2').click()
-    await page.locator('[data-ribbon-body] .table-style-card', { hasText: 'Blue Header' }).click()
+    // Word's built-in Grid Table 4 Accent 1, from the full gallery
+    await page.locator('[data-ribbon-body] .tbl-gallery-more').click()
+    await page.locator('.tbl-gallery-panel .tbl-thumb[aria-label="Grid Table 4 Accent 1"]').click()
     // the style's header shading shows before the save writes the style out
-    await expect(cell(page, 'a1b1')).toHaveCSS('background-color', 'rgb(217, 234, 247)')
+    await expect(cell(page, 'a1b1')).toHaveCSS('background-color', 'rgb(21, 96, 130)')
     await ribbon(page, 'Shading').click()
     await page.locator('.gcp-palette .gcp-swatch[title="Yellow"]').click()
     await expect(cell(page, 'b2')).toHaveCSS('background-color', 'rgb(255, 255, 0)')
@@ -114,13 +116,14 @@ test('Insert > Table makes a 3 x 3 table that Tab walks and extends; Table Layou
             columns: (
               /<w:tblGrid>[\s\S]*?<\/w:tblGrid>/.exec(body)?.[0].match(/<w:gridCol\b/g) ?? []
             ).length,
-            // the header shading is the style's, not the cells' own
+            // the table names the style, and the style goes out as Word defines it
             headerFill:
-              /<w:tblStyle w:val="BlueHeader"\/>/.test(body) &&
-              /w:styleId="BlueHeader"[\s\S]*?w:type="firstRow"[\s\S]*?w:fill="D9EAF7"/.test(
+              /<w:tblStyle w:val="GridTable4-Accent1"\/>/.test(body) &&
+              /w:styleId="GridTable4-Accent1"[\s\S]*?w:type="firstRow"[\s\S]*?w:fill="156082"/.test(
                 await part(docPath, 'word/styles.xml'),
               ),
-            borderColour: /<w:top\b[^>]*w:color="5B9BD5"/.test(body),
+            // Word's Apply and Clear Formatting: no lines of the table's own are saved
+            ownLines: /<w:tblBorders>|<w:tcBorders>/.test(body),
             shaded: shaded.map((tc) => /<w:t(?: [^>]*)?>([^<]*)/.exec(tc)?.[1]),
           }
         },
@@ -131,7 +134,7 @@ test('Insert > Table makes a 3 x 3 table that Tab walks and extends; Table Layou
         merged: true,
         columns: 2,
         headerFill: true,
-        borderColour: true,
+        ownLines: false,
         shaded: ['b2'],
       })
   } finally {
@@ -180,7 +183,8 @@ test('Table Design > Table Styles saves the picked style as the table’s style'
     await page.locator('.table-picker-grid .table-cell').nth(22).click()
     await page.locator('.doc-page table td').first().click()
     await ribbonTab(page, 'Table Design')
-    await page.locator('[data-ribbon-body] .table-style-card', { hasText: 'Blue Header' }).click()
+    await page.locator('[data-ribbon-body] .tbl-gallery-more').click()
+    await page.locator('.tbl-gallery-panel .tbl-thumb[aria-label="Grid Table 4 Accent 1"]').click()
     await saveFromMenu(app)
     await expect
       .poll(

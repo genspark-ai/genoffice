@@ -356,7 +356,8 @@ export const COMMANDS = {
   'table-text-direction': {},
   'table-style': {},
   'table-look': {},
-  'table-preset': {},
+  'table-border-painter': {},
+  'table-pen': {},
   'ai-proofread': { menuKey: 'menuAiProofread' },
   shortcuts: { menuKey: 'menuShortcuts', accelerator: 'CmdOrCtrl+/' },
 } as const satisfies Record<string, CommandDef>

@@ -7350,47 +7350,6 @@ body.docs-crop-active .doc-protected[data-doc-protected='image'] .doc-img-wrap {
   width: 150px;
 }
 
-.table-tool-group .table-command-button {
-  display: grid;
-  grid-template-columns: 20px minmax(0, 1fr) 12px;
-  align-items: center;
-  width: 100%;
-  min-height: 52px;
-  padding: 5px 7px;
-  gap: 6px;
-  border-color: var(--border);
-  background: var(--surface);
-}
-
-.table-command-button:hover:not(:disabled),
-.table-command-button.active {
-  border-color: var(--border-strong);
-  background: var(--hover);
-}
-
-.table-command-copy {
-  display: flex;
-  min-width: 0;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 1px;
-  text-align: left;
-}
-
-.table-command-copy > span,
-.table-command-copy > small {
-  display: block;
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.table-command-copy > small {
-  color: var(--text-dim);
-  font-size: 10px;
-}
-
 .table-autofit-menu {
   width: 238px;
   padding: 6px;
@@ -12329,18 +12288,6 @@ body.docs-crop-active
   opacity: 0.55;
 }
 
-.table-border-opts .gs-dd {
-  width: 72px;
-}
-
-.table-border-opts .gs-dd-btn {
-  box-sizing: border-box;
-  height: 20px;
-  min-height: 20px;
-  padding-top: 0;
-  padding-bottom: 0;
-}
-
 /* ---- Protect Document dialog (Review > Protect, Word's Password Protect layout) ---- */
 
 .modal.protect-dialog {
@@ -15022,39 +14969,6 @@ ruby.doc-ruby[data-ruby-align='right'] > rt {
   gap: 8px;
 }
 
-/* Border Styles / Line Weight / Pen Color stacked beside Borders ▾ (Word) */
-.table-border-opts {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  align-self: center;
-}
-
-.table-tool-group .table-pen-color {
-  display: inline-flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 4px;
-  box-sizing: border-box;
-  width: 72px;
-  height: 20px;
-  min-height: 20px;
-  padding: 0 6px;
-  border-color: var(--border);
-  background: var(--surface);
-}
-
-.table-tool-group .table-pen-color.active {
-  border-color: var(--border-strong);
-  background: var(--hover);
-}
-
-.table-pen-swatch {
-  flex: 1;
-  height: 10px;
-  border: 1px solid var(--docs-swatch-outline);
-}
-
 .table-size-inputs {
   display: flex;
   flex-direction: column;
@@ -15916,57 +15830,6 @@ tr > .page-gap-cut {
   flex-basis: 110px;
 }
 
-/* table style gallery cards */
-.table-style-gallery {
-  display: flex;
-  align-items: center;
-  gap: 3px;
-  flex-wrap: nowrap;
-  /* Word: the gallery takes the room the other groups (about 700px) leave */
-  max-width: clamp(320px, calc(100vw - 700px), 1400px);
-  overflow-x: auto;
-  padding-bottom: 2px;
-  scrollbar-width: none;
-}
-
-.table-style-gallery::-webkit-scrollbar {
-  display: none;
-}
-
-.table-style-card {
-  display: flex;
-  box-sizing: border-box;
-  flex: 0 0 76px;
-  flex-direction: column;
-  align-items: center;
-  gap: 3px;
-  padding: 4px 5px;
-  border: 1px solid transparent;
-  border-radius: 7px;
-  background: transparent;
-  cursor: pointer;
-  font-size: 10px;
-  color: var(--text-dim);
-}
-
-.table-style-card span:last-child {
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-  max-width: 68px;
-}
-
-.table-style-card:hover {
-  border-color: var(--border);
-  background: var(--hover);
-}
-
-.table-style-card.active {
-  border-color: var(--accent);
-  background: var(--accent-soft);
-  color: var(--text);
-}
-
 .table-style-card-grid {
   box-sizing: border-box;
   width: 44px;
@@ -16569,11 +16432,6 @@ tr > .page-gap-cut {
 .table-tool-inset .table-tool-button.active {
   border-color: var(--border);
   background: var(--active-bg);
-}
-
-.table-border-style {
-  font-family: ui-monospace, Menlo, monospace;
-  letter-spacing: -0.5px;
 }
 
 .table-small-dialog {
@@ -19575,4 +19433,231 @@ img.doc-inline-img.doc-multi-selected,
 
 .modal-customize-keyboard .ck-reset {
   margin-inline-end: auto;
+}
+
+/* ---- Table Design (Word's layout): style gallery, pen pickers, Border Painter ---- */
+.table-style-options .table-option-toggle.active {
+  border-color: transparent;
+  background: transparent;
+}
+
+/* anchors its ▾ panel like .rb-split-wrap does (the panel is fixed, so the ribbon's scroll clip does not cut it) */
+.tbl-gallery {
+  anchor-name: --rb-drop-wrap;
+  anchor-scope: --rb-drop-wrap;
+  display: flex;
+  align-items: stretch;
+  align-self: center;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+}
+
+.tbl-gallery-strip {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+}
+
+.tbl-thumb {
+  display: flex;
+  padding: 3px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: none;
+  cursor: pointer;
+}
+
+.tbl-thumb:hover {
+  border-color: var(--border-strong);
+}
+
+.tbl-thumb.active {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.tbl-thumb-svg {
+  display: block;
+  box-shadow: var(--docs-shadow-chip);
+}
+
+.tbl-gallery-nav {
+  display: flex;
+  flex-direction: column;
+  border-left: 1px solid var(--border);
+}
+
+.tbl-gallery-step {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--text-dim);
+  cursor: pointer;
+}
+
+.tbl-gallery-step + .tbl-gallery-step {
+  border-top: 1px solid var(--border);
+}
+
+.tbl-gallery-step:hover:not(:disabled),
+.tbl-gallery-step.active {
+  background: var(--hover);
+  color: var(--text);
+}
+
+.tbl-gallery-step:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.tbl-gallery-up {
+  display: flex;
+  transform: rotate(180deg);
+}
+
+.tbl-gallery-panel {
+  position: fixed;
+  position-anchor: --rb-drop-wrap;
+  top: calc(anchor(bottom) + 4px);
+  left: anchor(left);
+  position-try-fallbacks: flip-inline;
+  position-visibility: anchors-visible;
+  z-index: 60;
+  box-sizing: border-box;
+  width: min(560px, calc(100vw - 32px));
+  max-height: min(520px, calc(100vh - 160px));
+  overflow-y: auto;
+  padding: 6px 8px 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: var(--shadow-menu);
+}
+
+.tbl-gallery-heading {
+  margin: 6px 2px 4px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-dim);
+}
+
+.tbl-gallery-grid {
+  display: grid;
+  grid-template-columns: repeat(7, auto);
+  justify-content: start;
+  gap: 2px;
+}
+
+.tbl-gallery-sep {
+  height: 1px;
+  margin: 6px 0;
+  background: var(--border);
+}
+
+.tbl-gallery-clear {
+  width: 100%;
+  padding: 5px 8px;
+  border: none;
+  border-radius: 4px;
+  background: none;
+  color: var(--text);
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.tbl-gallery-clear:hover {
+  background: var(--hover);
+}
+
+.tbl-pen-opts {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 4px;
+}
+
+.tbl-pen-pick {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  box-sizing: border-box;
+  width: 132px;
+  height: 24px;
+  padding: 0 6px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.tbl-pen-pick .tbl-line-sample {
+  flex: 1;
+}
+
+.tbl-pen-pick:hover,
+.tbl-pen-pick.active {
+  border-color: var(--border-strong);
+  background: var(--hover);
+}
+
+.tbl-pen-weight {
+  min-width: 34px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.tbl-pen-menu button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.tbl-pen-panel {
+  position: fixed;
+  position-anchor: --rb-drop-wrap;
+  top: calc(anchor(bottom) + 4px);
+  left: anchor(left);
+  position-try-fallbacks: flip-inline;
+  position-visibility: anchors-visible;
+  z-index: 60;
+  padding: 6px 8px 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: var(--shadow-menu);
+}
+
+.tbl-pen-row {
+  display: flex;
+  gap: 2px;
+}
+
+.tbl-pen-swatch {
+  display: flex;
+  align-items: center;
+  padding: 4px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: none;
+  cursor: pointer;
+}
+
+.tbl-pen-swatch:hover {
+  border-color: var(--border-strong);
+  background: var(--hover);
+}
+
+.table-border-painting,
+.table-border-painting td,
+.table-border-painting th {
+  cursor: crosshair;
 }

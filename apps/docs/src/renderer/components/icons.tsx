@@ -2431,3 +2431,24 @@ export function IconChevronRight(props: IconProps) {
     </Svg>
   )
 }
+
+/** Table Design ▸ Border Styles: three line samples */
+export function IconBorderStyles(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M2.5 4.2h11" />
+      <path d="M2.5 8h11" strokeWidth="2" />
+      <path d="M2.5 11.3h11M2.5 13h11" />
+    </Svg>
+  )
+}
+
+/** Table Design ▸ Border Painter: a pen over a dashed cell grid */
+export function IconBorderPainter(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M2.5 2.5h7M2.5 2.5v11M2.5 13.5h4M2.5 8h4M6 2.5v4" strokeDasharray="1.2 1.2" />
+      <path d="M13.6 5.4 8.3 10.7l-1.9.5.5-1.9 5.3-5.3a.95.95 0 0 1 1.4 1.4z" />
+    </Svg>
+  )
+}

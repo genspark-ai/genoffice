@@ -1180,11 +1180,45 @@
     },
     {
       "group": "Table Styles",
-      "controls": []
-    },
-    {
-      "group": "Shading",
       "controls": [
+        {
+          "name": "Table Grid",
+          "tag": "button"
+        },
+        {
+          "name": "Grid Table Light",
+          "tag": "button"
+        },
+        {
+          "name": "Plain Table 1",
+          "tag": "button"
+        },
+        {
+          "name": "Plain Table 2",
+          "tag": "button"
+        },
+        {
+          "name": "Plain Table 3",
+          "tag": "button"
+        },
+        {
+          "name": "Plain Table 4",
+          "tag": "button"
+        },
+        {
+          "name": "Previous styles",
+          "tag": "button",
+          "disabled": true
+        },
+        {
+          "name": "Next styles",
+          "tag": "button"
+        },
+        {
+          "name": "More table styles",
+          "tag": "button",
+          "popup": true
+        },
         {
           "name": "Shading",
           "tag": "button",
@@ -1201,6 +1235,11 @@
           "popup": true
         },
         {
+          "name": "Line Style",
+          "tag": "button",
+          "popup": true
+        },
+        {
           "name": "Line Weight",
           "tag": "button",
           "popup": true
@@ -1211,13 +1250,17 @@
           "popup": true
         },
         {
-          "name": "Borders",
+          "name": "Bottom Border",
           "tag": "button"
         },
         {
           "name": "Borders",
           "tag": "button",
           "popup": true
+        },
+        {
+          "name": "Border Painter",
+          "tag": "button"
         }
       ]
     }

@@ -205,6 +205,7 @@ import {
 } from './hf-sections'
 import { installHfFloatEdit, tagHfFloatEl } from './editor/hf-float-edit'
 import { HF_MARGIN_SKIP, hfBandAt, pageMarginBands } from './editor/hf-margin-hit'
+import { loadBuiltInTableStyleInfos } from './editor/built-in-table-style-infos'
 import { hfFooterLine, hfLayoutResolved, hfPhantomSpec, hfWithPhantom } from './hf-phantom'
 import { hfVariantHeightsPx, sectionHfHeights } from './hf-heights'
 import { makeGapNotesEl, measureNoteHeightDom, noteRowMetrics } from './editor/note-dom'
@@ -1552,6 +1553,17 @@ export function App() {
   const [themeFonts, setThemeFonts] = useState<ThemeFonts | null>(null)
   const [themeFontsDirty, setThemeFontsDirty] = useState(false)
   const [themeColors, setThemeColors] = useState<ThemeColors | null>(null)
+  // Word's built-in table styles under the document theme, for Table Design
+  const builtInTableStylesRef = useRef<Map<string, StyleInfo> | null>(null)
+  useEffect(() => {
+    let live = true
+    void loadBuiltInTableStyleInfos(themeColors).then((infos) => {
+      if (live) builtInTableStylesRef.current = infos
+    })
+    return () => {
+      live = false
+    }
+  }, [themeColors])
   const [themeColorsDirty, setThemeColorsDirty] = useState(false)
   const [commentComposing, setCommentComposing] = useState(false)
   const [trackChanges, setTrackChanges] = useState(false)
@@ -8157,6 +8169,12 @@ export function App() {
         ribbonStylesRef.current?.has('TableNormal') ? { ...style, basedOn: 'TableNormal' } : style,
       )
     },
+    hasStyle: (styleId) =>
+      !!ribbonStylesRef.current?.has(styleId) ||
+      (!!aiStyleUpsertsRef.current[styleId] && !aiStyleUpsertsRef.current[styleId].remove),
+    tableStyleDisplay: (styleId) =>
+      ribbonStylesRef.current?.get(styleId)?.tableDisplay ??
+      builtInTableStylesRef.current?.get(styleId)?.tableDisplay,
     showObjectFormatTab: () => {
       const tab = formatState.imageSelected
         ? 'pictureFormat'

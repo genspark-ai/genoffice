@@ -111,15 +111,16 @@ test.describe('docs table ribbon (Word layout)', () => {
       // ---- Borders ▾ main half = Bottom Border; a bare caret formats the whole table
       await cell(1, 1).click()
       await tab('Table Design').click()
-      const bordersMain = page.locator('.table-split-main')
-      await expect(bordersMain).toHaveText('Borders')
+      const bordersCaret = page.locator('.rb-big-split-caret', { hasText: 'Borders' })
+      await expect(bordersCaret).toBeVisible()
+      const bordersMain = page.getByRole('button', { name: 'Bottom Border', exact: true })
       await bordersMain.click()
       await expect(cell(3, 0)).toHaveCSS('border-bottom-style', 'solid')
       await expect(cell(3, 2)).toHaveCSS('border-bottom-style', 'solid')
       await expect(cell(0, 0)).not.toHaveCSS('border-bottom-style', 'solid')
 
       // ---- the gallery lists Word's entries in Word's order
-      await page.locator('.table-split-caret').click()
+      await bordersCaret.click()
       await expect(page.locator('.layout-menu button')).toHaveText([
         'Bottom Border',
         'Top Border',

@@ -167,75 +167,11 @@ export function setTableLookOption(key: keyof TableLook, value: boolean): Comman
   }
 }
 
-export interface TablePreset {
-  styleId: string
-  /** the style's name in the file (w:name) */
-  name: string
-  headerFill: string | null
-  band1Fill: string | null
-  band2Fill: string | null
-  borderColor: string
-}
-
-const DEFAULT_TABLE_LOOK: TableLook = {
+export const DEFAULT_TABLE_LOOK: TableLook = {
   firstRow: true,
   lastRow: false,
   firstColumn: true,
   lastColumn: false,
   bandedRows: true,
   bandedColumns: false,
-}
-
-/** the w:style of type table a preset is saved as */
-export function tablePresetStyleXml(preset: TablePreset): string {
-  const line = (side: string) =>
-    `<w:${side} w:val="single" w:sz="4" w:space="0" w:color="${preset.borderColor}"/>`
-  const shaded = (type: string, fill: string | null) =>
-    fill
-      ? `<w:tblStylePr w:type="${type}"><w:tcPr><w:shd w:val="clear" w:color="auto" w:fill="${fill}"/></w:tcPr></w:tblStylePr>`
-      : ''
-  return (
-    `<w:style w:type="table" w:customStyle="1" w:styleId="${preset.styleId}">` +
-    `<w:name w:val="${preset.name}"/><w:uiPriority w:val="99"/>` +
-    '<w:tblPr><w:tblStyleRowBandSize w:val="1"/><w:tblInd w:w="0" w:type="dxa"/>' +
-    `<w:tblBorders>${['top', 'left', 'bottom', 'right', 'insideH', 'insideV'].map(line).join('')}</w:tblBorders>` +
-    '<w:tblCellMar><w:top w:w="0" w:type="dxa"/><w:left w:w="108" w:type="dxa"/>' +
-    '<w:bottom w:w="0" w:type="dxa"/><w:right w:w="108" w:type="dxa"/></w:tblCellMar></w:tblPr>' +
-    shaded('firstRow', preset.headerFill) +
-    shaded('band1Horz', preset.band1Fill) +
-    shaded('band2Horz', preset.band2Fill) +
-    '</w:style>'
-  )
-}
-
-/**
- * Gives the table the preset's style, which the caller defines in styles.xml. The shading comes
- * from the style; the border colour is also set on the cells, where the page draws it from.
- */
-export function applyTablePreset(preset: TablePreset): Command {
-  return (state, dispatch) => {
-    const selected = selectedTable(state)
-    if (!selected) return false
-    const border = { style: 'single', szEighths: 4, color: preset.borderColor }
-    const borders = { top: border, right: border, bottom: border, left: border }
-    let tr = state.tr
-    selected.node.forEach((row, rowOffset) => {
-      row.forEach((cell, cellOffset) => {
-        tr = tr.setNodeMarkup(selected.tableStart + rowOffset + 1 + cellOffset, undefined, {
-          ...cell.attrs,
-          fill: null,
-          borders,
-        })
-      })
-    })
-    tr = tr.setNodeMarkup(selected.pos, undefined, {
-      ...selected.node.attrs,
-      tblStyleId: preset.styleId,
-      // without a w:tblLook Word applies none of the style's conditional formatting
-      tblLook: (selected.node.attrs.tblLook as TableLook | null) ?? DEFAULT_TABLE_LOOK,
-      tblLookEdited: true,
-    })
-    dispatch?.(tr)
-    return true
-  }
 }

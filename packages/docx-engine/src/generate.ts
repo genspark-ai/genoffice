@@ -3050,12 +3050,15 @@ function tableModelXml(
     model.indentTwips && Math.round(model.indentTwips) !== 0
       ? `<w:tblInd w:w="${Math.round(model.indentTwips)}" w:type="dxa"/>`
       : ''
+  // an empty border set means none of the table's own: a table style draws them
+  const noOwnBorders = !!model.borders && Object.keys(model.borders).length === 0
   let tblPr = resolvedProps(
     originalTblPr ??
-      `<w:tblPr><w:tblW w:w="${totalWidth}" w:type="dxa"/>${tblInd}${borders}</w:tblPr>`,
+      `<w:tblPr><w:tblW w:w="${totalWidth}" w:type="dxa"/>${tblInd}${noOwnBorders ? '' : borders}</w:tblPr>`,
     'w:tblPrChange',
     model.tblPrChange,
   )
+  if (originalTblPr && noOwnBorders) tblPr = setTblPrChild(tblPr, 'w:tblBorders', null)
   // Table style reference: '' = remove, non-empty = replace/insert (tblStyle is the
   // first tblPr child)
   if (model.tblStyleId !== undefined) {

@@ -288,6 +288,14 @@ export {
   type CustomNumberingLevel,
 } from './blank'
 export {
+  BUILT_IN_TABLE_NORMAL_XML,
+  BUILT_IN_TABLE_STYLES,
+  builtInTableStyle,
+  type BuiltInTableStyle,
+  type BuiltInTableStyleGroup,
+} from './builtin-table-styles'
+export { builtInTableStyleInfos } from './builtin-table-style-infos'
+export {
   DEFAULT_SECTION,
   applySectionSettings,
   DEFAULT_LINE_PITCH_TWIPS,

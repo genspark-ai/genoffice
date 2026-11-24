@@ -1532,6 +1532,8 @@ export function pmTableToModel(table: PmNode): TableModel {
     ...(tablePropsEdited('tblFloatEdited')
       ? { floatSide, ...(floatPosition ? { floatPos: floatPosition } : {}) }
       : {}),
+    // an empty set removes the table's own w:tblBorders (a table style was applied)
+    ...(table.attrs?.tblBordersCleared === true ? { borders: {} } : {}),
     ...(tablePropsEdited('tblLookEdited') && table.attrs?.tblLook
       ? { tableLook: table.attrs.tblLook as NonNullable<TableModel['tableLook']> }
       : {}),
