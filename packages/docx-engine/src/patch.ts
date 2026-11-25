@@ -1567,6 +1567,7 @@ export async function saveDocx(
       (await zip.file(relsPath)?.async('string')) ??
       '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n' +
         '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"></Relationships>'
+    relsXml = relsXml.replace(/<Relationships\b([^>]*)\/>/, '<Relationships$1></Relationships>')
     const rIds = new Map<string, string>()
     const docPrIds = new Map<string, number>()
     const relate = (key: string, mediaPath: string): string => {
