@@ -464,6 +464,17 @@ describe('textbox patch addressing', () => {
     expect(noBodyPr).toContain('</w:txbxContent></wps:txbx><wps:bodyPr anchor="ctr"/></wps:wsp>')
   })
 
+  it('inject keeps literal `$$` in first shape text when bodyPr is missing', async () => {
+    const out = patchTextboxParas(drawingParagraph([wspShape({ id: '5' })]), {
+      inject: [{ shapeId: '5', paras: [{ runs: [{ text: 'Budget $$' }] }] }],
+    })
+    expect(out).toContain('<w:t xml:space="preserve">Budget $$</w:t>')
+    expect(out).toContain('<wps:bodyPr anchor="ctr"/>')
+
+    const doc = await parseDocx(await buildDocx({ bodyXml: out }))
+    expect(doc.blocks[0].textboxes?.[0].paras[0].runs[0].text).toBe('Budget $$')
+  })
+
   it('inject onto a shape that already has a txbx rewrites its content instead', () => {
     const out = patchTextboxParas(drawingParagraph([wspShape({ id: '5', txbx: HELLO_TXBX })]), {
       inject: [{ shapeId: '5', paras: [{ runs: [{ text: 'replaced' }] }] }],

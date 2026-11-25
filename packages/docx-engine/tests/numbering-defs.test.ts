@@ -446,6 +446,28 @@ describe('named list styles', () => {
     expect(style.levels[0].lvlText).toBe('$&%1$$')
   })
 
+  it('a level edit keeps a literal `$$` in w:lvlText', async () => {
+    const doc = await parseDocx(
+      await buildDocx({ bodyXml: P('x'), numberingXml: MULTILEVEL_NUMBERING }),
+    )
+    const saved = await saveDocx(doc, originals(doc), {
+      numbering: {
+        levelEdits: [
+          {
+            abstractNumId: '0',
+            ilvl: 0,
+            level: { numFmt: 'decimal', lvlText: '$$%1', indentLeft: 720 },
+          },
+        ],
+      },
+    })
+    const numXml = await JSZip.loadAsync(saved).then((zip) =>
+      zip.file('word/numbering.xml')!.async('string'),
+    )
+    expect(numXml).toContain('<w:lvlText w:val="$$%1"/>')
+    expect((await parseDocx(saved)).numbering.get('1')!.levels[0].lvlText).toBe('$$%1')
+  })
+
   it('a deleted list style leaves `$$` level text whole in the lists that copied it', () => {
     const xml =
       '<w:numbering><w:abstractNum w:abstractNumId="1"><w:styleLink w:val="S"/>' +
