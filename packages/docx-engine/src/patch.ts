@@ -1561,7 +1561,7 @@ export async function saveDocx(
     }
     const linked = resolvePictureLinkTokens(xml, () => '') !== xml
     if (!linked && !xml.includes(NEW_PICTURE_TOKEN_PREFIX)) return xml
-    const relsPath = partPath.replace(/^word\/([^/]+)$/, 'word/_rels/$1.rels')
+    const relsPath = partPath.replace(/([^/]+)$/, '_rels/$1.rels')
     let relsXml =
       hfRelsOut.get(relsPath) ??
       (await zip.file(relsPath)?.async('string')) ??

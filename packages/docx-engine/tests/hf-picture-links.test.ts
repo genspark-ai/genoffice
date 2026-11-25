@@ -3,6 +3,7 @@ import JSZip from 'jszip'
 import { describe, expect, it } from 'vitest'
 import { parseDocx, saveDocx, type HeaderFooter } from '../src'
 import { buildDocx, TINY_PNG_BASE64 } from './helpers/build-docx'
+import { packageXmlProblems } from './helpers/strict-xml'
 
 const IMAGE_REL = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/image'
 const OTHER_PNG =
@@ -120,5 +121,83 @@ describe('linked pictures of a header', () => {
     expect(after.blips[0].embed).toContain('Target="media/image1.png"')
     expect(after.blips[0].link).toContain('Target="file:///D:/new/logo.png"')
     expect(after.blips[1].link).toContain('Target="file:///C:/art/mark.png"')
+  })
+
+  describe.each(['header', 'footer'] as const)('%s part location', (kind) => {
+    it.each(['', 'bands/', 'bands/deeper/'])(
+      'retargets an external picture link in word/%s without changing its embedded picture',
+      async (folder) => {
+        const zip = await JSZip.loadAsync(
+          await buildDocx({
+            bodyXml: '<w:p><w:r><w:t>body</w:t></w:r></w:p>',
+            withImage: true,
+            [kind + 'Xml']: HEADER,
+            [kind + 'RelsXml']: RELS,
+          }),
+        )
+        const file = `${kind}1.xml`
+        const partPath = `word/${folder}${file}`
+        const relsPath = `word/${folder}_rels/${file}.rels`
+        const originalXml = await zip.file(`word/${file}`)!.async('string')
+        zip.remove(`word/${file}`)
+        zip.remove(`word/_rels/${file}.rels`)
+        zip.file(partPath, originalXml)
+        zip.file(
+          relsPath,
+          `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${RELS.replace('media/image1.png', '../'.repeat(folder.split('/').length - 1) + 'media/image1.png')}</Relationships>`,
+        )
+        for (const path of ['[Content_Types].xml', 'word/_rels/document.xml.rels']) {
+          const xml = await zip.file(path)!.async('string')
+          zip.file(path, xml.replaceAll(file, folder + file))
+        }
+        const bytes = await zip.generateAsync({ type: 'uint8array' })
+        const parsed = await parseDocx(bytes)
+        expect(Object.values(parsed.hfParts ?? {})[0].linkedPictures).toHaveLength(2)
+        expect(Object.values(parsed.hfParts ?? {})[0].images?.[0].dataUrl).toBe(
+          'data:image/png;base64,' + TINY_PNG_BASE64,
+        )
+        const target = 'file:///D:/new/logo & co.png'
+        const saved = await saveDocx(parsed, [{ kind: 'original', docxIndex: 0 }], {
+          [kind]: {
+            text: kind === 'header' ? (parsed.headerText ?? '') : (parsed.footerText ?? ''),
+            pictureOnly: true,
+            pictureLinks: { 0: { target } },
+          },
+        })
+        expect(await packageXmlProblems(saved)).toEqual([])
+        const out = await JSZip.loadAsync(saved)
+        const rels = await out.file(relsPath)!.async('string')
+        const xml = await out.file(partPath)!.async('string')
+        const firstBlip = xml.match(/<a:blip\b[^>]*>/)![0]
+        const linkId = /r:link="([^"]+)"/.exec(firstBlip)![1]
+        expect(firstBlip).toContain('r:embed="rId1"')
+        expect(linkId).not.toBe('rId1')
+        const link = rels.match(new RegExp(`<Relationship\\b[^>]*Id="${linkId}"[^>]*>`))![0]
+        expect(link).toContain('Target="file:///D:/new/logo &amp; co.png"')
+        expect(link).toContain('TargetMode="External"')
+        expect(rels).toContain('Target="file:///C:/art/mark.png"')
+        const neutral = (value: string) => value.replace(/<a:blip\b[^>]*>/g, '<a:blip/>')
+        expect(neutral(xml)).toBe(neutral(originalXml))
+        const paths = (archive: JSZip) =>
+          Object.keys(archive.files)
+            .filter((path) => !archive.files[path].dir)
+            .sort()
+        expect(paths(out)).toEqual(paths(zip))
+        for (const [path, entry] of Object.entries(zip.files)) {
+          if (entry.dir || path === partPath || path === relsPath) continue
+          expect(await out.file(path)!.async('uint8array'), path).toEqual(
+            await entry.async('uint8array'),
+          )
+        }
+        const reopened = await parseDocx(saved)
+        expect(Object.values(reopened.hfParts ?? {})[0].linkedPictures).toEqual([
+          { drawing: 0, target, docPr: '11' },
+          { drawing: 1, target: 'file:///C:/art/mark.png', docPr: '12' },
+        ])
+        expect(Object.values(reopened.hfParts ?? {})[0].images?.[0].dataUrl).toBe(
+          'data:image/png;base64,' + TINY_PNG_BASE64,
+        )
+      },
+    )
   })
 })
