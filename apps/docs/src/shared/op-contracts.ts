@@ -241,7 +241,7 @@ export const OP_CONTRACTS = {
   },
 } as const
 
-const publicOps = Object.values(OP_CONTRACTS).filter((op) => !('hidden' in op))
+export const PUBLIC_DOCS_OPS = Object.values(OP_CONTRACTS).filter((op) => !('hidden' in op))
 
 const string = { type: 'string' }
 const boolean = { type: 'boolean' }
@@ -393,7 +393,7 @@ const fieldOverrides: Record<string, Record<string, Record<string, unknown>>> = 
 }
 
 export const APPLY_OPS_ITEMS = {
-  oneOf: publicOps.map((op) => ({
+  oneOf: PUBLIC_DOCS_OPS.map((op) => ({
     ...object(
       {
         op: { type: 'string', const: op.name },
@@ -415,5 +415,5 @@ export const APPLY_OPS_ITEMS = {
 export const APPLY_OPS_USAGE = [
   'Targets combine selectors with AND: nodeType (docHeading, docParagraph, docListItem, image, table), headingLevel, containsText, matchCase, blockIndexes (zero-based), scope ("selection" or "document"), or range ({from,to}). Use at least one selector. For a revision-bound target, pass {target: {engine: item.target}} using an item from query_document.',
   'Operation signatures (? marks optional fields):',
-  ...publicOps.map((op) => op.signature),
+  ...PUBLIC_DOCS_OPS.map((op) => op.signature),
 ].join('\n')

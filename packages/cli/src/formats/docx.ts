@@ -45,6 +45,8 @@ import {
 import type { FloatSpec } from '../../../../apps/docs/src/renderer/ai/floating-ops'
 import type { AiNotesAccess, NoteKind } from '../../../../apps/docs/src/renderer/ai/note-ops'
 import type { AiCommentsAccess } from '../../../../apps/docs/src/renderer/ai/tools'
+import { HTML_RULES } from '../../../../apps/docs/src/shared/html-rules'
+import { PUBLIC_DOCS_OPS } from '../../../../apps/docs/src/shared/op-contracts'
 import { ensureDom } from '../dom'
 import type { PathContext } from '../fs'
 import type { BatchMode } from '../batch'
@@ -1841,7 +1843,7 @@ function splitSignature(signature: string): { signature: string; note?: string }
 
 export async function docsCatalog(): Promise<{ catalog: OpCatalog; htmlRules: string }> {
   const mods = await docsModules()
-  const block: OpEntry[] = mods.ops.opCatalog().map((d) => ({
+  const block: OpEntry[] = PUBLIC_DOCS_OPS.map((d) => ({
     op: d.name,
     group: 'block',
     ...splitSignature(d.signature),
@@ -1916,6 +1918,6 @@ export async function docsCatalog(): Promise<{ catalog: OpCatalog; htmlRules: st
       groups,
       ops: [...block, ...content, ...controls, ...packages],
     }),
-    htmlRules: mods.protocol.HTML_RULES,
+    htmlRules: HTML_RULES,
   }
 }
