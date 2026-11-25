@@ -67,10 +67,22 @@ export function findChildren(node: XNode, name: string): XNode[] {
 }
 
 /**
- * Direct children with `name`, looking through w:sdt → w:sdtContent wrappers
- * (nested sdt included). Structured document tags may wrap table rows, cells
- * or paragraphs at any level; for display purposes the wrapper is transparent
- * (research-report templates wrap every field in an sdt).
+ * Transparent wrappers that may sit around table rows, cells or paragraphs in
+ * the WordprocessingML tree. Word paints their content in place, so the editor
+ * and the geometry readers must see through them:
+ *
+ * - w:sdt → w:sdtContent (structured document tags; research-report templates
+ *   wrap every field in one)
+ * - w:customXml (custom XML markup may wrap a row, a cell or a cell paragraph)
+ *
+ * w:smartTag is handled by the run extractor, not here: it only ever wraps
+ * runs/paragraphs inside a paragraph, never table structure.
+ */
+const TRANSPARENT_WRAPPERS = new Set(['w:sdt', 'w:customXml'])
+
+/**
+ * Direct children with `name`, looking through transparent w:sdt / w:customXml
+ * wrappers (nested ones included).
  */
 export function childrenThroughSdt(node: XNode, name: string | readonly string[]): XNode[] {
   const names = Array.isArray(name) ? (name as readonly string[]) : [name as string]
@@ -79,8 +91,8 @@ export function childrenThroughSdt(node: XNode, name: string | readonly string[]
     for (const child of childrenOf(n)) {
       const cn = nameOf(child)
       if (cn !== undefined && names.includes(cn)) out.push(child)
-      else if (cn === 'w:sdt') {
-        const content = findChild(child, 'w:sdtContent')
+      else if (cn !== undefined && TRANSPARENT_WRAPPERS.has(cn)) {
+        const content = cn === 'w:sdt' ? findChild(child, 'w:sdtContent') : child
         if (content) visit(content)
       }
     }

@@ -1182,6 +1182,21 @@ async function buildBlock(
       table: extractTable(xml, ctx, el.start),
     }
   }
+  // A table wrapped in custom XML markup is still one table block. Its
+  // originalXml stays the full wrapper so an untouched block saves
+  // byte-for-byte; only the inner table feeds the model and the geometry scan.
+  if (el.name === 'w:customXml') {
+    const inner = childrenThroughSdt({ [el.name]: xmlParser.parse(xml) }, 'w:tbl')[0]
+    if (inner) {
+      const innerXml = serializeXNode(inner)
+      return {
+        ...base,
+        type: 'table',
+        ...tableSummary(innerXml),
+        table: extractTable(innerXml, ctx, el.start),
+      }
+    }
+  }
 
   // --- SDT (structured document tag): extract sdtContent paragraph as editable ---
   if (el.name === 'w:sdt') {
@@ -9470,9 +9485,9 @@ async function tableBlipMedia(
   const out = new Map<string, string>()
   const rIds = new Set<string>()
   for (const el of elements) {
-    if (el.name !== 'w:tbl' && el.name !== 'w:sdt') continue
+    if (el.name !== 'w:tbl' && el.name !== 'w:sdt' && el.name !== 'w:customXml') continue
     let slice = documentXml.slice(el.start, el.end)
-    if (el.name === 'w:sdt') {
+    if (el.name !== 'w:tbl') {
       const from = slice.indexOf('<w:tbl')
       if (from === -1) continue
       slice = slice.slice(from, slice.lastIndexOf('</w:tbl>') + '</w:tbl>'.length)
@@ -9532,9 +9547,9 @@ async function tableOleMath(
   const out = new Map<string, string>()
   const rIds = new Set<string>()
   for (const el of elements) {
-    if (el.name !== 'w:tbl' && el.name !== 'w:sdt') continue
+    if (el.name !== 'w:tbl' && el.name !== 'w:sdt' && el.name !== 'w:customXml') continue
     let slice = documentXml.slice(el.start, el.end)
-    if (el.name === 'w:sdt') {
+    if (el.name !== 'w:tbl') {
       const from = slice.indexOf('<w:tbl')
       if (from === -1) continue
       slice = slice.slice(from, slice.lastIndexOf('</w:tbl>') + '</w:tbl>'.length)
