@@ -1,3 +1,4 @@
+import { OP_CONTRACTS } from '../../shared/op-contracts'
 import { Fragment, type Node as PmNode } from '@tiptap/pm/model'
 import { EditorState } from '@tiptap/pm/state'
 import type { Command, Transaction } from '@tiptap/pm/state'
@@ -870,19 +871,9 @@ export function tableOpDefs(h: TableOpHelpers): OpDef[] {
     return tableResult(op.op, 1)
   }
 
-  const rowSig = (name: string, extra: string) =>
-    `{ op: "${name}", target, row, ${extra} }  // target must match one native table (nodeType "table" and/or blockIndexes); row is 0-based`
-  const colSig = (name: string, extra: string) =>
-    `{ op: "${name}", target, col, ${extra} }  // target must match one native table; col is a 0-based grid column`
-
   return [
     {
-      name: 'insertTableRow',
-      signature:
-        rowSig('insertTableRow', 'position?: "before"|"after", count?') +
-        "; new rows copy the neighbouring row's cell shading/borders (default: after)",
-      keys: ['row', 'position', 'count'],
-      target: 'required',
+      ...OP_CONTRACTS.insertTableRow,
       validate(op, where) {
         return (
           h.validateShape(op, this, where) ??
@@ -894,10 +885,7 @@ export function tableOpDefs(h: TableOpHelpers): OpDef[] {
       apply: runInsertRow,
     },
     {
-      name: 'deleteTableRow',
-      signature: rowSig('deleteTableRow', 'count?') + '; cells merged across the row shrink',
-      keys: ['row', 'count'],
-      target: 'required',
+      ...OP_CONTRACTS.deleteTableRow,
       validate(op, where) {
         return (
           h.validateShape(op, this, where) ?? checkIndex(op, where, 'row') ?? checkCount(op, where)
@@ -906,12 +894,7 @@ export function tableOpDefs(h: TableOpHelpers): OpDef[] {
       apply: runDeleteRow,
     },
     {
-      name: 'insertTableColumn',
-      signature:
-        colSig('insertTableColumn', 'position?: "before"|"after", count?') +
-        "; the new column takes the neighbouring column's width and cell formatting (default: after)",
-      keys: ['col', 'position', 'count'],
-      target: 'required',
+      ...OP_CONTRACTS.insertTableColumn,
       validate(op, where) {
         return (
           h.validateShape(op, this, where) ??
@@ -923,10 +906,7 @@ export function tableOpDefs(h: TableOpHelpers): OpDef[] {
       apply: runInsertColumn,
     },
     {
-      name: 'deleteTableColumn',
-      signature: colSig('deleteTableColumn', 'count?') + '; cells merged across the column shrink',
-      keys: ['col', 'count'],
-      target: 'required',
+      ...OP_CONTRACTS.deleteTableColumn,
       validate(op, where) {
         return (
           h.validateShape(op, this, where) ?? checkIndex(op, where, 'col') ?? checkCount(op, where)
@@ -935,33 +915,21 @@ export function tableOpDefs(h: TableOpHelpers): OpDef[] {
       apply: runDeleteColumn,
     },
     {
-      name: 'mergeTableCells',
-      signature:
-        '{ op: "mergeTableCells", target, range: { row, col, rowEnd?, colEnd? } }  // merge the rectangle (0-based grid coordinates, ends inclusive) into one cell; refused when an existing merged cell crosses the rectangle edge; the texts are kept as separate paragraphs',
-      keys: ['range'],
-      target: 'required',
+      ...OP_CONTRACTS.mergeTableCells,
       validate(op, where) {
         return h.validateShape(op, this, where) ?? checkRange(op.range, where, 'range')
       },
       apply: runMergeCells,
     },
     {
-      name: 'splitTableCell',
-      signature:
-        '{ op: "splitTableCell", target, cell: { row, col } }  // undo a merge: the cell becomes one cell per grid slot it covered; the text stays in the top-left one',
-      keys: ['cell'],
-      target: 'required',
+      ...OP_CONTRACTS.splitTableCell,
       validate(op, where) {
         return h.validateShape(op, this, where) ?? checkRange(op.cell, where, 'cell')
       },
       apply: runSplitCell,
     },
     {
-      name: 'setTableCellText',
-      signature:
-        '{ op: "setTableCellText", target, range: { row, col, rowEnd?, colEnd? }, text, match?: "one"|"all" }  // replace ordinary cell text in one native table; zero-based grid coordinates, ends inclusive; covered merged coordinates name their physical owner once; default one physical cell, explicit all applies to the bounded range; empty text clears; objects/fields/revisions/nested tables are refused',
-      keys: ['range', 'text', 'match'],
-      target: 'required',
+      ...OP_CONTRACTS.setTableCellText,
       validate(op, where) {
         const error = h.validateShape(op, this, where) ?? checkRange(op.range, where, 'range')
         if (error) return error
@@ -973,11 +941,7 @@ export function tableOpDefs(h: TableOpHelpers): OpDef[] {
       apply: runSetCellText,
     },
     {
-      name: 'setTableCellFormat',
-      signature:
-        '{ op: "setTableCellFormat", target, range?: { row, col, rowEnd?, colEnd? }, fill?: "#RRGGBB"|null, vAlign?: "top"|"center"|"bottom"|null, width?: twips|"2.5cm"|"1in"|"72pt"|"96px", borders?: { all?, top?, left?, bottom?, right?: { style?: "single"|"dashed"|"double"|"none", width?: pt, color?: "#RRGGBB" }|null }|null }  // cells in the range (omitted = whole table); width sets the grid columns the range covers; borders: null = no borders on the cell, a side null = that side off',
-      keys: ['range', 'fill', 'vAlign', 'width', 'borders'],
-      target: 'required',
+      ...OP_CONTRACTS.setTableCellFormat,
       validate(op, where) {
         const shape = h.validateShape(op, this, where)
         if (shape) return shape
@@ -1011,11 +975,7 @@ export function tableOpDefs(h: TableOpHelpers): OpDef[] {
       apply: runSetCellFormat,
     },
     {
-      name: 'setTableStyle',
-      signature:
-        '{ op: "setTableStyle", target, styleId?: string|null, look?: { firstRow?, lastRow?, firstColumn?, lastColumn?, bandedRows?, bandedColumns?: boolean } }  // styleId must be a table style defined in this document (docs read lists them as tableStyles); null removes the style; look toggles Word\'s Table Style Options',
-      keys: ['styleId', 'look'],
-      target: 'required',
+      ...OP_CONTRACTS.setTableStyle,
       validate(op, where) {
         const shape = h.validateShape(op, this, where)
         if (shape) return shape

@@ -513,14 +513,14 @@ describe('shared Docs runtime', () => {
     })
     const client = runtime.connect({ id: 'protected-cli' })
     expect(client.context().text).not.toContain('Secret')
-    const caps = await client.execute({
-      id: 'capabilities',
-      name: 'get_editor_capabilities',
-      input: {},
-    })
+    expect(client.availableTools()).not.toContain('run_cli')
     expect(
-      JSON.parse(caps.output).tools.find((tool: { name: string }) => tool.name === 'run_cli'),
-    ).toMatchObject({ available: false, errorCode: 'permission_denied' })
+      await client.execute({
+        id: 'context',
+        name: 'get_document_context',
+        input: {},
+      }),
+    ).not.toHaveProperty('resourceContext')
     expect(
       await client.execute({
         id: 'raw-read',
@@ -1076,35 +1076,20 @@ describe('shared Docs runtime', () => {
     runtime.dispose()
   })
 
-  it('reports callable capabilities and operation guidance without enabling Harness inference inside the editor', async () => {
+  it('keeps tool discovery separate from document context', async () => {
     const editor = await documentWith('Original')
     const runtime = createDocsRuntime({
       current: () => ({ editor, identity: editor, numIds: { bullet: null, ordered: null } }),
     })
-    const client = runtime.connect({ id: 'capabilities-reader' })
-    const result = await client.execute({
-      id: 'capabilities',
-      name: 'get_editor_capabilities',
-      input: {},
-    })
-    expect(result.isError, result.output).not.toBe(true)
-    const capabilities = JSON.parse(result.output)
-    expect(
-      capabilities.operations.some(
-        (operation: { name: string }) => operation.name === 'findReplace',
-      ),
-    ).toBe(true)
-    expect(capabilities.htmlRules).toContain('<p>')
-    expect(
-      capabilities.tools.find((tool: { name: string }) => tool.name === 'write_document'),
-    ).toBeUndefined()
-    expect(
-      capabilities.tools.find((tool: { name: string }) => tool.name === 'read_comments'),
-    ).toMatchObject({ available: false })
-    expect(
-      capabilities.tools.find((tool: { name: string }) => tool.name === 'replace_blocks'),
-    ).toMatchObject({ available: true })
-    expect(capabilities).not.toHaveProperty('harnessWorkflows')
+    const client = runtime.connect({ id: 'context-reader' })
+    expect(client.availableTools()).toContain('replace_blocks')
+    expect(client.availableTools()).not.toContain('read_comments')
+    expect(client.availableTools()).not.toContain('write_document')
+    const result = await client.execute({ id: 'context', name: 'get_document_context', input: {} })
+    expect(result).toMatchObject({ editable: true, output: expect.stringContaining('Original') })
+    expect(result).not.toHaveProperty('tools')
+    expect(result).not.toHaveProperty('operations')
+    expect(result).not.toHaveProperty('harnessWorkflows')
     runtime.dispose()
   })
 

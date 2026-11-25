@@ -60,14 +60,7 @@ function runtimeFixture() {
 it('advertises optional runtime diagnostics accurately and does not widen a stale writing baseline', async () => {
   const { editor, annotations, caller, removeProvider } = runtimeFixture()
   annotations.setRules('host', [{ id: 'bad', pattern: 'bad', message: 'Check this word' }])
-  const capabilities = await caller.execute({
-    id: 'capabilities',
-    name: 'get_editor_capabilities',
-    input: {},
-  })
-  expect(JSON.parse(capabilities.output).tools).toContainEqual(
-    expect.objectContaining({ name: 'read_document_diagnostics', available: true }),
-  )
+  expect(caller.availableTools()).toContain('read_document_diagnostics')
   editor.commands.insertContentAt(1, 'Changed ')
   const before = editor.getJSON()
   const diagnosticRead = await caller.execute({
@@ -108,18 +101,7 @@ it('advertises optional runtime diagnostics accurately and does not widen a stal
     input: {},
   })
   expect(unavailable).toMatchObject({ isError: true, committed: false, errorCode: 'unavailable' })
-  const absentCapabilities = await caller.execute({
-    id: 'absent-capabilities',
-    name: 'get_editor_capabilities',
-    input: {},
-  })
-  expect(JSON.parse(absentCapabilities.output).tools).toContainEqual(
-    expect.objectContaining({
-      name: 'read_document_diagnostics',
-      available: false,
-      errorCode: 'unavailable',
-    }),
-  )
+  expect(caller.availableTools()).not.toContain('read_document_diagnostics')
 })
 
 it('exposes current and pending host checks through independent standard MCP read-only connections', async () => {

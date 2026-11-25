@@ -282,7 +282,15 @@ test('the embedded public editor edits, undoes, saves and reopens Word with its 
       items: [],
       page: { complete: true },
     })
-    await tool('get_editor_capabilities', {})
+    const discovered = (await mcp.listTools()).tools
+    expect(discovered.map(({ name }) => name)).not.toContain('get_editor_capabilities')
+    expect(
+      JSON.stringify(discovered.find(({ name }) => name === 'apply_ops')?.inputSchema),
+    ).toContain('setFont')
+    expect(await mcp.callTool({ name: 'get_editor_capabilities', arguments: {} })).toMatchObject({
+      isError: true,
+      content: [{ text: expect.stringContaining('not found') }],
+    })
     await tool('replace_selection', { html: 'Agent' })
     await expect(body).toHaveText('Agent Word text')
     await tool('document_history', { action: 'undo' })

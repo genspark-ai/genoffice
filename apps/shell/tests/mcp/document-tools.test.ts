@@ -275,6 +275,7 @@ function fakeDocsControl(wcId = 42) {
       return wcId
     },
     runCommand: async (id: number, command: string, payload: unknown) => {
+      if (command === 'list_tools') return LIVE_DOCS_TOOL_NAMES
       calls.push({ wcId: id, command, payload })
       return { summary: `${command} ok` }
     },
@@ -340,7 +341,9 @@ describe('M6 visible-editing tools (docs control wired)', () => {
     return arr.map((c) => c.text ?? '').join('')
   }
 
-  it('registers the visible session tools alongside the file tools', async () => {
+  it('discovers live document tools after creating a session', async () => {
+    expect((await client2!.listTools()).tools.map((t) => t.name)).not.toContain('apply_ops')
+    await client2!.callTool({ name: 'create_session', arguments: { family: 'docx' } })
     const { tools } = await client2!.listTools()
     expect(tools.map((t) => t.name).sort()).toEqual(
       [

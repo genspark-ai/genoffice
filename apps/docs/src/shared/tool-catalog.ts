@@ -11,6 +11,8 @@ import {
 
 /** Editing remains in the runtime; inference and orchestration use the Harness's own facilities. */
 
+import { APPLY_OPS_ITEMS, APPLY_OPS_USAGE } from './op-contracts'
+import { HTML_RULES, INLINE_HTML_RULES } from './html-rules'
 import { DOCS_IMAGE_SOURCE_SCHEMA } from './media-policy'
 import { DOCS_RANGE_PRECONDITIONS_SCHEMA } from './edit-preconditions'
 
@@ -21,7 +23,6 @@ export const DOCS_READ_TOOLS = new Set([
   'search_knowledge_base',
   'read_knowledge_file',
   'read_document_media',
-  'get_editor_capabilities',
   'get_document_context',
   'read_blocks',
   'read_revisions',
@@ -32,12 +33,12 @@ export const DOCS_READ_TOOLS = new Set([
   'inspect_document_draft',
 ])
 
-export function docsToolCatalog(operationNames: readonly string[] = []): AgentToolDef[] {
+export function docsToolCatalog(): AgentToolDef[] {
   return [
     {
       name: 'get_document_context',
       description:
-        'Get the latest state of the current document: block list (index|type|content preview), full-text stats (word/character counts) and the current selection. Refreshes the full caller baseline, including document-side state. Block indexes change after modifications; call this when you need up-to-date indexes or a stale-target error requires full context.',
+        'Get the latest state of the current document: block list (index|type|content preview), full-text stats (word/character counts) and the current selection. Includes editable status and any authorized resource context. Refreshes the full caller baseline, including document-side state. Block indexes change after modifications; call this when you need up-to-date indexes or a stale-target error requires full context.',
       inputSchema: { type: 'object', properties: {}, required: [] },
     },
     {
@@ -73,7 +74,9 @@ export function docsToolCatalog(operationNames: readonly string[] = []): AgentTo
           html: {
             type: 'string',
             description:
-              'restricted HTML fragment to insert; <span data-tab></span> is a tab character (literal tabs collapse to spaces)',
+              'restricted HTML fragment to insert; <span data-tab></span> is a tab character (literal tabs collapse to spaces)' +
+              '\n' +
+              HTML_RULES,
           },
           afterBlockIndex: {
             type: 'integer',
@@ -111,7 +114,9 @@ export function docsToolCatalog(operationNames: readonly string[] = []): AgentTo
           html: {
             type: 'string',
             description:
-              'replacement restricted HTML fragment; <span data-tab></span> is a tab character',
+              'replacement restricted HTML fragment; <span data-tab></span> is a tab character' +
+              '\n' +
+              HTML_RULES,
           },
         },
         required: ['startBlockIndex', 'endBlockIndex', 'html'],
@@ -138,7 +143,9 @@ export function docsToolCatalog(operationNames: readonly string[] = []): AgentTo
           html: {
             type: 'string',
             description:
-              'replacement inline content: plain text or restricted inline HTML (strong em u s a br formula)',
+              'replacement inline content: plain text or restricted inline HTML (strong em u s a br formula)' +
+              '\n' +
+              INLINE_HTML_RULES,
           },
         },
         required: ['html'],
@@ -147,10 +154,8 @@ export function docsToolCatalog(operationNames: readonly string[] = []): AgentTo
     {
       name: 'apply_ops',
       description:
-        (operationNames.length
-          ? `Run a list of formatting/structure ops as one atomic transaction: ${operationNames.join(', ')}. `
-          : 'Run formatting/structure ops as one atomic transaction. Call get_editor_capabilities for operation names and signatures. ') +
-        'Each op is a flat { op, target?, ...fields } object; fields are patches (present = set, null = clear, absent = untouched). Any invalid op rejects the whole batch with its usage line. findReplace defaults to exactly one literal match across formatting runs within one paragraph; zero/multiple matches reject atomically. Intentional bulk replacement requires match:"all" and an explicit target scope.',
+        'Run formatting/structure ops as one atomic transaction. Each op is a flat { op, target?, ...fields } object; fields are patches (present = set, null = clear, absent = untouched). Any invalid op rejects the whole batch with its usage line. Use dryRun to validate current targets without committing.\n' +
+        APPLY_OPS_USAGE,
       inputSchema: {
         type: 'object',
         properties: {
@@ -158,7 +163,7 @@ export function docsToolCatalog(operationNames: readonly string[] = []): AgentTo
             type: 'array',
             description:
               'ops executed in order, e.g. [{"op":"setFont","target":{"nodeType":"docHeading"},"color":"#FF0000"}]',
-            items: { type: 'object' },
+            items: APPLY_OPS_ITEMS,
           },
           dryRun: {
             type: 'boolean',
@@ -570,4 +575,16 @@ export function docsToolCatalog(operationNames: readonly string[] = []): AgentTo
         'Supply root with label, optional block index and children. This tool does not modify the document.',
     },
   ]
+}
+
+/** Preserve operation-specific validation and usage errors in the executor. */
+export function docsToolExecutionSchema(tool: AgentToolDef): AgentToolDef['inputSchema'] {
+  if (tool.name !== 'apply_ops') return tool.inputSchema
+  return {
+    ...tool.inputSchema,
+    properties: {
+      ...(tool.inputSchema.properties as Record<string, unknown>),
+      ops: { type: 'array', items: { type: 'object' } },
+    },
+  }
 }

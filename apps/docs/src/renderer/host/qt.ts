@@ -328,6 +328,7 @@ export function createQtDocsHost(channel: DocsQtChannel) {
     }
   }
   let cliAvailable: boolean | undefined
+  let attachmentsAvailable = false
   const updateResources = (state: {
     attachments: AttachmentMeta[]
     knowledge: typeof knowledge
@@ -386,22 +387,27 @@ export function createQtDocsHost(channel: DocsQtChannel) {
     }
     attachments = state.attachments
     knowledge = state.knowledge
-    if (cliAvailable === state.cliAvailable && resources) return
+    const hasAttachments = attachments.length > 0
+    if (cliAvailable === state.cliAvailable && attachmentsAvailable === hasAttachments && resources)
+      return
     cliAvailable = state.cliAvailable
+    attachmentsAvailable = hasAttachments
     resources = createDocsResourceTools({
-      attachments: {
-        list: () => attachments,
-        read: (path, offset, maxChars) =>
-          sourceRead(async () => {
-            const result = await services.readAttachment(path, offset, maxChars)
-            if (!result.ok) throw new Error(result.error ?? 'Attachment read failed')
-            return {
-              text: result.text ?? '',
-              totalChars: result.totalChars ?? 0,
-              offset: result.offset ?? 0,
-            }
-          }),
-      },
+      ...(attachmentsAvailable && {
+        attachments: {
+          list: () => attachments,
+          read: (path, offset, maxChars) =>
+            sourceRead(async () => {
+              const result = await services.readAttachment(path, offset, maxChars)
+              if (!result.ok) throw new Error(result.error ?? 'Attachment read failed')
+              return {
+                text: result.text ?? '',
+                totalChars: result.totalChars ?? 0,
+                offset: result.offset ?? 0,
+              }
+            }),
+        },
+      }),
       knowledge: {
         listFiles: () => knowledge,
         search: (q, limit) => sourceRead(() => services.kbSearch({ q, limit })),

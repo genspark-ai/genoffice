@@ -9,6 +9,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js'
 import { createDocsMcpServer } from '../src/services/docs-mcp'
 import { createDocsCommandRouter } from '../src/renderer/runtime/command-router'
+import { docsToolCatalog } from '../src/shared/tool-catalog'
 
 const cleanup: Array<() => void> = []
 afterEach(() =>
@@ -251,15 +252,11 @@ it('continues a cell object inventory on the same owner when earlier cells also 
 
 it('publishes merged table and explicit row capabilities that agree with executable operations', async () => {
   const { client } = open('<p>Anchor</p>')
-  const capabilities = await client.execute({
-    id: 'table-capabilities',
-    name: 'get_editor_capabilities',
-    input: {},
-  })
-  const published = JSON.parse(capabilities.output)
-  expect(published.htmlRules).toContain('support horizontal/vertical merges')
-  expect(published.htmlRules).not.toContain('merged cells are not supported')
-  expect(published.htmlRules).not.toContain('only cell text remains editable')
+  const insert = docsToolCatalog().find((tool) => tool.name === 'insert_content')
+  const definition = JSON.stringify(insert?.inputSchema)
+  expect(definition).toContain('support horizontal/vertical merges')
+  expect(definition).not.toContain('merged cells are not supported')
+  expect(definition).not.toContain('only cell text remains editable')
   expect(
     await client.execute({
       id: 'merged-insert',
@@ -752,16 +749,7 @@ it('requires an authoritative epoch for stores whose getters omit authored data'
   })
   expect(refused).toMatchObject({ committed: false, errorCode: 'unavailable' })
   expect(watermark).toBe('Original')
-  const capabilities = await client.execute({
-    id: 'cap',
-    name: 'get_editor_capabilities',
-    input: {},
-  })
-  expect(
-    JSON.parse(capabilities.output).tools.find(
-      (tool: { name: string }) => tool.name === 'set_watermark',
-    ).available,
-  ).toBe(false)
+  expect(client.availableTools()).not.toContain('set_watermark')
   publishEpoch = true
   client.context()
   const changed = await client.execute({
@@ -1223,11 +1211,25 @@ it('advertises only granted operations through read-only MCP queries and capabil
     const result = await client.callTool({ name: 'query_document', arguments: {} })
     const operation = result.structuredContent as { output: string }
     expect(JSON.parse(operation.output).items[0].supportedOperations).toEqual([])
-    const capabilities = await client.callTool({ name: 'get_editor_capabilities', arguments: {} })
-    const capability = JSON.parse((capabilities.structuredContent as { output: string }).output)
-    expect(capability.editable).toBe(false)
-    expect(capability.operations).toEqual([])
-    expect(capability.tools.map((tool: { name: string }) => tool.name)).not.toContain('apply_ops')
+    const context = await client.callTool({ name: 'get_document_context', arguments: {} })
+    expect(context.structuredContent).toMatchObject({ editable: false })
+    const draftControls = [
+      'start_document_draft',
+      'inspect_document_draft',
+      'update_document_draft',
+      'stop_document_draft',
+      'finish_document_draft',
+    ]
+    for (const name of draftControls) {
+      expect(tools.tools.some((tool) => tool.name === name)).toBe(false)
+      expect(
+        await client.callTool({ name, arguments: { draftId: 'cached', decision: 'discard' } }),
+      ).toMatchObject({ isError: true, content: [{ text: expect.stringContaining('not found') }] })
+    }
+    expect(await client.callTool({ name: 'apply_ops', arguments: { ops: [] } })).toMatchObject({
+      isError: true,
+      content: [{ text: expect.stringContaining('not found') }],
+    })
   } finally {
     await client.close()
     await server.close()

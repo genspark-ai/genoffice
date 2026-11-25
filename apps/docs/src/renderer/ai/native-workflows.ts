@@ -223,10 +223,8 @@ export function createNativeDocsWorkflows(
         const prompt = String(call.input.prompt ?? '').trim()
         if (!prompt)
           return refused(t('aiSumGenerateImage'), 'prompt must not be empty', 'invalid_input')
-        const caps = await execute('get_editor_capabilities', {}, modelSignal)
-        if (caps.isError) return caps
-        if (!JSON.parse(caps.output).editable)
-          return refused(t('aiSumGenerateImage'), 'The document is read-only', 'permission_denied')
+        const denied = document.checkEditable(modelSignal)
+        if (denied) return { ...denied, summary: t('aiSumGenerateImage') }
         const aspectRatio = String(call.input.aspectRatio ?? '').trim()
         const generated = await getNativeAgentServices().aiGenerateImage({
           prompt,

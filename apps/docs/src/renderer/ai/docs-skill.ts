@@ -128,46 +128,8 @@ export function createDocsSkill(
       if (
         call.name === 'run_cli' &&
         !DOCS_FILE_COMMANDS.has(String((call.input.args as unknown[] | undefined)?.[0] ?? ''))
-      ) {
-        const resources = getResources?.()
-        const tool = resources?.tools.find((tool) => tool.name === call.name)
-        if (resources && tool) {
-          const capabilities = await client.execute(
-            { id: crypto.randomUUID(), name: 'get_editor_capabilities', input: {} },
-            signal,
-          )
-          if (capabilities.isError) return capabilities
-          const availability = (
-            JSON.parse(capabilities.output).tools as Array<{
-              name: string
-              available: boolean
-              reason?: string
-              errorCode?: string
-            }>
-          ).find((tool) => tool.name === call.name)
-          if (!availability?.available)
-            return {
-              output: availability?.reason ?? 'The resource helper is unavailable',
-              summary: call.name,
-              isError: true,
-              errorCode: availability?.errorCode ?? 'unavailable',
-              committed: false,
-            }
-          const input = z.fromJSONSchema(tool.inputSchema).safeParse(call.input)
-          if (!input.success)
-            return {
-              output: input.error.message,
-              summary: call.name,
-              isError: true,
-              errorCode: 'invalid_input',
-              committed: false,
-            }
-          return resources.executeTool(
-            call,
-            AbortSignal.any([client.signal, ...(signal ? [signal] : [])]),
-          )
-        }
-      }
+      )
+        return client.executeNativeCli(call, signal)
       return client.execute(call, signal)
     },
   }

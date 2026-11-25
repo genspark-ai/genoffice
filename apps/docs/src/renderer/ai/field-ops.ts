@@ -1,3 +1,4 @@
+import { OP_CONTRACTS } from '../../shared/op-contracts'
 import type { Mark, Node as PmNode } from '@tiptap/pm/model'
 import type { Transaction } from '@tiptap/pm/state'
 import type { Op, OpDef, OpResult, RunEnv, Target, TopBlock } from './ops'
@@ -625,11 +626,7 @@ function runUpdateFields(op: Op, env: RunEnv, h: FieldOpHelpers, now = new Date(
 
 export function fieldOpDefs(h: FieldOpHelpers): OpDef[] {
   const insertField: OpDef = {
-    name: 'insertField',
-    signature:
-      '{ op: "insertField", target, type: "SEQ"|"REF"|"PAGEREF"|"DATE"|"TIME"|"MERGEFIELD"|"IF"|"PAGE"|"NUMPAGES"|"AUTHOR"|..., args?: string, result?: string, position?: "start"|"end", afterText?: string }  // insert a Word field into exactly one paragraph, at its end unless position or afterText says otherwise; args is the instruction after the keyword ({ SEQ Figure \\* ARABIC } = type "SEQ", args "Figure \\* ARABIC"). Computed here: SEQ (visible fields with that identifier so far + 1), REF/PAGEREF (the bookmarked paragraph; insertBookmark creates one), DATE/TIME (now, \\@ picture), MERGEFIELD («Name»), IF with literal operands; PAGE/NUMPAGES show "1"; anything else needs result, the text shown until Word updates it. Fields only Word can compute are marked dirty and refresh when the file opens in Word',
-    keys: ['type', 'args', 'result', 'position', 'afterText'],
-    target: 'required',
+    ...OP_CONTRACTS.insertField,
     validate(op, where) {
       const shape = h.validateShape(op, insertField, where)
       if (shape) return shape
@@ -653,11 +650,7 @@ export function fieldOpDefs(h: FieldOpHelpers): OpDef[] {
     apply: (op, env) => runInsertField(op, env, h),
   }
   const insertBookmark: OpDef = {
-    name: 'insertBookmark',
-    signature:
-      '{ op: "insertBookmark", target, name }  // bookmark exactly one paragraph (name: letters, digits, underscore, up to 40 characters, unique) so REF / PAGEREF fields can point at it',
-    keys: ['name'],
-    target: 'required',
+    ...OP_CONTRACTS.insertBookmark,
     validate(op, where) {
       const shape = h.validateShape(op, insertBookmark, where)
       if (shape) return shape
@@ -668,11 +661,7 @@ export function fieldOpDefs(h: FieldOpHelpers): OpDef[] {
     apply: (op, env) => runInsertBookmark(op, env, h),
   }
   const updateFields: OpDef = {
-    name: 'updateFields',
-    signature:
-      '{ op: "updateFields", scope?: "all"|"SEQ"|"REF"|"DATE" }  // recompute the inline fields the editor can: SEQ numbering in document order, REF results from their bookmarks, DATE/TIME to now; with scope "all" every other field (PAGE, NUMPAGES, AUTHOR...) is marked dirty so Word recomputes it on open. Table-of-contents blocks are untouched (insertToc rebuilds one)',
-    keys: ['scope'],
-    target: 'none',
+    ...OP_CONTRACTS.updateFields,
     validate(op, where) {
       const shape = h.validateShape(op, updateFields, where)
       if (shape) return shape

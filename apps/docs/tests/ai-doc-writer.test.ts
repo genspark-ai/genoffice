@@ -19,7 +19,7 @@ import { DraftLanding } from '../src/renderer/runtime/draft-landing'
 import { DocumentDraft } from '../src/renderer/runtime/document-draft'
 import { createDocsRuntime } from '../src/renderer/runtime/docs-runtime'
 import { createNativeDocsWorkflows } from '../src/renderer/ai/native-workflows'
-import { HTML_RULES } from '../src/renderer/ai/protocol'
+import { HTML_RULES } from '../src/shared/html-rules'
 import type { AgentToolCall } from '@genoffice/agent-core'
 
 const NUM_IDS = { bullet: BLANK_BULLET_NUM_ID, ordered: BLANK_ORDERED_NUM_ID }

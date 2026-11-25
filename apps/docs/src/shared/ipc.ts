@@ -362,6 +362,7 @@ export type McpEditorCommand =
   | 'read_document'
   | 'save_document'
   | 'execute_tool'
+  | 'list_tools'
   | 'cancel_operation'
   | 'close_caller'
 

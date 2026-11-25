@@ -9,7 +9,11 @@ import {
   readDocxPropertiesViaCli,
 } from '../headless-cli'
 import type { McpInvocation, McpToolDefinition } from '../mcp-server'
-import { docsToolCatalog, DOCS_READ_TOOLS } from '../../../../../docs/src/shared/tool-catalog'
+import {
+  docsToolCatalog,
+  DOCS_READ_TOOLS,
+  docsToolExecutionSchema,
+} from '../../../../../docs/src/shared/tool-catalog'
 import { DOCS_RUNTIME_TOOLS } from '../../../../../docs/src/shared/runtime-tools'
 import { formatDocsMcpResult } from '../../../../../docs/src/shared/mcp-result'
 import { DOCS_RESOURCE_TOOLS } from '../../../../../docs/src/shared/resource-tools'
@@ -51,6 +55,7 @@ export interface DocToolDeps {
    * headless/unit runs, where a `document` argument is refused.
    */
   resolveTarget?: TargetResolver
+  listDocumentTargets?: () => Promise<number[]>
 }
 
 /** editor commands the docs renderer bridge understands (see docs shared/ipc.ts) */
@@ -62,6 +67,7 @@ export type McpEditorCommandName =
   | 'read_document'
   | 'save_document'
   | 'execute_tool'
+  | 'list_tools'
 
 /**
  * Visible-editor control: opens a docs tab and pushes editor commands into it,
@@ -382,22 +388,40 @@ function createDocxContentTools(deps: DocToolDeps, host: SessionHost): McpToolDe
     'apply_ops',
     'insert_picture',
   ])
+  const discover = async (invocation: McpInvocation) => {
+    const targets = new Set(await deps.listDocumentTargets?.())
+    const active = host.current()
+    if (active?.family === 'docx') targets.add(active.wcId)
+    const lists = await Promise.allSettled(
+      [...targets].map((wcId) => docs.runCommand(wcId, 'list_tools', {}, invocation)),
+    )
+    invocation.signal.throwIfAborted()
+    return new Set<string>(
+      lists.flatMap((list) =>
+        list.status === 'fulfilled' && Array.isArray(list.value) ? list.value : [],
+      ),
+    )
+  }
+  const withDocument = (schema: Record<string, unknown>) => ({
+    ...schema,
+    type: 'object' as const,
+    properties: {
+      ...(schema.properties as Record<string, unknown>),
+      document: {
+        type: 'string' as const,
+        description: 'An open document id or path; omit for the active session document.',
+      },
+    },
+  })
   return [
     ...[...docsToolCatalog(), ...DOCS_RUNTIME_TOOLS, ...DOCS_RESOURCE_TOOLS].map(
       (tool): McpToolDefinition => ({
         name: tool.name,
         description: tool.description,
-        formatResult: (result) => formatDocsMcpResult(result, tool.name),
-        inputSchema: z.fromJSONSchema({
-          ...tool.inputSchema,
-          properties: {
-            ...(tool.inputSchema.properties as Record<string, unknown>),
-            document: {
-              type: 'string',
-              description: 'An open document id or path; omit for the active session document.',
-            },
-          },
-        }),
+        discover,
+        formatResult: formatDocsMcpResult,
+        jsonSchema: withDocument(tool.inputSchema),
+        inputSchema: z.fromJSONSchema(withDocument(docsToolExecutionSchema(tool))),
         handler: async (args, invocation) => {
           const { document, ...input } = args
           const wc = await target(document, { focus: !DOCS_READ_TOOLS.has(tool.name) })
@@ -409,6 +433,7 @@ function createDocxContentTools(deps: DocToolDeps, host: SessionHost): McpToolDe
     ),
     {
       name: 'read_document',
+      discover,
       description:
         "Read the current live document context and refresh this caller's editing baseline.",
       inputSchema: {

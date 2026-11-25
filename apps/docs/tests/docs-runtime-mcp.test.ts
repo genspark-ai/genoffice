@@ -1,7 +1,10 @@
-import { afterEach, expect, it } from 'vitest'
+import { afterEach, expect, it, vi } from 'vitest'
 import { Editor } from '@tiptap/core'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
-import { CallToolResultSchema } from '@modelcontextprotocol/sdk/types.js'
+import {
+  CallToolResultSchema,
+  ToolListChangedNotificationSchema,
+} from '@modelcontextprotocol/sdk/types.js'
 import { createServer } from 'node:net'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
 import { McpServerService, McpToolExecutionError } from '../../shell/src/main/mcp/mcp-server'
@@ -18,7 +21,6 @@ import type { McpEditorCommand } from '../src/shared/ipc'
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js'
 import { createDocsMcpServer } from '../src/services/docs-mcp'
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
-import { LIVE_DOCS_TOOL_NAMES } from '../../shell/tests/mcp/docs-tool-names'
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 import { resolve } from 'node:path'
 import { createDocsHostBridge, type DocsHostBridge } from '../src/services/host-bridge'
@@ -39,6 +41,44 @@ afterEach(async () => {
   runtime?.dispose()
   editor?.destroy()
 })
+
+async function expectStandardToolDiscovery(mcp: Client) {
+  const { tools } = await mcp.listTools()
+  const names = tools.map((tool) => tool.name)
+  expect(names).toEqual(expect.arrayContaining(['query_document', 'read_document', 'apply_ops']))
+  expect(names).not.toContain('get_editor_capabilities')
+  expect(names).not.toContain('read_attachment')
+  const apply = tools.find((tool) => tool.name === 'apply_ops')
+  expect(apply?.description).toContain('setFont')
+  expect(apply?.inputSchema.properties).toMatchObject({
+    ops: {
+      type: 'array',
+      items: {
+        oneOf: expect.arrayContaining([
+          expect.objectContaining({
+            properties: expect.objectContaining({
+              op: { type: 'string', const: 'setFont' },
+              target: {
+                type: 'object',
+                properties: expect.objectContaining({ nodeType: expect.anything() }),
+                required: [],
+                minProperties: 1,
+                description: expect.any(String),
+              },
+              color: { anyOf: [{ type: 'string' }, { type: 'null' }] },
+            }),
+            required: ['op', 'target'],
+          }),
+        ]),
+      },
+    },
+    dryRun: { type: 'boolean', description: expect.any(String) },
+  })
+  expect(await mcp.callTool({ name: 'get_editor_capabilities', arguments: {} })).toMatchObject({
+    isError: true,
+    content: [{ text: expect.stringContaining('not found') }],
+  })
+}
 
 it('keeps optional helper contracts callable as host resources appear and disappear without reconnecting', async () => {
   const { editorExtensions } = await import('../src/renderer/editor/extensions')
@@ -65,7 +105,11 @@ it('keeps optional helper contracts callable as host resources appear and disapp
   await boundServer.connect(serverTransport)
   client = new Client({ name: 'dynamic-resources', version: '1' }, { capabilities: {} })
   await client.connect(clientTransport)
-  const before = (await client.listTools()).tools
+  const notifications = vi.fn()
+  client.setNotificationHandler(ToolListChangedNotificationSchema, notifications)
+  const names = async () => (await client!.listTools()).tools.map((tool) => tool.name)
+  expect(await names()).not.toContain('search_knowledge_base')
+  expect(await names()).not.toContain('read_attachment')
   sources = createKnowledgeBaseSkill({
     listFiles: () => [
       {
@@ -93,8 +137,15 @@ it('keeps optional helper contracts callable as host resources appear and disapp
   })
   expect(searched.isError, JSON.stringify(searched)).not.toBe(true)
   expect(JSON.stringify(searched.content)).toContain('Late source evidence')
-  expect((await client.listTools()).tools).toEqual(before)
+  await vi.waitFor(() => expect(notifications).toHaveBeenCalledTimes(1), { timeout: 3500 })
+  expect(await names()).toContain('search_knowledge_base')
+  expect(await names()).toContain('read_knowledge_file')
   sources = undefined
+  await vi.waitFor(() => expect(notifications).toHaveBeenCalledTimes(2), { timeout: 3500 })
+  expect(await names()).not.toContain('read_knowledge_file')
+  expect(
+    (await client.callTool({ name: 'get_document_context', arguments: {} })).structuredContent,
+  ).not.toHaveProperty('resourceContext')
   const unavailable = await client.callTool({
     name: 'read_knowledge_file',
     arguments: { index: 0 },
@@ -191,17 +242,16 @@ it('discovers and calls the same authorized attachment and knowledge helpers thr
       revision: 0,
     })
   }
-  const caps = await client.callTool({ name: 'get_editor_capabilities', arguments: {} })
-  const capabilities = JSON.parse(String((caps.structuredContent as { output: string }).output))
-  expect(capabilities.resourceContext).toContain('attached.txt')
-  expect(
-    capabilities.harnessWorkflows.find(
-      (workflow: { nativeTool: string }) => workflow.nativeTool === 'write_document',
-    ).editorTools,
-  ).toContain('start_document_draft')
-  expect(capabilities.tools.some((tool: { name: string }) => tool.name === 'write_document')).toBe(
-    false,
-  )
+  const context = await client.callTool({ name: 'get_document_context', arguments: {} })
+  expect(context.structuredContent).toMatchObject({
+    editable: true,
+    output: expect.stringContaining('Live text'),
+    resourceContext: expect.stringContaining('attached.txt'),
+  })
+  expect(context.structuredContent).not.toHaveProperty('tools')
+  expect(context.structuredContent).not.toHaveProperty('harnessWorkflows')
+  expect(names).toContain('start_document_draft')
+  expect(names).not.toContain('write_document')
   expect(active.getText()).toBe('Live text')
   router.dispose()
 })
@@ -245,9 +295,7 @@ it('edits the captured live document from the packaged stdio MCP process', async
       },
     }),
   )
-  expect((await client.listTools()).tools.map((tool) => tool.name).sort()).toEqual(
-    [...LIVE_DOCS_TOOL_NAMES, 'save_document'].sort(),
-  )
+  await expectStandardToolDiscovery(client)
   const changed = await client.callTool({ name: 'replace_selection', arguments: { html: 'New' } })
   expect(changed.isError).not.toBe(true)
   expect(active.getText()).toBe('New Two')
@@ -282,14 +330,125 @@ it('exposes a host-bound document over a standard SDK transport with no Electron
   await boundServer.connect(serverTransport)
   client = new Client({ name: 'ordinary-harness', version: '1' }, { capabilities: {} })
   await client.connect(clientTransport)
-  expect((await client.listTools()).tools.map((tool) => tool.name).sort()).toEqual(
-    [...LIVE_DOCS_TOOL_NAMES, 'save_document'].sort(),
-  )
+  await expectStandardToolDiscovery(client)
   expect((await client.callTool({ name: 'read_document' })).isError).not.toBe(true)
   const result = await client.callTool({ name: 'replace_selection', arguments: { html: 'New' } })
   expect(result.structuredContent).toMatchObject({ committed: true })
   expect(active.getText()).toBe('New Two')
   router.dispose()
+})
+
+it('lets only the original write caller stop and discard its own draft when the editor becomes read-only', async () => {
+  const { editorExtensions } = await import('../src/renderer/editor/extensions')
+  editor = new Editor({
+    element: document.createElement('div'),
+    extensions: editorExtensions,
+    content: '<h1>Heading</h1><p>Original body</p>',
+  })
+  const active = editor
+  runtime = createDocsRuntime({
+    current: () => ({ editor: active, identity: active, numIds: { bullet: null, ordered: null } }),
+  })
+  const router = createDocsCommandRouter(runtime)
+  router.bindScope('draft-owner-grant', runtime.capture())
+  const connect = async (readOnly = false) => {
+    const server = createDocsMcpServer({
+      version: 'test',
+      bindingId: 'draft-owner-grant',
+      readOnly,
+      endpoint: {
+        request: (message, signal) => router.handle(message, signal),
+        closeCaller: (callerId) => router.disconnect(callerId),
+      },
+    })
+    const [upstream, downstream] = InMemoryTransport.createLinkedPair()
+    const mcp = new Client({ name: 'draft-test', version: '1' })
+    await server.connect(upstream)
+    await mcp.connect(downstream)
+    return {
+      mcp,
+      close: async () => {
+        await mcp.close()
+        await server.close()
+      },
+    }
+  }
+  const owner = await connect()
+  const unrelated = await connect()
+  const reference = await connect(true)
+  try {
+    expect((await owner.mcp.listTools()).tools.map(({ name }) => name)).toContain('apply_ops')
+    const started = await owner.mcp.callTool({
+      name: 'start_document_draft',
+      arguments: { afterBlockIndex: 0 },
+    })
+    const { draftId } = JSON.parse(
+      String(CallToolResultSchema.parse(started).structuredContent?.output),
+    )
+    const updated = await owner.mcp.callTool({
+      name: 'update_document_draft',
+      arguments: { draftId, sequence: 1, html: '<p>Provisional text</p>' },
+    })
+    expect(updated.isError).not.toBe(true)
+    active.setEditable(false)
+    const names = (await owner.mcp.listTools()).tools.map(({ name }) => name)
+    expect(names).toContain('stop_document_draft')
+    expect(names).toContain('finish_document_draft')
+    expect(names).not.toContain('start_document_draft')
+    expect(names).not.toContain('apply_ops')
+    expect((await unrelated.mcp.listTools()).tools.map(({ name }) => name)).not.toContain(
+      'stop_document_draft',
+    )
+    const stoppedByAnother = await unrelated.mcp.callTool({
+      name: 'stop_document_draft',
+      arguments: { draftId },
+    })
+    expect(stoppedByAnother).toMatchObject({
+      isError: true,
+      structuredContent: { output: expect.stringContaining('does not belong') },
+    })
+    expect((await reference.mcp.listTools()).tools.map(({ name }) => name)).not.toContain(
+      'finish_document_draft',
+    )
+    expect(
+      await reference.mcp.callTool({
+        name: 'finish_document_draft',
+        arguments: { draftId, decision: 'discard' },
+      }),
+    ).toMatchObject({ isError: true, content: [{ text: expect.stringContaining('not found') }] })
+    expect(
+      await owner.mcp.callTool({
+        name: 'apply_ops',
+        arguments: {
+          ops: [{ op: 'setFont', target: { nodeType: 'docHeading' }, color: '#FF0000' }],
+        },
+      }),
+    ).toMatchObject({ isError: true, structuredContent: { errorCode: 'permission_denied' } })
+    expect(
+      (await owner.mcp.callTool({ name: 'stop_document_draft', arguments: { draftId } })).isError,
+    ).not.toBe(true)
+    expect(
+      await owner.mcp.callTool({
+        name: 'finish_document_draft',
+        arguments: { draftId, decision: 'finalize' },
+      }),
+    ).toMatchObject({ isError: true, structuredContent: { errorCode: 'permission_denied' } })
+    expect(
+      (
+        await owner.mcp.callTool({
+          name: 'finish_document_draft',
+          arguments: { draftId, decision: 'discard' },
+        })
+      ).isError,
+    ).not.toBe(true)
+    expect(active.getText()).toBe('Heading\n\nOriginal body')
+    expect((await owner.mcp.listTools()).tools.map(({ name }) => name)).not.toContain(
+      'stop_document_draft',
+    )
+  } finally {
+    await Promise.all([owner.close(), unrelated.close(), reference.close()])
+    router.dispose()
+  }
 })
 
 it.each(['unknown', 'released', 'replaced'] as const)(
@@ -562,12 +721,40 @@ it('reads full live blocks through standard MCP and applies an edit through the 
   client = new Client({ name: 'docs-integration', version: '1' })
   await client.connect(new StreamableHTTPClientTransport(new URL(`${service.getUrl()}/mcp`)))
   await client.callTool({ name: 'create_session', arguments: { family: 'docx' } })
+  await expectStandardToolDiscovery(client)
   const read = await client.callTool({
     name: 'read_blocks',
     arguments: { startBlockIndex: 0, endBlockIndex: 1 },
   })
   expect(read.isError).not.toBe(true)
   expect(JSON.stringify(read.content)).toContain('Unsaved manual text')
+  const ops = [
+    { op: 'setFont', target: { blockIndexes: [0] }, color: '#FF0000' },
+    { op: 'setParagraphFormat', target: { blockIndexes: [1] }, align: 'center' },
+  ]
+  const before = active.getJSON()
+  const preview = await client.callTool({ name: 'apply_ops', arguments: { ops, dryRun: true } })
+  expect(preview.structuredContent).toMatchObject({
+    committed: false,
+    receipt: { outcome: 'preview', revisionBefore: 0, revisionAfter: 0 },
+  })
+  const invalid = await client.callTool({
+    name: 'apply_ops',
+    arguments: { ops: [...ops, { op: 'setFont', color: '#FF0000' }] },
+  })
+  expect(invalid).toMatchObject({
+    isError: true,
+    structuredContent: { committed: false, output: expect.stringContaining('setFont') },
+  })
+  expect(active.getJSON()).toEqual(before)
+  expect(
+    (await client.callTool({ name: 'apply_ops', arguments: { ops } })).structuredContent,
+  ).toMatchObject({ committed: true, receipt: { outcome: 'applied' } })
+  expect(active.getJSON()).not.toEqual(before)
+  expect(
+    (await client.callTool({ name: 'document_history', arguments: { action: 'undo' } })).isError,
+  ).not.toBe(true)
+  expect(active.getJSON()).toEqual(before)
   const edit = await client.callTool({
     name: 'replace_blocks',
     arguments: {
@@ -584,6 +771,7 @@ it('reads full live blocks through standard MCP and applies an edit through the 
   })
   expect(active.getText()).toBe('Agent result\n\nKeep this paragraph')
   active.commands.insertContentAt(1, 'Manual ')
+  await client.listTools()
   const stale = await client.callTool({
     name: 'replace_blocks',
     arguments: { startBlockIndex: 0, endBlockIndex: 0, html: '<p>Wrong</p>' },

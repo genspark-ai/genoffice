@@ -176,11 +176,27 @@ through that scope. A scope stays bound to the captured document generation and
 maps its selection across edits; it does not follow whichever document is later
 opened in the same window.
 
-`get_editor_capabilities` reports tool availability, restricted HTML rules and
-the `apply_ops` signatures. The MCP surface contains 46 tool contracts, including
-draft/review/history/media controls and optional resource helpers. Editing uses
-the same document implementation as the native consumer. No inference is needed
-to execute these primitives.
+Discover tools with the standard MCP `tools/list` request, then invoke them
+through `tools/call`. The list reflects current document and resource
+authority. Re-list after receiving `notifications/tools/list_changed`, or when
+connecting under a new grant. Calls recheck authority even when a client
+already knows a tool name.
+
+The `apply_ops` definition includes per-operation fields, target selectors
+and usage. Set `dryRun: true` to validate a batch against the current document
+without changing its contents, revision or undo history. Use `query_document`
+for fresh revision-bound targets and their editing restrictions.
+
+`get_document_context` retains the existing text in `output` and adds
+`editable` and, when available and authorized, `resourceContext` alongside
+it. The latter includes indexes for granted attachments and knowledge files.
+The `editable` value reflects the caller's grant as well as the document
+state. A reference or review grant cannot use draft controls. A caller that
+started a draft under a write grant may still stop or discard its own draft
+if the editor becomes read-only.
+
+When upgrading from an SDK that exposed `get_editor_capabilities`, switch
+discovery to `tools/list` and remove calls to the former tool.
 
 Operation results contain `documentId`, `revision`, `output`, `committed` and
 optional `errorCode`/`pending`. `committed: null` means the host could not establish
@@ -209,7 +225,8 @@ captured selection; they do not retarget the operation.
 An explicit `<p></p>` creates an empty paragraph and survives a read/write
 round trip. `<p><br></p>` contains a real line break instead; it is not an
 equivalent representation of an empty paragraph. Empty wrapper `<div>` elements
-are ignored. These rules are also returned by `get_editor_capabilities`.
+are ignored. The HTML input schemas of the editing and draft tools include the
+applicable rules.
 
 `read_blocks` returns a projection for editing, not a complete DOCX serialization.
 Elements carrying the reserved `data-doc-readonly` attribute describe objects
@@ -767,10 +784,21 @@ stopping MCP removes access through its connections but does not itself clear th
 host's resource configuration. Clear/revoke resources when their application
 scope ends, including document changes where the old sources no longer apply.
 
-The former inference tools are described in `get_editor_capabilities` as Harness
-workflows: web/image search, image generation, media analysis and document
-writing. The Harness performs those steps and supplies ordinary content/images
-or ordered draft updates. They are not model endpoints in the editor.
+### Harness workflows
+
+- Run web or image search in the Harness. Pass verified text to the editing
+  tools, or pass a direct image URL to `insert_image`.
+- Generate images in the Harness. Supply a host-authorized image input to
+  `insert_picture` for a floating image, or use `insert_image` with a direct URL.
+- Use `read_document_media` for an authorized image in the document. Pass the
+  returned MCP image content to the Harness for analysis. The Harness handles
+  image, audio and video inputs supplied directly by the user.
+- Plan and generate long-form content in the Harness. Read the current
+  document before calling `start_document_draft`. Send cumulative restricted
+  HTML with increasing sequence numbers to `update_document_draft` and query
+  progress with `inspect_document_draft`. To interrupt generation, call
+  `stop_document_draft`, then use `finish_document_draft` to retain the last
+  validated content or discard it. For a completed draft, finalize explicitly.
 
 ## Node file processing
 

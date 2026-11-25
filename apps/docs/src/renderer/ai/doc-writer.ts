@@ -1,5 +1,5 @@
 // Modified for ForaOffice from GenOffice v0.12.852.
-import { HTML_RULES } from './protocol'
+import { HTML_RULES } from '../../shared/html-rules'
 
 /**
  * Long-form writing runs as its own tool-less request whose reply body IS the

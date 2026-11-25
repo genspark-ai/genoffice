@@ -5,8 +5,13 @@ import type { Socket } from 'node:net'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js'
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js'
-import type { ZodRawShape, ZodType } from 'zod'
-import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js'
+import { z, type ZodRawShape, type ZodType } from 'zod'
+import {
+  ListToolsRequestSchema,
+  type CallToolResult,
+  type Tool,
+} from '@modelcontextprotocol/sdk/types.js'
+import { monitorMcpToolList } from '../../../../docs/src/shared/mcp-tool-list'
 
 /**
  * Local MCP server for GenOffice.
@@ -41,6 +46,10 @@ export interface McpToolDefinition {
   description: string
   /** zod raw shape, as the SDK expects (not a z.object()) */
   inputSchema?: ZodRawShape | ZodType
+  /** Publish the source JSON Schema when execution uses a separate validator. */
+  jsonSchema?: Tool['inputSchema']
+  /** Tools sharing the same function are discovered in a single authority read. */
+  discover?: (invocation: McpInvocation) => Promise<ReadonlySet<string>>
   /** return value is serialized as JSON text; a thrown error becomes isError */
   handler: (args: Record<string, unknown>, context?: McpInvocation) => Promise<unknown> | unknown
   formatResult?: (result: unknown) => CallToolResult
@@ -159,6 +168,40 @@ export class McpServerService {
           }
         }) as never,
       )
+    }
+    if (tools.some((tool) => tool.jsonSchema || tool.discover)) {
+      const sources = [...new Set(tools.flatMap((tool) => (tool.discover ? [tool.discover] : [])))]
+      const discover = async (signal: AbortSignal) => {
+        const lists = await Promise.all(
+          sources.map(async (source) => [source, await source({ ...connection, signal })] as const),
+        )
+        const available = new Map(lists)
+        return tools.filter(
+          (tool) => !tool.discover || available.get(tool.discover)?.has(tool.name),
+        )
+      }
+      const listed = monitorMcpToolList(
+        lifetime.signal,
+        async () => (await discover(lifetime.signal)).map((tool) => tool.name),
+        () => server.server.sendToolListChanged(),
+      )
+      server.server.setRequestHandler(ListToolsRequestSchema, async (_request, extra) => {
+        const tools = await discover(AbortSignal.any([extra.signal, lifetime.signal]))
+        listed(tools.map((tool) => tool.name))
+        return {
+          tools: tools.map(({ name, description, inputSchema, jsonSchema }) => ({
+            name,
+            description,
+            inputSchema: jsonSchema ?? {
+              ...z.toJSONSchema(
+                inputSchema instanceof z.ZodType ? inputSchema : z.object(inputSchema ?? {}),
+                { io: 'input', unrepresentable: 'any' },
+              ),
+              type: 'object' as const,
+            },
+          })),
+        }
+      })
     }
     return server
   }

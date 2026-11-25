@@ -7221,6 +7221,12 @@ app.whenReady().then(async () => {
     authorizeSave: authorizeMcpSheetWrite,
     abandonBlankTab: (wcId) => abandonBlankSheetsTabForMcp(wcId),
   })
+  const listMcpDocuments = async () => {
+    const tabs = tabManager ? await tabManager.openDocuments() : []
+    return [...tabs, ...(await detachedOpenDocuments())]
+  }
+  const contentsForMcpDocument = (tabId: string) =>
+    tabManager?.webContentsForTab(tabId) ?? detachedWebContentsFor(tabId)
   configureMcpRuntime({
     version: app.getVersion(),
     defaultSaveDir: () => defaultSaveDir(),
@@ -7231,12 +7237,8 @@ app.whenReady().then(async () => {
     // documents the user has open: the tab list plus each family's own bridge,
     // so an agent reaches a tab nobody but the user opened
     openDocumentsControl: createOpenDocumentsControl({
-      list: async () => {
-        const tabs = tabManager ? await tabManager.openDocuments() : []
-        return [...tabs, ...(await detachedOpenDocuments())]
-      },
-      webContentsFor: (tabId) =>
-        tabManager?.webContentsForTab(tabId) ?? detachedWebContentsFor(tabId),
+      list: listMcpDocuments,
+      webContentsFor: contentsForMcpDocument,
       closeTab: (tabId) =>
         closeDetachedWithoutPrompt(tabId) || (tabManager?.closeTabWithoutPrompt(tabId) ?? false),
       defaultSaveDir: () => defaultSaveDir(),
@@ -7261,13 +7263,14 @@ app.whenReady().then(async () => {
     cliRunner: bundledCliRunner(),
     // lets the content tools take a `document` argument (tab id or path) and edit
     // a tab the *user* has open, with no create_session involved
+    listDocumentTargets: async () =>
+      (await listMcpDocuments()).flatMap((tab) => {
+        const contents = tab.kind === 'docs' ? contentsForMcpDocument(tab.id) : undefined
+        return contents && !contents.isDestroyed() ? [contents.id] : []
+      }),
     resolveTarget: createOpenTargetResolver({
-      list: async () => {
-        const tabs = tabManager ? await tabManager.openDocuments() : []
-        return [...tabs, ...(await detachedOpenDocuments())]
-      },
-      webContentsFor: (tabId) =>
-        tabManager?.webContentsForTab(tabId) ?? detachedWebContentsFor(tabId),
+      list: listMcpDocuments,
+      webContentsFor: contentsForMcpDocument,
       // an agent editing a background tab would otherwise work where nobody can
       // see it: switch to that tab and bring its window forward first
       activate: (tabId) => {

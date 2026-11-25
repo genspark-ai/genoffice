@@ -608,8 +608,8 @@ it('discovers and uses the cell text operation through standard MCP and persists
     await server.connect(serverTransport)
     await client.connect(clientTransport)
     await client.callTool({ name: 'get_document_context', arguments: {} })
-    const caps = await client.callTool({ name: 'get_editor_capabilities', arguments: {} })
-    expect(JSON.stringify(caps)).toContain('setTableCellText')
+    const apply = (await client.listTools()).tools.find((tool) => tool.name === 'apply_ops')
+    expect(JSON.stringify(apply?.inputSchema)).toContain('setTableCellText')
     for (const text of ['MCP', '']) {
       const result = await client.callTool({
         name: 'apply_ops',

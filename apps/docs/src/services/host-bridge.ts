@@ -18,11 +18,18 @@ const requestSchema = z.object({
   id: z.union([z.string(), z.number(), z.null()]).optional(),
   params: z.unknown().optional(),
 })
+const bridgeCommand = z.enum([
+  'list_tools',
+  'execute_tool',
+  'read_document',
+  'save_document',
+  'close_caller',
+])
 const paramsSchema = z
   .object({
     message: z
       .object({
-        command: z.enum(['execute_tool', 'read_document', 'save_document', 'close_caller']),
+        command: bridgeCommand,
         payload: z.unknown().optional(),
       })
       .strict(),
@@ -231,7 +238,7 @@ export function connectDocsHostBridge(
     throw new Error('The editor host endpoint must be an explicit local bridge')
   let closed = false
   const post = async (
-    command: 'execute_tool' | 'read_document' | 'save_document' | 'close_caller',
+    command: z.infer<typeof bridgeCommand>,
     payload: unknown,
     signal?: AbortSignal,
   ) => {
@@ -263,6 +270,7 @@ export function connectDocsHostBridge(
     request(message, signal) {
       if (closed) return Promise.reject(new Error('The document connection is closed'))
       if (
+        message.command !== 'list_tools' &&
         message.command !== 'execute_tool' &&
         message.command !== 'read_document' &&
         message.command !== 'save_document'

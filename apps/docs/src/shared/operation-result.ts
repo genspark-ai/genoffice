@@ -47,6 +47,9 @@ export interface DocsOperationResult extends ToolExecution {
       }>
     }>
   }
+  /** Document context metadata, alongside the existing textual output. */
+  editable?: boolean
+  resourceContext?: string
   documentId: string
   revision: number
   /** null means the host lost the IO response and the file effect is unknown. */

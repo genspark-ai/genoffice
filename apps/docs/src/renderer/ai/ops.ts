@@ -1,3 +1,4 @@
+import { OP_CONTRACTS, FONT_KEYS, PARA_KEYS, IMAGE_KEYS } from '../../shared/op-contracts'
 import { checkPlaceholders, placeholderSource, REDACT_MARK } from './redact'
 import type { Editor } from '@tiptap/core'
 import type { Node as PmDocNode, Schema } from '@tiptap/pm/model'
@@ -190,46 +191,11 @@ export function opSignatures(): string[] {
   return callable().map((d) => d.signature)
 }
 
-export function opCatalog(): Pick<OpDef, 'name' | 'signature' | 'keys' | 'target'>[] {
-  return callable().map((d) => ({
-    name: d.name,
-    signature: d.signature,
-    keys: d.keys,
-    target: d.target,
-  }))
-}
-
 // ---- validation ----
 
 const NODE_TYPES = ['docHeading', 'docParagraph', 'docListItem', 'image', 'table'] as const
 const BASELINES = ['superscript', 'subscript', 'none'] as const
 const ALIGNS = ['left', 'center', 'right', 'justify'] as const
-const FONT_KEYS = [
-  'bold',
-  'italic',
-  'underline',
-  'strike',
-  'color',
-  'highlight',
-  'fontSize',
-  'fontFamily',
-  'baseline',
-  'link',
-] as const
-const PARA_KEYS = [
-  'align',
-  'lineSpacing',
-  'indentLeft',
-  'indentRight',
-  'indentFirstLine',
-  'spaceBefore',
-  'spaceAfter',
-  'pageBreakBefore',
-  'shadingFill',
-  'borders',
-  'tabs',
-] as const
-const IMAGE_KEYS = ['widthPx', 'heightPx', 'align'] as const
 
 function validateTarget(target: unknown, where: string): string | null {
   if (!target || typeof target !== 'object') return `${where}: missing target`
@@ -1354,14 +1320,8 @@ function runInsertToc(op: Op, env: RunEnv): OpResult {
 
 // ---- op definitions ----
 
-const FONT_SIGNATURE_FIELDS =
-  'bold?, italic?, underline?, strike?, color?: "#RRGGBB"|null, highlight?, fontSize?: pt|null, fontFamily?: string|null, baseline?: "superscript"|"subscript"|"none"|null, link?: {url}|null'
-
 register({
-  name: 'setFont',
-  signature: `{ op: "setFont", target, ${FONT_SIGNATURE_FIELDS} }  // run-level style of the targeted blocks (only the selected characters when the target is a partial selection); a present field is set, null clears it, absent fields stay; fontFamily applies to its own script slot (an East Asian font keeps the run's Latin font and vice versa)`,
-  keys: FONT_KEYS,
-  target: 'required',
+  ...OP_CONTRACTS.setFont,
   validate(op, where) {
     return validateShape(op, this, where) ?? validateFontFields(op, where)
   },
@@ -1369,10 +1329,7 @@ register({
 })
 
 register({
-  name: 'setMatchedFont',
-  signature: `{ op: "setMatchedFont", text?, matchCase?, matchColor?: "#RRGGBB"|"auto", matchFontSize?: pt|"default", target?, ${FONT_SIGNATURE_FIELDS} }  // character-level: styles only the runs that match (not the whole block) — occurrences of text, and/or runs currently in matchColor / at matchFontSize (as shown by read_blocks spans); give at least one of text / matchColor / matchFontSize; target narrows the scanned blocks, omitted = whole document (table cells included)`,
-  keys: ['text', 'matchCase', 'matchColor', 'matchFontSize', ...FONT_KEYS],
-  target: 'optional',
+  ...OP_CONTRACTS.setMatchedFont,
   validate(op, where) {
     const shape = validateShape(op, this, where)
     if (shape) return shape
@@ -1401,11 +1358,7 @@ register({
 })
 
 register({
-  name: 'setParagraphFormat',
-  signature:
-    '{ op: "setParagraphFormat", target, align?: "left"|"center"|"right"|"justify"|null, lineSpacing?, indentLeft?, indentRight?, indentFirstLine?, spaceBefore?, spaceAfter?, pageBreakBefore?: boolean, shadingFill?: "#RRGGBB"|null, borders?: subset of "tblr"|null, tabs?: [{ pos: twips|"6.5in", align?: "left"|"center"|"right"|"decimal"|"bar", leader?: "none"|"dot"|"hyphen"|"underscore"|"middleDot", clear?: true }]|null }  // paragraph format of the targeted blocks (whole blocks, even for a partial selection); lengths in twips, lineSpacing as a multiple; indentFirstLine positive = first-line indent, negative = hanging; a two-character CJK indent ≈ font size in pt × 40 twips; tabs replaces the paragraph\'s own stops ([] / null clears them, clear: true cancels a style stop); a tab character in HTML is <span data-tab></span>',
-  keys: PARA_KEYS,
-  target: 'required',
+  ...OP_CONTRACTS.setParagraphFormat,
   validate(op, where) {
     return validateShape(op, this, where) ?? validateParagraphFields(op, where)
   },
@@ -1413,10 +1366,7 @@ register({
 })
 
 register({
-  name: 'setHeadingLevel',
-  signature: '{ op: "setHeadingLevel", target, level: 0-6 }  // 0 = demote to body paragraph',
-  keys: ['level'],
-  target: 'required',
+  ...OP_CONTRACTS.setHeadingLevel,
   validate(op, where) {
     const shape = validateShape(op, this, where)
     if (shape) return shape
@@ -1429,11 +1379,7 @@ register({
 })
 
 register({
-  name: 'findReplace',
-  signature:
-    '{ op: "findReplace", find, replace, matchCase?, match?: "one"|"all", target? }  // literal logical-text replacement across formatting runs inside one paragraph; inherits match-start formatting, preserves outside text; default one rejects zero/multiple matches; all requires an explicit target scope',
-  keys: ['find', 'replace', 'matchCase', 'match'],
-  target: 'optional',
+  ...OP_CONTRACTS.findReplace,
   validate(op, where) {
     const shape = validateShape(op, this, where)
     if (shape) return shape
@@ -1451,10 +1397,7 @@ register({
 })
 
 register({
-  name: 'deleteBlocks',
-  signature: '{ op: "deleteBlocks", target }',
-  keys: [],
-  target: 'required',
+  ...OP_CONTRACTS.deleteBlocks,
   validate(op, where) {
     return validateShape(op, this, where)
   },
@@ -1462,11 +1405,7 @@ register({
 })
 
 register({
-  name: 'moveBlocks',
-  signature:
-    '{ op: "moveBlocks", blockIndexes: number[], afterBlockIndex }  // move the blocks (relative order kept) after afterBlockIndex; -1 = start of document',
-  keys: ['blockIndexes', 'afterBlockIndex'],
-  target: 'none',
+  ...OP_CONTRACTS.moveBlocks,
   validate(op, where) {
     const shape = validateShape(op, this, where)
     if (shape) return shape
@@ -1484,11 +1423,7 @@ register({
 })
 
 register({
-  name: 'setList',
-  signature:
-    '{ op: "setList", target, kind?: "bullet"|"number" }  // paragraphs to list items (default bullet); heading blocks are not converted',
-  keys: ['kind'],
-  target: 'required',
+  ...OP_CONTRACTS.setList,
   validate(op, where) {
     const shape = validateShape(op, this, where)
     if (shape) return shape
@@ -1501,10 +1436,7 @@ register({
 })
 
 register({
-  name: 'clearList',
-  signature: '{ op: "clearList", target }  // list items back to body paragraphs',
-  keys: [],
-  target: 'required',
+  ...OP_CONTRACTS.clearList,
   validate(op, where) {
     return validateShape(op, this, where)
   },
@@ -1512,11 +1444,7 @@ register({
 })
 
 register({
-  name: 'setImageProperties',
-  signature:
-    '{ op: "setImageProperties", target, widthPx?, heightPx?, align?: "left"|"center"|"right"|null }  // image blocks only (target nodeType "image"); giving one dimension scales the other proportionally',
-  keys: IMAGE_KEYS,
-  target: 'required',
+  ...OP_CONTRACTS.setImageProperties,
   validate(op, where) {
     const shape = validateShape(op, this, where)
     if (shape) return shape
@@ -1541,11 +1469,7 @@ register({
 })
 
 register({
-  name: 'insertToc',
-  signature:
-    '{ op: "insertToc", afterBlockIndex }  // insert a TOC field after that block (-1 = start of document); entries come from the current headings, Word computes page numbers on open; fails if the document has no headings',
-  keys: ['afterBlockIndex'],
-  target: 'none',
+  ...OP_CONTRACTS.insertToc,
   validate(op, where) {
     return validateShape(op, this, where) ?? validateAfterBlockIndex(op, where)
   },
@@ -1572,11 +1496,7 @@ const validDelta = (op: Op, where: string): string | null =>
   op.delta === 1 || op.delta === -1 ? null : `${where}: delta must be 1 or -1`
 
 register({
-  name: 'setParagraphAttrs',
-  signature: '{ op: "setParagraphAttrs", target, attrs: Record<string, unknown> }',
-  keys: ['attrs'],
-  target: 'required',
-  hidden: true,
+  ...OP_CONTRACTS.setParagraphAttrs,
   validate(op, where) {
     const shape = validateShape(op, this, where)
     if (shape) return shape
@@ -1589,11 +1509,7 @@ register({
 })
 
 register({
-  name: 'setOutlineLevel',
-  signature: '{ op: "setOutlineLevel", target, level: 0-9 }',
-  keys: ['level'],
-  target: 'required',
-  hidden: true,
+  ...OP_CONTRACTS.setOutlineLevel,
   validate(op, where) {
     const shape = validateShape(op, this, where)
     if (shape) return shape
@@ -1606,11 +1522,7 @@ register({
 })
 
 register({
-  name: 'stepIndent',
-  signature: '{ op: "stepIndent", target, delta: 1|-1 }',
-  keys: ['delta'],
-  target: 'required',
-  hidden: true,
+  ...OP_CONTRACTS.stepIndent,
   validate(op, where) {
     return validateShape(op, this, where) ?? validDelta(op, where)
   },
@@ -1618,11 +1530,7 @@ register({
 })
 
 register({
-  name: 'stepHangingIndent',
-  signature: '{ op: "stepHangingIndent", target, delta: 1|-1 }',
-  keys: ['delta'],
-  target: 'required',
-  hidden: true,
+  ...OP_CONTRACTS.stepHangingIndent,
   validate(op, where) {
     return validateShape(op, this, where) ?? validDelta(op, where)
   },

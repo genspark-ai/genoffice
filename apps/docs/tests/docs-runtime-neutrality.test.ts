@@ -29,9 +29,7 @@ it('accepts an ordinary consumer identity and exposes editing primitives without
   try {
     const consumer = runtime.connect({ id: 'any-compatible-consumer' })
     consumer.context()
-    const capabilities = JSON.parse(
-      (await consumer.execute({ id: 'caps', name: 'get_editor_capabilities', input: {} })).output,
-    )
+    const tools = consumer.availableTools()
     const modelTools = [
       'web_search',
       'image_search',
@@ -39,12 +37,8 @@ it('accepts an ordinary consumer identity and exposes editing primitives without
       'generate_image',
       'write_document',
     ]
-    expect(
-      capabilities.tools.filter((tool: { name: string }) => modelTools.includes(tool.name)),
-    ).toEqual([])
-    expect(
-      capabilities.tools.some((tool: { name: string }) => tool.name === 'start_document_draft'),
-    ).toBe(true)
+    expect(tools.filter((name) => modelTools.includes(name))).toEqual([])
+    expect(tools).toContain('start_document_draft')
     const refused = await consumer.execute({
       id: 'inference',
       name: 'web_search',

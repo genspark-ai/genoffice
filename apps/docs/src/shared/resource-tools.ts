@@ -9,7 +9,7 @@ import { DOCS_OFFICE_CLI_TOOL } from './cli-tool-schema'
 /** Host-authorized attachment, knowledge and bounded Office helpers. No model service. */
 export type DocsResourceTools = Pick<AgentSkill, 'tools' | 'buildContext' | 'executeTool'>
 
-/** Contracts stay discoverable; the current host/document determines availability at invocation. */
+/** Contracts for resource tools that a host may authorize for the current document. */
 export const DOCS_RESOURCE_TOOLS = [
   READ_ATTACHMENT_TOOL_DEF,
   READ_KNOWLEDGE_FILE_TOOL,

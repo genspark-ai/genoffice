@@ -8,14 +8,13 @@ import { ResourceAccessError } from '@genoffice/agent-core/resource-tools'
 import {
   buildDocContext,
   getSelectionScope,
-  HTML_RULES,
   parseHtmlFragment,
   parseInlineFragment,
   resolveImageRefs,
   type AiTrack,
   type NumIds,
 } from '../ai/protocol'
-import { executeOps, opCatalog, opNames } from '../ai/ops'
+import { executeOps } from '../ai/ops'
 import type { DocsEngineTarget } from '../../shared/document-query'
 import {
   executeTool,
@@ -31,7 +30,11 @@ import type { AiNotesAccess } from '../ai/note-ops'
 import type { AiPageSetupAccess } from '../ai/page-setup'
 import type { WritePosition } from './draft-landing'
 import { z } from 'zod'
-import { docsToolCatalog, DOCS_READ_TOOLS } from '../../shared/tool-catalog'
+import {
+  docsToolCatalog,
+  DOCS_READ_TOOLS,
+  docsToolExecutionSchema,
+} from '../../shared/tool-catalog'
 import { DOCS_DRAFT_CONTROLS, DOCS_RUNTIME_TOOLS } from '../../shared/runtime-tools'
 import { DocumentDraft, DraftInputError, draftPosition } from './document-draft'
 import { DRAFT_META, hasActiveDocumentDraft } from './draft-landing'
@@ -63,7 +66,15 @@ import type { DocsAnnotations } from '../sdk/annotations'
 import type { DocsRangePreconditions } from '../../shared/edit-preconditions'
 
 type RuntimeExecution = ToolExecution &
-  Pick<DocsOperationResult, 'errorCode' | 'media' | 'imageReferenceErrors' | 'structurePlan'> &
+  Pick<
+    DocsOperationResult,
+    | 'errorCode'
+    | 'media'
+    | 'imageReferenceErrors'
+    | 'structurePlan'
+    | 'editable'
+    | 'resourceContext'
+  > &
   Partial<Pick<DocsOperationResult, 'committed' | 'receipt' | 'matchCount' | 'changeCount'>>
 
 interface DocumentGenerationState {
@@ -144,6 +155,11 @@ export interface DocsRuntimeClient {
     file?: DocsRuntimeFileState
     text: string
   }
+  availableTools(): string[]
+  checkEditable(
+    signal?: AbortSignal,
+  ): (ToolExecution & Pick<DocsOperationResult, 'committed' | 'errorCode'>) | undefined
+  executeNativeCli(call: AgentToolCall, signal?: AbortSignal): Promise<DocsOperationResult>
   execute(call: AgentToolCall, signal?: AbortSignal): Promise<DocsOperationResult>
   save(options: { path: string; overwrite: boolean }, signal?: AbortSignal): Promise<DocsSaveResult>
   close(): void
@@ -151,6 +167,7 @@ export interface DocsRuntimeClient {
 
 export interface DocsRuntime {
   connect(caller: RuntimeCaller): DocsRuntimeClient
+  availableTools(): string[]
   capture(): DocsRuntimeScope
   dispose(): void
 }
@@ -160,6 +177,7 @@ export interface DocsRuntimeScope {
   readonly signal: AbortSignal
   readonly documentId: string
   readonly text: string
+  availableTools(): string[]
   connect(caller: RuntimeCaller): DocsRuntimeClient
   close(): void
 }
@@ -173,6 +191,11 @@ interface ClientSeed {
 }
 
 interface InternalClient extends DocsRuntimeClient {
+  execute(
+    call: AgentToolCall,
+    signal?: AbortSignal,
+    nativeCli?: boolean,
+  ): Promise<DocsOperationResult>
   fork(caller: RuntimeCaller): InternalClient
 }
 
@@ -194,7 +217,7 @@ const executionFailure = (error: unknown): RuntimeExecution =>
 const toolSchemas = new Map(
   [...docsToolCatalog(), ...DOCS_RUNTIME_TOOLS, ...DOCS_RESOURCE_TOOLS].map((tool) => [
     tool.name,
-    z.fromJSONSchema(tool.inputSchema),
+    z.fromJSONSchema(docsToolExecutionSchema(tool)),
   ]),
 )
 
@@ -260,6 +283,43 @@ export function createDocsRuntime(bindings: DocsRuntimeBindings): DocsRuntime {
     return doc
   }
 
+  const redactedDocuments = new WeakMap<ProseMirrorNode, boolean>()
+  const resourceRefusal = (doc: RuntimeDocument) => {
+    const body = doc.editor.state.doc
+    let redacted = redactedDocuments.get(body)
+    if (redacted === undefined) {
+      redacted = redactLabelsOf(body.toJSON()).length > 0
+      redactedDocuments.set(body, redacted)
+    }
+    if (redacted)
+      return {
+        reason:
+          'Raw file helpers are disabled while this document contains AI-withheld content. Use its projected live document tools.',
+        errorCode: 'permission_denied' as const,
+      }
+  }
+
+  // Read the current authority without initializing a generation or touching a read baseline.
+  const listTools = (doc: RuntimeDocument, provider?: DocsResourceTools, ownsDraft = false) => {
+    const resourceTools = provider?.tools
+    const resourceNames =
+      resourceTools?.length && !resourceRefusal(doc)
+        ? new Set(resourceTools.map((tool) => tool.name))
+        : undefined
+    const available = [...toolSchemas.keys()].filter((name) => {
+      if (DOCS_RESOURCE_TOOL_NAMES.has(name)) return resourceNames?.has(name) ?? false
+      if (
+        !doc.editor.isEditable &&
+        (name === 'stop_document_draft' || name === 'finish_document_draft')
+      )
+        return ownsDraft
+      return !authoredStoreUnavailable(name, doc) && !toolUnavailable(name, doc)
+    })
+    available.push('read_document')
+    if (bindings.save && doc.editor.isEditable) available.push('save_document')
+    return available
+  }
+
   const connect = (caller: RuntimeCaller, seed?: ClientSeed): InternalClient => {
     let closed = false
     const lifetime = new AbortController()
@@ -287,14 +347,6 @@ export function createDocsRuntime(bindings: DocsRuntimeBindings): DocsRuntime {
         throw new Error('The host registered an unsupported Docs resource helper')
       return tools
     }
-    const resourceRefusal = (doc: RuntimeDocument) =>
-      redactLabelsOf(doc.editor.getJSON()).length > 0
-        ? {
-            reason:
-              'Raw file helpers are disabled while this document contains AI-withheld content. Use its projected live document tools.',
-            errorCode: 'permission_denied' as const,
-          }
-        : undefined
     const createOwnedDraft = (doc: RuntimeDocument, position: WritePosition) => {
       if (hasActiveDocumentDraft(doc.editor)) throw new Error('A document draft is already active')
       const draftId = crypto.randomUUID()
@@ -396,6 +448,35 @@ export function createDocsRuntime(bindings: DocsRuntimeBindings): DocsRuntime {
           editor: observedEditor,
         })
       },
+      availableTools() {
+        const doc = bindings.current()
+        return closed ||
+          disposed ||
+          !doc ||
+          doc.editor.isDestroyed ||
+          doc.identity !== boundIdentity
+          ? []
+          : listTools(
+              doc,
+              resources(),
+              [...drafts.values()].some((draft) => draft.pending),
+            )
+      },
+      checkEditable(signal) {
+        const doc = bindings.current()
+        const refused = (message: string, code: DocsErrorCode) => ({
+          ...failure(message, code),
+          committed: false,
+        })
+        if (signal?.aborted) return refused('The operation was canceled', 'canceled')
+        if (closed || disposed || !doc || doc.editor.isDestroyed || doc.identity !== boundIdentity)
+          return refused('The document binding is no longer valid', 'stale_target')
+        if (!doc.editor.isEditable) return refused('The document is read-only', 'permission_denied')
+      },
+      executeNativeCli(call, signal) {
+        if (call.name !== 'run_cli') throw new Error('Expected a native run_cli call')
+        return client.execute(call, signal, true)
+      },
       context(options) {
         if (closed) throw new Error('The document caller is closed')
         const doc = current()
@@ -431,7 +512,7 @@ export function createDocsRuntime(bindings: DocsRuntimeBindings): DocsRuntime {
             ) + documentMediaReferences(doc.editor, documentId, documentState.revision),
         }
       },
-      execute(call, signal) {
+      execute(call, signal, nativeCli = false) {
         const operationSignal = signal
           ? AbortSignal.any([signal, lifetime.signal])
           : lifetime.signal
@@ -473,24 +554,24 @@ export function createDocsRuntime(bindings: DocsRuntimeBindings): DocsRuntime {
             return failure('stopped by the user; the operation was canceled', 'canceled')
           const doc = current()
           revisionBefore = boundState.revision
+          if (boundIdentity !== doc.identity)
+            return failure(
+              'The document was replaced; create a new document binding',
+              'stale_target',
+            )
           const missingStoreEpoch = authoredStoreUnavailable(call.name, bindings.current())
           if (missingStoreEpoch)
             return failure(missingStoreEpoch.reason, missingStoreEpoch.errorCode)
           const resourceProvider = resources()
           const helper = resourceProvider?.tools.find((tool) => tool.name === call.name)
           const schema =
-            toolSchemas.get(call.name) ?? (helper && z.fromJSONSchema(helper.inputSchema))
+            nativeCli && helper ? z.fromJSONSchema(helper.inputSchema) : toolSchemas.get(call.name)
           if (!schema) return failure(`Unknown Docs tool: ${call.name}`, 'unavailable')
           const validated = schema.safeParse(call.input)
           if (!validated.success)
             return failure(
               `Invalid ${call.name} input: ${validated.error.message}`,
               'invalid_input',
-            )
-          if (boundIdentity !== doc.identity)
-            return failure(
-              'The document was replaced; create a new document binding',
-              'stale_target',
             )
           if (call.name === 'query_document') {
             try {
@@ -713,37 +794,6 @@ export function createDocsRuntime(bindings: DocsRuntimeBindings): DocsRuntime {
             }
             call = { ...call, input: { ...call.input, html: images.html } }
           }
-          if (call.name === 'get_editor_capabilities') {
-            const helperTools = resources()?.tools ?? []
-            const tools = [
-              ...docsToolCatalog(opNames()),
-              ...DOCS_RUNTIME_TOOLS,
-              ...DOCS_RESOURCE_TOOLS,
-            ].map((tool) => {
-              const unavailable = DOCS_RESOURCE_TOOL_NAMES.has(tool.name)
-                ? helperTools.some((helper) => helper.name === tool.name)
-                  ? resourceRefusal(doc)
-                  : {
-                      reason: 'This resource helper is not available in the current host context',
-                      errorCode: 'unavailable' as const,
-                    }
-                : (authoredStoreUnavailable(tool.name, bindings.current()) ??
-                  toolUnavailable(tool.name, doc))
-              return { ...tool, available: !unavailable, ...(unavailable ?? {}) }
-            })
-            return {
-              output: JSON.stringify({
-                documentId,
-                editable: doc.editor.isEditable,
-                tools,
-                resourceContext: resourceRefusal(doc) ? '' : (resources()?.buildContext?.() ?? ''),
-                htmlRules: HTML_RULES,
-                operations: opCatalog(),
-              }),
-              summary: 'Document capabilities',
-              mutated: false,
-            }
-          }
           if (DOCS_RESOURCE_TOOL_NAMES.has(call.name)) {
             if (!helper)
               return failure(
@@ -753,6 +803,7 @@ export function createDocsRuntime(bindings: DocsRuntimeBindings): DocsRuntime {
             const denied = resourceRefusal(doc)
             if (denied) return failure(denied.reason, denied.errorCode)
             if (
+              !nativeCli &&
               call.name === 'run_cli' &&
               !DOCS_FILE_COMMANDS.has(String((call.input.args as unknown[] | undefined)?.[0] ?? ''))
             )
@@ -1109,12 +1160,14 @@ export function createDocsRuntime(bindings: DocsRuntimeBindings): DocsRuntime {
               doc.editor.view.dispatch(transaction.setMeta('addToHistory', false))
           }
           if (!result.isError) {
-            if (call.name === 'get_document_context')
+            if (call.name === 'get_document_context') {
               result.output = bindDocumentImageHtml(
                 result.output,
                 boundState.documentId,
                 boundState.revision,
               )
+              result = { ...result, editable: doc.editor.isEditable }
+            }
             if (call.name === 'get_document_context' && doc.file)
               result.output =
                 `File: ${doc.file.path}\nContent: live editing buffer; dirty=${doc.file.dirty}; savedHash=${doc.file.savedHash ?? 'unknown'}\n` +
@@ -1154,6 +1207,21 @@ export function createDocsRuntime(bindings: DocsRuntimeBindings): DocsRuntime {
         }
         const result = boundState.queue
           .then(run)
+          .then((execution) => {
+            if (call.name !== 'get_document_context' || execution.isError) return execution
+            const doc = bindings.current()
+            if (
+              closed ||
+              disposed ||
+              operationSignal.aborted ||
+              doc?.identity !== boundIdentity ||
+              doc.editor.isDestroyed ||
+              resourceRefusal(doc)
+            )
+              return execution
+            const resourceContext = resources()?.buildContext?.()
+            return { ...execution, ...(resourceContext && { resourceContext }) }
+          })
           .catch(executionFailure)
           .then((execution): DocsOperationResult => {
             if (!disposed && bindings.current()?.identity === boundIdentity) current()
@@ -1229,6 +1297,8 @@ export function createDocsRuntime(bindings: DocsRuntimeBindings): DocsRuntime {
             outcome = refuse('The document binding is no longer valid', 'stale_target')
           else if (signal?.aborted)
             outcome = refuse('The save was canceled before writing', 'canceled')
+          else if (!current().editor.isEditable)
+            outcome = refuse('The document is read-only', 'permission_denied')
           else if (!bindings.save)
             outcome = refuse('The host does not provide saving', 'unavailable')
           else if (hasActiveDocumentDraft(current().editor))
@@ -1307,6 +1377,12 @@ export function createDocsRuntime(bindings: DocsRuntimeBindings): DocsRuntime {
   }
   return {
     connect,
+    availableTools() {
+      const doc = bindings.current()
+      return !doc || disposed || doc.editor.isDestroyed
+        ? []
+        : listTools(doc, bindings.resources?.())
+    },
     capture() {
       const seed = connect({ id: crypto.randomUUID() })
       const context = seed.context()
@@ -1314,6 +1390,7 @@ export function createDocsRuntime(bindings: DocsRuntimeBindings): DocsRuntime {
       return {
         ...context,
         signal: seed.signal,
+        availableTools: seed.availableTools,
         connect(caller) {
           const client = seed.fork(caller)
           scopedClients.add(client)

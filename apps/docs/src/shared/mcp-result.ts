@@ -1,21 +1,10 @@
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js'
 import { isDocsOperationResult } from './operation-result'
-import { DOCS_HARNESS_WORKFLOWS } from './harness-workflows'
 
 /** Standard MCP image content keeps binary media out of textual/structured diagnostics. */
-export function formatDocsMcpResult(result: unknown, toolName?: string): CallToolResult {
+export function formatDocsMcpResult(result: unknown): CallToolResult {
   if (isDocsOperationResult(result)) {
-    const { media, display, ...operation } = result
-    const metadata =
-      toolName === 'get_editor_capabilities' && !result.isError
-        ? {
-            ...operation,
-            output: JSON.stringify({
-              ...JSON.parse(operation.output),
-              harnessWorkflows: DOCS_HARNESS_WORKFLOWS,
-            }),
-          }
-        : operation
+    const { media, display, ...metadata } = result
     return {
       content: [
         { type: 'text', text: JSON.stringify(metadata) },

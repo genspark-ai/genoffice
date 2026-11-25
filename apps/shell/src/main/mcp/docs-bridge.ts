@@ -189,7 +189,7 @@ export function createDocsControl(deps: DocsBridgeDeps): DocsControl {
     await waitForReady(wcId)
     if (wc.isDestroyed()) throw new Error('The document tab was closed')
     if (invocation?.signal.aborted) throw new Error('The document operation was canceled')
-    if (invocation) {
+    if (invocation && command !== 'list_tools') {
       const targets = callerTargets.get(invocation.callerId) ?? new Set<number>()
       targets.add(wcId)
       callerTargets.set(invocation.callerId, targets)

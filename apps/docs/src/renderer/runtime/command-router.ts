@@ -88,6 +88,12 @@ export function createDocsCommandRouter(runtime: DocsRuntime): DocsCommands {
       try {
         const key = JSON.stringify([message.bindingId ?? null, callerId])
         let client = callers.get(key)?.client
+        if (message.command === 'list_tools') {
+          operationSignal.throwIfAborted()
+          if (client) return client.availableTools()
+          if (message.bindingId) return scopes.get(message.bindingId)?.availableTools() ?? []
+          return runtime.availableTools()
+        }
         if (!client) {
           if (message.bindingId) {
             const scope = scopes.get(message.bindingId)

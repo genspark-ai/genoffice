@@ -11,7 +11,7 @@ import type { ToolDisplay } from '@genoffice/agent-core'
 import type { AgentToolCall, CreateDocumentType } from '../../shared/ipc'
 import { t } from '../i18n/locale'
 import { MIND_MAP_LIMITS, parseMindMapTree } from '@genoffice/agent-core/mind-map'
-import { executeOps, opNames } from './ops'
+import { executeOps } from './ops'
 import {
   describeStructureDeletion,
   inventoryStructures,
@@ -91,7 +91,7 @@ import {
 
 const READ_MAX_CHARS = 24_000
 
-export const DOCS_EDITOR_TOOLS = docsToolCatalog(opNames())
+export const DOCS_EDITOR_TOOLS = docsToolCatalog()
 
 /**
  * App-owned header/footer state, handed to the tool executor. Writes run the

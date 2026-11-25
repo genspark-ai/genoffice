@@ -1,4 +1,5 @@
 // Modified for ForaOffice: reliable document targeting and portable inspection.
+import { HTML_RULES } from './html-rules'
 import type { AgentToolDef } from '@genoffice/agent-core'
 
 /** Runtime lifecycle controls, separate from the pinned native AI tool catalog. */
@@ -61,12 +62,6 @@ export const DOCS_RUNTIME_TOOLS: AgentToolDef[] = [
     },
   },
   {
-    name: 'get_editor_capabilities',
-    description:
-      'Discover current document tool availability, restricted HTML rules, and apply_ops operation signatures. In external mode all inference workflows execute in the Harness.',
-    inputSchema: { type: 'object', properties: {} },
-  },
-  {
     name: 'document_history',
     description:
       'Undo or redo one live-document edit. Refused if this caller has not read the latest document.',
@@ -103,7 +98,7 @@ export const DOCS_RUNTIME_TOOLS: AgentToolDef[] = [
       properties: {
         draftId: { type: 'string' },
         sequence: { type: 'integer', minimum: 1 },
-        html: { type: 'string', maxLength: 200_000 },
+        html: { type: 'string', maxLength: 200_000, description: HTML_RULES },
         deleteStructures: {
           type: 'array',
           items: { type: 'string' },

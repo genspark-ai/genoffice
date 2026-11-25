@@ -1,4 +1,5 @@
 // Modified for ForaOffice from GenOffice v0.12.852.
+import { OP_CONTRACTS } from '../../shared/op-contracts'
 import { STYLE_TYPES, ALIGNS, HIGHLIGHTS, LENGTH_DESC } from '../../shared/style-tool-schema'
 export { DEFINE_STYLE_TOOL, LIST_STYLES_TOOL } from '../../shared/style-tool-schema'
 import type { Node as PmDocNode } from '@tiptap/pm/model'
@@ -233,11 +234,7 @@ interface OpHelpers {
 /** Block ops registered by ops.ts: applyStyle puts a paragraph style on the targeted paragraphs. */
 export function styleOpDefs(h: OpHelpers): OpDef[] {
   const applyStyle: OpDef = {
-    name: 'applyStyle',
-    signature:
-      '{ op: "applyStyle", target, styleId }  // paragraph style by id (or name) from styles.xml / define_style; a heading style turns the block into a heading of its level, another paragraph style turns a heading back into a paragraph; list items keep their numbering',
-    keys: ['styleId'],
-    target: 'required',
+    ...OP_CONTRACTS.applyStyle,
     validate(op, where) {
       const shape = h.validateShape(op, this, where)
       if (shape) return shape

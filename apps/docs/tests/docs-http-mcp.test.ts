@@ -60,7 +60,18 @@ it('exposes standard HTTP MCP tools over the live unsaved document using returne
   const { active, service } = await fixture()
   const { client } = await connect(service)
   expect(service.connection.transport).toBe('streamable-http')
-  expect((await client.listTools()).tools.map((tool) => tool.name)).toContain('read_document')
+  const { tools } = await client.listTools()
+  const names = tools.map((tool) => tool.name)
+  expect(names).toContain('read_document')
+  expect(names).not.toContain('read_attachment')
+  expect(names).not.toContain('get_editor_capabilities')
+  expect(JSON.stringify(tools.find((tool) => tool.name === 'apply_ops')?.inputSchema)).toContain(
+    'setFont',
+  )
+  expect(await client.callTool({ name: 'get_editor_capabilities', arguments: {} })).toMatchObject({
+    isError: true,
+    content: [{ text: expect.stringContaining('not found') }],
+  })
   expect(JSON.stringify(await client.callTool({ name: 'read_document' }))).toContain(
     'Unsaved words',
   )

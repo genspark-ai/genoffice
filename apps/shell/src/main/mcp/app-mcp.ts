@@ -55,6 +55,7 @@ export interface McpRuntimeDeps {
    * the argument from the tool schemas
    */
   resolveTarget?: TargetResolver
+  listDocumentTargets?: () => Promise<number[]>
   /** where the MCP log file lives (userData); logging is unavailable without it */
   logFilePath?: string
 }
@@ -165,6 +166,7 @@ function buildTools(connection: McpInvocation): McpToolDefinition[] {
           if (!opened) throw new Error(`could not open ${filePath} in GenOffice`)
         },
         docs,
+        listDocumentTargets: deps.listDocumentTargets,
         extraFormats,
         ...(cli ? { cli } : {}),
         ...(deps.resolveTarget ? { resolveTarget: deps.resolveTarget } : {}),

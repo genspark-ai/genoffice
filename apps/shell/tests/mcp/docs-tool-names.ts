@@ -13,7 +13,6 @@ export const LIVE_DOCS_TOOL_NAMES = [
   'finish_document_draft',
   'generate_mindmap',
   'get_document_context',
-  'get_editor_capabilities',
   'insert_chart',
   'insert_content',
   'insert_endnote',

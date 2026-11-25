@@ -36,7 +36,6 @@ import { LIVE_DOCS_TOOL_NAMES } from './docs-tool-names'
  */
 
 const DEFAULT_NAMES = [
-  ...LIVE_DOCS_TOOL_NAMES,
   'apply_sheet_ops',
   'apply_slide_ops',
   'create_session',
@@ -84,6 +83,8 @@ function docsControl(): { control: DocsControl; calls: Array<Record<string, unkn
     runCommand: async (wcId, command, payload) => {
       calls.push({ wcId, command, payload })
       switch (command) {
+        case 'list_tools':
+          return LIVE_DOCS_TOOL_NAMES
         case 'read_document':
           return { blocks: [{ index: 0, text: 'Quarterly Report' }], text: 'Quarterly Report' }
         case 'insert_content':
@@ -313,6 +314,9 @@ describe('MCP surface over Streamable HTTP (/mcp)', () => {
 
       // ── 4. visible docx session: create → edit → read ─────────────────────
       const created = await call(client, 'create_session', { family: 'docx' })
+      expect((await client.listTools()).tools.map((tool) => tool.name)).toEqual(
+        expect.arrayContaining(LIVE_DOCS_TOOL_NAMES),
+      )
       expect(created.isError).toBe(false)
       expect(created.json).toMatchObject({ ok: true, family: 'docx' })
 
