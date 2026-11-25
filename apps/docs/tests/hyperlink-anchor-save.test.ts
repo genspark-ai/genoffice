@@ -6,11 +6,11 @@ import { buildDocx } from '../../../packages/docx-engine/tests/helpers/build-doc
 import { blocksToPmDoc, pmDocToSavePlan } from '../src/renderer/editor/convert'
 import { editorExtensions } from '../src/renderer/editor/extensions'
 
-it('keeps the external hyperlink bookmark when editing nearby text', async () => {
+it('keeps the external hyperlink bookmark and location attributes when editing nearby text', async () => {
   const untouched = '<w:p><w:r><w:t>untouched</w:t></w:r></w:p>'
   const bytes = await buildDocx({
     bodyXml:
-      '<w:p><w:hyperlink r:id="rId11" w:anchor="section2" w:history="1">' +
+      '<w:p><w:hyperlink r:id="rId11" w:anchor="section2" w:history="1" w:tgtFrame="_blank" w:docLocation="page-two">' +
       '<w:r><w:t>link</w:t></w:r></w:hyperlink><w:r><w:t>after</w:t></w:r></w:p>' +
       untouched,
     extraRels:
@@ -40,6 +40,8 @@ it('keeps the external hyperlink bookmark when editing nearby text', async () =>
     const zip = await JSZip.loadAsync(output)
     const xml = await zip.file('word/document.xml')!.async('string')
     expect(xml.match(/<w:hyperlink\b[^>]*>/)?.[0]).toContain('w:history="1"')
+    expect(xml.match(/<w:hyperlink\b[^>]*>/)?.[0]).toContain('w:tgtFrame="_blank"')
+    expect(xml.match(/<w:hyperlink\b[^>]*>/)?.[0]).toContain('w:docLocation="page-two"')
     expect(xml).toContain(untouched)
     const relsPath = 'word/_rels/document.xml.rels'
     const sourceZip = await JSZip.loadAsync(bytes)

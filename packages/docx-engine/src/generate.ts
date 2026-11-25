@@ -4011,13 +4011,15 @@ function runsXml(
         const group: Run[] = []
         const groupStart = i
         const href = run.link.href
-        const { anchor, history } = run.link
+        const { anchor, history, targetFrame, docLocation } = run.link
         let rId = run.link.rId
         while (
           i < to &&
           runs[i].link?.href === href &&
           runs[i].link?.anchor === anchor &&
-          runs[i].link?.history === history
+          runs[i].link?.history === history &&
+          runs[i].link?.targetFrame === targetFrame &&
+          runs[i].link?.docLocation === docLocation
         ) {
           const next = runs[i].link!.rId
           if (group.length > 0 && next !== undefined && rId !== undefined && next !== rId) break
@@ -4029,10 +4031,14 @@ function runsXml(
         for (let j = groupStart; j < i; j++) parts.push(startsAt(j))
         const tooltip = group[0]?.link?.tooltip
         const tipAttr = tooltip ? ` w:tooltip="${escapeXmlAttr(tooltip)}"` : ''
+        const frameAttr =
+          targetFrame === undefined ? '' : ` w:tgtFrame="${escapeXmlAttr(targetFrame)}"`
+        const locationAttr =
+          docLocation === undefined ? '' : ` w:docLocation="${escapeXmlAttr(docLocation)}"`
         if (href.startsWith('#')) {
           const inner = group.map((r) => fragment(r, true)).join('')
           parts.push(
-            `<w:hyperlink w:anchor="${escapeXmlAttr(href.slice(1))}"${tipAttr}>${inner}</w:hyperlink>`,
+            `<w:hyperlink w:anchor="${escapeXmlAttr(href.slice(1))}"${tipAttr}${frameAttr}${locationAttr}>${inner}</w:hyperlink>`,
           )
         } else {
           const finalRId = rId ?? allocate?.(href)
@@ -4042,7 +4048,7 @@ function runsXml(
               history === undefined ? '' : ` w:history="${escapeXmlAttr(history)}"`
             const inner = group.map((r) => fragment(r, true)).join('')
             parts.push(
-              `<w:hyperlink r:id="${escapeXmlAttr(finalRId)}"${anchorAttr}${tipAttr}${historyAttr}>${inner}</w:hyperlink>`,
+              `<w:hyperlink r:id="${escapeXmlAttr(finalRId)}"${anchorAttr}${tipAttr}${historyAttr}${frameAttr}${locationAttr}>${inner}</w:hyperlink>`,
             )
           } else {
             parts.push(group.map((r) => fragment(r, false)).join(''))
