@@ -147,10 +147,19 @@ test('the embedded public editor edits, undoes, saves and reopens Word with its 
     await page.waitForFunction(() => window.docsTest?.ready)
     await expect(page.locator('.ai-dock')).toHaveCount(0)
     const body = page.locator('.ProseMirror').first()
+    const commandKey = process.platform === 'darwin' ? 'Meta' : 'Control'
+    const selectPrefix = async (prefix: string) => {
+      await body.focus()
+      await body.evaluate((element, length) => {
+        const text = document.createTreeWalker(element, NodeFilter.SHOW_TEXT).nextNode()
+        if (!text) throw new Error('The document body has no text to select')
+        window.getSelection()?.setBaseAndExtent(text, 0, text, length)
+      }, prefix.length)
+      await expect.poll(() => page.evaluate(() => window.getSelection()?.toString())).toBe(prefix)
+    }
     await body.click()
     await page.keyboard.insertText('Manual Word text')
-    await page.keyboard.press('Control+Home')
-    for (let i = 0; i < 6; i++) await page.keyboard.press('Shift+ArrowRight')
+    await selectPrefix('Manual')
     await page.locator('.ai-ask-trigger').click()
     await page.locator('.ai-ask-pop-input').fill('Edit the selected text')
     await page.locator('.ai-ask-confirm').click()
@@ -223,10 +232,7 @@ test('the embedded public editor edits, undoes, saves and reopens Word with its 
     const grantForHarness = async () => {
       // An independent conversation receives its own UI-selected scope and caller lifetime.
       const count = await page.evaluate(() => window.docsTest.actions.length)
-      await body.click()
-      await page.keyboard.press('Control+Home')
-      for (let index = 0; index < 'Agent'.length; index++)
-        await page.keyboard.press('Shift+ArrowRight')
+      await selectPrefix('Agent')
       await page.locator('.ai-ask-trigger').click()
       await page.locator('.ai-ask-pop-input').fill('Edit the selected text')
       await page.locator('.ai-ask-confirm').click()
@@ -249,7 +255,12 @@ test('the embedded public editor edits, undoes, saves and reopens Word with its 
         },
       }),
     )
-    await page.keyboard.press('Control+End')
+    await body.focus()
+    await body.evaluate((element) => {
+      const selection = window.getSelection()
+      selection?.selectAllChildren(element)
+      selection?.collapseToEnd()
+    })
     const tool = async (name: string, input: Record<string, unknown>) => {
       const result = await mcp!.callTool({ name, arguments: input })
       if (result.isError) throw new Error(JSON.stringify(result.content))
@@ -436,7 +447,7 @@ test('the embedded public editor edits, undoes, saves and reopens Word with its 
     await page.evaluate(() => {
       delete (window.docsTest.services as Partial<DesktopApi>).saveDocxTo
     })
-    await page.keyboard.press('Control+Shift+S')
+    await page.keyboard.press(`${commandKey}+Shift+S`)
     await expect.poll(() => existsSync(output)).toBe(true)
     await expect(page.getByText('Saved', { exact: true })).toBeVisible()
     const archive = await JSZip.loadAsync(await readFile(output))
@@ -456,7 +467,7 @@ test('the embedded public editor edits, undoes, saves and reopens Word with its 
       item.click()
     })
     await expect(body).toHaveText('')
-    await page.keyboard.press('Control+o')
+    await page.keyboard.press(`${commandKey}+o`)
     await expect
       .poll(() =>
         page.evaluate(() => {
