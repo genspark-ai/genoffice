@@ -67,10 +67,11 @@ export function findChildren(node: XNode, name: string): XNode[] {
 }
 
 /**
- * Direct children with `name`, looking through w:sdt → w:sdtContent wrappers
- * (nested sdt included). Structured document tags may wrap table rows, cells
- * or paragraphs at any level; for display purposes the wrapper is transparent
- * (research-report templates wrap every field in an sdt).
+ * Direct children with `name`, looking through transparent OOXML wrappers:
+ * w:sdt → w:sdtContent and w:customXml (nested wrappers included). Both may
+ * wrap table rows, cells or paragraphs at any level; for display purposes the
+ * wrapper is transparent (research-report templates wrap every field in an
+ * sdt; Word's custom XML markup wraps block/row/cell content directly).
  */
 export function childrenThroughSdt(node: XNode, name: string | readonly string[]): XNode[] {
   const names = Array.isArray(name) ? (name as readonly string[]) : [name as string]
@@ -82,6 +83,9 @@ export function childrenThroughSdt(node: XNode, name: string | readonly string[]
       else if (cn === 'w:sdt') {
         const content = findChild(child, 'w:sdtContent')
         if (content) visit(content)
+      } else if (cn === 'w:customXml') {
+        // CT_CustomXmlBlock holds its block content directly (no sdtContent).
+        visit(child)
       }
     }
   }
