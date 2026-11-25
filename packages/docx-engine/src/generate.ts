@@ -1126,7 +1126,7 @@ function injectShapeText(
       const bodyPrAt = shapeXml.search(/<wps:bodyPr[\s/>]/)
       shapeXml =
         bodyPrAt === -1
-          ? shapeXml.replace('</wps:wsp>', `${txbx}<wps:bodyPr anchor="ctr"/></wps:wsp>`)
+          ? shapeXml.replace('</wps:wsp>', () => `${txbx}<wps:bodyPr anchor="ctr"/></wps:wsp>`)
           : shapeXml.slice(0, bodyPrAt) +
             txbx +
             shapeXml
