@@ -1,19 +1,19 @@
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 use std::fs::File;
-use std::io::{BufReader, Read};
+use std::io::Read;
 use std::path::Path;
 
 use base64::Engine;
 use quick_xml::events::Event;
-use quick_xml::{Reader, Writer};
+use quick_xml::Writer;
 use roxmltree::{Document, Node};
 use serde::Serialize;
 use zip::ZipArchive;
 
 use crate::SidecarError;
 use crate::types::{ThreadInfo, ThreadReplyInfo};
-use crate::xml_util::copy_entry_bounded;
+use crate::xml_util::{copy_entry_bounded, xml_reader};
 
 mod charts;
 mod colors;
@@ -1956,7 +1956,7 @@ pub(crate) fn read_worksheet_without_cells(
     path: &str,
 ) -> Result<String, SidecarError> {
     let entry = crate::zip_entry(archive, path)?;
-    let mut reader = Reader::from_reader(BufReader::new(entry));
+    let mut reader = xml_reader(entry)?;
     let mut writer = Writer::new(Vec::new());
     let mut buffer = Vec::new();
     let mut skipped = Vec::new();

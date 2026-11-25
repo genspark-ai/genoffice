@@ -79,7 +79,7 @@ pub(crate) fn read_sheet_cell_images(
         return Ok(Vec::new());
     }
     let entry = zip_entry(archive, worksheet_path)?;
-    let mut reader = Reader::from_reader(BufReader::new(entry));
+    let mut reader = xml_reader(entry)?;
     let mut buffer = Vec::new();
     let mut current_row = 0usize;
     let mut first_row = true;

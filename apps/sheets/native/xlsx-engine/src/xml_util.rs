@@ -2,6 +2,7 @@
 //! lookup, attribute access and text decoding.
 
 use std::borrow::Cow;
+use std::io::BufRead;
 
 use quick_xml::XmlVersion;
 
@@ -48,6 +49,24 @@ fn hex_value(value: u8) -> Option<u8> {
         b'A'..=b'F' => Some(value - b'A' + 10),
         _ => None,
     }
+}
+
+/// quick-xml's `Reader` only takes UTF-8, so part bytes go through
+/// `DecodingReader`. It picks UTF-16 up from the BOM; a code page that is
+/// only named in the XML declaration (windows-1252) is applied here.
+pub(crate) fn xml_reader<R: Read>(
+    source: R,
+) -> Result<Reader<quick_xml::encoding::DecodingReader<BufReader<R>>>, SidecarError> {
+    let mut source = BufReader::new(source);
+    let declared = match Reader::from_reader(source.fill_buf()?).read_event() {
+        Ok(Event::Decl(declaration)) => declaration.encoder(),
+        _ => None,
+    };
+    let mut decoding = quick_xml::encoding::DecodingReader::new(source);
+    if let Some(encoding) = declared.filter(|encoding| encoding.is_ascii_compatible()) {
+        decoding.set_encoding(encoding);
+    }
+    Ok(Reader::from_reader(decoding))
 }
 
 /// Entry lookup tolerant of non-conformant producers: '\' separators,

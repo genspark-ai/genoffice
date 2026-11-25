@@ -27,7 +27,7 @@ pub(crate) fn index_worksheet(
     let mut archive = ZipArchive::new(file)?;
     let link_targets = visuals::hyperlink_targets(&mut archive, worksheet_path)?;
     let entry = zip_entry(&mut archive, worksheet_path)?;
-    let mut reader = Reader::from_reader(BufReader::new(entry));
+    let mut reader = xml_reader(entry)?;
     let mut buffer = Vec::new();
     let mut cell_builder: Option<CellBuilder> = None;
     // <row r=> and <c r=> are both optional: a missing row is one below its

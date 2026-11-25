@@ -497,7 +497,10 @@ fn open_reports_sparklines_that_follow_the_cells() {
     let metadata = open_single_sheet(&xml);
     assert_eq!(metadata.sheets[0].sparklines.len(), 1);
     assert_eq!(metadata.sheets[0].sparklines[0].cells[0].cell, "B1");
-    assert_eq!(metadata.sheets[0].sparklines[0].cells[0].source_ref, "S!A1:A1");
+    assert_eq!(
+        metadata.sheets[0].sparklines[0].cells[0].source_ref,
+        "S!A1:A1"
+    );
 }
 
 #[test]
@@ -926,6 +929,14 @@ fn sheet_state_maps_hidden_and_very_hidden() {
 }
 
 pub(crate) fn open_fixture(entries: &[(&str, &str)]) -> (tempfile::TempDir, PathBuf) {
+    let entries: Vec<(&str, &[u8])> = entries
+        .iter()
+        .map(|(name, content)| (*name, content.as_bytes()))
+        .collect();
+    open_fixture_bytes(&entries)
+}
+
+pub(crate) fn open_fixture_bytes(entries: &[(&str, &[u8])]) -> (tempfile::TempDir, PathBuf) {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("fixture.xlsx");
     let mut writer = zip::ZipWriter::new(File::create(&path).unwrap());
@@ -933,10 +944,78 @@ pub(crate) fn open_fixture(entries: &[(&str, &str)]) -> (tempfile::TempDir, Path
         .compression_method(zip::CompressionMethod::Deflated);
     for (name, content) in entries {
         writer.start_file(*name, options).unwrap();
-        writer.write_all(content.as_bytes()).unwrap();
+        writer.write_all(content).unwrap();
     }
     writer.finish().unwrap();
     (dir, path)
+}
+
+fn encode_part(xml: &str, label: &str) -> Vec<u8> {
+    match label {
+        "UTF-16" => {
+            let mut bytes = vec![0xFF, 0xFE];
+            bytes.extend(xml.encode_utf16().flat_map(u16::to_le_bytes));
+            bytes
+        }
+        _ => xml
+            .chars()
+            .map(|c| u8::try_from(u32::from(c)).expect("latin-1 text"))
+            .collect(),
+    }
+}
+
+fn non_utf8_workbook_strings(label: &str) -> Vec<String> {
+    let declaration = format!(r#"<?xml version="1.0" encoding="{label}"?>"#);
+    let part = |body: &str| encode_part(&format!("{declaration}{body}"), label);
+    let workbook = r#"<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="S" sheetId="1" r:id="rId1"/></sheets></workbook>"#;
+    let rels = r#"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/></Relationships>"#;
+    let shared = part(
+        r#"<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><si><t>Crème brûlée</t></si></sst>"#,
+    );
+    let sheet = part(
+        r#"<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData><row r="1"><c r="A1" t="s"><v>0</v></c><c r="B1" t="inlineStr"><is><t>Façade</t></is></c></row></sheetData></worksheet>"#,
+    );
+    let (_dir, path) = open_fixture_bytes(&[
+        ("xl/workbook.xml", workbook.as_bytes()),
+        ("xl/_rels/workbook.xml.rels", rels.as_bytes()),
+        ("xl/sharedStrings.xml", &shared),
+        ("xl/worksheets/sheet1.xml", &sheet),
+    ]);
+    let mut sessions = WorkbookSessions::new();
+    let metadata = sessions.open(&path).unwrap();
+    let range = CellRange {
+        start_row: 0,
+        end_row: 0,
+        start_column: 0,
+        end_column: 1,
+    };
+    let result = sessions
+        .read_range(&metadata.session_id, "sheet-1", &range)
+        .unwrap();
+    let mut texts = Vec::new();
+    for cell in &result.cells {
+        match &cell.value {
+            Some(CellValue::String(text)) => texts.push(text.clone()),
+            other => panic!("unexpected {other:?}"),
+        }
+    }
+    texts
+}
+
+#[test]
+fn reads_utf16_parts_with_a_bom() {
+    assert_eq!(
+        non_utf8_workbook_strings("UTF-16"),
+        ["Crème brûlée", "Façade"]
+    );
+}
+
+#[test]
+fn reads_parts_declared_as_a_legacy_code_page() {
+    assert_eq!(
+        non_utf8_workbook_strings("windows-1252"),
+        ["Crème brûlée", "Façade"]
+    );
 }
 
 /// Writers that never update `<dimension>` leave `ref="A1"` on sheets

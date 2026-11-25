@@ -164,7 +164,7 @@ pub(crate) fn read_sheet_dimensions(
     count_budget: &mut usize,
 ) -> Result<SheetDimensions, SidecarError> {
     let entry = zip_entry(archive, worksheet_path)?;
-    let mut reader = Reader::from_reader(BufReader::new(entry));
+    let mut reader = xml_reader(entry)?;
     let mut buffer = Vec::new();
     let mut maximum_row = 0;
     let mut maximum_column = 0;
@@ -509,7 +509,7 @@ pub(crate) fn read_shared_strings(
     let Ok(entry) = zip_entry(archive, "xl/sharedStrings.xml") else {
         return Ok(Vec::new());
     };
-    let mut reader = Reader::from_reader(BufReader::new(entry));
+    let mut reader = xml_reader(entry)?;
     let mut buffer = Vec::new();
     let mut strings = Vec::new();
     let mut current = String::new();

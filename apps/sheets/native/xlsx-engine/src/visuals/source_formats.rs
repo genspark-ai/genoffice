@@ -5,13 +5,11 @@
 
 use std::collections::{HashMap, HashSet};
 use std::fs::File;
-use std::io::BufReader;
 
-use quick_xml::Reader;
 use quick_xml::events::Event;
 use zip::ZipArchive;
 
-use crate::xml_util::{attribute_value, zip_entry};
+use crate::xml_util::{attribute_value, xml_reader, zip_entry};
 
 use super::CellStyle;
 
@@ -148,9 +146,11 @@ impl SourceFormats {
             return;
         };
         let mut found: HashMap<String, Option<usize>> = HashMap::new();
-        if let Ok(entry) = zip_entry(archive, path) {
+        if let Some(mut reader) = zip_entry(archive, path)
+            .ok()
+            .and_then(|entry| xml_reader(entry).ok())
+        {
             count_sheet_pass();
-            let mut reader = Reader::from_reader(BufReader::new(entry));
             let mut buffer = Vec::new();
             loop {
                 let event = match reader.read_event_into(&mut buffer) {
@@ -243,7 +243,7 @@ fn cell_style_index(archive: &mut ZipArchive<File>, path: &str, cell: &str) -> O
     let target_row = row_of(cell)?;
     let entry = zip_entry(archive, path).ok()?;
     count_sheet_pass();
-    let mut reader = Reader::from_reader(BufReader::new(entry));
+    let mut reader = xml_reader(entry).ok()?;
     let mut buffer = Vec::new();
     loop {
         match reader.read_event_into(&mut buffer).ok()? {
