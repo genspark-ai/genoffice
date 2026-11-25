@@ -350,6 +350,7 @@ class GroupByFunction extends BaseFunction {
     if (filterVariant && !filterVariant.isNull?.()) {
       const filter = asArray(filterVariant)
       if (isError(filter)) return filter
+      if (filter.getRowCount() !== rowCount) return errorOf(ErrorType.VALUE)
       const mask = readFilter(filter, rowCount)
       dataRows = dataRows.filter((row) => mask[row])
     }
@@ -449,6 +450,7 @@ class PivotByFunction extends BaseFunction {
     if (filterVariant && !filterVariant.isNull?.()) {
       const filter = asArray(filterVariant)
       if (isError(filter)) return filter
+      if (filter.getRowCount() !== rowCount) return errorOf(ErrorType.VALUE)
       const mask = readFilter(filter, rowCount)
       dataRows = dataRows.filter((row) => mask[row])
     }

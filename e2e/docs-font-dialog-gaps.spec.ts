@@ -96,7 +96,7 @@ test('underline style and colour, emphasis mark and OpenType features apply, sav
     await dialog.screenshot({ path: test.info().outputPath('font-tab.png') })
 
     await dialog.getByRole('tab', { name: 'Advanced' }).click()
-    await expect(dialog.getByLabel('Snap to grid when document grid is defined')).toHaveCount(0)
+    await expect(dialog.getByLabel('Snap to grid when document grid is defined')).toBeChecked()
     await pick('Ligatures', 'Standard and Contextual')
     await pick('Number spacing', 'Tabular')
     await pick('Number forms', 'Old-style')
@@ -199,6 +199,8 @@ test('Default… keeps the font for new blank documents', async () => {
       .poll(() => documentXml(docPath), { timeout: 30_000 })
       .toContain('<w:sz w:val="40"/>')
     expect(await documentXml(docPath)).toContain('<w:i/>')
+    // the file is on disk before the save is over, and until then New Document asks about unsaved changes
+    await expect(page.locator('.status-msg')).toContainText('Saved')
 
     // a new blank document starts in the kept font
     await clickMenu(app, ['File', 'New Document'])

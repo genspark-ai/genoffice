@@ -1,6 +1,6 @@
 import type { Editor } from '@tiptap/core'
 import type { Fragment, Node as PmNode, Schema } from '@tiptap/pm/model'
-import type { Command, EditorState, Transaction } from '@tiptap/pm/state'
+import type { Command, EditorState, Selection, Transaction } from '@tiptap/pm/state'
 import { NodeSelection, TextSelection } from '@tiptap/pm/state'
 import type { EditorView } from '@tiptap/pm/view'
 import {
@@ -85,15 +85,28 @@ function recordColumnDelete(
     return rev?.kind === 'ins' && rev.author === author
   }
   if (cells.every(ownInsertion)) return null
+  return markCellsDeleted(
+    state,
+    cells.map((pos): [number, PmNode] => [tablePos + 1 + pos, table.nodeAt(pos)!]),
+    author,
+    null,
+  )
+}
+
+/** the cells stay, marked w:cellDel with their text struck; `shift` tells an acceptance the cells below move up */
+function markCellsDeleted(
+  state: EditorState,
+  cells: Array<[number, PmNode]>,
+  author: string,
+  shift: 'up' | null,
+): Transaction {
   const date = revisionDateNow()
   const tr = state.tr.setMeta(TRACK_IGNORE, true)
   const del = state.schema.marks.del.create({ author, date })
-  for (const pos of cells.sort((a, b) => b - a)) {
-    const cell = table.nodeAt(pos)!
-    const at = tablePos + 1 + pos
+  for (const [at, cell] of [...cells].sort((a, b) => b[0] - a[0])) {
     tr.setNodeMarkup(at, undefined, {
       ...cell.attrs,
-      cellRevision: { kind: 'del', author, date },
+      cellRevision: { kind: 'del', author, date, ...(shift ? { shift } : {}) },
       rawTcPr: withTrackMarker(
         cell.attrs.rawTcPr as string | null,
         'w:cellDel',
@@ -594,11 +607,182 @@ export const deleteTableColumn: Command = (state, dispatch) => {
 
 export type DeleteCellsMode = 'shiftLeft' | 'shiftUp' | 'row' | 'column'
 
-/** shifting cells needs a plain grid: merged cells would leave holes Word refuses too */
-export function canShiftCells(state: EditorState): boolean {
+/** along a row (shift right / left) or along a column (shift down / up) */
+export type ShiftAxis = 'row' | 'column'
+
+interface CellRect {
+  top: number
+  left: number
+  bottom: number
+  right: number
+}
+
+const covers = (c: GridCell, row: number, col: number) =>
+  c.top <= row && row < c.top + c.rowspan && c.left <= col && col < c.left + c.colspan
+
+/** a merged cell is in the way when the cells that move would have to move through it */
+function shiftable(cells: GridCell[], rect: CellRect, axis: ShiftAxis): boolean {
+  return cells.every((c) => {
+    if (axis === 'row') {
+      const inRows = c.top < rect.bottom && c.top + c.rowspan > rect.top
+      return !inRows || c.left + c.colspan <= rect.left || c.rowspan === 1
+    }
+    const inCols = c.left < rect.right && c.left + c.colspan > rect.left
+    if (!inCols || c.top + c.rowspan <= rect.top) return true
+    return c.rowspan === 1 && c.left >= rect.left && c.left + c.colspan <= rect.right
+  })
+}
+
+/** whether the cells after (row) or below (column) the selection can move: no merged cell stands in their way */
+export function canShiftCells(state: EditorState, axis: ShiftAxis): boolean {
   if (!isInTable(state)) return false
   const rect = selectedRect(state)
-  return gridOf(rect.table).cells.every((c) => c.colspan === 1 && c.rowspan === 1)
+  return shiftable(unitGaps(gridOf(rect.table).cells), rect, axis)
+}
+
+/** a row's w:gridBefore / w:gridAfter of several columns reads as one wide placeholder: one per column here */
+function unitGaps(cells: GridCell[]): GridCell[] {
+  return cells.flatMap((c) => {
+    if (!c.node.attrs.gridGap || c.colspan === 1) return [c]
+    const widths = cellWidths(c)
+    return Array.from({ length: c.colspan }, (_, i) => ({
+      node: c.node.type.create(
+        { ...c.node.attrs, colspan: 1, colwidth: widths ? [widths[i]] : null },
+        c.node.content,
+      ),
+      top: c.top,
+      left: c.left + i,
+      rowspan: 1,
+      colspan: 1,
+    }))
+  })
+}
+
+const gapLike = (schema: Schema, like: GridCell, top: number, left: number): GridCell => ({
+  node: like.node.type.create(
+    { ...like.node.attrs, gridGap: true, fill: null, borders: null, cellRevision: null },
+    blankCellContent(schema, like.node),
+  ),
+  top,
+  left,
+  rowspan: 1,
+  colspan: 1,
+})
+
+export type InsertCellsMode = 'shiftRight' | 'shiftDown'
+
+/**
+ * Insert Cells…: as many blank cells as are selected go in at the selection.
+ * Shifting right pushes the rest of each selected row along, so those rows
+ * stick out past the others (which save a w:gridAfter); shifting down adds
+ * rows at the bottom and moves the selected columns' cells into them.
+ */
+export function insertCells(mode: InsertCellsMode): Command {
+  return (state, dispatch) => {
+    if (!canShiftCells(state, mode === 'shiftRight' ? 'row' : 'column')) return false
+    const rect = selectedRect(state)
+    const { table } = rect
+    const tablePos = rect.tableStart - 1
+    const g = gridOf(table)
+    const cells = unitGaps(g.cells)
+    const schema = table.type.schema
+    const cellAt = (row: number, col: number) => cells.find((c) => covers(c, row, col))!
+    const inRect = (c: GridCell) =>
+      c.top >= rect.top && c.top < rect.bottom && c.left >= rect.left && c.left < rect.right
+    if (cells.some((c) => inRect(c) && c.node.attrs.gridGap)) return false
+    const track = activeTracking(state)
+    const date = revisionDateNow()
+    // `shift` tells a rejection which way the cells came: it is not in the file
+    const fresh = (like: GridCell, top: number, left: number, shift: string | null): GridCell => ({
+      node: like.node.type.create(
+        {
+          ...like.node.attrs,
+          cellRevision: track
+            ? { kind: 'ins', author: track.author, date, ...(shift ? { shift } : {}) }
+            : null,
+          rawTcPr: track
+            ? withTrackMarker(
+                like.node.attrs.rawTcPr as string | null,
+                'w:cellIns',
+                'w:tcPr',
+                track.author,
+                date,
+              )
+            : like.node.attrs.rawTcPr,
+        },
+        blankCellContent(schema, like.node),
+      ),
+      top,
+      left,
+      rowspan: 1,
+      colspan: like.colspan,
+    })
+    const width = rect.right - rect.left
+    const height = rect.bottom - rect.top
+    const placed: GridCell[] = []
+    let rows = g.rows
+    let widths = columnWidthsPx(table, g.map)
+    let pct = pctOf(table, g.map, widths)
+    if (mode === 'shiftRight') {
+      const realEnd = (row: number) =>
+        Math.max(
+          0,
+          ...cells
+            .filter((c) => c.top <= row && row < c.top + c.rowspan && !c.node.attrs.gridGap)
+            .map((c) => c.left + c.colspan),
+        )
+      let gridWidth = g.map.width
+      for (let row = rect.top; row < rect.bottom; row++)
+        gridWidth = Math.max(gridWidth, realEnd(row) + width)
+      for (let row = 0; row < g.map.height; row++) {
+        const shifted = row >= rect.top && row < rect.bottom
+        const end = realEnd(row) + (shifted ? width : 0)
+        for (const c of cells.filter((x) => x.top === row)) {
+          // the placeholders after the row's last cell are laid out again below
+          if (c.node.attrs.gridGap && c.left >= realEnd(row)) continue
+          placed.push(shifted && c.left >= rect.left ? { ...c, left: c.left + width } : c)
+          if (shifted && inRect(c)) placed.push(fresh(c, row, c.left, null))
+        }
+        const last = cellAt(row, realEnd(row) - 1)
+        for (let col = end; col < gridWidth; col++) placed.push(gapLike(schema, last, row, col))
+      }
+      // a column the cells are pushed into is as wide as the one they came from
+      for (let col = g.map.width; col < gridWidth; col++) {
+        widths = widths && [...widths, widths[col - width]]
+        pct = [...pct, pct[col - width]]
+      }
+    } else {
+      const bottom = g.rows[g.rows.length - 1]
+      rows = [
+        ...g.rows,
+        ...Array.from({ length: height }, () => bottom.type.create(blankRowAttrs(bottom))),
+      ]
+      for (const c of cells) {
+        const moved = c.left >= rect.left && c.left < rect.right && c.top >= rect.top
+        placed.push(moved ? { ...c, top: c.top + height } : c)
+        if (inRect(c)) placed.push(fresh(c, c.top, c.left, 'down'))
+      }
+      const lastRow = cells.filter(
+        (c) => c.top + c.rowspan === g.map.height && (c.left < rect.left || c.left >= rect.right),
+      )
+      for (let i = 0; i < height; i++) {
+        const row = g.map.height + i
+        for (const above of lastRow)
+          placed.push(
+            above.node.attrs.gridGap
+              ? gapLike(schema, above, row, above.left)
+              : fresh(above, row, above.left, 'row'),
+          )
+      }
+    }
+    const next = buildTable(table, rows, placed)
+    const tr = state.tr.replaceWith(tablePos, tablePos + table.nodeSize, next)
+    if (mode === 'shiftRight') reflowColumns(tr, tablePos, widths, pct)
+    caretIntoCell(tr, tablePos, tr.doc.nodeAt(tablePos)!, rect.top, rect.left)
+    if (track) tr.setMeta(TRACK_IGNORE, true)
+    dispatch?.(tr)
+    return true
+  }
 }
 
 /** Delete Cells… dialog */
@@ -607,65 +791,72 @@ export function deleteCells(mode: DeleteCellsMode): Command {
     if (!isInTable(state)) return false
     if (mode === 'row') return deleteRow(state, dispatch)
     if (mode === 'column') return deleteTableColumn(state, dispatch)
-    if (!canShiftCells(state)) return false
+    if (!canShiftCells(state, mode === 'shiftLeft' ? 'row' : 'column')) return false
     const rect = selectedRect(state)
     const { table } = rect
     const tablePos = rect.tableStart - 1
     const g = gridOf(table)
+    const cells = unitGaps(g.cells)
     const schema = table.type.schema
     const doomed = new Set<GridCell>()
-    for (const c of g.cells) {
+    for (const c of cells) {
       if (c.top >= rect.top && c.top < rect.bottom && c.left >= rect.left && c.left < rect.right)
         doomed.add(c)
     }
     if (doomed.size === 0) return false
+    const track = activeTracking(state)
+    const live = selectedCells(state)
+    const ownInsertion = ([, cell]: [number, PmNode]) => {
+      const rev = cell.attrs.cellRevision as { kind?: string; author?: string } | null
+      return rev?.kind === 'ins' && rev.author === track?.author
+    }
+    if (track && live.length > 0 && !live.every(ownInsertion)) {
+      dispatch?.(markCellsDeleted(state, live, track.author, mode === 'shiftUp' ? 'up' : null))
+      return true
+    }
     const width = rect.right - rect.left
     const height = rect.bottom - rect.top
     const placed: GridCell[] = []
     if (mode === 'shiftLeft') {
       // the row shortens; a borderless placeholder keeps the grid rectangular (saves as w:gridAfter)
-      for (const c of g.cells) {
+      for (const c of cells) {
         if (doomed.has(c)) continue
         const inRows = c.top >= rect.top && c.top < rect.bottom
         placed.push(inRows && c.left >= rect.right ? { ...c, left: c.left - width } : c)
       }
       for (let r = rect.top; r < rect.bottom; r++) {
-        for (let i = 0; i < width; i++) {
-          const gone = [...doomed].find((c) => c.top === r && c.left === rect.left + i)!
-          placed.push({
-            node: gone.node.type.create(
-              { ...gone.node.attrs, gridGap: true, fill: null, borders: null },
-              blankCellContent(schema, gone.node),
-            ),
-            top: r,
-            left: g.map.width - width + i,
-            rowspan: 1,
-            colspan: 1,
-          })
-        }
+        const gone = [...doomed].find((c) => c.top === r)!
+        for (let i = 0; i < width; i++)
+          placed.push(gapLike(schema, gone, r, g.map.width - width + i))
       }
     } else {
-      for (const c of g.cells) {
+      for (const c of cells) {
         if (doomed.has(c)) continue
         const inCols = c.left >= rect.left && c.left < rect.right
         placed.push(inCols && c.top >= rect.bottom ? { ...c, top: c.top - height } : c)
       }
-      for (let col = rect.left; col < rect.right; col++) {
+      const lastRow = cells.filter(
+        (c) => c.top === g.map.height - 1 && c.left >= rect.left && c.left < rect.right,
+      )
+      for (const last of lastRow) {
         for (let i = 0; i < height; i++) {
-          const last = g.cells.find((c) => c.left === col && c.top === g.map.height - 1)!
           placed.push({
             node: last.node.type.create(last.node.attrs, blankCellContent(schema, last.node)),
             top: g.map.height - height + i,
-            left: col,
+            left: last.left,
             rowspan: 1,
-            colspan: 1,
+            colspan: last.colspan,
           })
         }
       }
     }
     // rows left with placeholders only are gone (Word deletes them); an emptied
     // table becomes a paragraph, so the save never writes a w:tr without a w:tc
-    const liveRows = new Set(placed.filter((c) => !c.node.attrs.gridGap).map((c) => c.top))
+    const liveRows = new Set(
+      placed
+        .filter((c) => !c.node.attrs.gridGap)
+        .flatMap((c) => Array.from({ length: c.rowspan }, (_, i) => c.top + i)),
+    )
     if (liveRows.size === 0) {
       dispatch?.(
         state.tr.replaceWith(
@@ -816,30 +1007,58 @@ export function enterSelectedTable(
 }
 
 /**
- * A right-click inside selected cells: the browser puts its caret where the press
- * landed and the editor follows it a moment later. That one move is taken back, so
- * the menu acts on the cells.
+ * A right-click: the browser makes a selection of its own where the press landed
+ * (on macOS the word there) and the editor follows it a moment later. `settle`
+ * sees what was followed and returns the selection to put back, or null to let it be.
  */
-export function keepCellSelection(editor: Editor, cells: CellSelection): void {
+function afterRightClickFollow(
+  editor: Editor,
+  settle: (followed: Selection, doc: PmNode) => Selection | null,
+  /** only the first selection followed is looked at: a later one is the user's own */
+  firstOnly = false,
+): void {
   const stop = () => {
     editor.off('transaction', restore)
     window.clearTimeout(timer)
   }
   function restore({ transaction }: { transaction: Transaction }) {
     if (transaction.docChanged) return stop()
+    if (transaction.getMeta('pointer') !== true) return
     const { selection, doc } = editor.state
-    const followed =
-      transaction.getMeta('pointer') === true &&
-      selection.empty &&
-      cells.ranges.some(
-        ({ $from, $to }) => selection.from >= $from.pos && selection.from <= $to.pos,
-      )
-    if (!followed) return
+    const back = settle(selection, doc)
+    if (!back && !firstOnly) return
     stop()
-    if (doc === cells.$anchorCell.doc) editor.view.dispatch(editor.state.tr.setSelection(cells))
+    if (!back) return
+    editor.view.dispatch(editor.state.tr.setSelection(back))
   }
   const timer = window.setTimeout(stop, 300)
   editor.on('transaction', restore)
+}
+
+/** A right-click inside selected cells leaves the browser's caret in one of them: the cells are put back, so the menu acts on them. */
+export function keepCellSelection(editor: Editor, cells: CellSelection): void {
+  afterRightClickFollow(editor, (followed, doc) =>
+    followed.empty &&
+    doc === cells.$anchorCell.doc &&
+    cells.ranges.some(({ $from, $to }) => followed.from >= $from.pos && followed.from <= $to.pos)
+      ? cells
+      : null,
+  )
+}
+
+/**
+ * A right-click past the end of a line: what the browser selects there can start in the
+ * next block (the first cell of a table below). The caret stays where the press landed.
+ */
+export function keepCaretAtPress(editor: Editor, pos: number): void {
+  afterRightClickFollow(
+    editor,
+    (followed, doc) =>
+      pos >= followed.from && pos <= followed.to
+        ? null
+        : TextSelection.near(doc.resolve(Math.min(pos, doc.content.size))),
+    true,
+  )
 }
 
 /** the table move handle selects the whole table as a NodeSelection; cell commands need a caret inside */

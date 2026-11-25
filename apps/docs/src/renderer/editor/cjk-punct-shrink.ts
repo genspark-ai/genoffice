@@ -1,10 +1,22 @@
 import { Extension, type Editor } from '@tiptap/core'
-import { isEastAsianChar, isEastAsianLangTag, isHangulChar } from '@genoffice/docx-engine'
+import {
+  isCjkLetterChar,
+  isEastAsianChar,
+  isEastAsianLangTag,
+  isHangulChar,
+  type KinsokuCustom,
+} from '@genoffice/docx-engine'
 import { Plugin, PluginKey, type EditorState } from '@tiptap/pm/state'
 import { Decoration, DecorationSet, type EditorView } from '@tiptap/pm/view'
 import type { Node as ProseMirrorNode } from '@tiptap/pm/model'
 import { SettledParagraphCache, noteFloatTransaction } from './settled-measure'
 import { sameLine } from './justify-shrink'
+import {
+  ANY_STANDARD_LINE_END,
+  ANY_STANDARD_LINE_START,
+  STRICT_JA_LINE_START,
+  kinsokuLang,
+} from './kinsoku-tables'
 import { rangeSlot } from '../dom-range'
 import { PHASED_CONTENT_SETTLED_EVENT, isPhasedContentPending } from '../phased-content'
 
@@ -57,6 +69,27 @@ import { PHASED_CONTENT_SETTLED_EVENT, isPhasedContentPending } from '../phased-
  *   nor applies kinsoku — the next line simply starts with the 。 (probes
  *   2026-09-05). No w:lang anywhere keeps the East Asian rules.
  *
+ * compressPunctuationAndJapaneseKana (Word for Mac probes 2026-11-18 and
+ * 2026-11-22, 12pt and 10.5pt, with and without a character grid) adds one
+ * thing, on the same alignments:
+ * - A line takes up what the next one starts with (a character with the marks
+ *   that may not start a line after it, an opening bracket with what follows,
+ *   a Latin word) when its kana can make the room. Hiragana U+3041-3093,
+ *   katakana U+30A1-30F6 and the fullwidth digits and letters give up to a
+ *   sixteenth of their advance each (the grid advance under a character
+ *   grid), evenly; everything else keeps its advance.
+ * - Only as far as the line would otherwise stretch: each kana gives at most
+ *   about four times what each glyph of the line as it stands would be
+ *   stretched by (50 kana with 1 to 11pt left over: taken up from 3pt on,
+ *   from 4pt on with 19 kana). Lines filled exactly take nothing up.
+ * - Punctuation goes first: a line its punctuation settles has no kana
+ *   compressed; where a line-start rule forces the run up, closing punctuation
+ *   is set half width and the kana give the rest.
+ * - A stop that would hang comes inside when the kana can give its whole
+ *   advance, is set half width at the margin when they can give half of it,
+ *   and hangs otherwise; with w:overflowPunct off, half width or nothing.
+ * - An opening bracket taken up this way is drawn without its blank half.
+ *
  * Re-created as display-only inline decorations: the affected line's
  * compressible punctuation gets negative letter-spacing (opening brackets a
  * negative left margin, their blank half leads the glyph) so Chromium's greedy
@@ -87,6 +120,41 @@ export function forbidsLineEnd(ch: string): boolean {
 
 export function isCompressible(ch: string): boolean {
   return COMPRESSIBLE.has(ch)
+}
+
+const KANA_CLASS = /[\u3041-\u3093\u30a1-\u30f6\uff10-\uff19\uff21-\uff3a\uff41-\uff5a]/
+
+/** what compressPunctuationAndJapaneseKana compresses besides punctuation */
+export function isCompressibleKana(ch: string): boolean {
+  return KANA_CLASS.test(ch)
+}
+
+/**
+ * The letters and digits that get a gap next to East Asian text. Kept here: importing
+ * line-metrics changes the module order, and with it how one corpus paragraph settles.
+ */
+const LATIN_ALNUM = /[0-9A-Za-z\u00c0-\u00d6\u00d8-\u00f6\u00f8-\u024f]/
+
+function autospaceGap(ch: string, autoSpace: unknown): boolean {
+  if (autoSpace === false || !LATIN_ALNUM.test(ch)) return false
+  return typeof autoSpace !== 'string' || (autoSpace === 'digits') === /[0-9]/.test(ch)
+}
+
+/** a character of a Latin word: a run of them does not break */
+const LATIN_WORD = /[!-~\u00a1-\u024f]/
+
+export type SpacingControl = 'none' | 'punct' | 'kana'
+
+export function spacingControlOf(
+  parsed: { compressPunctuation?: boolean; compressKana?: boolean } | null | undefined,
+): SpacingControl {
+  return parsed?.compressKana ? 'kana' : parsed?.compressPunctuation ? 'punct' : 'none'
+}
+
+export function setSpacingControl(storage: CjkPunctShrinkStorage, control: SpacingControl): void {
+  storage.enabled = control !== 'none'
+  storage.hangPunct = control === 'none'
+  storage.kana = control === 'kana'
 }
 
 /** Word applies its East Asian line rules under a CJK w:lang w:eastAsia or none at all */
@@ -136,12 +204,16 @@ export interface CjkPunctShrinkStorage {
   enabled: boolean
   /** no compressPunctuation: a trailing stop that does not fit hangs into the margin */
   hangPunct: boolean
+  /** compressPunctuationAndJapaneseKana: kana give way too (only read when enabled) */
+  kana: boolean
   /** settings.xml compatibilityMode < 15: Word 2010 layout also pulls on unjustified lines */
   legacyLayout: boolean
   /** docDefaults w:lang w:eastAsia: the fallback of the run / paragraph-style chain */
   docEastAsiaLang: string | null
   /** settings.xml w:strictFirstAndLastChars: Word's Strict kinsoku level */
   strictKinsoku: boolean
+  /** settings.xml w:noLineBreaksBefore / After: Word's Custom kinsoku level */
+  kinsokuCustom: KinsokuCustom | null
 }
 
 /** dispatched on document after the doc-scoped <style> commits (App) */
@@ -265,6 +337,73 @@ export function decideCjkHangUnderCompression(line: ShrinkLineChars): number | n
   return (deficit + SHRINK_EPS) / pool
 }
 
+/** the run a line would take up: what the next line starts with and cannot be parted from */
+export interface KanaRun {
+  width: number
+  kanaWidth: number
+  kanaCount: number
+  /** half the advance of its opening brackets: Word draws them without the blank half */
+  openerCredit: number
+  /** advance of the stop or closing bracket it ends with, 0 when it ends otherwise */
+  stopWidth: number
+}
+
+export interface KanaLineChars {
+  natural: number
+  avail: number
+  chars: number
+  kanaWidth: number
+  kanaCount: number
+  /** what the line's closing punctuation can give: half its advance, for a run a line-start rule forces up */
+  punctCredit: number
+  chain: KanaRun
+  hangs: boolean
+}
+
+export interface KanaShrink {
+  perKana: number
+  halfStop: boolean
+  /** the share of punctCredit the closing punctuation gives, 0 to 1 */
+  punct: number
+}
+
+/** each kana gives at most this many times what each glyph of the line would stretch (probes: 3.9 to 4.7) */
+const KANA_PER_STRETCH = 4
+
+/** Word's kana rule over one measured line; null when the kana cannot make the room */
+export function decideKanaShrink(line: KanaLineChars): KanaShrink | null {
+  const { chain } = line
+  const room = line.avail - line.natural
+  const total = chain.width - chain.openerCredit - room
+  const count = line.kanaCount + chain.kanaCount
+  if (room < -NOISE) return null
+  if (total <= NOISE) {
+    // the run fits once its opening bracket gives up the blank half: the kana only carry the overshoot
+    const byBracket = chain.openerCredit > 0 && total + chain.openerCredit > NOISE
+    if (!byBracket || (count === 0 && total > -SHRINK_EPS)) return null
+    const perKana = count > 0 ? Math.max(0, total + SHRINK_EPS) / count : 0
+    return { perKana, halfStop: false, punct: 0 }
+  }
+  if (count === 0) return null
+  const cap = (line.kanaWidth + chain.kanaWidth) / 16 + NOISE
+  const perKanaLimit = (KANA_PER_STRETCH * room) / Math.max(1, line.chars - 1)
+  const plan = (need: number, halfStop: boolean): KanaShrink | null => {
+    const punct = Math.min(line.punctCredit, Math.max(0, need))
+    const kana = Math.max(0, need) - punct
+    if (kana > cap || kana / count > perKanaLimit) return null
+    return {
+      perKana: (kana + SHRINK_EPS) / count,
+      halfStop,
+      punct: punct > 0 ? punct / line.punctCredit : 0,
+    }
+  }
+  const stop = chain.stopWidth
+  return (
+    (stop === 0 || line.hangs ? plan(total, false) : null) ??
+    (stop > 0 ? plan(total - stop / 2, true) : null)
+  )
+}
+
 /** The glyphs a decided amount lands on: the line's own punctuation (closers
  *  and openers) when it has a closer to compress, otherwise the pulled chain's
  *  stops alone — decideCjkShrinks sized the amount for exactly those. */
@@ -366,22 +505,24 @@ export function mapTextNodes(
 const charRange = rangeSlot()
 
 const candidateCache = new WeakMap<ProseMirrorNode, boolean>()
+const kanaCandidateCache = new WeakMap<ProseMirrorNode, boolean>()
 /** CJK paragraph with something to compress, within the per-char measurement budget */
-function isCandidate(node: ProseMirrorNode): boolean {
-  let is = candidateCache.get(node)
+function isCandidate(node: ProseMirrorNode, kana: boolean): boolean {
+  const cache = kana ? kanaCandidateCache : candidateCache
+  let is = cache.get(node)
   if (is === undefined) {
     const text = node.textContent
     is = text.length <= PARA_CHAR_BUDGET && textHasCjkNoHangul(text)
     if (is) {
       is = false
       for (const ch of text) {
-        if (COMPRESSIBLE.has(ch)) {
+        if (COMPRESSIBLE.has(ch) || (kana && KANA_CLASS.test(ch))) {
           is = true
           break
         }
       }
     }
-    candidateCache.set(node, is)
+    cache.set(node, is)
   }
   return is
 }
@@ -535,7 +676,7 @@ class CjkPunctShrinkView {
       if (!node.isTextblock) return true
       // justification usually comes from the paragraph style, not a direct
       // attr: filter on the rendered alignment in measureParagraph instead
-      if (isCandidate(node)) paras.push({ node, pos })
+      if (isCandidate(node, this.storage.enabled && this.storage.kana)) paras.push({ node, pos })
       return false
     })
 
@@ -893,6 +1034,28 @@ class CjkPunctShrinkView {
     for (let k = 0; k < decisions.length; k++) {
       const perGlyph = decisions[k]
       const lm = lineModels[k]
+      if (this.storage.kana && perGlyph === null) {
+        const brBetween =
+          k + 1 < lines.length &&
+          breakPositions.some(
+            (p) => p > lines[k][lines[k].length - 1].from && p < lines[k + 1][0].from,
+          )
+        const kana = kanaShrinks(
+          lines[k],
+          brBetween ? undefined : lines[k + 1],
+          lm,
+          node.attrs.overflowPunct !== false,
+          node.attrs.autoSpace,
+        )
+        if (kana) {
+          for (const s of kana) {
+            if (hungFrom.has(s.from)) continue
+            hungFrom.add(s.from)
+            out.push(s)
+          }
+          continue
+        }
+      }
       // a compression emitted last round that did not pull its chain (own
       // closers decorated, line still short, chain still on the next line):
       // Chromium's breaker rejected the marginal fit, so hang instead
@@ -938,19 +1101,104 @@ class CjkPunctShrinkView {
   }
 }
 
+const isKana = (c: CharBox) => c.ea && KANA_CLASS.test(c.ch)
+const isOpen = (c: CharBox) => c.ea && COMPRESSIBLE_OPEN.has(c.ch)
+
+const glued = (a: CharBox, b: CharBox) =>
+  forbidsLineStart(b.ch) || forbidsLineEnd(a.ch) || (LATIN_WORD.test(a.ch) && LATIN_WORD.test(b.ch))
+
+function kanaShrinks(
+  line: CharBox[],
+  next: CharBox[] | undefined,
+  lm: ShrinkLineChars,
+  hangs: boolean,
+  autoSpace: unknown,
+): MeasuredShrink[] | null {
+  const sum = (boxes: CharBox[]) => boxes.reduce((s, c) => s + c.width, 0)
+  // the quarter-em gaps between East Asian and Latin text: canvas advances do not carry them
+  const gaps = (boxes: CharBox[]) => {
+    let w = 0
+    for (let i = 1; i < boxes.length; i++) {
+      const [a, b] = [boxes[i - 1], boxes[i]]
+      const wide = isCjkLetterChar(a.ch.codePointAt(0)!) ? a : b
+      const latin = wide === a ? b : a
+      if (isCjkLetterChar(wide.ch.codePointAt(0)!) && autospaceGap(latin.ch, autoSpace))
+        w += (wide.width - wide.ls) / 4
+    }
+    return w
+  }
+  let end = line.length
+  while (end > 1 && line[end - 1].ch === ' ') end--
+  let body = line.slice(0, end)
+  let run: CharBox[]
+  if (sum(body) + gaps(body) - lm.avail > NOISE) {
+    // the line holds a run an earlier round took up (or a hung stop): it is weighed
+    // again as if still on the line below, so the answer does not depend on the order
+    let at = end - 1
+    while (at > 0 && glued(body[at - 1], body[at])) at--
+    if (at === 0) return null
+    run = body.slice(at)
+    body = body.slice(0, at)
+  } else {
+    // a word broken in the middle has no break point to mend; behind a full stop or a bracket it has
+    if (!next || (LATIN_ALNUM.test(body[end - 1].ch) && LATIN_ALNUM.test(next[0].ch))) return null
+    let to = 1
+    while (to < next.length && glued(next[to - 1], next[to])) to++
+    run = next.slice(0, to)
+  }
+  const last = body[body.length - 1]
+  const kana = body.filter(isKana)
+  const closers = body.filter(isClose)
+  const runKana = run.filter(isKana)
+  const openers = run.filter(isOpen)
+  const stop = run[run.length - 1]
+  const natural = sum(body) + gaps(body)
+  // forced up: its first glyph fits, and only what follows it keeps it off the line
+  const forced =
+    run.slice(1).some(isKinsokuClose) &&
+    natural + run[0].width + gaps([last, run[0]]) <= lm.avail + NOISE
+  const decision = decideKanaShrink({
+    natural,
+    avail: lm.avail,
+    chars: body.length,
+    kanaWidth: sum(kana),
+    kanaCount: kana.length,
+    punctCredit: forced ? sum(closers) / 2 : 0,
+    chain: {
+      width: sum(run) + gaps([last, ...run]),
+      kanaWidth: sum(runKana),
+      kanaCount: runKana.length,
+      openerCredit: sum(openers) / 2,
+      stopWidth: isClose(stop) ? stop.width : 0,
+    },
+    hangs,
+  })
+  if (!decision) return null
+  const out: MeasuredShrink[] = []
+  // Blink snaps each letter-spacing: over forty kana the half-pixel overshoot would be lost
+  const perChar = Math.ceil(decision.perKana * 100) / 100 + 0.02
+  if (decision.perKana > 0)
+    for (const c of [...kana, ...runKana])
+      out.push({ from: c.from, ch: c.ch, perChar, baseLs: c.ls })
+  if (decision.punct > 0)
+    for (const c of closers)
+      out.push({ from: c.from, ch: c.ch, perChar: (decision.punct * c.width) / 2, baseLs: c.ls })
+  for (const c of openers) out.push({ from: c.from, ch: c.ch, perChar: c.width / 2, baseLs: c.ls })
+  if (decision.halfStop)
+    out.push({ from: stop.from, ch: stop.ch, perChar: stop.width / 2, baseLs: stop.ls })
+  return out
+}
+
 export const kinsokuOffPluginKey = new PluginKey<DecorationSet>('kinsokuOff')
 
+/** letters, digits, marks, format characters, spaces and the non-breaking hyphen: never set free by a list */
+const WORDISH = /[\p{L}\p{N}\p{M}\p{Cf}\s\u2011\ud800-\udfff]/u
+
 /**
- * What Word's Strict level adds to the characters that may not start a line
- * (probe 2026-11-18): small kana, the prolonged sound mark and their halfwidth
- * forms, in Japanese text only. The line-end set and every other language are
- * the same as Standard.
+ * Under a custom list a character it leaves out breaks freely: the ones a
+ * standard list names, and any other mark or symbol the browser would hold.
  */
-const STRICT_JA_LINE_START = new Set(
-  '\u3041\u3043\u3045\u3047\u3049\u3063\u3083\u3085\u3087\u308e' +
-    '\u30a1\u30a3\u30a5\u30a7\u30a9\u30c3\u30e3\u30e5\u30e7\u30ee\u30f5\u30f6\u30fc' +
-    '\uff67\uff68\uff69\uff6a\uff6b\uff6c\uff6d\uff6e\uff6f\uff70',
-)
+const frees = (ch: string, standard: Set<string>) => standard.has(ch) || !WORDISH.test(ch)
 
 function joiner(): HTMLElement {
   const span = document.createElement('span')
@@ -965,37 +1213,64 @@ function joiner(): HTMLElement {
  * opening bracket may end one, so the paragraph gets a break opportunity in
  * front of each closer and behind each opener. The Strict level: Japanese text
  * gets a joiner in front of each character it adds to the line-start set.
+ * The Custom level (same probe): the two lists replace the standard ones for
+ * text of their language, so a listed character gets a joiner and a standard
+ * one that is not listed a break opportunity; Strict wins over a Japanese list.
  */
 function kinsokuBreaks(doc: ProseMirrorNode, storage: CjkPunctShrinkStorage): DecorationSet {
   const decos: Decoration[] = []
   const wbr = () => document.createElement('wbr')
+  const custom = storage.kinsokuCustom
+  const customLang = custom ? kinsokuLang(custom.lang || 'x') : null
+  const before = new Set(customLang ? custom!.before : '')
+  const after = new Set(customLang ? custom!.after : '')
+  const ea = (ch: string | undefined) => !!ch && isEastAsianChar(ch.codePointAt(0)!)
   doc.descendants((node, pos) => {
     if (!node.isTextblock) return true
     const off = node.attrs.kinsoku === false
-    if (!off && !storage.strictKinsoku) return false
+    if (!off && !storage.strictKinsoku && !customLang) return false
     const paraLang = (node.attrs.eaLang as string | null) ?? storage.docEastAsiaLang
+    let prev: string | undefined
     node.forEach((child, offset) => {
-      if (!child.isText) return
+      if (!child.isText) {
+        prev = undefined
+        return
+      }
       const text = child.text ?? ''
       const lang =
         (child.marks.find((m) => m.type.name === 'docTextStyle')?.attrs.eaLang as
           string | null | undefined) ?? paraLang
-      const strict = !off && /^ja\b/i.test(lang ?? '')
-      if (!off && !strict) return
+      const strict = !off && storage.strictKinsoku && /^ja\b/i.test(lang ?? '')
+      const listed = !off && !strict && customLang !== null && kinsokuLang(lang) === customLang
       for (let i = 0; i < text.length; i++) {
         const at = pos + 1 + offset + i
+        const ch = text[i]
+        const last = i > 0 ? text[i - 1] : prev
         if (strict) {
-          if (STRICT_JA_LINE_START.has(text[i]) && offset + i > 0)
+          if (STRICT_JA_LINE_START.has(ch) && offset + i > 0)
             decos.push(Decoration.widget(at, joiner, { side: -1, key: 'kinsoku-strict' }))
-          continue
+        } else if (listed) {
+          if (offset + i === 0) continue
+          // a Latin mark is under these rules only where it touches East Asian text
+          const wide = (c: string) => c.charCodeAt(0) >= 0x3000
+          // `last` is missing behind a picture or a note mark: the listed character still holds on
+          if ((last !== undefined && after.has(last)) || before.has(ch))
+            decos.push(Decoration.widget(at, joiner, { side: -1, key: 'kinsoku-custom' }))
+          else if (
+            last !== undefined &&
+            ((frees(ch, ANY_STANDARD_LINE_START) && (wide(ch) || ea(last))) ||
+              (frees(last, ANY_STANDARD_LINE_END) && (wide(last) || ea(ch))))
+          )
+            decos.push(Decoration.widget(at, wbr, { side: -1, key: 'kinsoku-free' }))
+        } else if (off && ch.charCodeAt(0) >= 0x3000) {
+          // Latin punctuation was never under these rules: a break there would split "example.com"
+          if (forbidsLineStart(ch) && offset + i > 0)
+            decos.push(Decoration.widget(at, wbr, { side: -1, key: 'kinsoku-off' }))
+          if (forbidsLineEnd(ch))
+            decos.push(Decoration.widget(at + 1, wbr, { side: -1, key: 'kinsoku-off' }))
         }
-        // Latin punctuation was never under these rules: a break there would split "example.com"
-        if (text.charCodeAt(i) < 0x3000) continue
-        if (forbidsLineStart(text[i]) && offset + i > 0)
-          decos.push(Decoration.widget(at, wbr, { side: -1, key: 'kinsoku-off' }))
-        if (forbidsLineEnd(text[i]))
-          decos.push(Decoration.widget(at + 1, wbr, { side: -1, key: 'kinsoku-off' }))
       }
+      prev = text[text.length - 1]
     })
     return false
   })
@@ -1003,8 +1278,13 @@ function kinsokuBreaks(doc: ProseMirrorNode, storage: CjkPunctShrinkStorage): De
 }
 
 /** Typography > Kinsoku level changed: the page follows at once */
-export function setStrictKinsoku(editor: Editor, strict: boolean): void {
+export function setKinsokuLevel(
+  editor: Editor,
+  strict: boolean,
+  custom: KinsokuCustom | null,
+): void {
   editor.storage.cjkPunctShrink.strictKinsoku = strict
+  editor.storage.cjkPunctShrink.kinsokuCustom = custom
   editor.view.dispatch(
     editor.state.tr.setMeta(kinsokuOffPluginKey, true).setMeta('addToHistory', false),
   )
@@ -1016,9 +1296,11 @@ export const CjkPunctShrinkExtension = Extension.create({
     return {
       enabled: false,
       hangPunct: false,
+      kana: false,
       legacyLayout: false,
       docEastAsiaLang: null,
       strictKinsoku: false,
+      kinsokuCustom: null,
     }
   },
   addProseMirrorPlugins() {

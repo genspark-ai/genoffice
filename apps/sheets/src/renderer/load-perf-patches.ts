@@ -5,6 +5,9 @@
  * paid a full rebuild per chunk. Coalesce the rebuilds so a burst of skeleton
  * changes ends in one.
  */
+import { IUniverInstanceService } from '@univerjs/core'
+import { SheetRangeThemeModel } from '@univerjs/sheets'
+import type { UniverRuntime } from './univer-state'
 import { HeaderUnhideRenderController } from '@univerjs/sheets-ui'
 
 const HEADER_UNHIDE_SETTLE_MS = 120
@@ -28,5 +31,42 @@ export function installHeaderUnhideDebounce(): void {
         origUpdate.call(this, workbook, worksheet)
       }, HEADER_UNHIDE_SETTLE_MS),
     )
+  }
+}
+
+/** Alternating range styles are the only consumers of the full-sheet row
+ * visibility cache. On large sheets without range styles, leave the cache
+ * uninitialized so registering the first rule still builds it on demand. */
+export function installRangeThemeVisibilityGate(runtime: UniverRuntime): void {
+  const injector = runtime.univer.__getInjector()
+  const instances = injector.get(IUniverInstanceService)
+  const themes = injector.get(SheetRangeThemeModel)
+  const original = themes.refreshSheetRowVisibleFuncSet
+  const cache = (
+    themes as unknown as {
+      _rowVisibleFuncSet?: Map<string, Map<string, Set<number>>>
+    }
+  )._rowVisibleFuncSet
+  if (!cache) return
+  themes.refreshSheetRowVisibleFuncSet = (unitId, subUnitId) => {
+    const sheet = instances.getUniverSheetInstance(unitId)?.getSheetBySheetId(subUnitId)
+    if (
+      sheet &&
+      sheet.getRowCount() >= 100_000 &&
+      !themes.getRegisteredRangeThemeStyle({
+        unitId,
+        subUnitId,
+        range: {
+          startRow: 0,
+          endRow: sheet.getRowCount() - 1,
+          startColumn: 0,
+          endColumn: sheet.getColumnCount() - 1,
+        },
+      })
+    ) {
+      cache.get(unitId)?.delete(subUnitId)
+      return
+    }
+    original.call(themes, unitId, subUnitId)
   }
 }

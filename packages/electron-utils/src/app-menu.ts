@@ -735,6 +735,10 @@ export function setSettingsInvoker(invoke: (() => void) | null): void {
   settingsInvoker = invoke
 }
 
+export function hasSettingsInvoker(): boolean {
+  return settingsInvoker !== null
+}
+
 export function settingsMenuItem(
   labels: AppMenuLabels,
   fallback?: () => void,

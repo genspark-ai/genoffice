@@ -36,6 +36,7 @@ const open = {
   hasTableOfFigures: false,
   hasIndex: false,
   hasTableOfAuthorities: false,
+  hasLinks: false,
   hasMergeSource: false,
   windowsDetached: false,
 }
@@ -89,6 +90,7 @@ describe('ribbon command state', () => {
       ['update-table-of-figures', 'hasTableOfFigures'],
       ['update-index', 'hasIndex'],
       ['toa-update', 'hasTableOfAuthorities'],
+      ['edit-links', 'hasLinks'],
       ['show-comments', 'hasComments'],
       ['view-merge-windows', 'windowsDetached'],
       ['mailings-edit-recipients', 'hasMergeSource'],

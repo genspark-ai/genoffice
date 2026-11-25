@@ -1,6 +1,7 @@
 /** A narrow-column document with long words in every place text can sit outside the body. */
 import type { Page } from '@playwright/test'
 import JSZip from 'jszip'
+import { stylesWithLanguage } from './docs-objects-fixture'
 
 const W = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"'
 const NS =
@@ -124,6 +125,7 @@ export async function hyphenationPlacesDocx(opts: PlacesOptions): Promise<Buffer
       '<Default Extension="xml" ContentType="application/xml"/>' +
       `<Override PartName="/word/document.xml" ContentType="${TYPE}.document.main+xml"/>` +
       `<Override PartName="/word/settings.xml" ContentType="${TYPE}.settings+xml"/>` +
+      `<Override PartName="/word/styles.xml" ContentType="${TYPE}.styles+xml"/>` +
       `<Override PartName="/word/footnotes.xml" ContentType="${TYPE}.footnotes+xml"/>` +
       `<Override PartName="/word/endnotes.xml" ContentType="${TYPE}.endnotes+xml"/>` +
       `<Override PartName="/word/header1.xml" ContentType="${TYPE}.header+xml"/>` +
@@ -139,6 +141,7 @@ export async function hyphenationPlacesDocx(opts: PlacesOptions): Promise<Buffer
       `<Relationship Id="rIdH" Type="${REL}/header" Target="header1.xml"/>` +
       `<Relationship Id="rIdF" Type="${REL}/footer" Target="footer1.xml"/>` +
       `<Relationship Id="rIdS" Type="${REL}/settings" Target="settings.xml"/>` +
+      `<Relationship Id="rIdSt" Type="${REL}/styles" Target="styles.xml"/>` +
       `<Relationship Id="rIdFn" Type="${REL}/footnotes" Target="footnotes.xml"/>` +
       `<Relationship Id="rIdEn" Type="${REL}/endnotes" Target="endnotes.xml"/></Relationships>`,
   )
@@ -146,6 +149,8 @@ export async function hyphenationPlacesDocx(opts: PlacesOptions): Promise<Buffer
     'word/settings.xml',
     `<?xml version="1.0" encoding="UTF-8"?><w:settings ${W}>${opts.settings}</w:settings>`,
   )
+  // Word hyphenates only text that declares a language
+  zip.file('word/styles.xml', stylesWithLanguage())
   zip.file(
     'word/header1.xml',
     `<?xml version="1.0" encoding="UTF-8"?><w:hdr ${W}>${brief('header')}</w:hdr>`,

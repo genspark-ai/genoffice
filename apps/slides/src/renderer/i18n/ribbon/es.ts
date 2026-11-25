@@ -180,7 +180,7 @@ export const es = {
   ribbonBulletHangNarrow: 'Estrecha',
   ribbonBulletHangNormal: 'Normal',
   ribbonBulletHangWide: 'Ancha',
-  ribbonBulletHangCustomTip: 'Sangría de viñeta personalizada (px, Intro para aplicar)',
+  ribbonBulletHangCustomTip: 'Sangría de viñeta personalizada ({unit}, Intro para aplicar)',
   ribbonBulletSize: 'Tamaño de viñeta',
   ribbonBulletColor: 'Color de viñeta',
   ribbonNumberStyle: 'Estilo de numeración',

@@ -10,6 +10,7 @@ import {
   writeDocxStyles,
 } from '../src/index'
 import { buildDocx } from './helpers/build-docx'
+import { xmlProblem } from './helpers/strict-xml'
 
 const W = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"'
 const style = (id: string, inner: string, attrs = 'w:type="paragraph" w:customStyle="1"') =>
@@ -142,5 +143,18 @@ describe('copying styles between files', () => {
     const body = await (await JSZip.loadAsync(written)).file('word/document.xml')!.async('string')
     expect(body).not.toContain('MyQuote')
     expect((await parseDocx(written)).styles.get('Fancy')?.display).toMatchObject({ bold: true })
+  })
+
+  it('declares the prefix of a copied text effect the other file does not know', async () => {
+    const other = await buildDocx({ bodyXml: '<w:p><w:r><w:t>x</w:t></w:r></w:p>' })
+    const source =
+      `<w:styles ${W} xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml">` +
+      NORMAL +
+      style('Fancy', '<w:rPr><w:b/><w14:ligatures w14:val="standardContextual"/></w:rPr>') +
+      '</w:styles>'
+    const ups = styleCopyUpserts(source, 'Fancy', await readDocxStylesXml(other))
+    const styles = await readDocxStylesXml(await writeDocxStyles(other, ups))
+    expect(styles).toContain('<w14:ligatures w14:val="standardContextual"/>')
+    expect(xmlProblem(styles)).toBeNull()
   })
 })

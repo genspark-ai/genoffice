@@ -272,6 +272,22 @@ export function restoreParagraphPermMarkers(
   return injectIntoParagraph(rebuilt, missingStarts.join(''), missingEnds.join(''))
 }
 
+/** length of a leading w:pPr; a w:pPrChange nests a second w:pPr inside it */
+function leadingPPrLength(xml: string): number {
+  const first = /^<w:pPr\b[^>]*?(\/?)>/.exec(xml)
+  if (!first) return 0
+  if (first[1]) return first[0].length
+  const tag = /<w:pPr\b[^>]*?(\/?)>|<\/w:pPr>/g
+  tag.lastIndex = first[0].length
+  let depth = 1
+  for (let m = tag.exec(xml); m; m = tag.exec(xml)) {
+    if (m[0].startsWith('</')) depth--
+    else if (!m[1]) depth++
+    if (depth === 0) return tag.lastIndex
+  }
+  return 0
+}
+
 /** insert `head` after the w:pPr (or the open tag) and `tail` before </w:p> */
 export function injectIntoParagraph(pXml: string, head: string, tail: string): string {
   let out = pXml
@@ -281,8 +297,11 @@ export function injectIntoParagraph(pXml: string, head: string, tail: string): s
     else if (out.endsWith('/>')) out = `${out.slice(0, -2)}>${tail}</w:p>`
   }
   if (head) {
-    const pPr = /^<w:p\b[^>]*>(<w:pPr\b[^>]*\/>|<w:pPr\b[\s\S]*?<\/w:pPr>)?/.exec(out)
-    if (pPr) out = out.slice(0, pPr[0].length) + head + out.slice(pPr[0].length)
+    const open = /^<w:p\b[^>]*>/.exec(out)
+    if (open) {
+      const at = open[0].length + leadingPPrLength(out.slice(open[0].length))
+      out = out.slice(0, at) + head + out.slice(at)
+    }
   }
   return out
 }

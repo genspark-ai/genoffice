@@ -44,6 +44,17 @@ function rememberEmail(address: string): void {
   }
 }
 
+/** the name of the file a file: address points at, as the text of a link to it */
+export function fileNameOfUrl(href: string): string | null {
+  if (!/^file:/i.test(href)) return null
+  try {
+    const name = decodeURIComponent(new URL(href).pathname.split('/').pop() ?? '')
+    return name || null
+  } catch {
+    return null
+  }
+}
+
 /** Insert Hyperlink dialog, shared by the ribbon and the native application menu */
 export function LinkInsertModal({ editor, onClose }: { editor: Editor; onClose: () => void }) {
   const { t } = useI18n()
@@ -112,7 +123,7 @@ export function LinkInsertModal({ editor, onClose }: { editor: Editor; onClose: 
   const target = (): { href: string; label: string; headingPos?: number } | null => {
     if (tab === 'web') {
       const href = linkUrl.trim()
-      return href ? { href, label: href } : null
+      return href ? { href, label: fileNameOfUrl(href) ?? href } : null
     }
     if (tab === 'email') {
       const href = buildMailto(mail)
@@ -143,7 +154,7 @@ export function LinkInsertModal({ editor, onClose }: { editor: Editor; onClose: 
         return href.length > 1
       })
     }
-    const attrs = () => ({ href, rId: null, tooltip })
+    const attrs = () => ({ href, rId: null, anchor: null, history: null, tooltip })
     if (linkAtOpen) {
       if (text === linkAtOpen.text.trim()) {
         // target-only change: re-mark the existing run so character
@@ -243,16 +254,29 @@ export function LinkInsertModal({ editor, onClose }: { editor: Editor; onClose: 
           ))}
         </div>
         {tab === 'web' && (
-          <label>
-            {t('ribbonLinkAddress')}
-            <input
-              name="linkAddress"
-              value={linkUrl}
-              onChange={(e) => setLinkUrl(e.target.value)}
-              placeholder="https://…"
-              onKeyDown={onEnter}
-            />
-          </label>
+          <div className="link-address-row">
+            <label>
+              {t('ribbonLinkAddress')}
+              <input
+                name="linkAddress"
+                value={linkUrl}
+                onChange={(e) => setLinkUrl(e.target.value)}
+                placeholder="https://…"
+                onKeyDown={onEnter}
+              />
+            </label>
+            <button
+              type="button"
+              name="linkSelectFile"
+              onClick={() => {
+                void window.desktop.pickLinkFile().then((file) => {
+                  if (file) setLinkUrl(file.url)
+                })
+              }}
+            >
+              {t('ribbonLinkSelect')}
+            </button>
+          </div>
         )}
         {tab === 'doc' && (
           <div className="link-places" role="listbox" aria-label={t('ribbonLinkTabDoc')}>

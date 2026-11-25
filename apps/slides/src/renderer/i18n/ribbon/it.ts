@@ -179,7 +179,7 @@ export const it = {
   ribbonBulletHangNarrow: 'Stretto',
   ribbonBulletHangNormal: 'Normale',
   ribbonBulletHangWide: 'Largo',
-  ribbonBulletHangCustomTip: 'Rientro elenco puntato personalizzato (px, Invio per applicare)',
+  ribbonBulletHangCustomTip: 'Rientro elenco puntato personalizzato ({unit}, Invio per applicare)',
   ribbonBulletSize: 'Dimensione punto elenco',
   ribbonBulletColor: 'Colore punto elenco',
   ribbonNumberStyle: 'Stile numerazione',

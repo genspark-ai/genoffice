@@ -1,6 +1,9 @@
 import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { wrapBigCaptions } from './ribbon-caption-wrap'
 import { fitRibbon, styleCardRoom } from './ribbon-fit'
+import { RbGroupMenu } from './ribbon-group-menu'
+import type { StyleSetSource } from '../style-set-previews'
+import type { SavedTheme } from '../saved-themes'
 import { ArrangeGroup } from './ribbon-arrange-group'
 import type { Lang } from '@genoffice/i18n'
 
@@ -51,7 +54,6 @@ import {
 import { HIGHLIGHT_CSS } from '../editor/extensions'
 import type { CaseMode } from '../editor/case-transform'
 import { isRtlUiLang, setSelectionAlign } from '../editor/direction'
-import { setFloatingWrap } from '../editor/floating-z-order'
 import { selectedBoxIndex } from '../editor/selected-box'
 import { HORIZONTAL, TEXTBOX_DIRECTIONS } from '../editor/textbox-direction'
 import { setInactiveSelectionShown } from '../editor/inactive-selection'
@@ -72,7 +74,6 @@ import {
   type RibbonCommandSource,
 } from './ribbon-command'
 import { RbTextEffects } from './ribbon-text-effects'
-import { AlignObjectsMenu } from './ribbon-align-menu'
 import type { RibbonFormatState } from './ribbon-format-state'
 import { setSelectedColumnWidth } from '../editor/table-sizing'
 import {
@@ -147,10 +148,10 @@ import {
   type RevisionDisplayMode,
   type ViewMode,
   setParaAttrs,
+  BIG,
 } from './ribbon-tabs'
 import { ZoteroTab } from './ribbon-zotero-tab'
 import type { CommentsMode } from './comments-mode'
-import { WRAP_OPTIONS } from './ContextMenu'
 import {
   GensparkMark,
   IconAlignCenter,
@@ -202,11 +203,10 @@ import {
   IconPasteMerge,
   IconPasteSource,
   IconPasteText,
+  IconPicture,
   IconPilcrow,
   IconRemoveBg,
   IconReplacePicture,
-  IconRotateLeft,
-  IconRotateRight,
   IconRowDelete,
   IconRowInsertAbove,
   IconRowInsertBelow,
@@ -225,10 +225,6 @@ import {
   IconStyles,
   IconStylesPane,
   IconSelectAll,
-  IconBringForward,
-  IconBringToFront,
-  IconSendBackward,
-  IconSendToBack,
   IconComments,
 } from './icons'
 interface RibbonProps {
@@ -295,6 +291,10 @@ interface RibbonProps {
   watermarkPicture: PictureWatermarkSpec | null
   watermarkDocImage: HfImage | null
   themeFonts: ThemeFonts | null
+  /** what Design's style set cards are resolved against */
+  styleSetSource?: StyleSetSource | null
+  /** the theme files of the themes folder: Design > Themes > Custom */
+  savedThemes?: readonly SavedTheme[]
   themeColors: ThemeColors | null
   /** Draw → pen / highlighter / eraser */
   inkTool: InkTool
@@ -314,7 +314,7 @@ interface RibbonProps {
   zoom: number
   darkPage: boolean
   /** external request (e.g. native menu Page Setup) to switch to a specific tab */
-  tabRequest?: { tab: string; nonce: number } | null
+  tabRequest?: { tab: string; nonce: number; dropdown?: string } | null
   header: HeaderFooter | null
   footer: HeaderFooter | null
   /** a header/footer strip is being edited: the contextual Header & Footer tab shows */
@@ -369,6 +369,9 @@ interface RibbonProps {
 // Word for Mac has no File ribbon tab: file actions live in the native menu
 // bar (which we provide). Windows Word does have one, so keep it there.
 const IS_MAC = navigator.platform.toLowerCase().includes('mac')
+// Home's last rungs are Word for Mac's. Off macOS Home also carries the Editing group and
+// already overflows the default window, where they would fold Paragraph away.
+const HOME_FOLDS = IS_MAC
 // Word offers Half-width / Full-width under Change Case only on CJK UIs
 const WIDTH_CASE_LANGS = new Set<Lang>(['zh', 'zh-TW', 'ja'])
 /** shell tab mode: the tab strip above owns traffic lights / caption buttons */
@@ -468,12 +471,6 @@ const ASIAN_LAYOUT_ITEMS: Array<[ActionCommandId, StringKey]> = [
   ['format-fit-text', 'ribbonFitText'],
 ]
 
-const ARRANGE_ORDER_ITEMS: Array<[StringKey, (props: { size?: number }) => ReactNode, string]> = [
-  ['appBringToFront', IconBringToFront, 'front'],
-  ['appBringForward', IconBringForward, 'forward'],
-  ['appSendBackward', IconSendBackward, 'backward'],
-  ['appSendToBack', IconSendToBack, 'back'],
-]
 /**
  * Shape Format ▸ outline weight gallery, in points — the weights Word offers.
  * The model stores CSS px (1 pt = 12700 EMU = 4/3 px), so a pick converts
@@ -686,6 +683,9 @@ function RibbonInner({
   watermarkPicture,
   watermarkDocImage,
   themeFonts,
+  themeColors,
+  styleSetSource,
+  savedThemes,
   inkTool,
   onInkTool,
   inkPresets,
@@ -801,7 +801,7 @@ function RibbonInner({
       drawTabPending.current = requested === 'draw'
       lastRegularTab.current = requested
       setTab(requested)
-      setDropdown(null)
+      setDropdown(tabRequest.dropdown ?? null)
     } else if (
       tabRequest.tab === 'tableDesign' ||
       tabRequest.tab === 'pictureFormat' ||
@@ -819,6 +819,7 @@ function RibbonInner({
   // trigger counts as "inside" and falls through to the trigger's onClick
   // toggle (closing it) instead of being treated as an outside press.
   useDismissablePopover(dropdown != null, () => setDropdown(null), {
+    escape: true,
     inside: () =>
       Array.from(document.querySelectorAll('[data-rb-panel]')).flatMap((panel) => [
         panel,
@@ -928,82 +929,6 @@ function RibbonInner({
     }
   }, [inShape])
 
-  /**
-   * Arrange group of a floating box: wrap text, stacking order, quarter
-   * turns. Shared by Shape Format and the photo-box Picture Format, which
-   * both act on the pressed box of the node.
-   */
-  const floatArrangeGroup = (rotation: boolean) => (
-    <div className="table-tool-group">
-      <div className="table-tool-row">
-        <Dropdown
-          className="rb-wrap-dd"
-          disabled={!canEdit}
-          tip={t('ribbonWrapText')}
-          value={fs.imageWrap ?? ''}
-          options={WRAP_OPTIONS.map((opt) => ({
-            value: opt.value ?? '',
-            label: t(opt.labelKey),
-          }))}
-          onPick={(v) => {
-            if (!canEdit) return
-            setFloatingWrap(editor, v || null)
-          }}
-        />
-      </div>
-      <div className="table-tool-row">
-        {ARRANGE_ORDER_ITEMS.map(([label, Icon, step]) => (
-          <button
-            key={label}
-            className="table-tool-button"
-            disabled={!canEdit}
-            data-tip={t(label)}
-            aria-label={t(label)}
-            onClick={() => runCommand('arrange-order', step)}
-          >
-            <Icon size={17} />
-          </button>
-        ))}
-        <AlignObjectsMenu
-          editor={editor}
-          hasDoc={hasDoc}
-          dropdown={dropdown}
-          setDropdown={setDropdown}
-          look="tool"
-        />
-        {rotation && (
-          <>
-            <button
-              className="table-tool-button"
-              disabled={!canEdit}
-              data-tip={t('ribbonRotateRight')}
-              aria-label={t('ribbonRotateRight')}
-              onClick={() => {
-                if (!canEdit) return
-                setShapeRotation(90)
-              }}
-            >
-              <IconRotateRight size={17} />
-            </button>
-            <button
-              className="table-tool-button"
-              disabled={!canEdit}
-              data-tip={t('ribbonRotateLeft')}
-              aria-label={t('ribbonRotateLeft')}
-              onClick={() => {
-                if (!canEdit) return
-                setShapeRotation(-90)
-              }}
-            >
-              <IconRotateLeft size={17} />
-            </button>
-          </>
-        )}
-      </div>
-      <div className="ribbon-group-label">{t('ribbonGroupArrange')}</div>
-    </div>
-  )
-
   /** the selected node's boxes and the one the ribbon addresses (the pressed box of a multi-drawing paragraph) */
   const selectedBoxes = (): { boxes: TextboxDisplay[]; index: number } | null => {
     const boxes = editor.getAttributes('docProtected')?.textboxes as TextboxDisplay[] | null
@@ -1018,14 +943,13 @@ function RibbonInner({
       .run()
 
   /**
-   * apply fill/outline/rotation/weight to the selected floating box. Null
+   * apply fill/outline/weight to the selected floating box. Null
    * deletes the attribute so the file keeps Word's own default instead of an
    * explicit no-op value.
    */
   const setShapeStyle = (patch: {
     fill?: string | null
     borderColor?: string | null
-    rotDeg?: number | null
     borderWidthPx?: number | null
   }) => {
     if (!canEdit) return
@@ -1040,27 +964,11 @@ function RibbonInner({
       if (patch.borderColor) box.borderColor = patch.borderColor
       else delete box.borderColor
     }
-    if ('rotDeg' in patch) {
-      if (patch.rotDeg) box.rotDeg = patch.rotDeg
-      else delete box.rotDeg
-    }
     if ('borderWidthPx' in patch) {
       if (patch.borderWidthPx) box.borderWidthPx = patch.borderWidthPx
       else delete box.borderWidthPx
     }
     writeSelectedBox(sel.boxes, sel.index, box)
-  }
-
-  /**
-   * rotate the selected shape by `delta` degrees clockwise (Word's quarter
-   * turns): the stored angle is normalized to 0-359 and dropped once it is 0.
-   */
-  const setShapeRotation = (delta: number) => {
-    if (!canEdit) return
-    const sel = selectedBoxes()
-    if (!sel) return
-    const rotDeg = ((Math.round((sel.boxes[sel.index].rotDeg ?? 0) + delta) % 360) + 360) % 360
-    setShapeStyle({ rotDeg: rotDeg || null })
   }
 
   /** set the selected shape's outline width from one of Word's weights, in points */
@@ -1805,14 +1713,16 @@ function RibbonInner({
     else armPainter(true)
   }
 
-  // Word's copy / paste formatting chords (⇧⌘C / ⇧⌘V; off the Mac the paste
-  // chord carries Alt because Ctrl+Shift+V is the paste-and-match-style menu
-  // accelerator). Paste targets the selection, or the word at the caret.
+  // Word's copy / paste formatting chords: ⌥⌘C (and ⇧⌘C) / ⌥⌘V on the Mac,
+  // Ctrl+Shift+C / Ctrl+Alt+Shift+V elsewhere, where Ctrl+Shift+V is the
+  // paste-and-match-style menu accelerator. Paste targets the selection, or
+  // the word at the caret.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (!(e.metaKey || e.ctrlKey) || !e.shiftKey) return
-      const copy = e.code === 'KeyC' && !e.altKey
-      const paste = e.code === 'KeyV' && e.altKey === !IS_MAC
+      if (!(e.metaKey || e.ctrlKey)) return
+      const one = e.shiftKey !== e.altKey
+      const copy = e.code === 'KeyC' && (IS_MAC ? one : e.shiftKey && !e.altKey)
+      const paste = e.code === 'KeyV' && e.altKey && e.shiftKey !== IS_MAC
       if (!copy && !paste) return
       const el = document.activeElement
       if (el && el !== document.body && !el.closest('.ProseMirror')) return
@@ -1925,7 +1835,7 @@ function RibbonInner({
     setDropdown(null)
   }
 
-  const pasteAs = (mode?: PasteMode) => {
+  const pasteAs = (mode?: PasteMode | 'picture') => {
     setDropdown(null)
     runCommand('paste-as', mode)
   }
@@ -2038,6 +1948,9 @@ function RibbonInner({
                 >
                   {t('ribbonNameWithAi')}
                 </button>
+                <RbMenuCommand cmd="print" onRun={() => setDropdown(null)}>
+                  {t('appPrintTitle')} <span className="file-menu-key">Ctrl+P</span>
+                </RbMenuCommand>
                 <div className="file-menu-sep" />
                 {convertItems}
               </div>
@@ -2380,11 +2293,22 @@ function RibbonInner({
               </div>
             )}
             <div className="ribbon-sep" />
-            {/* ---- Arrange: wrap text / stacking order, mirroring the Picture Format group ---- */}
-            {floatArrangeGroup(true)}
+            <ArrangeGroup
+              editor={editor}
+              hasDoc={canEdit}
+              dropdown={dropdown}
+              setDropdown={setDropdown}
+            />
           </div>
         ) : tab === 'pictureFormat' && inImage && fs.pictureBox ? (
-          <div className="table-ribbon-body">{floatArrangeGroup(false)}</div>
+          <div className="table-ribbon-body">
+            <ArrangeGroup
+              editor={editor}
+              hasDoc={canEdit}
+              dropdown={dropdown}
+              setDropdown={setDropdown}
+            />
+          </div>
         ) : tab === 'pictureFormat' && inImage ? (
           <div className="table-ribbon-body">
             {fs.graphicSelected && (
@@ -2502,47 +2426,15 @@ function RibbonInner({
                   <div className="ribbon-group-label">{t('ribbonGroupAlignment')}</div>
                 </div>
                 <div className="ribbon-sep" />
-                <ArrangeGroup
-                  editor={editor}
-                  hasDoc={canEdit}
-                  dropdown={dropdown}
-                  setDropdown={setDropdown}
-                />
-                <div className="ribbon-sep" />
               </>
             )}
-            {fs.inlinePicture && (
-              <>
-                {/* ---- Arrange: wrap text of a run picture (its own node) ---- */}
-                <div className="table-tool-group">
-                  <div className="table-tool-row">
-                    <Dropdown
-                      className="rb-wrap-dd"
-                      disabled={!canEdit}
-                      tip={t('ribbonWrapText')}
-                      value={fs.imageWrap ?? ''}
-                      options={WRAP_OPTIONS.map((opt) => ({
-                        value: opt.value ?? '',
-                        label: t(opt.labelKey),
-                      }))}
-                      onPick={(v) => runCommand('picture-wrap', v || NONE)}
-                    />
-                  </div>
-                  <div className="table-tool-row">
-                    <AlignObjectsMenu
-                      editor={editor}
-                      hasDoc={hasDoc}
-                      dropdown={dropdown}
-                      setDropdown={setDropdown}
-                      look="tool"
-                      opensEmpty
-                    />
-                  </div>
-                  <div className="ribbon-group-label">{t('ribbonGroupArrange')}</div>
-                </div>
-                <div className="ribbon-sep" />
-              </>
-            )}
+            <ArrangeGroup
+              editor={editor}
+              hasDoc={canEdit}
+              dropdown={dropdown}
+              setDropdown={setDropdown}
+            />
+            <div className="ribbon-sep" />
             {/* ---- Size: height/width in the measurement unit, aspect lock, reset ---- */}
             <div className="ribbon-group">
               <div className="ribbon-group-items">
@@ -3168,7 +3060,7 @@ function RibbonInner({
         ) : tab === 'home' ? (
           <>
             {/* ---- Genspark AI (first slot: entry + one-click AI actions) ---- */}
-            <div className="ribbon-group">
+            <div className="ribbon-group" data-tight="1000">
               <div className="ribbon-group-items">
                 <button
                   className={`rb-big ai-entry ${aiEntry.pressed ? 'active' : ''}`}
@@ -3309,7 +3201,7 @@ function RibbonInner({
 
             <div className="ribbon-sep" />
 
-            <div className="ribbon-group">
+            <div className="ribbon-group" data-tight="1000">
               <div className="ribbon-group-items">
                 <div className="rb-split-wrap">
                   <button
@@ -3338,7 +3230,7 @@ function RibbonInner({
             <div className="ribbon-sep" />
 
             {/* ---- Clipboard ---- */}
-            <div className="ribbon-group">
+            <div className="ribbon-group" data-tight="1001">
               <div className="ribbon-group-items">
                 <div className="rb-split-wrap rb-big-split">
                   <button
@@ -3377,6 +3269,16 @@ function RibbonInner({
                       <button role="menuitem" onClick={() => pasteAs('text')}>
                         <IconPasteText size={16} />
                         {t('appPasteTextOnly')}
+                      </button>
+                      <button
+                        role="menuitem"
+                        onClick={() => {
+                          setDropdown(null)
+                          runCommand('paste-as', 'picture')
+                        }}
+                      >
+                        <IconPicture size={16} />
+                        {t('ribbonPasteFormatPicture')}
                       </button>
                       <div className="spacing-menu-sep" />
                       <button role="menuitem" onClick={() => pick('edit-paste-special')}>
@@ -3426,7 +3328,12 @@ function RibbonInner({
             <div className="ribbon-sep" />
 
             {/* ---- Font ---- */}
-            <div className="ribbon-group">
+            <div className="ribbon-group" data-menu={HOME_FOLDS ? 1004 : undefined}>
+              {HOME_FOLDS && (
+                <RbGroupMenu name={t('appFontDialogTitle')}>
+                  <IconFontColorA size={BIG} />
+                </RbGroupMenu>
+              )}
               <div className="ribbon-group-items rb-font-group">
                 <div className="rb-row">
                   {/* Editable combobox (free-typed input + full preset dropdown): real
@@ -3748,7 +3655,12 @@ function RibbonInner({
             <div className="ribbon-sep" />
 
             {/* ---- Paragraph ---- */}
-            <div className="ribbon-group">
+            <div className="ribbon-group" data-menu={HOME_FOLDS ? 1003 : undefined}>
+              {HOME_FOLDS && (
+                <RbGroupMenu name={t('ribbonGroupParagraph')}>
+                  <IconAlignLeft size={BIG} />
+                </RbGroupMenu>
+              )}
               <div className="ribbon-group-items rb-font-group">
                 <div className="rb-row">
                   <div className="rb-split-wrap">
@@ -4078,7 +3990,7 @@ function RibbonInner({
             <div className="ribbon-sep" />
 
             {/* ---- Styles ---- */}
-            <div className="ribbon-group ribbon-group-styles">
+            <div className="ribbon-group ribbon-group-styles" data-tight="1001">
               <div className="ribbon-group-items rb-split-wrap style-gallery-wrap">
                 {styleCards > 0 && (
                   <div className="style-gallery-inline">{renderStyleCards(false, styleCards)}</div>
@@ -4116,10 +4028,19 @@ function RibbonInner({
                       <IconClearFormat />
                       {t('ribbonClearFormatting')}
                     </button>
+                    <button
+                      className="style-gallery-clear style-gallery-pane"
+                      disabled={stylesPane.disabled}
+                      onClick={() => pick('styles-pane')}
+                    >
+                      <IconStylesPane size={16} />
+                      {t('ribbonStylesPane')}
+                    </button>
                   </div>
                 )}
                 <button
                   className={`rb-big rb-styles-pane${stylesPane.pressed ? ' active' : ''}`}
+                  data-drop={HOME_FOLDS ? 1002 : undefined}
                   disabled={stylesPane.disabled}
                   aria-pressed={stylesPane.pressed}
                   data-tip={t(stylesPane.control.tip)}
@@ -4153,7 +4074,7 @@ function RibbonInner({
                       onClick={() => ed.chain().focus().selectAll().run()}
                     >
                       <IconSelectAll />
-                      {t('ribbonSelectAll')}
+                      <span className="rb-small-label">{t('ribbonSelectAll')}</span>
                     </button>
                   </div>
                   <div className="ribbon-group-label">{t('ribbonGroupEditing')}</div>
@@ -4200,6 +4121,9 @@ function RibbonInner({
             watermarkPicture={watermarkPicture}
             watermarkDocImage={watermarkDocImage}
             themeFonts={themeFonts}
+            themeColors={themeColors}
+            styleSetSource={styleSetSource ?? null}
+            savedThemes={savedThemes ?? NO_SAVED_THEMES}
           />
         ) : tab === 'layout' ? (
           <LayoutTab
@@ -4285,6 +4209,8 @@ function RibbonInner({
 // memo + shallow-stable formatState/callback props: caret moves that change no
 // displayed format skip re-rendering the whole ribbon
 /** the ribbon's controls read their commands from here, so the tab components need no extra props */
+const NO_SAVED_THEMES: readonly SavedTheme[] = []
+
 function RibbonWithCommands(props: RibbonProps) {
   const {
     hasDoc,

@@ -1,6 +1,6 @@
 /**
- * The Shape Format tab's Arrange group: wrap text plus the stacking commands,
- * where Word puts them. The commands themselves are unit-tested in
+ * The Shape Format tab's Arrange group, the one Layout shows: wrap text plus
+ * the stacking commands. The commands themselves are unit-tested in
  * floating-z-order.test.ts; this mounts the real ribbon and checks the group
  * is wired to the selected shape.
  */
@@ -60,11 +60,15 @@ function mountRibbon(editor: Editor) {
 const tipped = (container: HTMLElement, key: Parameters<typeof t>[0]): HTMLButtonElement =>
   container.querySelector(`.ribbon-body [data-tip="${t(key)}"]`) as HTMLButtonElement
 
-/** Drive a shared Dropdown (gs-dd): open the trigger, click the option by value. */
-function pickDropdown(container: HTMLElement, dd: HTMLButtonElement, value: string): void {
-  act(() => dd.click())
-  const item = container.querySelector<HTMLButtonElement>(`.gs-dd-item[data-value="${value}"]`)!
-  act(() => item.click())
+/** open one of the group's menu buttons and click the item with this caption */
+function pickFrom(
+  container: HTMLElement,
+  button: Parameters<typeof t>[0],
+  item: Parameters<typeof t>[0],
+): void {
+  act(() => tipped(container, button).click())
+  const items = [...container.querySelectorAll<HTMLButtonElement>('[data-rb-panel] button')]
+  act(() => items.find((el) => el.textContent?.trim() === t(item))!.click())
 }
 
 const attrsOf = (editor: Editor, pos: number) => editor.state.doc.nodeAt(pos)!.attrs
@@ -76,12 +80,16 @@ describe('the Shape Format Arrange group', () => {
   it('is only on screen while a shape is selected', async () => {
     const { editor } = await openBlankDoc()
     const { container, root, render } = mountRibbon(editor)
-    expect(tipped(container, 'appBringToFront')).toBeNull()
+    expect(tipped(container, 'appBringForward')).toBeNull()
 
     selectShape(editor)
     // the ribbon switches to Shape Format itself once the shape is selected
     render()
-    expect(tipped(container, 'appBringToFront')).not.toBeNull()
+    expect(tipped(container, 'appBringForward')).not.toBeNull()
+    // a shape has no preset place, and is turned but not mirrored
+    expect(tipped(container, 'ribbonPosition').disabled).toBe(true)
+    expect(tipped(container, 'ribbonWrapText').disabled).toBe(false)
+    expect(tipped(container, 'ribbonArrangeRotate').disabled).toBe(false)
 
     act(() => root.unmount())
     container.remove()
@@ -93,16 +101,16 @@ describe('the Shape Format Arrange group', () => {
     const pos = selectShape(editor)
     const { container, root } = mountRibbon(editor)
 
-    pickDropdown(container, tipped(container, 'ribbonWrapText'), 'behind')
+    pickFrom(container, 'ribbonWrapText', 'appWrapBehind')
     expect(attrsOf(editor, pos).imageWrap).toBe('behind')
     expect(wrapperClass(editor, pos)).toContain('doc-protected-floating')
     expect(wrapperClass(editor, pos)).toContain('doc-protected-behind')
 
-    pickDropdown(container, tipped(container, 'ribbonWrapText'), 'square-left')
+    pickFrom(container, 'ribbonWrapText', 'appWrapSquareLeft')
     expect(attrsOf(editor, pos).imageWrap).toBe('square-left')
     expect(wrapperClass(editor, pos)).toContain('doc-protected-wrapside')
 
-    pickDropdown(container, tipped(container, 'ribbonWrapText'), '')
+    pickFrom(container, 'ribbonWrapText', 'appWrapInline')
     expect(attrsOf(editor, pos).imageWrap).toBe(SHAPE_INLINE_WRAP)
 
     act(() => root.unmount())
@@ -115,19 +123,19 @@ describe('the Shape Format Arrange group', () => {
     const pos = selectShape(editor)
     const { container, root } = mountRibbon(editor)
 
-    act(() => tipped(container, 'appBringToFront').click())
+    pickFrom(container, 'appBringForward', 'appBringToFront')
     // a fresh shape is inline; the first reorder floats it in front
     expect(attrsOf(editor, pos).imageWrap).toBe('front')
     expect(attrsOf(editor, pos).imageZOrder).toBe(1)
     expect(wrapperClass(editor, pos)).toContain('doc-protected-floating')
 
-    act(() => tipped(container, 'appBringForward').click())
+    pickFrom(container, 'appBringForward', 'appBringForward')
     expect(attrsOf(editor, pos).imageZOrder).toBe(2)
 
-    act(() => tipped(container, 'appSendBackward').click())
+    pickFrom(container, 'appSendBackward', 'appSendBackward')
     expect(attrsOf(editor, pos).imageZOrder).toBe(1)
 
-    act(() => tipped(container, 'appSendToBack').click())
+    pickFrom(container, 'appSendBackward', 'appSendToBack')
     expect(attrsOf(editor, pos).imageZOrder).toBe(0)
 
     act(() => root.unmount())

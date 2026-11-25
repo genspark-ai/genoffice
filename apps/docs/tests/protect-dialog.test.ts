@@ -131,6 +131,68 @@ describe('ProtectDialog', () => {
     await d.cleanup()
   })
 
+  it('Sections… follows the Forms mode and reports the sections that changed', async () => {
+    const d = await mount({ sectionsProtected: [true, true, false] })
+    const sectionsButton = () => d.host.querySelector<HTMLButtonElement>('.protect-sections')!
+    expect(sectionsButton().disabled).toBe(true)
+    const [enable] = d.host.querySelectorAll('input[type="checkbox"]')
+    await d.click(enable)
+    expect(sectionsButton().disabled).toBe(true)
+    await d.click(d.host.querySelectorAll('input[type="radio"]')[3])
+    expect(sectionsButton().disabled).toBe(false)
+    await d.click(sectionsButton())
+    const boxes = () => [
+      ...d.host.querySelectorAll<HTMLInputElement>('.protect-sections-dialog input'),
+    ]
+    expect(boxes().map((b) => b.checked)).toEqual([true, true, false])
+    // Cancel keeps the list as it was
+    await d.click(boxes()[0])
+    await d.click(d.host.querySelector('.protect-sections-dialog .modal-actions button')!)
+    await d.click(sectionsButton())
+    expect(boxes().map((b) => b.checked)).toEqual([true, true, false])
+    await d.click(boxes()[1])
+    await d.click(d.host.querySelector('.protect-sections-dialog .btn-primary')!)
+    expect(d.host.querySelector('.protect-sections-dialog')).toBeNull()
+    await d.submit(d.applied)
+    expect(d.onApply).toHaveBeenCalledWith({
+      protection: { edit: 'forms', enforced: true },
+      sectionsProtected: [true, false, false],
+    })
+    await d.cleanup()
+  })
+
+  it('a forms protection that starts reports its sections even when the list was left alone', async () => {
+    const d = await mount({ sectionsProtected: [true, true] })
+    const [enable] = d.host.querySelectorAll('input[type="checkbox"]')
+    await d.click(enable)
+    await d.click(d.host.querySelectorAll('input[type="radio"]')[3])
+    await d.submit(d.applied)
+    expect(d.onApply).toHaveBeenCalledWith({
+      protection: { edit: 'forms', enforced: true },
+      sectionsProtected: [true, true],
+    })
+    await d.cleanup()
+  })
+
+  it('changing the sections of a password-protected forms restriction takes the password', async () => {
+    const creds = await hashProtectionPassword('lock-pw', 1000)
+    const protection = { edit: 'forms', enforced: true, ...creds }
+    const d = await mount({ protection, sectionsProtected: [true, true] })
+    await d.click(d.host.querySelector('.protect-sections')!)
+    await d.click(d.host.querySelector('.protect-sections-dialog input')!)
+    await d.click(d.host.querySelector('.protect-sections-dialog .btn-primary')!)
+    await d.submit(d.errorShown)
+    expect(d.onApply).not.toHaveBeenCalled()
+    const unlock = d.passwordInputs().at(-1)!
+    await d.setValue(unlock, 'lock-pw')
+    await d.submit(d.applied)
+    expect(d.onApply).toHaveBeenCalledWith({
+      protection,
+      sectionsProtected: [false, true],
+    })
+    await d.cleanup()
+  })
+
   it('removing a password-protected restriction requires the correct password', async () => {
     const creds = await hashProtectionPassword('lock-pw', 1000)
     const d = await mount({ protection: { edit: 'readOnly', enforced: true, ...creds } })

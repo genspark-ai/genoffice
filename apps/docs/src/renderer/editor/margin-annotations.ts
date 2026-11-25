@@ -331,6 +331,7 @@ function makeBubble(
       ta.focus()
       ta.setSelectionRange(ta.value.length, ta.value.length)
     }
+    entryEditors.set(entry, startEdit)
     const actions = makeCardActions(c, isRoot, replies.length, h, startEdit, flushEdits)
     if (actions) head.appendChild(actions)
     entry.append(head, text)
@@ -362,6 +363,31 @@ function makeBubble(
   }
   bubble.addEventListener('click', onJump)
   return bubble
+}
+
+/** what opens the edit box of a card entry, kept so a rebuilt card can open it again */
+const entryEditors = new WeakMap<Element, () => void>()
+
+/** a thread whose card was asked to open its edit box before the card was drawn */
+let editWanted: { id: string; until: number } | null = null
+const EDIT_WANTED_MS = 3000
+
+function openCardEdit(id: string, root: ParentNode): boolean {
+  const entry = root.querySelector(
+    `.comment-bubble[data-comment-id="${CSS.escape(id)}"] .comment-entry`,
+  )
+  const open = entry && entryEditors.get(entry)
+  open?.()
+  return !!open
+}
+
+/**
+ * Opens the edit box of a thread's own comment on its margin card. A card that
+ * is not drawn yet (comments were hidden, the layer follows pagination) opens
+ * it when it is.
+ */
+export function startMarginCommentEdit(id: string): void {
+  editWanted = openCardEdit(id, document) ? null : { id, until: Date.now() + EDIT_WANTED_MS }
 }
 
 /** per-thread display flags the app root carries for the margin layer */
@@ -622,6 +648,8 @@ export type AnchorPoint = { top: number; bottom: number; left: number }
  * opening a paragraph anchors at that paragraph's start), walking up.
  */
 export function visiblePointNear(el: HTMLElement | null, pm: HTMLElement): AnchorPoint | null {
+  // under a collapsed heading the balloon is hidden with its anchor
+  if (el?.closest('.doc-collapsed-body')) return null
   let cur: HTMLElement | null = el
   while (cur && cur !== pm) {
     for (
@@ -933,6 +961,14 @@ export function syncMarginAnnotations(
     value: typing.value,
     caret: typing.selectionStart ?? typing.value.length,
   }
+  // and an edit box that is open, with what was typed in it
+  const editing = layer.querySelector<HTMLTextAreaElement>('textarea.comment-edit-input')
+  const editDraft = editing && {
+    entryId: editing.closest<HTMLElement>('[data-entry-id]')?.dataset.entryId,
+    value: editing.value,
+    caret: editing.selectionStart ?? editing.value.length,
+    focused: document.activeElement === editing,
+  }
   layer.textContent = ''
 
   // Word: revision balloons live in a markup strip glued to the page; comment cards
@@ -1047,6 +1083,22 @@ export function syncMarginAnnotations(
         input.value = draft.value
         input.focus()
         input.setSelectionRange(draft.caret, draft.caret)
+      }
+    }
+    if (editWanted && editWanted.id === bubble.dataset.commentId) {
+      if (Date.now() < editWanted.until) openCardEdit(editWanted.id, layer)
+      editWanted = null
+    }
+    const entry =
+      editDraft?.entryId &&
+      bubble.querySelector(`[data-entry-id="${CSS.escape(editDraft.entryId)}"]`)
+    if (editDraft && entry) {
+      entryEditors.get(entry)?.()
+      const box = entry.querySelector<HTMLTextAreaElement>('textarea.comment-edit-input')
+      if (box) {
+        box.value = editDraft.value
+        if (editDraft.focused) box.setSelectionRange(editDraft.caret, editDraft.caret)
+        else box.blur()
       }
     }
   }

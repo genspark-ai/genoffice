@@ -21,7 +21,6 @@ import {
   underlineDecls,
 } from '../editor/run-typography'
 import { useModalKeys } from './modal-keys'
-import { Unavailable } from './Unavailable'
 
 /**
  * Word's Font dialog: the Font tab (faces, style, size, color, effects) and the
@@ -221,6 +220,40 @@ export function setUnderlineMark(
   return true
 }
 
+/**
+ * The Advanced tab's snap-to-grid box. Off writes the run's own w:snapToGrid
+ * off; on is written only over text that is off the grid, as an explicit on,
+ * because that text may be off through its character style.
+ */
+export function setRunSnapToGrid(
+  tr: Transaction,
+  ranges: ReadonlyArray<{ from: number; to: number }>,
+  on: boolean,
+): boolean {
+  const type = tr.doc.type.schema.marks.docTextStyle
+  const next = (base: Mark | undefined): Mark | undefined => {
+    if (on && !base?.attrs.offGrid) return undefined
+    return type.create({
+      ...(base?.attrs ?? {}),
+      offGrid: on ? null : true,
+      snapToGridOwn: on,
+    })
+  }
+  if (ranges.every((r) => r.from === r.to)) {
+    const mark = next((tr.storedMarks ?? tr.selection.$from.marks()).find((m) => m.type === type))
+    if (mark) tr.addStoredMark(mark)
+    return true
+  }
+  for (const { from, to } of ranges) {
+    tr.doc.nodesBetween(from, to, (node, pos) => {
+      if (!node.isText) return
+      const mark = next(node.marks.find((m) => m.type === type))
+      if (mark) tr.addMark(Math.max(pos, from), Math.min(pos + node.nodeSize, to), mark)
+    })
+  }
+  return true
+}
+
 /** the selection's ranges as plain positions (CellSelection = one per cell) */
 export function selectionRanges(sel: Selection): Array<{ from: number; to: number }> {
   return sel.ranges.map((r) => ({ from: r.$from.pos, to: r.$to.pos }))
@@ -316,6 +349,7 @@ export function FontDialog({
     textAttrs.caps === 'all' || textAttrs.caps === 'small' ? textAttrs.caps : '',
   )
   const [hidden, setHidden] = useState(textAttrs.vanish === true)
+  const [snapToGrid, setSnapToGrid] = useState(textAttrs.offGrid !== true)
   const [adv, setAdv] = useState<CharSpacingState>(() => charSpacingFromAttrs(textAttrs, size))
   // only touched fields are written: the initial values are one run's snapshot,
   // and a mixed selection must keep every other run's own value
@@ -390,6 +424,8 @@ export function FontDialog({
         }),
       )
     if (touched.has('strike')) chain = strike ? chain.setMark('strike') : chain.unsetMark('strike')
+    if (touched.has('snapToGrid'))
+      chain = chain.command(({ tr }) => setRunSnapToGrid(tr, ranges, snapToGrid))
     chain.run()
     onClose()
   }
@@ -708,9 +744,9 @@ export function FontDialog({
         />
         <span>{t('appKerningPointsAbove')}</span>
       </div>
-      <Unavailable id="font.snap-to-grid">
-        <div className="font-dialog-row">{check(t('appFontSnapToGrid'), true, () => {}, true)}</div>
-      </Unavailable>
+      <div className="font-dialog-row">
+        {check(t('appFontSnapToGrid'), snapToGrid, field('snapToGrid', setSnapToGrid))}
+      </div>
       <h3 className="font-group">{t('appFontTypography')}</h3>
       <div className="font-dialog-row">
         {picker(

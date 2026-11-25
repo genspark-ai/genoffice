@@ -13,6 +13,7 @@ import {
   patchSections,
   recordPageSetupChange,
   replayedPageSetup,
+  watermarkStateOf,
   type PageSetupPatch,
   type PageSetupState,
 } from '../src/renderer/editor/page-setup-history'
@@ -63,6 +64,9 @@ const state = (settings: SectionSettings, extra: Partial<PageSetupState> = {}): 
   ],
   autoHyphenation: false,
   hyphenation: { caps: true, limit: 0, zoneTwips: 360 },
+  pageColor: null,
+  watermark: { text: null, style: null, picture: null, dirty: false },
+  typography: { spacingControl: 'none', strictKinsoku: false, kinsokuCustom: null },
   ...extra,
 })
 
@@ -87,6 +91,8 @@ function harness() {
           endnote: { ...live.notes.endnote, ...patch.notes?.endnote },
         },
         hyphenation: { ...live.hyphenation, ...patch.hyphenation },
+        watermark: patch.watermark?.state ?? live.watermark,
+        typography: { ...live.typography, ...patch.typography },
       }
     }
   })
@@ -235,6 +241,65 @@ describe('page setup change', () => {
     expect(pageSetupChange(state(LETTER), after)).toBeNull()
   })
 
+  it('carries the page number format and a first-page choice of a section', () => {
+    const before = state(LETTER)
+    const after = state(LETTER)
+    after.sections = [
+      info(LETTER, {
+        pageNumberFmt: 'lowerRoman',
+        pageNumberStart: 3,
+        pageNumberChapter: { style: 1, sep: 'hyphen' },
+        titlePg: true,
+      }),
+    ]
+    const { undo, redo } = pageSetupChange(before, after)!
+    expect(undo.sections).toEqual({ 0: { pgNum: { chapter: null }, titlePg: false } })
+    expect(redo.sections).toEqual({
+      0: {
+        pgNum: { fmt: 'lowerRoman', start: 3, chapter: { style: 1, sep: 'hyphen' } },
+        titlePg: true,
+      },
+    })
+    const back = patchSections(after.sections, undo)[0]
+    expect([
+      back.pageNumberFmt,
+      back.pageNumberStart,
+      back.pageNumberChapter,
+      back.titlePg,
+    ]).toEqual([undefined, undefined, undefined, false])
+    expect(patchSections(before.sections, redo)).toEqual(after.sections)
+  })
+
+  it('carries the page colour, the watermark as it stood, and only the typography options that differ', () => {
+    const before = state(LETTER, { pageColor: null })
+    const draft = watermarkStateOf({ text: 'DRAFT', colorHex: 'FF0000' })
+    const after = state(LETTER, {
+      pageColor: 'FFF2CC',
+      watermark: draft,
+      typography: { spacingControl: 'kana', strictKinsoku: false, kinsokuCustom: null },
+    })
+    const { undo, redo } = pageSetupChange(before, after)!
+    expect(undo).toEqual({
+      pageColor: null,
+      // the file's own watermark: not one the save writes
+      watermark: { state: { text: null, style: null, picture: null, dirty: false } },
+      typography: { spacingControl: 'none' },
+    })
+    expect(redo).toEqual({
+      pageColor: 'FFF2CC',
+      watermark: { state: draft },
+      typography: { spacingControl: 'kana' },
+    })
+    expect(draft).toEqual({
+      text: 'DRAFT',
+      style: { colorHex: 'FF0000' },
+      picture: null,
+      dirty: true,
+    })
+    expect(watermarkStateOf(null)).toEqual({ text: null, style: null, picture: null, dirty: true })
+    expect(watermarkStateOf('COPY').style).toBeNull()
+  })
+
   it('carries the sectPr of a section behind an unsaved break', () => {
     const before = state(LETTER)
     before.sections = [info(LETTER, { pendingBreak: true, sectPrXml: '<a/>' }), info(LETTER)]
@@ -315,6 +380,37 @@ describe('page setup in the undo history', () => {
     expect(live().notes.footnote.numFmt).toBe('upperRoman')
     expect(live().autoHyphenation).toBe(true)
     expect(live().hyphenation.limit).toBe(3)
+    expect(editor.state.doc.textContent).toBe('alpha one')
+    editor.destroy()
+  })
+
+  it('takes a page colour and a typography option as one step each, in order with text edits', () => {
+    const { editor, change, replayed, live } = harness()
+    change(state(LETTER, { pageColor: 'FFF2CC' }))
+    editor.commands.insertContentAt(6, ' one')
+    change(
+      state(LETTER, {
+        pageColor: 'FFF2CC',
+        typography: { spacingControl: 'punct', strictKinsoku: true, kinsokuCustom: null },
+      }),
+    )
+    editor.commands.undo()
+    expect(replayed).toEqual([{ typography: { spacingControl: 'none', strictKinsoku: false } }])
+    expect(live().pageColor).toBe('FFF2CC')
+    editor.commands.undo()
+    expect(editor.state.doc.textContent).toBe('alpha')
+    expect(replayed).toHaveLength(1)
+    editor.commands.undo()
+    expect(live().pageColor).toBeNull()
+    editor.commands.redo()
+    editor.commands.redo()
+    editor.commands.redo()
+    expect(live().pageColor).toBe('FFF2CC')
+    expect(live().typography).toEqual({
+      spacingControl: 'punct',
+      strictKinsoku: true,
+      kinsokuCustom: null,
+    })
     expect(editor.state.doc.textContent).toBe('alpha one')
     editor.destroy()
   })

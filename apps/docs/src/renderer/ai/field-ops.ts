@@ -7,8 +7,8 @@ import { posAfterText } from './after-text'
  * Word field ops: insert an inline field with a locally computed (or given)
  * result, bookmark a paragraph for REF / PAGEREF, and refresh the fields the
  * editor can compute. A field inserted without a computed result is marked
- * dirty: the save gives a caption number its value and clears the mark (see
- * field-results), and what only Word can compute (page numbers, document
+ * dirty: the save gives a caption number or a page its value and clears the
+ * mark (see field-results), and what only Word can compute (document
  * properties, a REF with a position switch) keeps it, so Word updates it on open.
  */
 
@@ -64,7 +64,7 @@ function zoteroCitationProblem(args: unknown): string | null {
   if (!items.every(resolvable)) return 'every item in citationItems needs uris, id or itemData'
   return null
 }
-/** result defaults to "1" and Word recomputes on open */
+/** result defaults to "1" until the save or Word computes it */
 const COUNTER_FIELDS = new Set([
   'PAGE',
   'NUMPAGES',
@@ -74,8 +74,8 @@ const COUNTER_FIELDS = new Set([
   'NUMCHARS',
   'PAGEREF',
 ])
-/** inserted dirty, given its result when the document is saved */
-const SETTLED_ON_SAVE = new Set(['SEQ'])
+/** inserted dirty, given their result when the document is saved */
+const SETTLED_ON_SAVE = new Set(['SEQ', 'PAGE', 'NUMPAGES', 'SECTIONPAGES', 'PAGEREF'])
 const DATE_FIELDS = new Set(['DATE', 'TIME', 'CREATEDATE', 'SAVEDATE', 'PRINTDATE'])
 /** marks that never carry over onto an inserted field result */
 const NO_INHERIT = new Set([
@@ -654,7 +654,7 @@ export function fieldOpDefs(h: FieldOpHelpers): OpDef[] {
   const insertField: OpDef = {
     name: 'insertField',
     signature:
-      '{ op: "insertField", target, type: "SEQ"|"REF"|"PAGEREF"|"DATE"|"TIME"|"MERGEFIELD"|"IF"|"PAGE"|"NUMPAGES"|"AUTHOR"|..., args?: string, result?: string, position?: "start"|"end", afterText?: string }  // insert a Word field into exactly one paragraph, at its end unless position or afterText says otherwise; args is the instruction after the keyword ({ SEQ Figure \\* ARABIC } = type "SEQ", args "Figure \\* ARABIC"). Computed here: SEQ (visible fields with that identifier so far + 1), REF/PAGEREF (the bookmarked paragraph; insertBookmark creates one), DATE/TIME (now, \\@ picture), MERGEFIELD («Name»), IF with literal operands; PAGE/NUMPAGES show "1"; anything else needs result, the text shown until Word updates it. SEQ gets its real number when the document is saved; any other field that is not computed here (page numbers included) is marked dirty and refreshes when the file opens in Word. A Zotero citation is type "ADDIN", args "ZOTERO_ITEM CSL_CITATION {json}" (the Zotero Word-plugin payload: citationItems with uris, itemData, locator/label for pages) and result the formatted citation; Zotero\'s Refresh keeps it and the bibliography in sync',
+      '{ op: "insertField", target, type: "SEQ"|"REF"|"PAGEREF"|"DATE"|"TIME"|"MERGEFIELD"|"IF"|"PAGE"|"NUMPAGES"|"AUTHOR"|..., args?: string, result?: string, position?: "start"|"end", afterText?: string }  // insert a Word field into exactly one paragraph, at its end unless position or afterText says otherwise; args is the instruction after the keyword ({ SEQ Figure \\* ARABIC } = type "SEQ", args "Figure \\* ARABIC"). Computed here: SEQ (visible fields with that identifier so far + 1), REF/PAGEREF (the bookmarked paragraph; insertBookmark creates one), DATE/TIME (now, \\@ picture), MERGEFIELD («Name»), IF with literal operands; PAGE/NUMPAGES show "1"; anything else needs result, the text shown until Word updates it. SEQ gets its real number when the document is saved, and so do PAGE, NUMPAGES and PAGEREF when it is saved from the page view (otherwise they stay marked for Word); any other field that is not computed here is marked dirty and refreshes when the file opens in Word. A Zotero citation is type "ADDIN", args "ZOTERO_ITEM CSL_CITATION {json}" (the Zotero Word-plugin payload: citationItems with uris, itemData, locator/label for pages) and result the formatted citation; Zotero\'s Refresh keeps it and the bibliography in sync',
     keys: ['type', 'args', 'result', 'position', 'afterText'],
     target: 'required',
     validate(op, where) {

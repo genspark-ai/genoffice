@@ -134,11 +134,23 @@ export function createZoomWheelClassifier(): {
   ) => ZoomWheelIntent
 } {
   const pager = createWheelPager()
+  let lastPixelTime = -Infinity
+  let lastPixelDelta = 0
+  let notchMagnitude = 0
   const feed = (
     ev: Pick<WheelEvent, 'deltaY' | 'deltaMode' | 'ctrlKey' | 'metaKey'>,
     now: number,
   ): ZoomWheelIntent => {
     if (ev.deltaY === 0) return null
+    if (ev.deltaMode !== 0) return ev.deltaY > 0 ? 'zoom-out' : 'zoom-in'
+    const magnitude = Math.abs(ev.deltaY)
+    if (now - lastPixelTime > GAP_MS || Math.sign(ev.deltaY) !== Math.sign(lastPixelDelta)) {
+      notchMagnitude = Number.isInteger(ev.deltaY) && magnitude >= NOTCH ? magnitude : 0
+    } else if (magnitude !== notchMagnitude) {
+      notchMagnitude = 0
+    }
+    lastPixelTime = now
+    lastPixelDelta = ev.deltaY
     if (
       ev.deltaMode === 0 &&
       ev.ctrlKey &&
@@ -148,8 +160,12 @@ export function createZoomWheelClassifier(): {
     ) {
       return 'pinch'
     }
-    if (ev.deltaMode !== 0) return ev.deltaY > 0 ? 'zoom-out' : 'zoom-in'
     const flip = pager.feed(ev.deltaY, now)
+    // Matching full-notch packets from the start of a gesture can be a fast
+    // wheel. Once the stream varies, keep its tail under the pager's control.
+    // Feed the pager even for matching packets so a later swipe tail is not
+    // mistaken for a fresh gesture.
+    if (notchMagnitude) return ev.deltaY > 0 ? 'zoom-out' : 'zoom-in'
     return flip === 0 ? null : flip > 0 ? 'zoom-out' : 'zoom-in'
   }
   return { feed }

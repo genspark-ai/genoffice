@@ -13,8 +13,11 @@ import {
   applyTextFx,
   applyTextFxPreset,
   glowOf,
+  gradientFillOf,
+  gradientSpreadOf,
   sameTextFx,
   textFillOf,
+  textFillShownOf,
   textFxDecls,
   textFxOf,
 } from '../src/renderer/editor/text-fx'
@@ -187,6 +190,71 @@ describe('text effects', () => {
     editor.commands.setTextSelection({ from: 7, to: 12 })
     applyTextFx(editor, FX)
     expect(savedRuns()[1].fxOwn).not.toHaveProperty('fill')
+  })
+
+  it('puts a gradient over the colour, draws it clipped to the glyphs, and saves it as the text’s own', () => {
+    const gradient = gradientFillOf('4472C4', 'down')
+    expect(gradient).toEqual({
+      kind: 'gradient',
+      stops: [
+        { pos: 0, color: 'B4C7E7' },
+        { pos: 1, color: '4472C4' },
+      ],
+      angleDeg: 90,
+    })
+    expect(gradientSpreadOf(gradient)).toBe('down')
+    expect(gradientSpreadOf(gradientFillOf('C00000', 'center'))).toBe('center')
+    editor.commands.setTextSelection({ from: 7, to: 12 })
+    applyTextFx(editor, NONE, '4472C4', gradient)
+    expect(textFillShownOf(editor)).toEqual(gradient)
+    const span = editor.view.dom.querySelector('span[style*="background-clip"]') as HTMLElement
+    expect(span.textContent).toBe('fancy')
+    expect(span.style.backgroundImage).toMatch(/^linear-gradient\(180deg, rgb\(180, 199, 231\) 0%/)
+    expect(span.getAttribute('style')).toMatch(/-webkit-text-fill-color: ?transparent/)
+    const run = savedRuns()[1]
+    expect(run.color).toBe('4472C4')
+    expect(run.textFill).toEqual(gradient)
+    expect(run.fxOwn).toMatchObject({ fill: '4472C4', textFill: gradient })
+  })
+
+  it('gives a gradient up for a colour picked over it, on the page and in the save', () => {
+    editor.commands.setTextSelection({ from: 7, to: 12 })
+    applyTextFx(editor, NONE, '4472C4', gradientFillOf('4472C4', 'right'))
+    editor.chain().setMark('docTextStyle', { color: 'C00000' }).run()
+    expect(textFillShownOf(editor)).toBeNull()
+    expect(editor.view.dom.querySelector('span[style*="background-clip"]')).toBeNull()
+    const run = savedRuns()[1]
+    expect(run.textFill).toBeUndefined()
+    expect(run.fxOwn).toMatchObject({ fill: 'C00000', textFill: null })
+  })
+
+  it('makes a solid fill see-through over its colour, and takes that off again', () => {
+    editor.commands.setTextSelection({ from: 7, to: 12 })
+    const seeThrough = { kind: 'solid' as const, color: '4472C4', alpha: 0.6 }
+    applyTextFx(editor, NONE, '4472C4', seeThrough)
+    expect(textFillShownOf(editor)).toEqual(seeThrough)
+    const span = editor.view.dom.querySelector('span[style*="text-fill-color"]') as HTMLElement
+    expect(span.textContent).toBe('fancy')
+    expect(span.getAttribute('style')).toMatch(/rgba\(68, ?114, ?196, ?0\.6\)/)
+    const run = savedRuns()[1]
+    expect(run.color).toBe('4472C4')
+    expect(run.fxOwn).toMatchObject({ fill: '4472C4', textFill: seeThrough })
+
+    applyTextFx(editor, NONE, undefined, null)
+    expect(textFillShownOf(editor)).toBeNull()
+    expect(savedRuns()[1].fxOwn).toMatchObject({ fill: '4472C4', textFill: null })
+  })
+
+  it('takes a gradient off and keeps it through a change of another effect', () => {
+    const gradient = gradientFillOf('4472C4', 'diagonal')
+    editor.commands.setTextSelection({ from: 7, to: 12 })
+    applyTextFx(editor, NONE, '4472C4', gradient)
+    applyTextFx(editor, { ...NONE, glow: glowOf('4472C4', 5) })
+    expect(savedRuns()[1].fxOwn).toMatchObject({ textFill: gradient })
+    expect(textFillShownOf(editor)).toEqual(gradient)
+    applyTextFx(editor, NONE, undefined, null)
+    expect(textFillShownOf(editor)).toBeNull()
+    expect(savedRuns()[1].fxOwn).toMatchObject({ fill: '4472C4', textFill: null })
   })
 })
 

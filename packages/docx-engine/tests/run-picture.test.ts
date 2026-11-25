@@ -200,6 +200,60 @@ describe('run-level picture geometry on save', () => {
     expect(square).toContain('<wp:align>right</wp:align>')
   })
 
+  it('writes a turn and a flip on the picture a:xfrm, with the room the turn takes', async () => {
+    const floating = await runPicture(anchoredPicture({ posH: posOffset(0), posV: posOffset(0) }))
+    const same = { ...geometryOf(floating), rotDeg: 0, flipH: false, flipV: false }
+    expect(patchRunPictureXml(floating.xml, same)).toBe(floating.xml)
+
+    const turned = patchRunPictureXml(floating.xml, { ...same, rotDeg: 90, flipV: true })
+    expect(turned).toContain('<a:xfrm rot="5400000" flipV="1">')
+    // 200 x 133.3 px turned a quarter: the bounding box is taller by the difference
+    expect(turned).toContain('<wp:effectExtent l="0" t="317500" r="0" b="317500"/>')
+    expect(turned).toContain(`<wp:positionH relativeFrom="column">${posOffset(0)}</wp:positionH>`)
+    expect(await reparse(turned)).toMatchObject({ rotDeg: 90, flipV: true, wrap: floating.wrap })
+    // what the file already says is not written again
+    expect(patchRunPictureXml(turned, { ...same, rotDeg: 90, flipV: true })).toBe(turned)
+
+    const back = patchRunPictureXml(turned, same)
+    expect(back).toContain('<a:xfrm>')
+    expect(back).not.toMatch(/\brot=|flipV=/)
+    const again = await reparse(back)
+    expect([again.rotDeg, again.flipV]).toEqual([undefined, undefined])
+  })
+
+  it('keeps the room of a turn in step with a resize, in the same save or a later one', async () => {
+    const floating = await runPicture(anchoredPicture({ posH: posOffset(0), posV: posOffset(0) }))
+    const turnedAt = (xml: string, widthPx: number, heightPx: number) =>
+      patchRunPictureXml(xml, { ...geometryOf(floating), widthPx, heightPx, rotDeg: 90 })
+    // 100 x 40 px: 30 px more above and below
+    const both = turnedAt(floating.xml, 100, 40)
+    expect(both).toContain('<wp:extent cx="952500" cy="381000"/>')
+    expect(both).toContain('<wp:effectExtent l="0" t="285750" r="0" b="285750"/>')
+    const later = turnedAt(turnedAt(floating.xml, 200, 133), 100, 40)
+    expect(later).toContain('<wp:effectExtent l="0" t="285750" r="0" b="285750"/>')
+    expect(later.match(/<wp:effectExtent\b/g)).toHaveLength(1)
+    expect(turnedAt(later, 100, 40)).toBe(later)
+  })
+
+  it('gives a picture without an a:xfrm one to hold the turn', () => {
+    const drawing = /<w:drawing>[\s\S]*<\/w:drawing>/.exec(IMAGE_PARAGRAPH_XML)![0]
+    const bare = drawing.replace(/<pic:spPr\b[\s\S]*?<\/pic:spPr>/, '')
+    expect(bare).not.toContain('<a:xfrm')
+    const extent = /<wp:extent cx="(\d+)" cy="(\d+)"/.exec(bare)!
+    const xfrm = `<a:xfrm rot="10800000"><a:off x="0" y="0"/><a:ext cx="${extent[1]}" cy="${extent[2]}"/></a:xfrm>`
+    expect(patchRunPictureXml(bare, { rotDeg: 180 })).toContain(
+      `</pic:blipFill><pic:spPr>${xfrm}</pic:spPr>`,
+    )
+    for (const empty of ['<pic:spPr/>', '<pic:spPr bwMode="auto"></pic:spPr>']) {
+      const held = bare.replace('</pic:blipFill>', `</pic:blipFill>${empty}`)
+      expect(patchRunPictureXml(held, { rotDeg: 180 })).toContain(
+        `${empty.replace(/\/?>.*$/, '>')}${xfrm}</pic:spPr>`,
+      )
+    }
+    // nothing to turn: the picture stays as bare as it was
+    expect(patchRunPictureXml(bare, { rotDeg: 0, flipH: false })).toBe(bare)
+  })
+
   it('leaves VML pictures alone', () => {
     const vml =
       '<w:pict><v:shape style="width:10pt;height:10pt"><v:imagedata r:id="rId1"/></v:shape></w:pict>'

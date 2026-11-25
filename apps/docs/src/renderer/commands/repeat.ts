@@ -42,6 +42,15 @@ export function runRecorded(
   if (changed) last = { command, payload, docs: after, entered: new WeakSet() }
 }
 
+/**
+ * A repaint of what the last command left behind (a theme pick's colours reaching
+ * the page) is still that command's document: call with the document from before it.
+ */
+export function repainted(editor: Editor, before: PMNode): void {
+  const seen = last?.docs.find(([e]) => e === editor)
+  if (seen && seen[1] === before) seen[1] = editor.state.doc
+}
+
 /** the command Repeat would run now, if the document has not moved on since it ran */
 export function repeatable(
   editors: (Editor | null)[],

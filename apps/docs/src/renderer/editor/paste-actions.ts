@@ -14,6 +14,7 @@ import {
   type PasteMode,
 } from './paste-options'
 import { isForeignPasteHtml } from './paste-web-html'
+import { clipboardPicture } from './paste-picture'
 
 export type ClipboardPayload = { html: string; text: string; image: Blob | null }
 
@@ -41,6 +42,42 @@ export async function readClipboardPayload(): Promise<ClipboardPayload> {
     }
   }
   return payload
+}
+
+// what Change Picture can put in a picture's place: the bitmaps the save writes as they are
+const PICTURE_TYPES = ['image/png', 'image/jpeg', 'image/gif']
+
+async function clipboardPictureBlob(): Promise<Blob | null> {
+  try {
+    for (const item of await navigator.clipboard.read()) {
+      const type = PICTURE_TYPES.find((candidate) => item.types.includes(candidate))
+      if (type) return await item.getType(type)
+    }
+  } catch {
+    /* clipboard unavailable or denied */
+  }
+  return null
+}
+
+export async function clipboardHasPicture(): Promise<boolean> {
+  try {
+    const items = await navigator.clipboard.read()
+    return items.some((item) => PICTURE_TYPES.some((type) => item.types.includes(type)))
+  } catch {
+    return false
+  }
+}
+
+/** the picture on the clipboard as a data URL; null when it holds none */
+export async function readClipboardPicture(): Promise<string | null> {
+  const image = await clipboardPictureBlob()
+  if (!image) return null
+  return new Promise((resolve) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(typeof reader.result === 'string' ? reader.result : null)
+    reader.onerror = () => resolve(null)
+    reader.readAsDataURL(image)
+  })
 }
 
 function clipboardEvent(html: string | null, text: string): ClipboardEvent {
@@ -84,8 +121,19 @@ export function pastePayload(
 ): boolean {
   const { html, text, image } = payload
   if (mode === 'picture') {
-    if (!image) return false
-    insertBlobImage(editor, image)
+    if (image) {
+      insertBlobImage(editor, image)
+      return true
+    }
+    // Word's Paste as Picture: copied text or a table is drawn as one picture
+    if (!html.trim() && !text.trim()) return false
+    void clipboardPicture(html, text).then((picture) => {
+      if (!picture) return
+      void insertImageFromDataUrl(editor, picture.dataUrl, 'Picture (pasted)', undefined, {
+        width: picture.widthPx,
+        height: picture.heightPx,
+      })
+    })
     return true
   }
   if (html) {
@@ -132,6 +180,6 @@ export function pastePayload(
   return true
 }
 
-export async function pasteFromClipboard(editor: Editor, mode?: PasteMode): Promise<boolean> {
+export async function pasteFromClipboard(editor: Editor, mode?: PasteChoice): Promise<boolean> {
   return pastePayload(editor, await readClipboardPayload(), mode)
 }

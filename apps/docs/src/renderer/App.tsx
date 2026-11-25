@@ -1,17 +1,22 @@
 import { FloatWatch } from './editor/float-watch'
 import { attachCommentUndoSync, resetCommentUndoStore } from './editor/comment-undo-sync'
 import { scriptFontHtml } from './editor/script-fonts'
+import { storyEscLeavesView } from './editor/story-view'
 import { carryDocSeen } from './ai/tools'
 import {
   DOC_CSS_COMMITTED_EVENT,
   WRAP_WIDTHS_COMMITTED_EVENT,
-  setStrictKinsoku,
+  setKinsokuLevel,
+  setSpacingControl,
+  spacingControlOf,
+  type SpacingControl,
 } from './editor/cjk-punct-shrink'
 import { justifyShrinkPluginKey } from './editor/justify-shrink'
 import {
   docHyphenationSig,
+  hyphenatesSomeText,
   hyphenationConfigOf,
-  hyphenationDictFor,
+  hyphenationLangOf,
   hyphenationReady,
   hyphenationRelayout,
   hyphenationSettingsOf,
@@ -54,15 +59,18 @@ import {
   useAutoSavePref,
   useAiSidebarEnabled,
 } from '@genoffice/ui'
-import { commentAnchors, commentIdsAt } from './editor/comments'
+import { commentAnchors, commentIdsAt, wordRangeAtCaret } from './editor/comments'
 import { isCommandLetter } from './command-letter'
 import {
   PAGE_FIELD_INSTR,
+  isFieldLocked,
   setFieldInstr,
+  fieldRangeAt,
   toggleAllFieldCodes,
+  toggleFieldCodes,
   type FieldRange,
 } from './editor/field-codes'
-import { refreshTableFormulas } from './editor/table-formula'
+import { refreshTableFormulas, setFormulaSourceBlocks } from './editor/table-formula'
 import { linkTarget } from './editor/link-actions'
 import { TOP_ANCHOR, anchorPos } from './editor/link-targets'
 import { FieldDialog } from './components/FieldDialog'
@@ -83,6 +91,7 @@ import {
   pushDownWebInlineStyles,
 } from './editor/paste-web-html'
 import {
+  armPlainPaste,
   beginForeignPaste,
   caretParaFormat,
   caretStyleMark,
@@ -91,6 +100,7 @@ import {
   lastForeignPasteMode,
   mergeFormattingFragment,
   stashPastePayload,
+  takePlainPaste,
   takeTextReroute,
 } from './editor/paste-options'
 import { PasteOptionsChip } from './components/PasteOptionsChip'
@@ -101,6 +111,7 @@ import {
   applyPageNumType,
   customLevelFromNumberingLevel,
   applySectionSettings,
+  defaultSectPrXml,
   applySectionStartType,
   applyTitlePg,
   readSections,
@@ -132,6 +143,18 @@ import {
   pictureWatermarkPreviewImage,
   textWatermarkPreviewImage,
   previewFontSettings,
+  type ThemeEdit,
+  type ThemeFormat,
+  readDocxStylesXml,
+  readDocxThemeXml,
+  readDocxThemeFormat,
+  customStyleSetUpserts,
+  listStylesXml,
+  styleRestoreUpserts,
+  styleSetUpserts,
+  styleSetXmlOf,
+  themeOfXml,
+  themedDocxBytes,
   type StyleInfo,
   type StyleUpsert,
   type DefaultFonts,
@@ -143,6 +166,8 @@ import {
   type CommentImage,
   type MathPr,
   DEFAULT_MATH_PR,
+  type KinsokuCustom,
+  type DrawingGrid,
 } from '@genoffice/docx-engine'
 import type {
   AiDocContent,
@@ -180,7 +205,7 @@ import {
   renumber,
   type AiNotesAccess,
 } from './ai/note-ops'
-import { applyHfText, hfEditText } from './editor/hf-text'
+import { applyHfText, hfBlankPara, hfEditText } from './editor/hf-text'
 import {
   insertHfField,
   liveHfFieldOf,
@@ -197,7 +222,9 @@ import {
   ownHf,
   resolveHf,
   withHfLink,
+  hfPictureLinkRows,
   withHfPictureEdit,
+  withHfPictureLink,
   type HfSectionState,
 } from './hf-sections'
 import { installHfFloatEdit, tagHfFloatEl } from './editor/hf-float-edit'
@@ -205,6 +232,8 @@ import { HF_MARGIN_SKIP, hfBandAt, pageMarginBands } from './editor/hf-margin-hi
 import { hfFooterLine, hfLayoutResolved, hfPhantomSpec, hfWithPhantom } from './hf-phantom'
 import { hfVariantHeightsPx, sectionHfHeights } from './hf-heights'
 import { makeGapNotesEl, measureNoteHeightDom, noteRowMetrics } from './editor/note-dom'
+import { noteAreaPx, noteColumnLayout, noteColumnWidth, noteLines } from './note-columns'
+import type { NoteColumnsStats } from './pagination-note-columns'
 import { AiAskPopover } from './components/AiAskPopover'
 import { EDIT_QUEUE_MAX, selectionForAnchor, type DocsEditQueueItem } from './ai/edit-queue'
 import { addQueueAnchor, clearQueueAnchors, removeQueueAnchors } from './editor/ai-queue-anchors'
@@ -218,7 +247,7 @@ import {
   textStats,
 } from './word-count'
 import { CommentsPanel } from './components/CommentsPanel'
-import { EquationModal } from './components/EquationModal'
+import { EquationModal, type MathEditTarget } from './components/EquationModal'
 import { HeaderFooterArea } from './components/HeaderFooterArea'
 import { PageFootnotes, PageEndnotes } from './components/PageNoteAreas'
 import {
@@ -228,7 +257,14 @@ import {
   type EndnoteHomes,
   type SectionEndnoteGroup,
 } from './editor/section-endnotes'
-import { sectionNotePropsOf, setNoteProps, type NoteKind } from './note-format'
+import {
+  footnotesRestartPerPage,
+  sectionNotePropsOf,
+  setFootnotePages,
+  setNoteProps,
+  type NoteKind,
+} from './note-format'
+import { NotePageSettle } from './note-page-settle'
 import { PaginationPreview } from './components/PaginationPreview'
 import { imageParaPaginationMeta, paraPaginationMeta, tableWidowOff } from './editor/para-flags'
 import {
@@ -260,6 +296,7 @@ import {
   pageCutSignature,
   pageLeadsOf,
   applyGapLedger,
+  pageAtCanvasY,
   pagePaperEdges,
   pageReaderShadow,
   type FlowCarry,
@@ -296,6 +333,9 @@ import {
   docCharSpacePt,
   docCharCellPt,
   sectionCharCellSpecs,
+  sectionRightIndentPt,
+  sectionRightIndentSpecs,
+  docRightIndentPt,
   sectionCharSpaceSpecs,
   singleByteCharSpacePt,
   type ColumnBlockPlacement,
@@ -374,6 +414,7 @@ import { draftAutoBreaks, syncDraftBreaks } from './editor/draft-view'
 import {
   COMMENT_AREA_W,
   clearMarginAnnotations,
+  startMarginCommentEdit,
   syncMarginAnnotations,
   type MarginHandlers,
 } from './editor/margin-annotations'
@@ -403,6 +444,16 @@ import {
 } from './line-metrics'
 import { saveUntilPersisted } from './save-until-persisted'
 import { SPELLCHECK_KEY, spellcheckEnabled } from './spellcheck-pref'
+import { grammarHidden, setGrammarHiddenPref } from './grammar-pref'
+import { resetIgnoredGrammar, setGrammarMarksHidden } from './editor/grammar-marks'
+import { applySpellingSuggestion } from './editor/spell-replace'
+import { refreshSpellMarks, setSpellMarksActive } from './editor/spell-marks'
+import {
+  clearIgnoredOnce,
+  forgetIgnoredWords,
+  misspellingAfter,
+  setWordAside,
+} from './editor/spell-menu'
 import { cachedByDoc } from './doc-cache'
 import { useShallowStable, useStableCallbacks } from './use-stable'
 import { FindPanel } from './components/FindPanel'
@@ -415,21 +466,35 @@ import {
   patchSections,
   recordPageSetupChange,
   replayedPageSetup,
+  watermarkStateOf,
   type PageSetupPatch,
   type PageSetupState,
+  type WatermarkSide,
+  type WatermarkState,
 } from './editor/page-setup-history'
 import { ChangeCaseDialog } from './components/ChangeCaseDialog'
 import { DateTimeDialog } from './components/DateTimeDialog'
 import { ColumnsDialog } from './components/ColumnsDialog'
 import { SymbolDialog } from './components/SymbolDialog'
-import { FootnoteDialog, type NoteSettings } from './components/FootnoteDialog'
+import {
+  FootnoteDialog,
+  type NoteColumnCount,
+  type NoteSettings,
+} from './components/FootnoteDialog'
 import { fontSymbolPayload } from './editor/font-symbol'
 import { IconsDialog } from './components/IconsDialog'
 import { prepareLibraryIcons } from './editor/insert-icons'
 import { PageNumbersDialog } from './components/PageNumbersDialog'
 import { TabsDialog } from './components/TabsDialog'
 import { BulletsNumberingDialog } from './components/BulletsNumberingDialog'
-import { NO_LIST_STYLE_ID, listStyleEntries } from './list-styles'
+import { NO_LIST_STYLE_ID, listStyleEdits, listStyleEntries } from './list-styles'
+import {
+  drawListStyleSide,
+  modifyListStyleAsStep,
+  replayedListStyles,
+  withListStylePending,
+  type ListStyleChange,
+} from './editor/list-style-history'
 import { TranslationLanguageDialog } from './components/TranslationLanguageDialog'
 import { IndexTablesDialog } from './components/IndexTablesDialog'
 import {
@@ -440,16 +505,19 @@ import {
   indexTablesAtSelection,
   markCitation,
   tableSpecPayload,
+  updateFieldTablesAtSelection,
 } from './commands/reference-commands'
 import { CITATION_CATEGORY_LABELS, MarkCitationDialog } from './components/MarkCitationDialog'
 import { citationRunsOf } from './editor/citations'
 import { MarkIndexEntryDialog } from './components/MarkIndexEntryDialog'
+import { MarkTocEntryDialog } from './components/MarkTocEntryDialog'
 import { collectBookmarks } from './editor/cross-reference'
 import {
   indexEntrySwitches,
   indexEntryTerm,
   insertFieldMarks,
   markIndexEntries,
+  markTocEntry,
   occurrenceEnds,
 } from './editor/index-entry'
 import { HyphenationDialog, ManualHyphenationDialog } from './components/HyphenationDialog'
@@ -459,8 +527,12 @@ import { MATH_WRAP_CHANGED_EVENT, setMathWrapRules } from './editor/math-wrap'
 import { RevealFormattingDialog, revealedStyleName } from './components/RevealFormattingDialog'
 import { AutoTextDialog } from './components/AutoTextDialog'
 import { LanguageDialog } from './components/LanguageDialog'
-import { setMergePreview } from './editor/merge-preview'
+import { mergePreviewPrompts, setMergePreview } from './editor/merge-preview'
 import { DEFAULT_CITATION_STYLE, nextFieldId } from './editor/source-citations'
+import { closeFieldCodes, isFieldCodeOpen } from './editor/field-chars'
+import { neighbourWindow } from './window-order'
+import { StyleArea } from './components/StyleArea'
+import { useStyleAreaTwips } from './use-measurement'
 import type { MergePrompt } from './mail-merge/template'
 import { SelectionPane } from './components/SelectionPane'
 import { CitationsPane } from './components/CitationsPane'
@@ -475,7 +547,9 @@ import {
 import {
   autoTextEntries,
   deleteAutoText,
+  documentAutoText,
   insertAutoText,
+  insertDocumentAutoText,
   saveAutoText,
   selectionClip,
   selectionSnippet,
@@ -492,11 +566,23 @@ import {
   type EqLayoutTarget,
 } from './editor/eq-layout'
 import { FitTextDialog } from './components/FitTextDialog'
+import { ShapeSizeDialog } from './components/ShapeSizeDialog'
 import { TextEffectsDialog } from './components/TextEffectsDialog'
-import { pickAndInsertFile } from './editor/insert-file'
+import { pickAndInsertFile, type InsertFileNotes } from './editor/insert-file'
+import { insertLinkedFileBody, linkStatusKey, updateLinksAtSelection } from './editor/link-fields'
+import { offerCopiesAsLinkSource } from './editor/paste-link'
+import { LinksDialog, type HfLinkHost } from './components/LinksDialog'
 import { pickAndAutoMark } from './editor/index-automark'
-import { applyTextFx, textFillOf, textFxOf } from './editor/text-fx'
-import { fitTextOf, setFitText, textStretch, toggleEaLayout } from './editor/asian-layout'
+import {
+  applyShapeSize,
+  fitRelativeShapes,
+  pageGeometryKey,
+  selectedShapeSize,
+} from './editor/shape-size'
+import { applyTextFx, textFillOf, textFillShownOf, textFxOf } from './editor/text-fx'
+import { eaLayoutOf, fitTextOf, setEaLayout, setFitText, textStretch } from './editor/asian-layout'
+import { syncVerticalCellBoxes } from './editor/vertical-cell-boxes'
+import { HorizontalInVerticalDialog, TwoLinesInOneDialog } from './components/AsianLayoutDialogs'
 import { applyRuby, rubyTargetOf, type RubyTarget } from './editor/phonetic-guide'
 import { PropertiesDialog } from './components/PropertiesDialog'
 import type { ChartType } from './components/chart-types'
@@ -522,8 +608,10 @@ import {
   LineNumbersDialog,
   NumberDialog,
   ParagraphSpacingDialog,
+  SaveStyleSetDialog,
   ReduceFileSizeDialog,
   InsertFileRangeDialog,
+  InsertPictureOptionsDialog,
   TemplateGalleryDialog,
   RenameDialog,
   SizePositionDialog,
@@ -538,7 +626,14 @@ import {
   setSelectedPictureAlt,
 } from './editor/picture-props'
 import { saveDesignDefault, saveFontDefault, savePageDefault } from './design-default'
+import type { StyleSetSource } from './style-set-previews'
 import { charCellSpacingCss, gridBaseSizePt } from './char-grid'
+import {
+  gridlinesCss,
+  setActiveDrawingGrid,
+  setSnapsToGrid,
+  snapsToGrid,
+} from './editor/drawing-grid'
 import { sortScope, sortSelection, type SortRefusal } from './editor/sort-paragraphs'
 import {
   FilterRecipientsDialog,
@@ -579,12 +674,18 @@ import type { PageLayout } from './editor/goto'
 import { Ribbon } from './components/Ribbon'
 import { BookmarkModal, CaptionModal, CrossRefModal } from './components/ReferenceDialogs'
 import { fieldLinkBookmark, refreshNoteRefFields } from './editor/note-ref-fields'
-import { xmlOfNode } from './editor/toc-update'
+import { refreshNumberRefs } from './editor/number-refs'
+import { lockedTableLines, xmlOfNode } from './editor/toc-update'
 import { setAutoCaptionBlocks } from './editor/auto-caption'
 import { watermarkPresetsOf } from './components/ribbon-design-tab'
-import { WatermarkDialog, watermarkPageBoxOf } from './components/WatermarkDialog'
+import {
+  WatermarkDialog,
+  watermarkOfDocImage,
+  watermarkPageBoxOf,
+} from './components/WatermarkDialog'
 import { CropDialog, CutoutDialog } from './components/PictureDialogs'
-import { replaceSelectedPictureBytes } from './editor/picture-bytes'
+import { setGroupFileBlocks } from './editor/object-group'
+import { replaceSelectedPictureBytes, selectSubEditorPicture } from './editor/picture-bytes'
 import {
   AdjustListIndentsDialog,
   DefineBulletDialog,
@@ -656,17 +757,24 @@ import {
 } from './components/TableConvertDialogs'
 import { TablePropertiesDialog } from './components/TablePropertiesDialog'
 import { showToast } from './components/toast-bus'
-import { editableOrToast, ensureCaretInTable, keepCellSelection } from './editor/table-ops'
+import {
+  editableOrToast,
+  ensureCaretInTable,
+  keepCaretAtPress,
+  keepCellSelection,
+} from './editor/table-ops'
 import { PromptModal } from './components/PromptModal'
 import { ShortcutsDialog } from './components/ShortcutsDialog'
 import { CustomizeKeyboardDialog } from './components/CustomizeKeyboardDialog'
-import { setKeyLayerRunner } from './key-layer'
+import { currentKeyOverrides, setDocumentKeysEditedListener, setKeyLayerRunner } from './key-layer'
+import { chordFromEvent, windowKeyCommand } from './keybindings'
 import { SpellingDialog } from './components/SpellingDialog'
 import { WordCountDialog, type DocStats } from './components/WordCountDialog'
 import { AutoCorrectDialog } from './components/AutoCorrectDialog'
 import { PreferencesDialog } from './components/PreferencesDialog'
 import { applyCase, nextCaseMode, selectionText } from './editor/case-transform'
 import { stepHangingIndent, stepParagraphIndent } from './editor/indent'
+import { focusedEditor } from './editor/caret-keys'
 import { PasswordDialog } from './components/PasswordDialog'
 import { ProtectDialog, type ProtectDialogResult } from './components/ProtectDialog'
 import { t, useI18n, type StringKey } from './i18n/locale'
@@ -677,19 +785,31 @@ import {
 } from './editor/active-editor'
 import { installSelectionBar } from './editor/selection-bar'
 import { collectHeadings } from './editor/headings'
+import { headingCollapseKey } from './editor/heading-collapse'
 import { applyTocPageDisplays, backfillTocPageDom } from './editor/toc-refresh'
-import { renumberSeqFields, unreliableSeqLabelsOf } from './editor/field-results'
-import { setSelectionAlign } from './editor/direction'
+import {
+  footnoteOfBookmark,
+  numberingContextOf,
+  refreshPageFields,
+  renumberSeqFields,
+  replaceFieldRuns,
+  unreliableSeqLabelsOf,
+  type PageFacts,
+  type PageSource,
+} from './editor/field-results'
+import { alignSelectionOrTable } from './editor/direction'
 import {
   firstListNumId,
   markupShown,
   runMenuCommand,
   canRepeatCommand,
   type CommandHost,
+  type DesignHost,
+  type ThemePick,
   type PictureDialogKind,
 } from './commands/menu-commands'
 import { FALLBACK_STYLES, defaultParagraphStyleId } from './style-gallery'
-import { NONE, type ActionCommandId } from '../shared/commands'
+import { NONE, type ActionCommandId, type CommandId } from '../shared/commands'
 import { menuCommandState } from './commands/menu-state'
 import { textDirectionContext } from './commands/text-direction'
 import { useEditTarget } from './commands/edit-target'
@@ -715,6 +835,35 @@ import {
   type RevisionRange,
   type TrackChangesStorage,
 } from './editor/revisions'
+import { retintThemeRuns } from './editor/theme-retint'
+import { rethemeBody, type BodyReading } from './editor/theme-retheme'
+import {
+  partsReading,
+  rethemedNotes,
+  rethemedValue,
+  type PartsReading,
+} from './editor/theme-retheme-parts'
+import { repainted } from './commands/repeat'
+import {
+  designChange,
+  pendingDesign,
+  recordDesignStep,
+  replayedDesign,
+  replaysDesign,
+  withDesignSide,
+  withStyleUpsert,
+  type DesignChange,
+  type DesignSlot,
+  type DesignState,
+} from './editor/design-history'
+import {
+  customStyleSets,
+  deleteCustomStyleSet,
+  saveCustomStyleSet,
+  type CustomStyleSet,
+} from './custom-style-sets'
+import { loadSavedThemes, themePickOf, type SavedTheme } from './saved-themes'
+import { parseDocxOffThread } from './parse-off-thread'
 import {
   DEFAULT_REVISION_FILTER,
   authorInkIndex,
@@ -763,8 +912,15 @@ import { StylesPane } from './components/StylesPane'
 import { useStoredFlag } from './stored-flag'
 import { Ruler, rulerDims } from './components/Ruler'
 import { RulerBar, rulerBarHeight } from './components/RulerBar'
-import { VerticalRuler } from './components/VerticalRuler'
-import { docBodyFont, docHasCjk, docLineFactor, docStyleCss, docThemeCss } from './doc-style-css'
+import { VerticalRuler, VRULER_BAR_UNIT, vrulerBarWidth } from './components/VerticalRuler'
+import {
+  docBodyFont,
+  docHasCjk,
+  docLineFactor,
+  docStyleCss,
+  docThemeCss,
+  GRID_RIGHT_INDENT_RULE,
+} from './doc-style-css'
 import { fontAliasAnswers, onFontAliasesChanged } from './system-fonts'
 import { isDocDirty, runGuardedCandidate, runGuardedDocumentAction } from './doc-dirty'
 import {
@@ -781,6 +937,7 @@ import {
 import {
   applyAiDocContent as applyAiDocContentImpl,
   buildDocBytes as buildDocBytesImpl,
+  currentDocGeneration,
   exportPdf as exportPdfImpl,
   exportHtml as exportHtmlImpl,
   exportMarkdown as exportMarkdownImpl,
@@ -796,6 +953,7 @@ import {
   type PendingPdfExport,
 } from './file-actions'
 import { reduceFileSize } from './reduce-file-size'
+import { blocksToPmDoc, pmDocOptions } from './editor/convert'
 import { selectedPictureSources } from './reduce-pictures'
 import { BlockIndex } from './pagination-index'
 import { isPhasedContentPending } from './phased-content'
@@ -853,6 +1011,7 @@ import {
   createCustomListDef as createCustomListDefImpl,
   listStyleNum as listStyleNumImpl,
   addListStyle as addListStyleImpl,
+  modifyListStyle as modifyListStyleImpl,
   deleteListStyle as deleteListStyleImpl,
   listStylesInUse,
   listNumberingState,
@@ -899,6 +1058,7 @@ function hashStr(str: string): number {
 }
 
 const EMPTY_BLOCKS: Block[] = []
+const NO_ANSWERS: ReadonlyMap<string, string> = new Map()
 const NO_SECT_ENDNOTES: SectionEndnoteGroup[] = []
 
 const SORT_REFUSALS: Record<SortRefusal, StringKey> = {
@@ -1088,10 +1248,41 @@ const RUBY_LANGS: Record<string, string> = {
   ko: 'ko-KR',
 }
 
+/**
+ * The widest zoom ratio at which `contentPx` (unzoomed) fits the view. The
+ * side padding is read, not assumed: the vertical ruler's strip adds to the
+ * left one and grows with the zoom, so that part goes on the content's side.
+ */
+function fitRatio(scroller: Element, contentPx: number): number {
+  const cs = getComputedStyle(scroller)
+  const pad = parseFloat(cs.paddingLeft) + parseFloat(cs.paddingRight)
+  const strip = parseFloat(cs.getPropertyValue('--vruler-w'))
+  if (!Number.isFinite(pad)) return (scroller.clientWidth - 48) / contentPx
+  if (!Number.isFinite(strip)) return (scroller.clientWidth - pad) / contentPx
+  // one px for the strip's rounding up
+  return (scroller.clientWidth - (pad - strip) - 1) / (contentPx + VRULER_BAR_UNIT)
+}
+
+/** what Design changes outside the page background, as App carries it out */
+type DesignActions = Omit<DesignHost, 'setPageColor' | 'setWatermark'>
+
+type ThemeReading = BodyReading & { parts: PartsReading }
+
+function bodyReading(editor: Editor, parsed: ParsedDocFull): ThemeReading {
+  const json = blocksToPmDoc(parsed.blocks, readSections(parsed), pmDocOptions(parsed))
+  return {
+    blocks: parsed.blocks,
+    doc: editor.schema.nodeFromJSON(json),
+    parts: partsReading(parsed),
+  }
+}
+
 export function App() {
   // subscribe to language switches for re-render; strings all go through module-level t, so memoized callbacks never capture stale closures
   const { lang } = useI18n()
   const [doc, setDoc] = useState<DocState | null>(null)
+  const fileBlocks = doc?.parsed.blocks ?? EMPTY_BLOCKS
+  useEffect(() => setGroupFileBlocks(fileBlocks), [fileBlocks])
   /** a phased open is still streaming the document tail: editor stays read-only */
   const [docLoading, setDocLoading] = useState(false)
   /** true until the pending-open / new-blank boot checks settle; the start screen stays hidden meanwhile */
@@ -1103,6 +1294,7 @@ export function App() {
   const [docPwdPrompt, setDocPwdPrompt] = useState<{
     path: string
     name: string
+    template?: boolean
     value: string
     /** i18n key of the inline failure line ('' = none) */
     errorKey: '' | 'appDocPwdWrong' | 'appDocPwdUnsupported'
@@ -1127,13 +1319,13 @@ export function App() {
   const [spellcheck, setSpellcheck] = useState(spellcheckEnabled)
   const [largeDocSpellOff, setLargeDocSpellOff] = useState(false)
   const spellcheckActive = spellcheck && !largeDocSpellOff
-  const spellcheckActiveRef = useRef(spellcheckActive)
-  spellcheckActiveRef.current = spellcheckActive
   /** Increments on every open/new document: AiPanel remounts by key to reset the conversation and history (save path changes don't bump it, so the session continues) */
   const [aiPanelKey, setAiPanelKey] = useState(0)
-  const [ribbonTabRequest, setRibbonTabRequest] = useState<{ tab: string; nonce: number } | null>(
-    null,
-  )
+  const [ribbonTabRequest, setRibbonTabRequest] = useState<{
+    tab: string
+    nonce: number
+    dropdown?: string
+  } | null>(null)
   const [status, setStatus] = useState('')
   const [zoom, setZoom] = useState(100)
   const scrollContainerRef = useRef<HTMLElement>(null)
@@ -1192,19 +1384,34 @@ export function App() {
   const [mirrorMarginsDirty, setMirrorMarginsDirty] = useState(false)
   const pageSetupStateRef = useRef<PageSetupState | null>(null)
   /** a page setup command is running: the state it started from, and whether it also edited the document */
-  const pageSetupUndoRef = useRef<{ before: PageSetupState; edited: boolean } | null>(null)
+  const pageSetupUndoRef = useRef<{
+    before: PageSetupState
+    edited: boolean
+    render: number
+    /** the step waits while this is open, so what its OK puts in the document undoes with the change */
+    held?: 'paragraph' | 'note'
+  } | null>(null)
+  const pageSetupRenderRef = useRef(0)
   /** call before a command changes page setup: the change becomes one undo step once state settles */
-  const armPageSetupUndo = () => {
+  const armPageSetupUndo = useCallback((held?: 'paragraph') => {
     if (pageSetupUndoRef.current || !pageSetupStateRef.current) return
-    pageSetupUndoRef.current = { before: pageSetupStateRef.current, edited: false }
+    pageSetupUndoRef.current = {
+      before: pageSetupStateRef.current,
+      edited: false,
+      render: pageSetupRenderRef.current,
+      held,
+    }
     forceRender()
-  }
+  }, [])
   const [autoHyphenation, setAutoHyphenation] = useState(false)
   const [autoHyphenationDirty, setAutoHyphenationDirty] = useState(false)
   const [hyphenationEdit, setHyphenationEdit] = useState<Partial<HyphenationSettings> | null>(null)
   /** a Manual… run is going through the document: the page shows where words would break */
   const [manualHyphenation, setManualHyphenation] = useState(false)
   const [showSpelling, setShowSpelling] = useState(false)
+  const [spellingGrammarAt, setSpellingGrammarAt] = useState<string | null>(null)
+  const [hideGrammar, setHideGrammar] = useState(grammarHidden)
+  const [hideGrammarDirty, setHideGrammarDirty] = useState(false)
   const manualHyphenationRef = useRef(false)
   const [defaultTabStopEdit, setDefaultTabStopEdit] = useState<number | null>(null)
   /** settings.xml w:gutterAtTop as set in this session; null when untouched */
@@ -1247,12 +1454,18 @@ export function App() {
     [documentNoteProps, sections, section],
   )
   /** settings.xml w:characterSpacingControl as set in this session; null when untouched */
-  const [compressPunctEdit, setCompressPunctEdit] = useState<boolean | null>(null)
+  const [spacingControlEdit, setSpacingControlEdit] = useState<SpacingControl | null>(null)
   /** Track moves set in this session; the document carries it (settings.xml w:doNotTrackMoves) */
   const [trackMovesEdit, setTrackMovesEdit] = useState<boolean | null>(null)
   const trackMoves = trackMovesEdit ?? doc?.parsed.doNotTrackMoves !== true
   /** settings.xml w:strictFirstAndLastChars as set in this session; null when untouched */
   const [strictKinsokuEdit, setStrictKinsokuEdit] = useState<boolean | null>(null)
+  /** the custom kinsoku lists as set in this session: false = taken away, null = untouched */
+  const [kinsokuCustomEdit, setKinsokuCustomEdit] = useState<KinsokuCustom | false | null>(null)
+  const [drawingGridEdit, setDrawingGridEdit] = useState<DrawingGrid | null>(null)
+  const [snapObjects, setSnapObjects] = useState(snapsToGrid)
+  const drawingGrid = drawingGridEdit ?? doc?.parsed.drawingGrid ?? null
+  useEffect(() => setActiveDrawingGrid(drawingGrid), [drawingGrid])
   // read where the document CSS is rebuilt outside a render (font and style refreshes)
   const autoHyphenationRef = useRef(autoHyphenation)
   autoHyphenationRef.current = autoHyphenation
@@ -1375,7 +1588,10 @@ export function App() {
   const [viewMode, setViewMode] = useState<ViewMode>('print')
   const [readMode, setReadMode] = useState(false)
   // Read mode is a print-layout reading, so a view pick and Read Mode are exclusive
+  // Draft gives way to Print Layout while a header or footer is edited, and comes back after
+  const draftAwaitsHfRef = useRef(false)
   const switchView = (mode: ViewMode) => {
+    draftAwaitsHfRef.current = false
     setViewMode(mode)
     setReadMode(false)
   }
@@ -1383,8 +1599,18 @@ export function App() {
     if (v) setViewMode('print')
     setReadMode(v)
   }
+  // Story Focus: dim everything but the sentence the caret sits in (the
+  // story-view bar's toggle; the plugin draws the dim ranges)
+  const [storyFocus, setStoryFocus] = useState(false)
+  // the view Story View returns to when it closes (Leave Story, Esc): the one
+  // the document was in before entering
+  const [storyReturnView, setStoryReturnView] = useState<ViewMode>('print')
   const [showGrid, setShowGrid] = useState(false)
   const [splitView, setSplitView] = useState(false)
+  const styleAreaTwips = useStyleAreaTwips()
+  // Draft and Outline alone have the style area
+  const styleAreaPx =
+    (viewMode === 'draft' || viewMode === 'outline') && !readMode ? twipsToPx(styleAreaTwips) : 0
   const [showPagePreview, setShowPagePreview] = useState(false)
   const [splitHtml, setSplitHtml] = useState('')
   const [showFind, setShowFind] = useState(false)
@@ -1407,12 +1633,20 @@ export function App() {
     flushPaginationRef.current(fresh)
     return pageLayoutRef.current
   }, [])
+  /** the page layout as it stands, only while it is the document's own: no pass is run for the asking */
+  const pageSourceRef = useRef<() => PageSource | null>(() => null)
   const [showShortcuts, setShowShortcuts] = useState(false)
   const [showCustomizeKeyboard, setShowCustomizeKeyboard] = useState(false)
   const [showAutoCorrect, setShowAutoCorrect] = useState(false)
   const [autoTextList, setAutoTextList] = useState(autoTextEntries)
+  const [docAutoText, setDocAutoText] = useState<AutoTextEntry[]>([])
+  const docAutoTextRef = useRef<AutoTextEntry[]>([])
+  /** a style definition an AutoFormat rule adds; set once the style actions exist */
+  const defineStyleRef = useRef<(up: StyleUpsert) => void>(() => {})
   const [showPreferences, setShowPreferences] = useState(false)
   const commandHostRef = useRef<CommandHost | null>(null)
+  /** the commands the menu bar shows greyed out, as last reported to it */
+  const menuDisabledRef = useRef<readonly CommandId[]>([])
   const runCommand = useCallback((command: ActionCommandId, payload?: string) => {
     if (commandHostRef.current) runMenuCommand(commandHostRef.current, command, payload)
   }, [])
@@ -1441,6 +1675,7 @@ export function App() {
     id: string
     nonce: number
     reply?: boolean
+    edit?: boolean
   } | null>(null)
   /** Style definitions pending write-back (key = styleId), saved via SaveOptions.styleUpserts */
   const [defaultFonts, setDefaultFonts] = useState<DefaultFonts>()
@@ -1480,24 +1715,19 @@ export function App() {
     return null
   }, [watermarkDirty, watermarkPicture, watermark, watermarkStyle, sections, section])
   /** Design tab / AI set_watermark: pending stores the save path drains */
-  const applyWatermark = useCallback((spec: Watermark | null) => {
-    const wm = typeof spec === 'string' ? { text: spec } : spec
-    if (wm && 'image' in wm) {
-      setWatermark(null)
-      setWatermarkStyle(null)
-      setWatermarkPicture(wm)
-    } else if (wm) {
-      const { text, ...style } = wm
-      setWatermark(text)
-      setWatermarkStyle(Object.keys(style).length > 0 ? style : null)
-      setWatermarkPicture(null)
-    } else {
-      setWatermark(null)
-      setWatermarkStyle(null)
-      setWatermarkPicture(null)
-    }
-    setWatermarkDirty(true)
+  const putWatermark = useCallback((next: WatermarkState) => {
+    setWatermark(next.text)
+    setWatermarkStyle(next.style)
+    setWatermarkPicture(next.picture)
+    setWatermarkDirty(next.dirty)
   }, [])
+  const applyWatermark = useCallback(
+    (spec: Watermark | null) => {
+      armPageSetupUndo()
+      putWatermark(watermarkStateOf(spec))
+    },
+    [armPageSetupUndo, putWatermark],
+  )
   const [inkAnnotations, setInkAnnotations] = useState<InkAnnotation[]>([])
   const [inksDirty, setInksDirty] = useState(false)
   const [inkTool, setInkTool] = useState<InkTool>('select')
@@ -1509,6 +1739,8 @@ export function App() {
   }, [])
   const inkActive = inkPresets.find((p) => p.id === inkActiveId) ?? inkPresets[0]
   const [footnotes, setFootnotes] = useState<NoteInfo[]>([])
+  const footnotesRef = useRef(footnotes)
+  footnotesRef.current = footnotes
   /** Footnote ids already shown in canvas page gaps (the end-of-document list skips them to avoid duplication) */
   const [gapNoteIds, setGapNoteIds] = useState<Set<string>>(new Set())
   const [endnotes, setEndnotes] = useState<NoteInfo[]>([])
@@ -1517,6 +1749,7 @@ export function App() {
   const [notesDirty, setNotesDirty] = useState(false)
   const [sources, setSources] = useState<SourceInfo[]>([])
   const [sourcesDirty, setSourcesDirty] = useState(false)
+  const [docKeysDirty, setDocKeysDirty] = useState(false)
   const [citationStyle, setCitationStyle] = useState<CitationStyleId | null>(null)
   const [zoteroDocumentData, setZoteroDocumentDataState] = useState('')
   const [zoteroDocumentDataDirty, setZoteroDocumentDataDirty] = useState(false)
@@ -1544,6 +1777,26 @@ export function App() {
   const [themeFontsDirty, setThemeFontsDirty] = useState(false)
   const [themeColors, setThemeColors] = useState<ThemeColors | null>(null)
   const [themeColorsDirty, setThemeColorsDirty] = useState(false)
+  const [themeFormat, setThemeFormat] = useState<ThemeFormat | null>(null)
+  const [customSets, setCustomSets] = useState<CustomStyleSet[]>(customStyleSets)
+  const [showSaveStyleSet, setShowSaveStyleSet] = useState(false)
+  const [savedThemes, setSavedThemes] = useState<SavedTheme[]>([])
+  useEffect(() => {
+    void loadSavedThemes().then(setSavedThemes)
+  }, [])
+  /** the file as the page shows it once a theme pick repainted the body: per theme read so far */
+  const bodyThemeRef = useRef<{
+    parsed: ParsedDocFull
+    shown: ThemeReading
+    readings: Map<string, ThemeReading>
+  } | null>(null)
+  /** header and footer parts as they read under the theme on the page; null = as the file has them */
+  const [themedHf, setThemedHf] = useState<{
+    parsed: ParsedDocFull
+    parts: PartsReading['parsed']
+  } | null>(null)
+  const hfParsed =
+    (themedHf && themedHf.parsed === doc?.parsed ? themedHf.parts : doc?.parsed) ?? null
   const [commentComposing, setCommentComposing] = useState(false)
   const [trackChanges, setTrackChanges] = useState(false)
   // only the document toggle (ribbon / status bar / shortcut) maps to w:trackRevisions
@@ -1681,6 +1934,7 @@ export function App() {
   const [showCrossRefModal, setShowCrossRefModal] = useState(false)
   const [showCaptionModal, setShowCaptionModal] = useState(false)
   useEffect(() => setAutoCaptionBlocks(() => fileCtxRef.current.doc?.parsed.blocks ?? []), [])
+  useEffect(() => setFormulaSourceBlocks(() => fileCtxRef.current.doc?.parsed.blocks ?? []), [])
   const [showDocumentDialog, setShowDocumentDialog] = useState(false)
   const [showChangeCase, setShowChangeCase] = useState(false)
   const [showDateTime, setShowDateTime] = useState(false)
@@ -1689,6 +1943,7 @@ export function App() {
   const [showColumnsDialog, setShowColumnsDialog] = useState(false)
   const [showSymbolDialog, setShowSymbolDialog] = useState(false)
   const [showIconsDialog, setShowIconsDialog] = useState(false)
+  const [showChangePictureIcon, setShowChangePictureIcon] = useState(false)
   const [showPageNumbers, setShowPageNumbers] = useState(false)
   const [showBulletsNumbering, setShowBulletsNumbering] = useState(false)
   const [showTranslationLanguage, setShowTranslationLanguage] = useState(false)
@@ -1716,8 +1971,13 @@ export function App() {
   const [insertFileRange, setInsertFileRange] = useState<{
     fileName: string
     bookmarks: string[]
-    answer: (range: string | null | undefined) => void
+    answer: (options: { range: string | null; link: boolean } | undefined) => void
   } | null>(null)
+  const [insertPictureOptions, setInsertPictureOptions] = useState<{
+    fileName: string
+    answer: (options: { link: boolean } | undefined) => void
+  } | null>(null)
+  const [showLinks, setShowLinks] = useState(false)
   const [showParagraphSpacing, setShowParagraphSpacing] = useState(false)
   const [showSizePosition, setShowSizePosition] = useState(false)
   // Word's Focus: the page alone, still editable; Esc brings the window back
@@ -1736,6 +1996,11 @@ export function App() {
   const [pasteSpecialTarget, setPasteSpecialTarget] = useState<Editor | null>(null)
   const [tabsTarget, setTabsTarget] = useState<Editor | null>(null)
   const [fitTextTarget, setFitTextTarget] = useState<Editor | null>(null)
+  const [eaLayoutDialog, setEaLayoutDialog] = useState<{
+    editor: Editor
+    kind: 'combine' | 'vert'
+    text: string
+  } | null>(null)
   const [textEffectsTarget, setTextEffectsTarget] = useState<Editor | null>(null)
   const [languageTarget, setLanguageTarget] = useState<Editor | null>(null)
   const [markCitationAt, setMarkCitationAt] = useState<{
@@ -1744,6 +2009,7 @@ export function App() {
     at: number
   } | null>(null)
   const [markEntryAt, setMarkEntryAt] = useState<{ text: string; at: number } | null>(null)
+  const [markTocAt, setMarkTocAt] = useState<{ text: string; at: number } | null>(null)
   const [autoText, setAutoText] = useState<{
     mode: 'new' | 'insert'
     suggestedName: string
@@ -1761,11 +2027,7 @@ export function App() {
     kind: PictureDialogKind
     dataUrl: string
   } | null>(null)
-  const [eqEditTarget, setEqEditTarget] = useState<{
-    pos: number
-    latex: string
-    kind: 'inline' | 'block'
-  } | null>(null)
+  const [eqEditTarget, setEqEditTarget] = useState<MathEditTarget | null>(null)
   const [ctxMenu, setCtxMenu] = useState<ContextMenuState | null>(null)
   const ctxSeq = useRef(0)
   useEffect(() => {
@@ -1855,7 +2117,7 @@ export function App() {
       // Word checks spelling as you type by default; user toggle in Review → Spelling.
       // useEditor re-applies these options on every render, so the value must
       // be the effective one or a re-render undoes the large-document override
-      attributes: { class: 'doc-page', spellcheck: spellcheckActive ? 'true' : 'false' },
+      attributes: { class: 'doc-page', spellcheck: 'false' },
       // Word/web HTML cleanup: strip mso comments and <o:p>, unwrap <li><p>x</p></li>
       // (docListItem is an inline container; block-level p would shatter the list)
       transformPastedHTML: cleanPastedHtml,
@@ -1926,8 +2188,14 @@ export function App() {
         if (!data) return false
         const html = data.getData('text/html')
         // text-mode foreign paste (default setting or chip choice): the whole
-        // payload goes down the plain-text lane, formatting like typing
-        if (takeTextReroute()) {
+        // payload goes down the plain-text lane, formatting like typing.
+        // Paste and Match Style (⌥⇧⌘V / Ctrl+Shift+V) joins it: the clipboard's
+        // text goes in literally whatever flavors the event carries, never
+        // through the Markdown lane below (genoffice#2856). Both flags are one-shot and
+        // consumed before deciding, so an armed match-style can't leak into a
+        // later plain Cmd+V.
+        const matchStyle = takePlainPaste()
+        if (matchStyle || takeTextReroute()) {
           const plain = data.getData('text/plain') || htmlFallbackText(html)
           if (plain) {
             const slice = pasteTextSlice(plain, view.state.selection.$from, view)
@@ -2143,9 +2411,9 @@ export function App() {
       edits: sectionHfEdits,
       links: hfLinks,
       docStrips: { header, footer, variants: hfVariants },
-      parsed: doc?.parsed ?? null,
+      parsed: hfParsed,
     }),
-    [hfSections, sectionHfEdits, hfLinks, header, footer, hfVariants, doc],
+    [hfSections, sectionHfEdits, hfLinks, header, footer, hfVariants, hfParsed],
   )
   const hfResolveAt = useCallback(
     (si: number, kind: 'header' | 'footer', variant: HfView) =>
@@ -2203,6 +2471,13 @@ export function App() {
       (m) =>
         withHfPictureEdit({ ...hfState, edits: m }, si, kind, variant, drawing, edit)?.edits ?? m,
     )
+    return true
+  }
+  const hfLinkRows = useMemo(() => hfPictureLinkRows(hfState), [hfState])
+  /** Edit > Links changed a linked picture of a header or footer; false when no part takes it */
+  const commitHfPictureLink: HfLinkHost['set'] = (row, change) => {
+    if (!hfCommitTarget(hfState, row.si, row.kind, row.variant)) return false
+    setSectionHfEdits((m) => withHfPictureLink({ ...hfState, edits: m }, row, change)?.edits ?? m)
     return true
   }
   /** pending changes outside the body, refreshed with the revision badge (see storyRevisions memo) */
@@ -2376,222 +2651,28 @@ export function App() {
     saveLeftPane(leftPane)
   }, [leftPane])
 
-  const spellcheckWasOn = useRef(spellcheckActive)
-  const respellKickBusy = useRef(false)
+  // Ignore Once is remembered for the document it was said in
+  useEffect(() => {
+    if (editor) resetIgnoredGrammar(editor)
+  }, [editor, aiPanelKey])
+  useEffect(() => {
+    if (editor) setGrammarMarksHidden(editor, hideGrammar)
+  }, [editor, hideGrammar])
   // bumped by the context menu after Add to Dictionary / a language change:
-  // the session checker is updated but existing squiggles only refresh on typing
+  // the words on the page are looked up again
   const [respellNonce, setRespellNonce] = useState(0)
   const respellNonceSeen = useRef(0)
-  // spell-diag trace: squiggle losses in the field are intermittent and
-  // platform-bound, so the toggle/kick lifecycle leaves a line in
-  // userData/spell-diag.log for support to collect (never breaks the app)
-  const spellDiag = (line: string) => {
-    try {
-      window.desktop.spellDiag?.(line)
-    } catch {
-      /* diagnostics only */
-    }
-  }
+  const respell = useCallback(
+    () => void requestAnimationFrame(() => setRespellNonce((n) => n + 1)),
+    [],
+  )
+  // the red lines are drawn by the page itself (spell-marks), not by the browser:
+  // its markers only appear beside typing, so text that came with a file had none
   useEffect(() => {
-    let cancelRespellKick = () => {}
     localStorage.setItem(SPELLCHECK_KEY, spellcheck ? '1' : '0')
-    spellDiag(
-      `toggle spellcheck=${spellcheckActive} platform=${navigator.platform} composing=${editor.view.composing}`,
-    )
-    // setOptions (not a direct DOM write): ProseMirror re-applies editorProps
-    // attributes on every updateState, so only the props route sticks
-    editor.setOptions({
-      editorProps: {
-        ...editor.options.editorProps,
-        attributes: {
-          ...(editor.options.editorProps.attributes as Record<string, string>),
-          spellcheck: spellcheckActive ? 'true' : 'false',
-        },
-      },
-    })
-    // Blink only respells an editable as a consequence of real (trusted)
-    // typing of a word-committing character inside it. A retest ruled
-    // everything else out pixel by pixel: attribute flips, focus cycles (the
-    // first attempt at this fix), script or execCommand edits, fresh DOM
-    // nodes, session spellchecker kicks, synthetic clicks and arrow keys —
-    // even a typed zero-width space — existing typos stay unmarked. So on the
-    // re-enable transition, have the main process type one trusted space at
-    // the caret and remove it again by script (a trusted Backspace would work
-    // too, but its deletion re-suppresses the caret paragraph's markers).
-    // ProseMirror must not see any of it: its DOM observer is paused (no
-    // transaction, no history entry, no dirty flag) and a capture-phase key
-    // shield keeps its keymap and other key handlers out of the round trip —
-    // the same shield also tells us when the keystroke has actually landed.
-    const respellRequested = respellNonce !== respellNonceSeen.current
-    if (spellcheckActive && (!spellcheckWasOn.current || respellRequested)) {
-      let attempts = 0
-      // cancel a pending retry/rAF if the effect re-runs (another off/on) or the
-      // component unmounts — two overlapping kick chains would each pause the DOM
-      // observer and install the key shield, swallowing keystrokes twice
-      let cancelled = false
-      let rafId = 0
-      let retryTimer: ReturnType<typeof setTimeout> | undefined
-      cancelRespellKick = () => {
-        cancelled = true
-        if (rafId) cancelAnimationFrame(rafId)
-        if (retryTimer !== undefined) clearTimeout(retryTimer)
-      }
-      const runKick = () => {
-        if (cancelled) return
-        const view = editor.view
-        const dom = view.dom
-        if (!dom.isConnected) return spellDiag('kick abandoned: editor gone')
-        if (!spellcheckActiveRef.current) return spellDiag('kick canceled: toggled off again')
-        // a live IME composition (French dead keys, CJK input) or an in-flight
-        // kick used to make the re-enable return silently, so existing typos
-        // were never re-marked (one "the toggle worked only once" path).
-        // Retry for a few seconds instead of dropping the kick.
-        if (view.composing || respellKickBusy.current) {
-          spellDiag(
-            `kick deferred composing=${view.composing} busy=${respellKickBusy.current} attempt=${attempts}`,
-          )
-          if (attempts++ < 8) retryTimer = setTimeout(runKick, 600)
-          else spellDiag('kick gave up after retries')
-          return
-        }
-        respellKickBusy.current = true
-        spellDiag('kick start')
-        const sub = getActiveSubEditor()
-        const prev = document.activeElement as HTMLElement | null
-        // the caret can sit pages away from the viewport (last edit position);
-        // focusing and typing there scrolls it into view and the toggle
-        // "jumps to another page". Pin the scroller
-        // for the whole round trip: the reset runs inside the scroll event,
-        // before paint, so no jump ever shows.
-        const scroller = scrollContainerRef.current
-        const pinTop = scroller?.scrollTop ?? 0
-        const pinLeft = scroller?.scrollLeft ?? 0
-        const pinScroll = () => {
-          if (!scroller) return
-          if (scroller.scrollTop !== pinTop) scroller.scrollTop = pinTop
-          if (scroller.scrollLeft !== pinLeft) scroller.scrollLeft = pinLeft
-        }
-        scroller?.addEventListener('scroll', pinScroll, true)
-        view.focus() // puts the DOM caret where the state says it is
-        const sel = window.getSelection()
-        // typing over a range would replace it — kick from a caret instead;
-        // view.focus() below restores the real selection from PM state after
-        if (sel && !sel.isCollapsed) sel.collapseToEnd()
-        // the kick inserts exactly one space at the caret; snapshot the caret
-        // text node so the scrub can restore it byte-identically
-        const caretNode = sel?.anchorNode
-        const caretText = caretNode instanceof Text ? caretNode : null
-        const caretData = caretText?.data ?? null
-        let sawKick = false
-        let kickDown = false
-        let kickPress = false
-        // shield: PM's keymap must not see the kick, and the user's own keys
-        // must not mutate the DOM while the observer is paused (the dwell
-        // below makes that window user-noticeable on Windows) — swallow them.
-        // Exactly one space keydown and the keypress it produces pass (the
-        // kick); a later user space would land behind PM's back too
-        const shield = (e: KeyboardEvent) => {
-          let pass = false
-          if (e.key === ' ') {
-            if (e.type === 'keydown' && !kickDown) pass = kickDown = true
-            else if (e.type === 'keypress' && !kickPress) pass = kickPress = true
-          }
-          if (pass && e.type === 'keypress') sawKick = true
-          else if (!pass) e.preventDefault()
-          e.stopPropagation()
-        }
-        document.addEventListener('keydown', shield, true)
-        document.addEventListener('keypress', shield, true)
-        const observer = (
-          view as unknown as { domObserver: { stop: () => void; start: () => void } }
-        ).domObserver
-        observer.stop()
-        const scrub = () => {
-          // caret in a text node: remove exactly the one inserted character.
-          // deleteData keeps the node's other spell markers alive — a whole
-          // `data` reassignment would wipe the paragraph's fresh squiggles.
-          if (caretText && caretData !== null && caretText.data !== caretData) {
-            const now = caretText.data
-            if (now.length === caretData.length + 1) {
-              let i = 0
-              while (i < caretData.length && now[i] === caretData[i]) i++
-              caretText.deleteData(i, 1)
-            }
-            if (caretText.data !== caretData) caretText.data = caretData
-            return
-          }
-          // the space landed elsewhere: Blink canonicalizes the insertion point
-          // (end of a link, mark boundary, empty paragraph) into a sibling or
-          // fresh text node — the caret it left sits right after the space
-          if (!sawKick) return
-          const after = window.getSelection()
-          const node = after?.anchorNode
-          if (!(node instanceof Text) || !after || after.anchorOffset === 0) return
-          if (node === caretText) return
-          const ch = node.data[after.anchorOffset - 1]
-          if (ch === ' ' || ch === '\u00a0') node.deleteData(after.anchorOffset - 1, 1)
-        }
-        void window.desktop
-          .respellKick()
-          .catch(() => undefined)
-          .then(async () => {
-            try {
-              // the IPC can resolve before the input pipeline delivers the
-              // keystroke — wait for the shield to see it (or give up quietly:
-              // a kick that never landed left nothing to scrub)
-              const deadline = Date.now() + 800
-              while (!sawKick && Date.now() < deadline) {
-                await new Promise((r) => setTimeout(r, 30))
-              }
-              // Blink respells from an idle task and drops the answer if the text
-              // changed meanwhile: scrub behind the task and the checker's reply
-              if (sawKick) {
-                await new Promise<void>((r) => {
-                  if (typeof requestIdleCallback === 'function')
-                    requestIdleCallback(() => r(), { timeout: 400 })
-                  else setTimeout(r, 250)
-                })
-                await new Promise((r) => setTimeout(r, /win/i.test(navigator.platform) ? 900 : 150))
-              }
-              scrub()
-            } finally {
-              // a throw anywhere above must not leave the DOM observer stopped,
-              // the capture-phase key shield swallowing the user's keystrokes,
-              // or the busy latch held — any of those outlives the toggle and
-              // reads as "spellcheck died for good, even new typing").
-              observer.start()
-              document.removeEventListener('keydown', shield, true)
-              document.removeEventListener('keypress', shield, true)
-              respellKickBusy.current = false
-              spellDiag(`kick done landed=${sawKick}`)
-              // the kick already focused the main editor and collapsed the
-              // range, so the selection/textbox-routing/focus resync must run
-              // whenever the editor is still live — including a still-mounted
-              // re-toggle (cancelled) — or the user is left typing in the body
-              // with a dropped selection. Only a detached/destroyed view (where
-              // focus would throw) is skipped.
-              if (dom.isConnected) {
-                view.focus() // resync the DOM selection from PM state
-                // ribbon toggle during textbox editing: keep the routing and
-                // hand the keyboard back where it was — typing must not replace
-                // the box
-                if (sub) {
-                  setActiveSubEditor(sub)
-                  if (prev && prev !== dom) prev.focus({ preventScroll: true })
-                }
-                // unpin after the focus resync so its selection scroll is caught too
-                pinScroll()
-              }
-              // always drop the pin listener, even on a torn-down round trip
-              scroller?.removeEventListener('scroll', pinScroll, true)
-            }
-          })
-      }
-      rafId = requestAnimationFrame(runKick)
-    }
-    spellcheckWasOn.current = spellcheckActive
+    setSpellMarksActive(editor, spellcheckActive)
+    if (respellNonce !== respellNonceSeen.current) refreshSpellMarks(editor)
     respellNonceSeen.current = respellNonce
-    return () => cancelRespellKick()
   }, [editor, spellcheck, spellcheckActive, respellNonce])
 
   // Ctrl/⌘+wheel zoom: Chromium delivers a trackpad pinch as ctrlKey wheel
@@ -2641,6 +2722,13 @@ export function App() {
     editRestriction === 'readOnly' ||
     editRestriction === 'forms' ||
     editRestriction === 'comments'
+  /** protected for forms with a section left open (w:formProt off): the editor takes edits there */
+  const formsOpen =
+    !writeLocked &&
+    editRestriction === 'forms' &&
+    sections.some((s) => s.settings.formProt === false)
+  /** the body takes no edit anywhere */
+  const bodyLocked = isProtected && !formsOpen
   /** comments restriction: body read-only but adding comments stays allowed */
   const commentsAllowed = !writeLocked && editRestriction === 'comments'
   /**
@@ -2674,7 +2762,7 @@ export function App() {
   // StreamingTailGuardExtension; saves wait for the full content).
   useEffect(() => {
     if (!editor) return
-    setEditorEditable(editor, !readMode && (!isProtected || permRegionsActive))
+    setEditorEditable(editor, !readMode && (!bodyLocked || permRegionsActive))
     setPermRegionsEnabled(editor, !readMode && permRegionsActive)
     if (!readMode) return
     const onKey = (e: KeyboardEvent) => {
@@ -2682,7 +2770,16 @@ export function App() {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [editor, readMode, isProtected, permRegionsActive])
+  }, [editor, readMode, bodyLocked, permRegionsActive])
+
+  // forms protection section by section: the guard refuses edits in the protected ones
+  useEffect(() => {
+    if (!editor) return
+    const guard = editor.storage.sectionEditGuard
+    guard.sections = sections
+    guard.locked = formsOpen ? sections.map((s) => s.settings.formProt !== false) : null
+    guard.onBlocked = () => setStatus(t('appProtectSectionLocked'))
+  }, [editor, sections, formsOpen])
 
   // Track Changes: the recorder plugin reads its toggle from extension storage
   useEffect(() => {
@@ -2711,13 +2808,43 @@ export function App() {
     editor.commands.setOutlineViewActive(viewMode === 'outline')
   }, [editor, viewMode])
 
+  // heading folds stop at a section's last paragraph, and their triangles run the command
+  useEffect(() => {
+    if (!editor) return
+    const storage = editor.storage.headingCollapse
+    storage.sectionEnds = new Set(sections.slice(0, -1).map((s) => s.lastBlockIndex))
+    storage.onToggle = (pos, collapse) =>
+      runCommand('heading-collapse', `${collapse ? 'collapse' : 'expand'}@${pos}`)
+    storage.labels = { expand: t('appHeadingExpand'), collapse: t('appHeadingCollapse') }
+    if (headingCollapseKey.getState(editor.state)?.collapsed.length)
+      editor.view.dispatch(
+        editor.state.tr
+          .setMeta(headingCollapseKey, { refresh: true })
+          .setMeta('addToHistory', false),
+      )
+  }, [editor, sections, lang, runCommand])
+
   // story view (View ▸ Story View): the plugin draws the margin markers and
   // keeps typed text off the document's hidden formatting, only while the view
-  // mode is story
+  // mode is story; Focus dims everything but the caret's sentence, inside the
+  // view only
   useEffect(() => {
     if (!editor) return
     editor.commands.setStoryViewActive(viewMode === 'story')
-  }, [editor, viewMode])
+    editor.commands.setStoryViewFocus(storyFocus && viewMode === 'story')
+  }, [editor, viewMode, storyFocus])
+
+  // entering Story View records the view it came from, so Leave Story (and Esc)
+  // returns the document to where it was
+  const viewBeforeStoryRef = useRef<ViewMode>('print')
+  useEffect(() => {
+    if (viewMode === 'story') {
+      if (viewBeforeStoryRef.current !== 'story') setStoryReturnView(viewBeforeStoryRef.current)
+      viewBeforeStoryRef.current = 'story'
+    } else {
+      viewBeforeStoryRef.current = viewMode
+    }
+  }, [viewMode])
 
   // Backstop for paths that bypass the view buttons (read-only opens land in read mode)
   useEffect(() => {
@@ -2729,6 +2856,19 @@ export function App() {
   const draftHeldRef = useRef(false)
   const viewModeRef = useRef(viewMode)
   viewModeRef.current = viewMode
+  // the header or footer is done: Draft comes back, unless another view was picked meanwhile
+  const hfWasOpenRef = useRef(false)
+  useEffect(() => {
+    if (hfEditing) {
+      hfWasOpenRef.current = true
+      return
+    }
+    if (!hfWasOpenRef.current) return
+    hfWasOpenRef.current = false
+    if (!draftAwaitsHfRef.current) return
+    draftAwaitsHfRef.current = false
+    if (viewModeRef.current === 'print') setViewMode('draft')
+  }, [hfEditing])
   const showPreview = useCallback((show: boolean) => {
     if (show && viewModeRef.current === 'draft') {
       draftHeldRef.current = true
@@ -2850,9 +2990,15 @@ export function App() {
   const fileCtxRef = useRef<FileActionContext>(null as unknown as FileActionContext)
   const seenAliasSeqRef = useRef(0)
   // style-pane previews patch the parsed styles; a font-settle rebuild must keep them
-  const liveStylesRef = useRef<{ parsed: ParsedDocFull; styles: Map<string, StyleInfo> } | null>(
-    null,
-  )
+  const liveStylesRef = useRef<{
+    parsed: ParsedDocFull
+    styles: Map<string, StyleInfo>
+    theme?: Pick<ParsedDocFull, 'docDefaults' | 'themeFonts' | 'themeColors'>
+  } | null>(null)
+  const liveParsed = useCallback((parsed: ParsedDocFull): ParsedDocFull => {
+    const live = liveStylesRef.current
+    return live?.parsed === parsed ? { ...parsed, styles: live.styles, ...live.theme } : parsed
+  }, [])
   fileCtxRef.current = {
     editor,
     doc,
@@ -2905,6 +3051,21 @@ export function App() {
     sectionHfEdits,
     setSectionHfEdits,
     pageCount: pageInfo.total,
+    pageSource: (settle) => {
+      // as Update Field does: the pass that is due, and the one its own writes ask for
+      if (settle) for (let i = 0; i < 2 && !pageSourceRef.current(); i++) layoutNow()
+      const pages = pageSourceRef.current()
+      return (
+        pages && {
+          ...pages,
+          words: {
+            above: t('ribbonCrossRefAbove'),
+            below: t('ribbonCrossRefBelow'),
+            onPage: (n) => t('ribbonCrossRefOnPage', { n }),
+          },
+        }
+      )
+    },
     hfLinks,
     setHfLinks,
     titlePg,
@@ -2919,6 +3080,10 @@ export function App() {
     mirrorMarginsDirty,
     setMirrorMargins,
     setMirrorMarginsDirty,
+    hideGrammar,
+    hideGrammarDirty,
+    setHideGrammar,
+    setHideGrammarDirty,
     autoHyphenation,
     autoHyphenationDirty,
     setAutoHyphenation,
@@ -2935,12 +3100,16 @@ export function App() {
     setGutterAtTopEdit,
     fontConversions,
     setFontConversions,
-    compressPunctEdit,
-    setCompressPunctEdit,
+    spacingControlEdit,
+    setSpacingControlEdit,
     trackMovesEdit,
     setTrackMovesEdit,
     strictKinsokuEdit,
     setStrictKinsokuEdit,
+    kinsokuCustomEdit,
+    setKinsokuCustomEdit,
+    drawingGridEdit,
+    setDrawingGridEdit,
     mathPrEdit,
     setMathPrEdit,
     notePropsEdit,
@@ -2992,6 +3161,8 @@ export function App() {
     sourcesDirty,
     setSources,
     setSourcesDirty,
+    docKeysDirty,
+    setDocKeysDirty,
     citationStyle,
     setCitationStyle,
     zoteroDocumentData,
@@ -3002,6 +3173,10 @@ export function App() {
     themeFontsDirty,
     themeColors,
     themeColorsDirty,
+    themeFormat,
+    setThemeFormat,
+    shownBlocks: () =>
+      bodyThemeRef.current?.parsed === doc?.parsed ? bodyThemeRef.current!.shown.blocks : null,
     setThemeFonts,
     setThemeFontsDirty,
     setThemeColors,
@@ -3027,7 +3202,14 @@ export function App() {
       setModifyPwdPrompt(wp?.hash ? { value: '', errorKey: '' } : null)
     },
     promptDocxPassword: (info) =>
-      setDocPwdPrompt({ path: info.path, name: info.name, value: '', errorKey: '', busy: false }),
+      setDocPwdPrompt({
+        path: info.path,
+        name: info.name,
+        template: info.template,
+        value: '',
+        errorKey: '',
+        busy: false,
+      }),
   }
 
   const loadFile = useCallback(async (result: OpenDocxResult) => {
@@ -3149,7 +3331,9 @@ export function App() {
   const submitDocPwd = async () => {
     if (!docPwdPrompt || docPwdPrompt.busy || !docPwdPrompt.value) return
     setDocPwdPrompt({ ...docPwdPrompt, busy: true, errorKey: '' })
-    const res = await window.desktop.openDocxDecrypt(docPwdPrompt.path, docPwdPrompt.value)
+    const res = docPwdPrompt.template
+      ? await window.desktop.openTemplateDecrypt(docPwdPrompt.value)
+      : await window.desktop.openDocxDecrypt(docPwdPrompt.path, docPwdPrompt.value)
     if (res.ok) {
       // Open deferred the replace guard for the encrypted file (see
       // replacesDocument); it runs once, here, now that a real document exists.
@@ -3203,6 +3387,26 @@ export function App() {
       setProtectionDirty(true)
       dirtyRef.current = true
       changed = true
+    }
+    const sectionsProtected = result.sectionsProtected
+    if (sectionsProtected) {
+      const patch = (settings: SectionSettings, i: number): SectionSettings | null =>
+        (settings.formProt !== false) === sectionsProtected[i]
+          ? null
+          : { ...settings, formProt: sectionsProtected[i] ? undefined : false }
+      const touched = sections.flatMap((s, i) => (patch(s.settings, i) ? [i] : []))
+      editSectionSettings((s, i) => patch(s.settings, i))
+      const last = sections.length - 1
+      if (touched.includes(last) && section) {
+        setSection(patch(section, last) ?? section)
+        setSectionDirty(true)
+      }
+      const earlier = touched.filter((i) => i !== last)
+      if (earlier.length > 0) setSectionsDirty((d) => [...new Set([...d, ...earlier])])
+      if (touched.length > 0) {
+        dirtyRef.current = true
+        changed = true
+      }
     }
     if (result.removePersonalInfo !== undefined) {
       setRemovePersonalInfo(result.removePersonalInfo)
@@ -3269,10 +3473,17 @@ export function App() {
   }, [])
   /** Preview Results: the merge fields show the current recipient instead of their names */
   const [mergePreview, setMergePreviewOn] = useState(false)
-  const previewRecord = (mergePreview && mergeRecipients?.records[mergeRecordIndex]) || null
+  const previewRecords = mergeRecipients?.records
+  const previewRecord = (mergePreview && previewRecords?.[mergeRecordIndex]) || null
+  /** what the Ask and Fill-in fields were answered since Preview Results was turned on */
+  const [previewAnswers, setPreviewAnswers] = useState<ReadonlyMap<string, string>>(NO_ANSWERS)
   useEffect(() => {
-    if (editor && !editor.isDestroyed) setMergePreview(editor, previewRecord)
-  }, [editor, previewRecord])
+    if (!mergePreview) setPreviewAnswers(NO_ANSWERS)
+  }, [mergePreview])
+  useEffect(() => {
+    if (editor && !editor.isDestroyed)
+      setMergePreview(editor, previewRecord, previewRecords, mergeRecordIndex, previewAnswers)
+  }, [editor, previewRecord, previewRecords, mergeRecordIndex, previewAnswers])
   useEffect(
     () => setMergeRecordIndex((index) => Math.max(Math.min(index, mergeRecipientCount - 1), 0)),
     [mergeRecipientCount],
@@ -3301,6 +3512,38 @@ export function App() {
     total: number
     answer: (text: string) => void
   } | null>(null)
+
+  // Preview Results puts the questions of the record it shows, each once while it stays on
+  useEffect(() => {
+    if (!editor || editor.isDestroyed || !previewRecord || !previewRecords) return
+    const prompts = mergePreviewPrompts(
+      editor.state,
+      previewRecords,
+      mergeRecordIndex,
+      previewAnswers,
+    )
+    if (prompts.length === 0) return
+    let live = true
+    let asking: { prompt: MergePrompt; total: number; answer: (text: string) => void } | null = null
+    void (async () => {
+      const answers = new Map(previewAnswers)
+      for (const prompt of prompts) {
+        const text = await new Promise<string>((answer) => {
+          asking = { prompt, total: previewRecords.length, answer }
+          setMergeQuestion(asking)
+        })
+        if (!live) return
+        answers.set(prompt.key, text)
+      }
+      setPreviewAnswers(answers)
+    })()
+    return () => {
+      live = false
+      // the preview went away or moved on under an open question: nobody is left to hear the answer
+      const stale = asking
+      setMergeQuestion((open) => (open === stale ? null : open))
+    }
+  }, [editor, previewRecord, previewRecords, mergeRecordIndex, previewAnswers])
 
   /** build the merged documents and write them where the user says */
   const mergeMailings = useCallback(
@@ -3357,10 +3600,21 @@ export function App() {
   // flag is consumed in the render after state commit, guaranteeing the save closure
   // sees the latest sectionsDirty/trailingStartType
   const pendingSectionSaveRef = useRef(false)
+  // sections carried in by Insert > File are modelled only by the reload: a save that
+  // raced further edits skipped it, so it is asked for again, a few times at most
+  const carriedSectionRetriesRef = useRef(0)
   useEffect(() => {
     if (pendingSectionSaveRef.current && doc?.filePath) {
       pendingSectionSaveRef.current = false
-      void save(false, true)
+      void save(false, true).then((saved) => {
+        if (!saved || !saveIncompleteRef.current || carriedSectionRetriesRef.current <= 0) {
+          carriedSectionRetriesRef.current = 0
+          return
+        }
+        carriedSectionRetriesRef.current--
+        pendingSectionSaveRef.current = true
+        forceRender()
+      })
     }
   })
 
@@ -3410,7 +3664,8 @@ export function App() {
     if (!sec) return null
     if (sec.pendingBreak) return sec.sectPrXml
     const isLast = idx === sections.length - 1
-    let xml = sec.sectPrXml
+    // a body without a w:sectPr: the properties it is read with, so a break has something to copy
+    let xml = sec.sectPrXml || defaultSectPrXml(sec.settings)
     if (isLast ? sectionDirty : sectionsDirty.includes(idx)) {
       xml = applySectionSettings(xml, (isLast && section) || sec.settings)
       xml = applyTitlePg(xml, isLast ? titlePg : sec.titlePg)
@@ -3449,10 +3704,7 @@ export function App() {
       const sectPrCopy =
         ai?.sectPr ||
         effectiveSectPrXml(targetSection) ||
-        applySectionSettings(
-          '<w:sectPr><w:pgSz w:w="12240" w:h="15840"/><w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="708" w:footer="708" w:gutter="0"/></w:sectPr>',
-          section ?? sections[0]?.settings ?? DEFAULT_SECTION,
-        )
+        defaultSectPrXml(section ?? sections[0]?.settings ?? DEFAULT_SECTION)
       const genXml = `<w:p><w:pPr>${sectPrCopy}</w:pPr></w:p>`
       // an unsaved section's sectPr lives in its own break paragraph: write the
       // type there before the copy goes in (the copy carries the same XML)
@@ -3584,6 +3836,11 @@ export function App() {
           pPr: { ...(prev[styleId]?.pPr ?? {}), numPr: { numId, ilvl } },
         },
       })),
+    renameStyle: (styleId, name) =>
+      setStyleUpserts((prev) => ({
+        ...prev,
+        [styleId]: { ...(prev[styleId] ?? { styleId }), styleId, name },
+      })),
   }
 
   const createCustomListDef = useCallback(
@@ -3601,9 +3858,25 @@ export function App() {
   const [listDialog, setListDialog] = useState<ListDialogKind | null>(null)
   /** the library card the open define dialog customizes */
   const [listCard, setListCard] = useState<number | null>(null)
-  /** the list style Bullets and Numbering opens on: one just added */
+  /** the list style Bullets and Numbering opens on: one just added or modified */
   const [addedListStyle, setAddedListStyle] = useState<string | undefined>()
+  /** the list style Modify Style is open on */
+  const [modifiedListStyle, setModifiedListStyle] = useState<string | null>(null)
   const [listRecentsEpoch, setListRecentsEpoch] = useState(0)
+
+  // Story View: Esc leaves, back to the view the document came in from. An
+  // Escape meant for something else never claims the view (storyEscLeavesView):
+  // the context menu, the comment popup and the dialogs close on their own
+  // Escape instead, and so does an Escape inside the find panel.
+  useEffect(() => {
+    if (viewMode !== 'story') return
+    const onKey = (e: KeyboardEvent) => {
+      if (!storyEscLeavesView(e, !!(showLinkModal || listDialog || ctxMenu || commentPopup))) return
+      setViewMode(storyReturnView)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [viewMode, showLinkModal, listDialog, ctxMenu, commentPopup, storyReturnView])
   const recentLists = useMemo(
     () => ({
       bullets: recentListPresets('bullets'),
@@ -3631,8 +3904,19 @@ export function App() {
         doc?.parsed.listStyles,
         pendingNumbering.styleDefs,
         pendingNumbering.removedStyles,
+        doc
+          ? listStyleEdits(
+              doc.parsed,
+              pendingNumbering,
+              new Map(
+                Object.values(styleUpserts).flatMap((up) =>
+                  up.name && !up.remove ? [[up.styleId, up.name] as const] : [],
+                ),
+              ),
+            )
+          : undefined,
       ),
-    [doc, pendingNumbering.styleDefs, pendingNumbering.removedStyles],
+    [doc, pendingNumbering, styleUpserts],
   )
   const applyDefinedList = useCallback(
     (levels: CustomNumberingLevel[], kind: 'bullets' | 'numbers' | 'multi') => {
@@ -3665,6 +3949,39 @@ export function App() {
   )
   const listTarget = listDialog ? currentListTargetImpl(numberingCtxRef.current) : null
 
+  // a copy made in a saved document can be pasted elsewhere as a link to it
+  useEffect(() => {
+    if (!editor) return
+    return offerCopiesAsLinkSource(editor, () => !!fileCtxRef.current.doc?.filePath)
+  }, [editor])
+
+  // what the document's own glossary part holds is offered beside this computer's entries
+  const glossaryBytes = doc?.parsed.hasGlossary ? doc.parsed.internal.originalBytes : undefined
+  useEffect(() => {
+    docAutoTextRef.current = []
+    setDocAutoText([])
+    if (!glossaryBytes) return
+    let alive = true
+    void documentAutoText(glossaryBytes).then((entries) => {
+      if (!alive) return
+      docAutoTextRef.current = entries
+      setDocAutoText(entries)
+    })
+    return () => {
+      alive = false
+    }
+  }, [glossaryBytes])
+  /** an entry goes in the way its place keeps it: pasted, or read from the glossary part */
+  const insertAnyAutoText = useCallback(
+    (entry: AutoTextEntry) => {
+      if (!editor) return
+      if (entry.from !== 'document') insertAutoText(editor, entry)
+      else if (glossaryBytes)
+        void insertDocumentAutoText(editor, glossaryBytes, entry.name, insertFileNotesRef.current())
+    },
+    [editor, glossaryBytes],
+  )
+
   // typed "- " / "1. " lists get real numbering definitions, like the ribbon buttons
   useEffect(() => {
     if (!editor) return
@@ -3677,17 +3994,18 @@ export function App() {
         return createCustomListDef(levels)
       },
       insertTable: (cols) => insertTableAt(editor, 1, cols, true),
-      autoText: autoTextEntries,
-      insertAutoText: (entry) => insertAutoText(editor, entry),
+      autoText: () => [...autoTextEntries(), ...docAutoTextRef.current],
+      insertAutoText: insertAnyAutoText,
       openOptions: () => {
         setAutoTextList(autoTextEntries())
         setShowAutoCorrect(true)
       },
+      defineStyle: (up) => defineStyleRef.current(up),
     }
     return () => {
       storage.hooks = null
     }
-  }, [editor, allocateListNumId, createCustomListDef])
+  }, [editor, allocateListNumId, createCustomListDef, insertAnyAutoText])
 
   // ---- Inline fields: insertion and F9 update (cached results recomputed locally) ----
 
@@ -3733,6 +4051,9 @@ export function App() {
     [pageInfo, doc],
   )
 
+  const fieldValueRef = useRef(fieldValue)
+  fieldValueRef.current = fieldValue
+
   const insertField = useCallback(
     (instr: string, lang?: string) => {
       if (!editor) return
@@ -3767,7 +4088,8 @@ export function App() {
               type: 'instrField',
               attrs: RULE_FIELD_INSTR.test(instr)
                 ? { instr, fieldId: nextFieldId(target.state.doc), fieldPart: 'single' }
-                : { instr },
+                : // the page in view stands in until the layout gives the field its own
+                  { instr, ...(PAGE_FIELD_INSTR.test(instr) ? { dirty: true } : {}) },
             },
             // Word names the months and days of a date field in the language of its text
             ...(lang && target.schema.marks.docTextStyle
@@ -3790,13 +4112,26 @@ export function App() {
   /** F9: recompute the inline field caches (PAGE/NUMPAGES/date-time/file name, caption numbers, formulas); TOC has its own Update Table */
   const updateFields = useCallback(() => {
     if (!editor) return
+    // codes typed between Cmd+F9's braces become fields first, in the editor that has the keys too
+    const typedIn = focusedEditor()
+    let closed = closeFieldCodes(editor, fieldValue)
+    if (typedIn && typedIn !== editor) closed += closeFieldCodes(typedIn, fieldValue)
+    // asked for by hand: a pass that is due runs first (and the one its own writes ask for),
+    // so the pages are the document's
+    for (let i = 0; i < 2 && !pageSourceRef.current(); i++) layoutNow()
+    // a table of contents, an index or a table of figures the selection is in is rebuilt
+    const tableHost = commandHostRef.current
+    const tables = tableHost
+      ? updateFieldTablesAtSelection(editor, tableHost)
+      : { updated: 0, locked: 0 }
     const { state, view } = editor
     const jobs: Array<{ from: number; to: number; text: string; marks: readonly PmMark[] }> = []
     let changed = 0
     state.doc.descendants((node, pos) => {
       if (!node.isText) return
       const mark = node.marks.find((m) => m.type.name === 'instrField')
-      if (!mark) return
+      // a page field takes the page it stands on from the layout below, never the one in view
+      if (!mark || isFieldLocked(mark) || PAGE_FIELD_INSTR.test(String(mark.attrs.instr))) return
       const slots = parseLangAttr(
         node.marks.find((m) => m.type.name === 'docTextStyle')?.attrs.lang,
       )
@@ -3804,42 +4139,50 @@ export function App() {
         String(mark.attrs.instr),
         slots?.val ?? slots?.eastAsia ?? slots?.bidi,
       )
-      // a page field keeps the mark it has: its page here is the one in view, not its own
-      const paged = PAGE_FIELD_INSTR.test(String(mark.attrs.instr))
-      if (!next || (next === node.text && (paged || mark.attrs.dirty !== true))) return
+      if (!next || (next === node.text && mark.attrs.dirty !== true)) return
       if (next !== node.text) changed++
-      // any other field recomputed here carries its result: nothing is left for Word to update
-      const marks = paged
-        ? node.marks
-        : node.marks.map((m) =>
-            m === mark ? mark.type.create({ ...mark.attrs, dirty: false }) : m,
-          )
+      // a field recomputed here carries its result: nothing is left for Word to update
+      const marks = node.marks.map((m) =>
+        m === mark ? mark.type.create({ ...mark.attrs, dirty: false }) : m,
+      )
       jobs.push({ from: pos, to: pos + node.nodeSize, text: next, marks })
     })
-    let tr = state.tr
-    for (const j of jobs.sort((a, b) => b.from - a.from)) {
-      tr = tr.replaceWith(j.from, j.to, state.schema.text(j.text, [...j.marks]))
-    }
-    const noteRefs = refreshNoteRefFields(tr, {
-      above: t('ribbonCrossRefAbove'),
-      below: t('ribbonCrossRefBelow'),
-    })
+    const tr = state.tr
     const blocks = doc?.parsed.blocks ?? EMPTY_BLOCKS
+    const pages = fileCtxRef.current.pageSource?.() ?? null
+    const headings = numberingContextOf(editor)
+    if (pages) changed += refreshPageFields(tr, pages, blocks, true)
+    replaceFieldRuns(tr, jobs)
+    const words = { above: t('ribbonCrossRefAbove'), below: t('ribbonCrossRefBelow') }
+    const noteRefs =
+      refreshNoteRefFields(tr, words) +
+      refreshNumberRefs(tr, editor.storage.listNumbering.defs, { words })
     const updated =
       changed +
       noteRefs +
       refreshTableFormulas(tr) +
       renumberSeqFields(tr, blocks, {
-        skip: unreliableSeqLabelsOf(blocks, state.schema),
+        skip: unreliableSeqLabelsOf(blocks, state.schema, headings),
+        headings,
         dropDirty: true,
+        words,
       })
-    if (!tr.docChanged) {
-      setStatus(t('appNoFieldsToUpdate'))
-      return
-    }
-    view.dispatch(tr)
-    setStatus(updated === 0 ? t('appNoFieldsToUpdate') : t('appFieldsUpdated', { n: updated }))
-  }, [editor, fieldValue, doc])
+    if (tr.docChanged) view.dispatch(tr)
+    const n = updated + closed + tables.updated
+    setStatus(
+      n > 0
+        ? t('appFieldsUpdated', { n })
+        : t(tables.locked > 0 ? 'ribbonLinksIsLocked' : 'appNoFieldsToUpdate'),
+    )
+    // linked text the selection is in is read from its file again
+    void updateLinksAtSelection(editor, blocks, insertFileNotesRef.current()).then((results) => {
+      if (results.length === 0) return
+      const failed = results.find((r) => r.status !== 'updated')
+      setStatus(
+        failed ? t(linkStatusKey(failed)) : t('appFieldsUpdated', { n: n + results.length }),
+      )
+    })
+  }, [editor, fieldValue, doc, layoutNow])
 
   // editorRef: lets the handlePaste closure (the useEditor config exists before the instance) reach the instance
   useEffect(() => {
@@ -3950,6 +4293,7 @@ export function App() {
       ? { style: Number(pgNumModal.chapStyle), sep: pgNumModal.chapSep }
       : null
     const idx = sections.length > 0 ? Math.min(activeSection, sections.length - 1) : -1
+    armPageSetupUndo()
     if (idx >= 0) {
       const patched = editor
         ? rewritePendingSectPrs(editor, sections, (s, i) =>
@@ -3981,7 +4325,7 @@ export function App() {
     }
     setPgNumModal(null)
     setStatus(t('appPgNumFormatSet'))
-  }, [pgNumModal, sections, activeSection, editor])
+  }, [pgNumModal, sections, activeSection, editor, armPageSetupUndo])
 
   const exportPdf = useCallback(
     (outPath?: string) => exportPdfImpl(fileCtxRef.current, outPath),
@@ -4114,6 +4458,22 @@ export function App() {
 
   /** App state bundle for the extracted review actions (review-actions.ts); refreshed every render. */
   const reviewCtxRef = useRef<ReviewContext>(null as unknown as ReviewContext)
+  /** the document's notes, for content that brings notes of its own (Insert > File, a link's update) */
+  const insertFileNotes = (): InsertFileNotes => {
+    const notesOf = (kind: 'footnote' | 'endnote') =>
+      kind === 'footnote' ? reviewCtxRef.current.footnotes : reviewCtxRef.current.endnotes
+    return {
+      list: notesOf,
+      add: (kind, notes) => {
+        const ctx = reviewCtxRef.current
+        const next = [...notesOf(kind), ...notes]
+        ;(kind === 'footnote' ? ctx.setFootnotes : ctx.setEndnotes)(next)
+        ctx.setNotesDirty(true)
+      },
+    }
+  }
+  const insertFileNotesRef = useRef(insertFileNotes)
+  insertFileNotesRef.current = insertFileNotes
   reviewCtxRef.current = {
     editor,
     doc,
@@ -4185,7 +4545,7 @@ export function App() {
         [p.footnote, p.endnote].map((k) => [
           k.numFmt,
           k.numStart ?? 1,
-          k.numRestart === 'eachSect',
+          k.numRestart ?? 'continuous',
         ]),
       ),
       list.map((s) => [s.lastBlockIndex, s.pendingBreak ? 1 : 0]),
@@ -4198,6 +4558,7 @@ export function App() {
     const counted = noteNumberingRef.current
     noteNumberingRef.current = { parsed: doc.parsed, sig: noteNumberingSig }
     if (counted?.parsed !== doc.parsed) {
+      setFootnotePages(new Map())
       const opened = readSections(doc.parsed)
       const sig = noteNumberingSigOf(
         sectionNotePropsOf(
@@ -4216,13 +4577,19 @@ export function App() {
 
   // the Footnote and Endnote dialog's Apply: the marks renumber and redraw now, the file takes it on save.
   // A section's own properties win over the document's, so a document-wide change goes into every section too.
-  const applyNoteSettings = (delta: NoteSettings, scope: 'document' | 'section') => {
+  const applyNoteSettings = (
+    delta: NoteSettings,
+    scope: 'document' | 'section',
+    columns?: NoteColumnCount,
+  ) => {
     if (!editor) return
     const last = Math.max(sections.length - 1, 0)
     const at = noteSectionAtCaret()
     const hit = (i: number) => scope === 'document' || i === at
+    const withColumns = ({ footnoteColumns: _was, ...s }: SectionSettings): SectionSettings =>
+      columns == null ? s : { ...s, footnoteColumns: columns }
     const own = (s: SectionSettings): SectionSettings => ({
-      ...s,
+      ...(columns === undefined ? s : withColumns(s)),
       ...(Object.keys(delta.footnote).length > 0
         ? { footnotePr: { ...s.footnotePr, ...delta.footnote } }
         : {}),
@@ -4451,7 +4818,7 @@ export function App() {
     if (!section) return null
     const scroller = document.querySelector('.editor-scroll')
     if (!scroller) return null
-    return ((scroller.clientWidth - 48) / (twipsToPx(section.pageWidth) + markupExtra)) * 100
+    return fitRatio(scroller, twipsToPx(section.pageWidth) + markupExtra) * 100
   }, [section, markupExtra])
 
   /** Last auto-fit: if current zoom still equals its value → "fit mode", re-fit on size changes */
@@ -4468,11 +4835,10 @@ export function App() {
       const scroller = document.querySelector('.editor-scroll')
       if (!scroller) return null
       const pad = 48
-      const wFit =
-        ((scroller.clientWidth - pad) / (twipsToPx(section.pageWidth) + markupExtra)) * 100
+      const wFit = fitRatio(scroller, twipsToPx(section.pageWidth) + markupExtra) * 100
       const hFit = ((scroller.clientHeight - pad) / twipsToPx(section.pageHeight)) * 100
       const textW = twipsToPx(section.pageWidth - section.marginLeft - section.marginRight)
-      const tFit = ((scroller.clientWidth - pad) / (textW + markupExtra)) * 100
+      const tFit = fitRatio(scroller, textW + markupExtra) * 100
       if (mode === 'multi') {
         // Word: a whole page tall and as many across as fit, never fewer than two
         const slotW = twipsToPx(section.pageWidth) + markupExtra
@@ -4541,14 +4907,18 @@ export function App() {
 
   // markup column appearing/disappearing changes the canvas width without a
   // pane resize: apply the same follow/clamp rules as the ResizeObserver above
-  useEffect(() => {
-    if (!doc) return
-    const raw = rawFitWidth()
-    if (raw == null) return
-    const lf = lastFitRef.current
-    if (lf != null && Math.abs(zoomLiveRef.current - lf.value) <= 0.5) refitZoom(lf.mode)
-    else if (zoomLiveRef.current > raw + 0.5) refitZoom('width')
-  }, [doc, markupExtra, rawFitWidth, refitZoom])
+  const refitForCanvasWidth = useCallback(
+    (clampManual: boolean) => {
+      if (!doc) return
+      const raw = rawFitWidth()
+      if (raw == null) return
+      const lf = lastFitRef.current
+      if (lf != null && Math.abs(zoomLiveRef.current - lf.value) <= 0.5) refitZoom(lf.mode)
+      else if (clampManual && zoomLiveRef.current > raw + 0.5) refitZoom('width')
+    },
+    [doc, rawFitWidth, refitZoom],
+  )
+  useEffect(() => refitForCanvasWidth(true), [refitForCanvasWidth, markupExtra])
 
   // Read Mode opens at 1:1 — the same page size as the Page Preview — and the
   // user's zoom / fit mode is restored on exit (wheel zoom still works inside).
@@ -4606,6 +4976,26 @@ export function App() {
     }
   }, [doc])
 
+  // the footnote columns of a section's pages (null: one column, the area as it always was)
+  const compatibilityMode = doc?.parsed.compatibilityMode
+  const noteColumnsOf = useCallback(
+    (s: SectionSettings) => noteColumnLayout(s, compatibilityMode),
+    [compatibilityMode],
+  )
+  const hasNoteColumns = useMemo(
+    () =>
+      footnotes.length > 0 &&
+      // the last section is written from its own state
+      (sections.length > 0
+        ? sections.map((s, i) => (i === sections.length - 1 && section) || s.settings)
+        : section
+          ? [section]
+          : []
+      ).some((s) => noteColumnsOf(s) !== null),
+    [footnotes, sections, section, noteColumnsOf],
+  )
+  const noteColumnsStatsRef = useRef<NoteColumnsStats>({ rounds: 0, stop: 'settled' })
+
   // per-note render metrics: resolved style line height/size plus the entry's
   // height at the renderers' exact styles (DOM wrap truth; the char-width
   // estimate stays as the DOM-less fallback and the parity runner's model)
@@ -4621,7 +5011,10 @@ export function App() {
       kind: NoteKind,
       fmt?: string,
     ): { height: number; lineHeightPx: number; fontSizePt: number; fontFamily?: string } => {
-      const contentW = twipsToPx(sec.pageWidth - sec.marginLeft - sec.marginRight)
+      const contentW = noteColumnWidth(
+        twipsToPx(sec.pageWidth - sec.marginLeft - sec.marginRight),
+        kind === 'footnote' ? noteColumnsOf(sec) : null,
+      )
       // the grid snaps the line height: sections of one width can differ in it
       const key = `${kind}|${fn?.id ?? ''}|${no}|${fmt ?? ''}|${Math.round(contentW)}|${sec.docGrid?.type ?? ''}:${sec.docGrid?.linePitch ?? ''}|${fn?.styleId ?? ''}|${fn?.text ?? ''}|${revisionDisplay}`
       let v = cache.get(key)
@@ -4653,7 +5046,7 @@ export function App() {
     // note-list deps only reset the cache (keys carry the note text, but
     // formatting-only edits keep it — a fresh map re-measures them)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [footnotes, endnotes, noteStyleOf, revisionDisplay])
+  }, [footnotes, endnotes, noteStyleOf, revisionDisplay, noteColumnsOf])
 
   // the numbers the body shows right now: inserting or deleting a note renumbers
   // its in-text marks in document order, and the note areas must say the same
@@ -4706,20 +5099,22 @@ export function App() {
           sections.find((s) => (b.docxIndex ?? 0) <= s.lastBlockIndex)?.settings ?? section
         if (!sec) continue
         const fn = footnotes.find((f) => f.id === run.noteRef!.id)
+        const info = noteRenderInfoOf(
+          fn,
+          noOf.get(run.noteRef!.id) ?? 0,
+          sec,
+          'footnote',
+          noteFmt('footnote', run.noteRef!.id),
+        )
         bands.push({
-          heightPx: noteRenderInfoOf(
-            fn,
-            noOf.get(run.noteRef!.id) ?? 0,
-            sec,
-            'footnote',
-            noteFmt('footnote', run.noteRef!.id),
-          ).height,
+          heightPx: info.height,
+          ...(hasNoteColumns ? { lines: noteLines(info.height, info.lineHeightPx) } : {}),
         })
       }
       // the once-per-page separator is charged by the pagination engine, not per block
       return bands
     },
-    [footnotes, sections, section, noteRenderInfoOf, noteNo, noteFmt],
+    [footnotes, sections, section, noteRenderInfoOf, noteNo, noteFmt, hasNoteColumns],
   )
 
   // typed w:docGrid line pitch (pt) when every section shares one; null = no snapping
@@ -4736,9 +5131,8 @@ export function App() {
     liveTypedGridRef.current = { parsed, typed: typedGridNow }
     // a document just read: its CSS was built from the same sections
     if (first || kept.typed === typedGridNow) return
-    const live = liveStylesRef.current
-    setDocCss(liveDocCss(live?.parsed === parsed ? { ...parsed, styles: live.styles } : parsed))
-  }, [typedGridNow, doc?.parsed, liveDocCss])
+    setDocCss(liveDocCss(liveParsed(parsed)))
+  }, [typedGridNow, doc?.parsed, liveDocCss, liveParsed])
   // mixed grids: .doc-page keeps the first typed pitch as the inheritance
   // fallback (floats/notes/web view); print blocks get per-section overrides
   // via sectionGridPitchSpecs on the layout channel
@@ -4937,7 +5331,9 @@ export function App() {
           const fmt = noteFmt('footnote', id)
           const info = noteRenderInfoOf(fn, noOf.get(id) ?? 0, sec, 'footnote', fmt)
           const richParas = noteRunsInView(revisionDisplay, fn.richParas)
+          const cols = hasNoteColumns ? noteColumnsOf(sec) : null
           out[page]?.push({
+            ...(cols ? { cols } : {}),
             no: noOf.get(id) ?? 0,
             ...(fmt ? { fmt } : {}),
             id,
@@ -4963,7 +5359,65 @@ export function App() {
       noteNo,
       noteFmt,
       revisionDisplay,
+      hasNoteColumns,
+      noteColumnsOf,
     ],
+  )
+
+  // w:numRestart="eachPage": a mark's number depends on the page it lands on and its width
+  // on where the line breaks, so the pass that laid the pages out numbers the marks by page
+  // and lays out again until the numbers hold (NotePageSettle). Not an edit: no undo step,
+  // and the document is no more modified than it was.
+  const footnotePerPage = footnotesRestartPerPage(sectionNoteProps)
+  const footnotePerPageRef = useRef(footnotePerPage)
+  footnotePerPageRef.current = footnotePerPage
+  const noteSettleRef = useRef(new NotePageSettle())
+  const settleFootnotePages = useCallback(
+    (blocks: BlockBox[], slices: PageSlice[], pageNotes: PageNoteItem[][]) => {
+      const view = editorRef.current
+      if (!view) return
+      const pages = new Map<string, number>()
+      pageNotes.forEach((items, page) => {
+        for (const item of items) if (!pages.has(item.id)) pages.set(item.id, page)
+      })
+      // a mark the opened file does not hold yet counts on the page its block starts on
+      const topOf = new Map(blocks.filter((b) => b.el).map((b) => [b.el as Element, b.top]))
+      const shown: Array<[string, number]> = []
+      view.state.doc.forEach((block, offset) => {
+        block.descendants((node) => {
+          if (node.type.name !== 'docNoteRef' || node.attrs.kind !== 'footnote') return true
+          const id = String(node.attrs.id)
+          if (node.attrs.mark == null) shown.push([id, Number(node.attrs.num)])
+          if (!pages.has(id)) {
+            const top = topOf.get(view.view.nodeDOM(offset) as Element)
+            if (top !== undefined) pages.set(id, pageOfY(slices, top))
+          }
+          return false
+        })
+      })
+      setFootnotePages(pages)
+      const before = view.state.doc
+      const tr = view.state.tr
+      renumber(tr, 'footnote')
+      const asked: Array<[string, number]> = []
+      tr.doc.descendants((node) => {
+        if (node.type.name !== 'docNoteRef') return true
+        if (node.attrs.kind === 'footnote' && node.attrs.mark == null)
+          asked.push([String(node.attrs.id), Number(node.attrs.num)])
+        return false
+      })
+      const settle = noteSettleRef.current
+      const go = settle.step(before, JSON.stringify(shown), JSON.stringify(asked))
+      ;(window as unknown as Record<string, unknown>).__noteSettle = settle.stats
+      if (!go) return
+      const wasDirty = dirtyRef.current
+      view.view.dispatch(tr.setMeta('addToHistory', false))
+      dirtyRef.current = wasDirty
+      carryDocSeen(view, before)
+      settle.carry(view.state.doc)
+      setNoteRenumbered((n) => n + 1)
+    },
+    [],
   )
 
   // an endnote entry as drawn in a section: its height and line box at that section's width and grid
@@ -5199,6 +5653,7 @@ export function App() {
     // group layout) re-run it from their block; the preview never prints a pass
     // whose floats were measured before the boxes existed
     let passGen = 0
+    let layoutDoc: PmNode | null = null
     const floatWatch = new FloatWatch((changed) => {
       const pm = pmEl()
       let top: Element | null = changed[0]
@@ -5209,7 +5664,9 @@ export function App() {
     let secWidthSig = ''
     let charSpaceSig = ''
     const colWidthPass = newWidthPassState()
-    const pmEl = () => document.querySelector('.editor-scroll .ProseMirror') as HTMLElement | null
+    // the body editor: an open first-page header editor is an earlier .ProseMirror
+    const pmEl = () =>
+      document.querySelector('.editor-scroll .ProseMirror.doc-page') as HTMLElement | null
     const locate = () => {
       const pm = pmEl()
       if (!pm || slices.length === 0) return
@@ -5463,7 +5920,9 @@ export function App() {
         }
         let fast = false
         try {
-          fast = Boolean(edited && edited.size > 0 && tryFastPass(edited))
+          const turned =
+            !!editor && syncVerticalCellBoxes(editor.view.dom as HTMLElement, editor.view)
+          fast = Boolean(!turned && edited && edited.size > 0 && tryFastPass(edited))
           if (!fast) {
             if (!edited) fastReject = 'trigger'
             else if (edited.size === 0) fastReject = 'none'
@@ -5483,6 +5942,8 @@ export function App() {
           if (dbg) dbg.fastPasses = fastPasses
         }
         locate()
+        // the layout stands for this document, whichever pass confirmed it
+        layoutDoc = editor?.state.doc ?? null
       } finally {
         lastPassMs = performance.now() - lastPassAt
         // a pass that threw between the add and the pre-setPageGaps remove
@@ -5617,6 +6078,9 @@ export function App() {
           ...(hasVertical ? { inlineExtraOf: blockInlineExtraPx } : {}),
           factor,
           resumeFor: (bs, secSig) => resumeFor(bs, secSig, dirty) ?? undefined,
+          ...(hasNoteColumns
+            ? { noteColumns: { of: noteColumnsOf, stats: noteColumnsStatsRef.current } }
+            : {}),
           out: sliceOut,
         }
         const flow = prepareFlow({ blocks, totalHeight, floats, sectBreaks }, passCtx)
@@ -5719,7 +6183,11 @@ export function App() {
           return cuts[idx - 1]?.display
         })
         const tr = editor.state.tr
-        if (applyTocPageDisplays(editor.state.doc, tr, headings, displays)) {
+        const lockedLines = lockedTableLines(
+          editor.state.doc,
+          fileCtxRef.current.doc?.parsed.blocks ?? EMPTY_BLOCKS,
+        )
+        if (applyTocPageDisplays(editor.state.doc, tr, headings, displays, lockedLines)) {
           tr.setMeta('addToHistory', false)
           const before = editor.state.doc
           editor.view.dispatch(tr)
@@ -5727,6 +6195,7 @@ export function App() {
           carryDocSeen(editor, before)
         }
       }
+      if (editor && footnotePerPageRef.current) settleFootnotePages(blocks, slices, pageNotes)
       // M4 always-on pagination in the canvas: render page gaps before page-leading blocks
       // (print view only; gaps don't count as content — measureBlocks subtracts them, so
       // slice results are gap-independent and refresh is idempotent)
@@ -5936,10 +6405,9 @@ export function App() {
             const cut = cuts[k + 1]
             const stacked = !slices[k].regions || colMode === 'mixed'
             const items = pageNotes[k] ?? []
+            const noteCols = items[0]?.cols ?? null
             const fnH =
-              items.length > 0
-                ? items.reduce((s, n) => s + n.height, 0) + noteSeparatorPx('footnote')
-                : 0
+              items.length > 0 ? noteAreaPx(items, noteCols) + noteSeparatorPx('footnote') : 0
             const remaining = stacked ? prevCut.padPx : 0
             const pullUp = stacked ? Math.max(0, prevCut.usedPx - prevCut.physUsedPx) : 0
             // used excludes the reserved footnote height (footnoteExtraPx inflates capacity
@@ -6058,8 +6526,9 @@ export function App() {
                 fnH,
                 footnoteLineHeightPx(prevSec.docGrid),
                 (id) => editNote('footnote', id),
+                noteCols,
               )
-              notesKey = `${Math.round(fnH)}:${notesLeft.toFixed(1)}:${noteSettings.footnote.numFmt ?? ''}${notesBeneathText ? 'b' : ''}:${items.map((n) => `${n.no}${n.fmt ?? ''}${n.text}`).join('|')}:h${docHyphenationSig()}`
+              notesKey = `${noteCols ? `c${noteCols.count}:${Math.round(noteCols.gapPx)}:` : ''}${Math.round(fnH)}:${notesLeft.toFixed(1)}:${noteSettings.footnote.numFmt ?? ''}${notesBeneathText ? 'b' : ''}:${items.map((n) => `${n.no}${n.fmt ?? ''}${n.text}`).join('|')}:h${docHyphenationSig()}`
               notesMetrics = {
                 ...notesMetrics,
                 marginBottom: metrics.marginBottom + fnH,
@@ -6416,7 +6885,15 @@ export function App() {
           }
           // DOM-only (contenteditable=false subtrees the save path never reads);
           // a pristine open keeps the file's cached results like the refresh above
-          const tocLines = pm.querySelectorAll<HTMLElement>('.doc-toc-line[data-toc-anchor]')
+          const everyTocLine = pm.querySelectorAll<HTMLElement>('.doc-toc-line[data-toc-anchor]')
+          // the lines of a locked table keep the page they show
+          const lockedLines =
+            everyTocLine.length > 0 ? lockedTableLines(editor.state.doc, parsed.blocks) : null
+          const lockedEls = [...(lockedLines ?? [])].map((pos) => editor.view.nodeDOM(pos))
+          const tocLines =
+            lockedEls.length > 0
+              ? [...everyTocLine].filter((line) => !lockedEls.some((el) => el?.contains(line)))
+              : [...everyTocLine]
           if (tocLines.length > 0 && slices.length > 0) {
             const anchorIdx = new Map<string, number>()
             for (const b of parsed.blocks) {
@@ -6592,6 +7069,12 @@ export function App() {
             ? [
                 ...sectionCharSpaceSpecs(blocks, secList, doc.parsed.balanceDbcsSpacing === true),
                 ...sectionCharCellSpecs(blocks, secList, gridBasePtRef.current),
+                ...sectionRightIndentSpecs(
+                  blocks,
+                  secList,
+                  gridBasePtRef.current,
+                  (doc.parsed.compatibilityMode ?? 0) < 15,
+                ),
               ]
             : []
         // sections disagreeing on the top margin: per-block --doc-margin-top for page-relative anchors
@@ -6661,7 +7144,12 @@ export function App() {
         // re-anchor them to the paper before the strips are measured/aligned
         alignTableGapFills(pm, factor)
         stage('tableGapFills')
-        if ((secWSpecs.length > 0 || mirrorMargins) && section) {
+        // the stylesheet centers a strip on the paper: it sits on the left margin
+        // only when the side margins are equal
+        const offCenter = (secList?.map((s) => s.settings) ?? [section]).some(
+          (s) => s != null && s.marginLeft !== s.marginRight,
+        )
+        if ((secWSpecs.length > 0 || mirrorMargins || offCenter) && section) {
           const cSet = secList?.[0]?.settings ?? section
           alignGapHfStrips(pm, pageLeftOf(cSet) + twipsToPx(cSet.marginLeft), factor)
         }
@@ -6786,7 +7274,7 @@ export function App() {
         const cSig =
           charSpecs.length === 0
             ? ''
-            : `${charSpecs.length}:${[...new Set(charSpecs.map((s) => s.charSpacePt ?? `c${s.charCellPt}`))].join(',')}`
+            : `${charSpecs.length}:${[...new Set(charSpecs.map((s) => s.charSpacePt ?? (s.charCellPt !== undefined ? `c${s.charCellPt}` : `r${s.rightIndentPt}`)))].join(',')}`
         if (cSig !== charSpaceSig) {
           charSpaceSig = cSig
           wrapWidthsChanged = true
@@ -6840,6 +7328,7 @@ export function App() {
         )
         // for real-device verification/troubleshooting: current slices and block geometry (read-only snapshot, no functional dependency)
         ;(window as unknown as Record<string, unknown>).__pageDebug = {
+          ...(hasNoteColumns ? { noteColumns: { ...noteColumnsStatsRef.current } } : {}),
           slices,
           fastPasses,
           fastReject,
@@ -6986,6 +7475,96 @@ export function App() {
       window.clearTimeout(timer)
       remeasure()
     }
+    pageSourceRef.current = () => {
+      const layout = pageLayoutRef.current
+      const pm = pmEl()
+      if (!editor || !pm || !layout || layout.cuts.length === 0) return null
+      // a place on the canvas tells its page only where the sheets are drawn one under the
+      // other with the text running down them: the page view, and no columns drawn as one
+      // flow down every sheet (there the canvas and the cuts disagree). Sideways pages are
+      // asked through the flow the layout cut, like columns standing side by side
+      if (viewMode !== 'print' || readMode || colMode === 'uniform') return null
+      if (multipageActiveRef.current != null) return null
+      if (timer !== null || isPhasedContentPending() || layoutDoc !== editor.state.doc) return null
+      const { cuts } = layout
+      const counts = sectionPageCounts(layout.slices)
+      const secs = lastSecListRef.current
+      const view = editor.view
+      // the canvas zoom as applied (see remeasure), not this closure's
+      const zoomNow = canvasZoomOf(scroller.querySelector<HTMLElement>('.doc-zoom'), zoom / 100)
+      const factsAt = (screenY: number): PageFacts | null => {
+        const i = pageAtCanvasY(cuts, mTopPx, (screenY - pm.getBoundingClientRect().top) / zoomNow)
+        return i === null ? null : factsOf(i)
+      }
+      const factsOf = (i: number): PageFacts => {
+        const cut = cuts[i]
+        const fmt = secs?.[Math.min(cut.section, secs.length - 1)]?.pageNumberFmt
+        return {
+          index: i,
+          number: cut.pageNo,
+          display: cut.display,
+          chaptered: cut.display !== formatPageNumber(cut.pageNo, fmt),
+          sectionPages: counts[i],
+        }
+      }
+      const boxOf = (pos: number): DOMRect | null => {
+        const el = view.nodeDOM(pos)
+        if (!(el instanceof HTMLElement)) return null
+        const box = el.getBoundingClientRect()
+        if (box.height > 0) return box
+        // a floating text box leaves its block no height: the box is what the page draws
+        const drawn = el.querySelector('.doc-textbox')?.getBoundingClientRect()
+        return drawn && drawn.height > 0 ? drawn : null
+      }
+      // columns stand side by side, so there the flow the layout cut tells the page: a
+      // block's own, and what is inside a block that sits on one page
+      const flowPageAt = (pos: number, edge?: 'top' | 'bottom'): PageFacts | null => {
+        const $pos = view.state.doc.resolve(pos)
+        const nested = $pos.depth > 0
+        const el = view.nodeDOM(nested ? $pos.before(1) : pos)
+        const block = el instanceof HTMLElement ? lastBlocks.find((b) => b.el === el) : undefined
+        if (!block || !(block.height > 0)) return null
+        const last = cuts.length - 1
+        const first = Math.min(Math.max(pageOfY(cuts, block.top), 0), last)
+        const end = Math.min(Math.max(pageOfY(cuts, block.top + block.height - 1), first), last)
+        if (cuts[first].blank || cuts[end].blank) return null
+        if (first === end) return factsOf(first)
+        return nested || !edge ? null : factsOf(edge === 'top' ? first : end)
+      }
+      return {
+        pageCount: visiblePageCount(layout.slices),
+        edited: dirtyRef.current,
+        hfPage: (sectionEnd, variant) => {
+          const section = secs?.findIndex((s) => s.lastBlockIndex === sectionEnd) ?? -1
+          const i = cuts.findIndex(
+            (c) => c.section === section && c.hf.variant === variant && !c.blank,
+          )
+          return i < 0 ? null : factsOf(i)
+        },
+        noteBookmarkPage: (name) => {
+          const fromFile = fileCtxRef.current.doc?.parsed.footnotes ?? []
+          const id = footnoteOfBookmark(name, footnotesRef.current, fromFile)
+          const i = id === null ? -1 : layout.pageNotes.findIndex((p) => p.some((n) => n.id === id))
+          return i < 0 || !cuts[i] || cuts[i].blank ? null : factsOf(i)
+        },
+        pageAt: (pos, edge) => {
+          try {
+            if (colMode === 'mixed' || hasVertical) return flowPageAt(pos, edge)
+            if (edge) {
+              const box = boxOf(pos)
+              return box && factsAt(edge === 'top' ? box.top + 1 : box.bottom - 1)
+            }
+            const at = view.coordsAtPos(pos, 1)
+            const y = (at.top + at.bottom) / 2
+            // text that is not drawn (hidden, collapsed) reports a place outside its paragraph
+            const box = boxOf(view.state.doc.resolve(pos).before())
+            return box && y >= box.top && y <= box.bottom ? factsAt(y) : null
+          } catch {
+            return null
+          }
+        },
+      }
+    }
     if (isPhasedContentPending()) onUpdate()
     else remeasure()
     // async @font-face loading triggers a full reflow (line-break points change); pagination
@@ -6998,12 +7577,7 @@ export function App() {
       // strut metrics measured under a fallback face before a bundled font loaded
       if (takeSettledMetricFaces()) {
         const parsed = fileCtxRef.current.doc?.parsed
-        const live = liveStylesRef.current
-        if (parsed) {
-          setDocCss(
-            liveDocCss(live?.parsed === parsed ? { ...parsed, styles: live.styles } : parsed),
-          )
-        }
+        if (parsed) setDocCss(liveDocCss(liveParsed(parsed)))
       }
       if (reprobeHf) {
         bumpHfProbeFontEpoch()
@@ -7027,8 +7601,7 @@ export function App() {
       if (!parsed) return
       if (!docFontsCoveredBy(parsed, names).length) return
       bumpLineSampleFontEpoch()
-      const live = liveStylesRef.current
-      setDocCss(liveDocCss(live?.parsed === parsed ? { ...parsed, styles: live.styles } : parsed))
+      setDocCss(liveDocCss(liveParsed(parsed)))
       onUpdate()
     }
     const offFontAliases = onFontAliasesChanged(onAliases)
@@ -7049,7 +7622,19 @@ export function App() {
     // the shrink list covers every justified paragraph; only the entries that
     // differ from the last list moved a wrap point, so the pass resumes there
     let shrinkSig = new Map<number, string>()
-    const onShrinkTr = (props: { transaction: Transaction }) => {
+    const onShrinkTr = (props: {
+      transaction: Transaction
+      appendedTransactions?: Transaction[]
+    }) => {
+      // a heading folded or opened without an edit: the same blocks at other heights
+      const batch = [props.transaction, ...(props.appendedTransactions ?? [])]
+      if (
+        batch.some((tr) => tr.getMeta(headingCollapseKey)) &&
+        !batch.some((tr) => tr.docChanged)
+      ) {
+        resetWidthPassHistory(colWidthPass)
+        onUpdate()
+      }
       const decos = props.transaction.getMeta(justifyShrinkPluginKey) as
         Array<{ from: number; to: number; type?: { attrs?: { style?: string } } }> | undefined
       if (decos && editor) {
@@ -7090,6 +7675,7 @@ export function App() {
       document.removeEventListener(MATH_WRAP_CHANGED_EVENT, onMathWrap)
       floatWatch.dispose()
       flushPaginationRef.current = () => {}
+      pageSourceRef.current = () => null
       if (timer) window.clearTimeout(timer)
       if (hfTimer) window.clearTimeout(hfTimer)
       document.fonts.removeEventListener('loadingdone', onLoadingDone)
@@ -7109,6 +7695,9 @@ export function App() {
     blockMetaOf,
     blockPlans,
     pageFootnotesOf,
+    settleFootnotePages,
+    hasNoteColumns,
+    noteColumnsOf,
     endnoteItems,
     sectEndnoteGroups,
     noteSettings,
@@ -7145,7 +7734,40 @@ export function App() {
     balloonMode,
     delSectBreaks,
     pendingWatermarkImage,
+    watermarkDirty,
   ])
+
+  // Shapes sized as a share of the page follow a page setup the user changed.
+  // A file's own cached sizes stay as they are until then: a section counts
+  // once it is dirty, and from then on (an undo takes the dirt away again).
+  const relGeometryRef = useRef<{ doc: unknown; keys: string[]; edited: Set<number> } | null>(null)
+  const openedParsed = doc?.parsed
+  useEffect(() => {
+    if (!editor) return
+    const last = Math.max(sections.length - 1, 0)
+    const settingsAt = (i: number) => (i === last && section) || sections[i]?.settings || section
+    const keys = Array.from({ length: last + 1 }, (_, i) => pageGeometryKey(settingsAt(i)))
+    const was = relGeometryRef.current
+    const same = !!was && was.doc === openedParsed && was.keys.length === keys.length
+    const edited = same ? was.edited : new Set<number>()
+    relGeometryRef.current = { doc: openedParsed, keys, edited }
+    if (!same) return
+    const moved = keys.map(
+      (key, i) =>
+        key !== was.keys[i] &&
+        (edited.has(i) || (i === last ? sectionDirty : sectionsDirty.includes(i))),
+    )
+    if (!moved.some(Boolean)) return
+    moved.forEach((yes, i) => yes && edited.add(i))
+    // an undo replays the page setup from inside its own transaction: fit once that has landed
+    window.setTimeout(() => {
+      if (editor.isDestroyed) return
+      fitRelativeShapes(editor, (topIndex) => {
+        const i = Math.min(sectionIndexAtBlock(editor.state.doc, sections, topIndex), last)
+        return moved[i] ? (settingsAt(i) ?? null) : null
+      })
+    }, 0)
+  }, [editor, sections, section, sectionDirty, sectionsDirty, openedParsed])
 
   // section at the cursor: the target the Layout tab acts on
   useEffect(() => {
@@ -7303,7 +7925,7 @@ export function App() {
   const documentStats = useCallback((): DocStats | null => {
     if (!editor) return null
     const text = documentTextForWordCount(editor.state.doc)
-    const pm = document.querySelector('.ProseMirror')
+    const pm = document.querySelector('.ProseMirror.doc-page')
     const zoomFactor = zoom / 100
     let lines = 0
     if (pm) {
@@ -7450,6 +8072,16 @@ export function App() {
     }
     const handler = (e: KeyboardEvent) => {
       const canEdit = !!editor?.isEditable && focusInEditor()
+      const chord = chordFromEvent(e)
+      const menuKey =
+        chord && !e.defaultPrevented ? windowKeyCommand(currentKeyOverrides(), chord) : null
+      if (menuKey) {
+        e.preventDefault()
+        // greyed out in the menu bar, the key does nothing, as there
+        if (!menuDisabledRef.current.includes(menuKey)) runCommand(menuKey)
+        // the looser tests below would also take these chords (Find answers any ⌘F)
+        return
+      }
       if ((e.metaKey || e.ctrlKey) && isCommandLetter(e, 'o')) {
         e.preventDefault()
         void openFile()
@@ -7471,7 +8103,7 @@ export function App() {
           setFindFocusReplace((n) => n + 1)
         }
       }
-      // Go To: ⌥⌘G on the Mac (Word for Mac), Ctrl+G elsewhere (⇧⌘G stays Word Count)
+      // Go To: ⌥⌘G on the Mac (Word for Mac), Ctrl+G elsewhere
       if (
         (e.metaKey || e.ctrlKey) &&
         !e.shiftKey &&
@@ -7510,10 +8142,21 @@ export function App() {
         e.preventDefault()
         setShowLinkModal(true)
       }
+      const updateKey =
+        e.key === 'F9' || (IS_MAC && e.metaKey && e.altKey && e.shiftKey && e.code === 'KeyU')
       if (e.key === 'F9' && e.altKey && doc && editor) {
         e.preventDefault()
         toggleAllFieldCodes(editor.view)
-      } else if (e.key === 'F9' && doc && editor?.isEditable) {
+      } else if (IS_MAC && e.key === 'F9' && e.shiftKey && doc && editor) {
+        // Word for Mac's ⇧F9: the code of the field the caret is in
+        e.preventDefault()
+        const target = focusedEditor() ?? editor
+        const { state, view } = target
+        const field = fieldRangeAt(state, state.selection.from)
+        if (field && isFieldCodeOpen(field.mark))
+          closeFieldCodes(target, (instr) => fieldValueRef.current(instr), field)
+        else if (field) toggleFieldCodes(view, field)
+      } else if (updateKey && doc && editor?.isEditable) {
         e.preventDefault()
         updateFields()
       }
@@ -7535,7 +8178,7 @@ export function App() {
         e.preventDefault()
         // route into a focused textbox sub-editor, like the ribbon does
         const target = getActiveSubEditor() ?? editor
-        setSelectionAlign(target, ALIGN_KEYS[e.key])
+        alignSelectionOrTable(target, ALIGN_KEYS[e.key])
       }
       // Word line-spacing shortcuts ⌘1 / ⌘2 / ⌘5; e.code because shifted-digit
       // layouts (AZERTY) make e.key unreliable
@@ -7551,12 +8194,18 @@ export function App() {
         e.preventDefault()
         runCommand('line-spacing', String(SPACING_KEYS[e.code]))
       }
-      // Paragraph styles ⌥⌘0 Normal / ⌥⌘1..3 headings (Ctrl+Shift+N is taken by New Window)
+      // Paragraph styles ⌥⌘0 Normal / ⌥⌘1..3 headings; Word for Mac's ⇧⌘N is Normal as well
+      // (off the Mac Ctrl+Shift+N is New Window)
       const STYLE_KEYS: Record<string, 'p' | 'h1' | 'h2' | 'h3'> = {
         Digit0: 'p',
         Digit1: 'h1',
         Digit2: 'h2',
         Digit3: 'h3',
+      }
+      const normalKey = IS_MAC && e.metaKey && e.shiftKey && !e.altKey && !e.ctrlKey
+      if (normalKey && e.code === 'KeyN' && editor && canEdit) {
+        e.preventDefault()
+        if (!getActiveSubEditor()) applyParagraphStyle(editor, 'p', ribbonStylesRef.current)
       }
       if (
         (e.metaKey || e.ctrlKey) &&
@@ -7595,18 +8244,22 @@ export function App() {
         e.preventDefault()
         ribbonActionsRef.current.nudgeFontSize?.(e.code === 'BracketRight' ? 1 : -1)
       }
-      // Superscript / subscript. Word's own ⌘= / ⇧⌘= collide with the zoom
-      // accelerators for the "=" half only, so the unshifted pair is on ⌘. / ⌘,
-      // (the same keys the shifted grow/shrink pair uses).
+      // Superscript / subscript: ⇧⌘= / ⇧⌘- as in Word for Mac, where ⌘. is Cancel
+      // and ⌘, Preferences. Off the Mac, where Ctrl+Shift+- is the non-breaking
+      // hyphen, the unshifted pair is on Ctrl+. / Ctrl+,
       const vertAlign = e.shiftKey
         ? e.code === 'Equal'
           ? 'superscript'
-          : null
-        : e.code === 'Period'
-          ? 'superscript'
-          : e.code === 'Comma'
+          : IS_MAC && e.code === 'Minus'
             ? 'subscript'
             : null
+        : IS_MAC
+          ? null
+          : e.code === 'Period'
+            ? 'superscript'
+            : e.code === 'Comma'
+              ? 'subscript'
+              : null
       if ((e.metaKey || e.ctrlKey) && !e.altKey && vertAlign && editor && canEdit) {
         e.preventDefault()
         runCommand(vertAlign)
@@ -7622,19 +8275,27 @@ export function App() {
         e.preventDefault()
         ;(getActiveSubEditor() ?? editor)?.chain().focus().unsetAllMarks().run()
       }
-      // Indent ⌃M / outdent ⌃⇧M and hanging indent ⌘T / ⇧⌘T. Ctrl-only on both
-      // platforms: ⌘M minimizes the window, and indenting a paragraph on the way
-      // out would be a silent edit.
-      if (e.ctrlKey && !e.metaKey && !e.altKey && e.code === 'KeyM' && editor && canEdit) {
+      // Indent and outdent: ⌃⇧M (and ⌃M) / ⇧⌘M as in Word for Mac, Ctrl+M /
+      // Ctrl+Shift+M elsewhere. Never bare ⌘M: it minimizes the window, and
+      // indenting a paragraph on the way out would be a silent edit.
+      const indentKey = e.ctrlKey && !e.metaKey && !e.altKey && e.code === 'KeyM'
+      const macOutdentKey =
+        IS_MAC && e.metaKey && e.shiftKey && !e.ctrlKey && !e.altKey && e.code === 'KeyM'
+      if ((indentKey || macOutdentKey) && editor && canEdit) {
         e.preventDefault()
-        if (!getActiveSubEditor()) stepParagraphIndent(editor, e.shiftKey ? -1 : 1)
+        const out = IS_MAC ? macOutdentKey : e.shiftKey
+        if (!getActiveSubEditor()) stepParagraphIndent(editor, out ? -1 : 1)
       }
       if ((e.metaKey || e.ctrlKey) && !e.altKey && e.code === 'KeyT' && editor && canEdit) {
         e.preventDefault()
         if (!getActiveSubEditor()) stepHangingIndent(editor, e.shiftKey ? -1 : 1)
       }
-      // Clear paragraph formatting — Word's Ctrl+Q (⌘Q quits on macOS)
-      if (e.ctrlKey && !e.metaKey && !e.shiftKey && !e.altKey && e.code === 'KeyQ' && canEdit) {
+      // Clear paragraph formatting: Word for Mac's ⌥⌘Q, Word for Windows' Ctrl+Q (⌘Q quits on macOS)
+      const clearParaKey =
+        e.code === 'KeyQ' &&
+        !e.shiftKey &&
+        (e.ctrlKey ? !e.metaKey && !e.altKey : IS_MAC && e.metaKey && e.altKey)
+      if (clearParaKey && canEdit) {
         e.preventDefault()
         if (editor && !getActiveSubEditor()) clearParagraphFormatting(editor)
       }
@@ -7648,8 +8309,8 @@ export function App() {
         e.preventDefault()
         if (!isProtected && !trackChangesForced) toggleTrackChangesByUser()
       }
-      // Word count ⇧⌘G
-      if ((e.metaKey || e.ctrlKey) && e.shiftKey && !e.altKey && e.code === 'KeyG' && doc) {
+      // Word Count is Ctrl+Shift+G in Word for Windows; Word for Mac gives ⇧⌘G to Find Previous
+      if (!IS_MAC && e.ctrlKey && e.shiftKey && !e.altKey && e.code === 'KeyG' && doc) {
         e.preventDefault()
         runCommand('word-count')
       }
@@ -7677,8 +8338,8 @@ export function App() {
           runCommand('insert-field', instr)
         }
       }
-      // Proofread F7 (Word's spelling & grammar check)
-      if (e.key === 'F7' && !e.shiftKey && doc) {
+      // Proofread F7; on the Mac F7 is Spelling and Grammar, as in Word
+      if (!IS_MAC && e.key === 'F7' && !e.shiftKey && doc) {
         e.preventDefault()
         runCommand('ai-proofread')
       }
@@ -7697,11 +8358,18 @@ export function App() {
     toggleTrackChangesByUser,
   ])
 
-  // double-click an inline equation / click an equation block's edit button (ones with LaTeX source) → reopen the equation dialog for editing
+  // double-click an inline equation / click an equation block's edit button (ones with LaTeX source or MathType OMML) -> reopen the equation dialog for editing
   useEffect(() => {
     const handler = (e: Event) => {
-      const detail = (e as CustomEvent<{ pos: number; latex: string; kind?: 'inline' | 'block' }>)
-        .detail
+      const detail = (
+        e as CustomEvent<{
+          pos: number
+          latex: string
+          kind?: 'inline' | 'block'
+          isMathType?: boolean
+          omml?: string
+        }>
+      ).detail
       if (editor && doc && detail) setEqEditTarget({ kind: 'inline', ...detail })
     }
     window.addEventListener('ai-docs-edit-inline-math', handler)
@@ -7733,10 +8401,9 @@ export function App() {
     }
     manualHyphenationRef.current = manual
     setManualHyphenation(manual)
-    const live = liveStylesRef.current
-    setDocCss(liveDocCss(live?.parsed === parsed ? { ...parsed, styles: live.styles } : parsed))
+    setDocCss(liveDocCss(liveParsed(parsed)))
     // Chromium hyphenates only under an explicit lang, as on open (file-actions)
-    const docLang = next.auto ? parsed.docDefaults?.lang : undefined
+    const docLang = next.auto ? hyphenationLangOf(parsed) : undefined
     if (docLang) editor.view.dom.setAttribute('lang', docLang)
     else editor.view.dom.removeAttribute('lang')
     const config = hyphenationConfigOf(parsed, next.auto || manual, next)
@@ -7756,11 +8423,16 @@ export function App() {
     setMathLimits(next)
     refreshLimitDefaults(editor)
   }
-  const selectedProjection = (): string => {
+  /** the selected text; `orCaretWord` lets a bare caret stand for the word it is in, as Word's Thesaurus reads it */
+  const selectedProjection = (orCaretWord = false): string => {
     const target = getActiveSubEditor() ?? editor
-    if (!target || target.state.selection.empty) return ''
-    const { from, to } = target.state.selection
-    return redactTextBetween(target.getJSON() as RedactableNode, from, to, ' ').trim()
+    const range = !target?.state.selection.empty
+      ? target?.state.selection
+      : orCaretWord
+        ? wordRangeAtCaret(target)
+        : null
+    if (!target || !range) return ''
+    return redactTextBetween(target.getJSON() as RedactableNode, range.from, range.to, ' ').trim()
   }
   commandHostRef.current = {
     editor,
@@ -7796,15 +8468,25 @@ export function App() {
       setInkTool(inkActive.kind)
     },
     setDesignAsDefault: () => {
+      const parsed = doc?.parsed
+      if (!parsed) return
       const { before, after, line, multiple } = defaultStyleSpacing()
-      saveDesignDefault({
-        ...(themeFonts ? { fonts: themeFonts } : {}),
-        ...(themeColors ? { colors: themeColors } : {}),
-        ...(after != null && line != null && multiple
-          ? { spacing: { ...(before ? { beforeTwips: before } : {}), afterTwips: after, line } }
-          : {}),
+      const bytes = parsed.internal.originalBytes
+      void Promise.all([
+        readDocxStylesXml(bytes, Object.values(styleUpserts)),
+        themeFormat ?? readDocxThemeFormat(bytes),
+      ]).then(([stylesXml, format]) => {
+        saveDesignDefault({
+          ...(themeFonts ? { fonts: themeFonts } : {}),
+          ...(themeColors ? { colors: themeColors } : {}),
+          ...(format ? { format } : {}),
+          styles: styleSetXmlOf(stylesXml),
+          ...(after != null && line != null && multiple
+            ? { spacing: { ...(before ? { beforeTwips: before } : {}), afterTwips: after, line } }
+            : {}),
+        })
+        setStatus(t('ribbonSetAsDefaultDone'))
       })
-      setStatus(t('ribbonSetAsDefaultDone'))
     },
     nothingToCrop: () => setStatus(t('ribbonAutoCropNothing')),
     selectChartData: () => {
@@ -7821,9 +8503,26 @@ export function App() {
       const style = listStyles.find((s) => s.styleId === styleId)
       return style ? listStyleNumImpl(numberingCtxRef.current, style) : null
     },
-    openListDialog: (kind, card) => {
+    openListDialog: (kind, card, styleId) => {
       setListCard(card ?? null)
+      setModifiedListStyle(styleId ?? null)
       setListDialog(kind)
+    },
+    modifyListStyle: (styleId, name, levels) => {
+      const style = listStyles.find((s) => s.styleId === styleId)
+      const modified =
+        style &&
+        modifyListStyleAsStep(
+          numberingCtxRef.current,
+          style,
+          name,
+          levels,
+          (id) => aiStyleUpsertsRef.current[id],
+        )
+      if (!modified) return
+      setListDialog(null)
+      setAddedListStyle(styleId)
+      setShowBulletsNumbering(true)
     },
     addListStyle: (name, levels) => {
       const styleId = addListStyleImpl(numberingCtxRef.current, name, levels, listStyles)
@@ -7850,10 +8549,13 @@ export function App() {
     applyHeadingLevel: (level) => {
       if (editor) applyParagraphStyle(editor, level ? `h${level}` : 'p', ribbonStylesRef.current)
     },
-    checkSpelling: () => setShowSpelling(true),
+    checkSpelling: (grammarAt) => {
+      setSpellingGrammarAt(grammarAt ?? null)
+      setShowSpelling(true)
+    },
     thesaurus: () => {
       // a word or a short phrase, as on the right-click menu; the model reads the projection
-      const text = selectedProjection()
+      const text = selectedProjection(true)
       if (!text || text.length > 20) return setStatus(t('appThesaurusSelect'))
       setShowAi(true)
       setAiPreset({ text: t('appSynonymsPrompt', { text }), nonce: Date.now(), autoRun: true })
@@ -7861,8 +8563,9 @@ export function App() {
     translate: (scope) => {
       const langName = t(ribbonLangKey(translationLanguage(lang)))
       if (scope === 'selection') {
-        // the passage goes in the request, as on the right-click menu, so a text box's is found
-        const text = selectedProjection()
+        // the passage goes in the request, as on the right-click menu, so a text box's is found;
+        // a bare caret stands for the word it is in there too
+        const text = selectedProjection(true)
         if (!text) return setStatus(t('appTranslateSelect'))
         setShowAi(true)
         setAiPreset({
@@ -7946,7 +8649,9 @@ export function App() {
         altText: setShowAltText,
         lineNumbers: setShowLineNumbers,
         icons: setShowIconsDialog,
+        changePictureIcon: setShowChangePictureIcon,
         paragraphSpacing: setShowParagraphSpacing,
+        saveStyleSet: setShowSaveStyleSet,
         reduceFileSize: (open: boolean) => {
           setReduceSelection(open && editor ? selectedPictureSources(editor.state) : [])
           setShowReduceFileSize(open)
@@ -7976,6 +8681,43 @@ export function App() {
       if (!editor) return
       const { from, to } = editor.state.selection
       setMarkEntryAt({ text: editor.state.doc.textBetween(from, to, ' ').trim(), at: to })
+    },
+    openMarkTocEntry: () => {
+      if (!editor) return
+      const { from, to } = editor.state.selection
+      setMarkTocAt({ text: editor.state.doc.textBetween(from, to, ' ').trim(), at: to })
+    },
+    nextMisspelling: () => {
+      if (!editor || !spellcheckEnabled()) return
+      const word = misspellingAfter(
+        editor.state,
+        (w) => window.desktop.spellIsMisspelled?.(w) ?? false,
+      )
+      if (!word) return setStatus(t('appSpellingComplete'))
+      editor.chain().focus().setTextSelection({ from: word.from, to: word.to }).run()
+      const dom = editor.view.domAtPos(word.from).node
+      ;(dom instanceof Element ? dom : dom.parentElement)?.scrollIntoView({ block: 'nearest' })
+      // Word shows the word's suggestions as on a right-click
+      const at = editor.view.coordsAtPos(word.to)
+      setCtxMenu({
+        x: at.left,
+        y: at.bottom,
+        seq: ++ctxSeq.current,
+        pos: word.to,
+        imageSrc: null,
+        link: null,
+        note: null,
+      })
+    },
+    copyTextPrompt: (kind) => {
+      const prompts = [t('appCopyTextTo'), t('appCopyTextFrom')]
+      setStatus((shown) =>
+        kind ? prompts[kind === 'to' ? 0 : 1] : prompts.includes(shown) ? '' : shown,
+      )
+    },
+    showMergeFields: () => {
+      if (mergeSource?.fields.length)
+        setRibbonTabRequest({ tab: 'mailings', dropdown: 'mergefield', nonce: Date.now() })
     },
     setIndexSection: (nth, change, wrap) => {
       if (!editor || !doc) return
@@ -8024,29 +8766,29 @@ export function App() {
           )
       })
     },
+    openLinks: () => setShowLinks(true),
     insertFile: () => {
       if (!editor) return
-      const notesOf = (kind: 'footnote' | 'endnote') =>
-        kind === 'footnote' ? reviewCtxRef.current.footnotes : reviewCtxRef.current.endnotes
       void pickAndInsertFile(editor, {
-        notes: {
-          list: notesOf,
-          add: (kind, notes) => {
-            const ctx = reviewCtxRef.current
-            const next = [...notesOf(kind), ...notes]
-            ;(kind === 'footnote' ? ctx.setFootnotes : ctx.setEndnotes)(next)
-            ctx.setNotesDirty(true)
-          },
-        },
-        askRange: (fileName, bookmarks) =>
+        notes: insertFileNotes(),
+        askOptions: (fileName, bookmarks) =>
           new Promise((answer) => setInsertFileRange({ fileName, bookmarks, answer })),
+        insertLinked: (source, notes, instr) => insertLinkedFileBody(editor, source, notes, instr),
       }).then((result) => {
         if (result.status === 'password') setStatus(t('appDocPwdTitle'))
         else if (result.status === 'empty') setStatus(t('ribbonInsertFileEmpty'))
         else if (result.status === 'failed')
           setStatus(t('ribbonInsertFileFailed', { error: result.error }))
+        else if (result.status === 'inserted' && result.unlinked)
+          setStatus(t('ribbonLinksNotLinked'))
         else if (result.status === 'inserted' && result.leftOut > 0)
           setStatus(t('ribbonInsertFileLeftOut', { count: String(result.leftOut) }))
+        // as after a section break: the layout follows the sections of the file
+        if (result.status === 'inserted' && result.sections && doc?.filePath) {
+          pendingSectionSaveRef.current = true
+          carriedSectionRetriesRef.current = 3
+          forceRender()
+        }
       })
     },
     openAutoText: (mode) => {
@@ -8055,20 +8797,23 @@ export function App() {
         setStatus(t('ribbonAutoTextSelect'))
         return
       }
-      setAutoText({ mode, suggestedName: selectionSnippet(editor), entries: autoTextEntries() })
+      setAutoText({
+        mode,
+        suggestedName: selectionSnippet(editor),
+        entries: [...autoTextEntries(), ...(mode === 'insert' ? docAutoTextRef.current : [])],
+      })
     },
     citationHeading: (category) => t(CITATION_CATEGORY_LABELS[category] ?? 'ribbonToaOther'),
-    openLanguage: (target) => {
-      if (target.state.selection.empty) setStatus(t('ribbonProofingSelect'))
-      else setLanguageTarget(target)
-    },
+    openLanguage: setLanguageTarget,
     openTextEffects: setTextEffectsTarget,
     openFitText: (target) => {
       if (textStretch(target.state)) setFitTextTarget(target)
       else setStatus(t('ribbonAsianSelect'))
     },
-    toggleAsianLayout: (target, kind) => {
-      if (!toggleEaLayout(target, kind)) setStatus(t('ribbonAsianSelect'))
+    openAsianLayout: (target, kind) => {
+      const stretch = textStretch(target.state)
+      if (stretch) setEaLayoutDialog({ editor: target, kind, text: stretch.text })
+      else setStatus(t('ribbonAsianSelect'))
     },
     openPhoneticGuide: (target) => {
       const ruby = rubyTargetOf(target.state)
@@ -8088,6 +8833,7 @@ export function App() {
         (n) => n + 1,
       )
     },
+    pageLayout: () => pageLayoutRef.current,
     findStep: (dir) => {
       if (!showFind) {
         setShowFind(true)
@@ -8098,6 +8844,7 @@ export function App() {
     },
     showLayoutTab: () => setRibbonTabRequest({ tab: 'layout', nonce: Date.now() }),
     openMailMerge: (mode) => setMergePanel((open) => ({ mode, pick: (open?.pick ?? 0) + 1 })),
+    labelMainDocument: doc?.parsed.mailMergeMainType === 'mailingLabels',
     showTableDesignTab: () => setRibbonTabRequest({ tab: 'tableDesign', nonce: Date.now() }),
     defineTableStyle: (style) => {
       upsertStyleDef(
@@ -8116,8 +8863,15 @@ export function App() {
     insertField,
     insertNote,
     editNote,
+    convertNote: (kind, id) =>
+      void convertNotesImpl(
+        reviewCtxRef.current,
+        kind === 'footnote' ? 'toEndnotes' : 'toFootnotes',
+        { kind, id },
+      ),
     noNotes: () => setStatus(t('ribbonNoNotes')),
     blocks: doc?.parsed.blocks ?? EMPTY_BLOCKS,
+    docBytes: doc?.parsed.internal.originalBytes ?? null,
     sources,
     citationStyle: citationStyle ?? DEFAULT_CITATION_STYLE,
     setCitationStyle: (style) => {
@@ -8125,31 +8879,67 @@ export function App() {
       setSourcesDirty(true)
     },
     headingPages: () => ribbonActions.headingPages(),
-    pagesOf: (positions) => {
+    pagesOf: (positions, edge) => {
       const layout = editor && section ? layoutNow() : null
       if (!editor || !layout || layout.cuts.length === 0) return null
       return headingPagesOf(
         layout.blocks,
         layout.cuts,
         positions.map((pos) => editor.view.nodeDOM(pos) as HTMLElement | null),
+        edge,
       ).pages
     },
     review: {
       toggleSpellcheck: () => ribbonActions.onSpellcheck(!spellcheckActive),
-      resetIgnoredWords: () =>
+      resetIgnoredWords: () => {
+        if (editor) resetIgnoredGrammar(editor)
         void window.desktop.spellResetIgnored?.().then(() => {
+          if (editor) clearIgnoredOnce(editor)
+          forgetIgnoredWords()
           setRespellNonce((n) => n + 1)
           setStatus(t('ribbonIgnoredWordsReset'))
-        }),
+        })
+      },
+      toggleGrammarMarks: () => {
+        setGrammarHiddenPref(!hideGrammar)
+        setHideGrammar(!hideGrammar)
+        // written to the document only when it differs from what the file says
+        if (doc) setHideGrammarDirty(!hideGrammar !== (doc.parsed.hideGrammaticalErrors ?? false))
+      },
       deleteComment: (id) => (id ? deleteComment(id) : ribbonActions.onDeleteComment()),
       resolveComment: (id) => {
         const thread = id ?? commentThreadAtCaretImpl(reviewCtxRef.current)
         if (thread) resolveComment(thread, true)
       },
+      reopenComment: (id) => resolveComment(id, false),
       replyToComment: (id) => {
         setShowComments(true)
         setCommentFocus({ id, nonce: Date.now(), reply: true })
       },
+      editComment: (id) => {
+        setShowComments(true)
+        setCommentFocus({ id, nonce: Date.now(), edit: true })
+        startMarginCommentEdit(id)
+      },
+      replaceMisspelling: (pos, word, to, marked) => {
+        if (editor)
+          applySpellingSuggestion(
+            editor,
+            pos,
+            word,
+            to,
+            marked ? window.desktop.spellReplace : undefined,
+          )
+      },
+      ignoreSpelling: (word) => {
+        setWordAside(word, 'ignored')
+        void window.desktop.spellIgnoreWord?.(word).then(respell)
+      },
+      learnSpelling: (word) => {
+        setWordAside(word, 'learned')
+        void window.desktop.spellAddWord?.(word).then(respell)
+      },
+      respell,
       deleteAllComments: (resolvedOnly) => ribbonActions.onDeleteAllComments(resolvedOnly),
       gotoComment: (dir) => ribbonActions.onGotoComment(dir),
       toggleComments: () => ribbonActions.onShowComments(),
@@ -8184,19 +8974,19 @@ export function App() {
       protect: () => ribbonActions.onProtectDoc(),
     },
     design: {
-      setThemeFonts: (fonts) => ribbonActions.onThemeFonts(fonts),
-      setThemeColors: (colors) => ribbonActions.onThemeColors(colors),
+      setTheme: (pick) => designRef.current.setTheme(pick),
       setPageColor: (hex) => ribbonActions.onPageColor(hex),
       setWatermark: (text) => ribbonActions.onWatermark(text),
-      setParagraphSpacing: ({ beforeTwips = 0, afterTwips, line }) => {
-        const styles = ribbonStylesRef.current
-        const styleId = defaultParagraphStyleId(styles) ?? 'Normal'
-        upsertStyleDef({
-          styleId,
-          ...(styles?.has(styleId) ? {} : { builtIn: true }),
-          pPr: { spaceBeforeTwips: beforeTwips, spaceAfterTwips: afterTwips, lineSpacing: line },
-        })
-      },
+      setParagraphSpacing: (spacing) => designRef.current.setParagraphSpacing(spacing),
+      applyStyleSet: (set) => designRef.current.applyStyleSet(set),
+      resetStyleSet: () => designRef.current.resetStyleSet(),
+      saveStyleSet: (name) => designRef.current.saveStyleSet(name),
+      deleteStyleSet: (id) => designRef.current.deleteStyleSet(id),
+      savedTheme: (name) => designRef.current.savedTheme(name),
+      openedTheme: () => designRef.current.openedTheme(),
+      browseTheme: () => designRef.current.browseTheme(),
+      saveTheme: () => designRef.current.saveTheme(),
+      deleteTheme: (name) => designRef.current.deleteTheme(name),
     },
     view: {
       mode: viewMode,
@@ -8222,6 +9012,12 @@ export function App() {
       newWindow: () => void window.desktop.openNewTab(doc?.filePath ?? null),
       arrangeAll: () => void window.desktop.arrangeAllWindows(),
       mergeWindows: () => void window.desktop.gatherWindows(),
+      switchWindow: (dir) =>
+        void window.desktop.listDocsTabs().then((tabs) => {
+          const next = neighbourWindow(tabs, dir)
+          if (next) void window.desktop.focusDocsTab(next)
+        }),
+      closePane: () => setSplitView(false),
     },
     headerFooter: {
       header: shownHeader,
@@ -8243,7 +9039,12 @@ export function App() {
     setGutterAtTop: (atTop) => ribbonActions.onGutterAtTop(atTop),
     setSectionStart: (type) => ribbonActions.onSectionStart(type),
     insertSectionBreak: (type) => ribbonActions.onInsertSectionBreak(type),
-    insertImage: () => editor && void insertImageViaDialog(editor),
+    insertImage: () =>
+      editor &&
+      void insertImageViaDialog(
+        editor,
+        (fileName) => new Promise((answer) => setInsertPictureOptions({ fileName, answer })),
+      ),
     insertPageBreak: () => editor && insertPageBreakAt(editor),
     insertBlankPage: () => editor && insertBlankPageAt(editor),
     newComment: () => {
@@ -8258,10 +9059,17 @@ export function App() {
   }
   // native application menu → renderer commands
   useEffect(() => window.desktop.onMenuCommand(runCommand), [runCommand])
+  // the menu's paste-and-match-style arms the plain-paste flag just before its
+  // paste event fires, so the editor skips the Markdown lane (see genoffice#2856)
+  useEffect(() => window.desktop.onPastePlain(armPlainPaste), [])
   useEffect(() => {
     setKeyLayerRunner(runCommand)
     return () => setKeyLayerRunner(null)
   }, [runCommand])
+  useEffect(() => {
+    setDocumentKeysEditedListener(() => setDocKeysDirty(true))
+    return () => setDocumentKeysEditedListener(null)
+  }, [])
 
   // Resolve the bookmark anchor against the original block XML, fall back to
   // matching the heading text of a TOC entry.
@@ -8269,7 +9077,7 @@ export function App() {
     (anchor: string, tocTitle = '') => {
       let target: Element | null = null
       if (anchor === TOP_ANCHOR) {
-        document.querySelector('.ProseMirror')?.firstElementChild?.scrollIntoView({
+        document.querySelector('.ProseMirror.doc-page')?.firstElementChild?.scrollIntoView({
           behavior: 'smooth',
           block: 'start',
         })
@@ -8363,11 +9171,12 @@ export function App() {
   /** Editor right-click menu, only inside the document body */
   const onDocContextMenu = useCallback(
     (e: ReactMouseEvent) => {
-      if (readMode || (isProtected && !commentsAllowed)) return
+      if (readMode || (bodyLocked && !commentsAllowed)) return
       const bubble = (e.target as HTMLElement).closest(
         '.comment-bubble, .comment-balloon, .doc-del-marker',
       ) as HTMLElement | null
-      if (!bubble && !(e.target as HTMLElement).closest('.doc-page')) return
+      const noteRow = (e.target as HTMLElement).closest<HTMLElement>('[data-note-row]')
+      if (!bubble && !noteRow && !(e.target as HTMLElement).closest('.doc-page')) return
       // no preventDefault: Blink must still request a context menu so the main
       // process receives the misspelling data it relays to this menu
       const seq = ++ctxSeq.current
@@ -8408,6 +9217,11 @@ export function App() {
         setCtxMenu({ x, y, seq, pos, imageSrc, link: null, commentId, balloon: true })
         return
       }
+      if (noteRow?.dataset.noteId) {
+        const kind = noteRow.dataset.noteRow === 'endnote' ? 'endnote' : 'footnote'
+        setCtxMenu({ x, y, seq, note: { kind, id: noteRow.dataset.noteId, at: 'text' } })
+        return
+      }
       // Word behavior: right-clicking outside the selection moves the cursor there first (menu items act on the clicked block)
       if (editor) {
         // Right-clicking directly on an image / floating object selects it as a
@@ -8429,6 +9243,12 @@ export function App() {
         // a floating run picture is its own node, outside any .doc-protected block
         const runPic =
           !protectedEl && !fromKeyboard ? runPictureAtEvent(editor.view, e.target, x, y) : null
+        // a picture of a header, footer or text box is selected in the editor that holds it
+        if (!fromKeyboard && selectSubEditorPicture(editor, e.target)) {
+          selectedNode = true
+          // its text box becomes the object selected in the document, as a click on it makes it
+          protectedEl ??= (e.target as HTMLElement).closest<HTMLElement>('.doc-protected')
+        }
         if (runPic) {
           editor.view.dispatch(
             editor.state.tr.setSelection(NodeSelection.create(editor.state.doc, runPic.pos)),
@@ -8458,8 +9278,10 @@ export function App() {
             const inside = selection.ranges.some(
               ({ $from, $to }) => hit.pos >= $from.pos && hit.pos <= $to.pos,
             )
-            if (!inside) editor.commands.setTextSelection(hit.pos)
-            else if (selection instanceof CellSelection) keepCellSelection(editor, selection)
+            if (!inside) {
+              editor.commands.setTextSelection(hit.pos)
+              keepCaretAtPress(editor, editor.state.selection.head)
+            } else if (selection instanceof CellSelection) keepCellSelection(editor, selection)
           }
         }
       }
@@ -8476,9 +9298,19 @@ export function App() {
               tocTitle: tocLine.dataset.tocTitle ?? '',
             }
           : null
-      setCtxMenu({ x, y, seq, pos, imageSrc, link })
+      const mark = (e.target as HTMLElement).closest<HTMLElement>('.doc-note-ref')
+      const note =
+        mark?.dataset.noteRef && !fromKeyboard
+          ? {
+              kind:
+                mark.dataset.noteKind === 'endnote' ? ('endnote' as const) : ('footnote' as const),
+              id: mark.dataset.noteRef,
+              at: 'ref' as const,
+            }
+          : null
+      setCtxMenu({ x, y, seq, pos, imageSrc, link, note })
     },
-    [readMode, isProtected, commentsAllowed, editor],
+    [readMode, bodyLocked, commentsAllowed, editor],
   )
 
   /** double-click on a page-gap strip: edit that page's header/footer in place */
@@ -8503,6 +9335,7 @@ export function App() {
       pageTotal: el.dataset.hfTotal ?? '1',
       sectionPages: el.dataset.hfSectionPages,
       spellcheck: spellcheckActive,
+      blank: hfBlankPara(kind, fileCtxRef.current.doc?.parsed.styles),
       onCommit: (next) => {
         committed = true
         // the ribbon may have unlinked the section since the editor opened
@@ -8553,7 +9386,11 @@ export function App() {
   const openHfEditor = (kind: 'header' | 'footer', pageIdx?: number) => {
     hfEditorRef.current?.exit()
     // only Print Layout shows the strips
-    if (viewMode !== 'print') switchView('print')
+    if (viewMode !== 'print') {
+      const fromDraft = viewMode === 'draft'
+      switchView('print')
+      draftAwaitsHfRef.current = fromDraft
+    }
     const edge =
       pageIdx === undefined || (kind === 'header' ? pageIdx === 0 : pageIdx === lastPageIdx)
     const el = edge
@@ -8568,15 +9405,12 @@ export function App() {
   openHfEditorRef.current = openHfEditor
   // Word: a double-click anywhere in a page's top or bottom margin opens that
   // page's header or footer, empty or not (the strips cover only their text)
-  const hfMarginHitOf = (e: { target: EventTarget | null; clientX: number; clientY: number }) => {
-    if (readMode || isProtected || viewMode !== 'print') return null
-    if (!(e.target instanceof Element) || e.target.closest(HF_MARGIN_SKIP)) return null
-    if (e.target.closest('.page-hf')) return null
+  /** every page's top and bottom margin on the canvas, from the last pagination pass */
+  const marginBandsNow = () => {
     const layout = pageLayoutRef.current
     const pm = editor?.view.dom
     if (!layout || layout.cuts.length === 0 || !pm) return null
     const r = pm.getBoundingClientRect()
-    if (e.clientX < r.left || e.clientX > r.right) return null
     const zf = zoom / 100
     const secList = layout.flow?.secList
     const bands = pageMarginBands(
@@ -8589,7 +9423,15 @@ export function App() {
         return set ? effectiveBottomPx(set, cut.hf.footerPx) : 0
       },
     )
-    return hfBandAt(bands, (e.clientY - r.top) / zf)
+    return { bands, rect: r, zf }
+  }
+  const hfMarginHitOf = (e: { target: EventTarget | null; clientX: number; clientY: number }) => {
+    if (readMode || isProtected || viewMode !== 'print') return null
+    if (!(e.target instanceof Element) || e.target.closest(HF_MARGIN_SKIP)) return null
+    if (e.target.closest('.page-hf')) return null
+    const now = marginBandsNow()
+    if (!now || e.clientX < now.rect.left || e.clientX > now.rect.right) return null
+    return hfBandAt(now.bands, (e.clientY - now.rect.top) / now.zf)
   }
   const hfMarginHitRef = useRef(hfMarginHitOf)
   hfMarginHitRef.current = hfMarginHitOf
@@ -8693,6 +9535,12 @@ export function App() {
         if (cur) setHfLink(cur.section, cur.kind, cur.variant, action.on)
         if (!action.on) refocus()
         break
+      case 'toggleLinkToPrevious': {
+        const linked = cur ? hfLinkedAt(cur.section, cur.kind, cur.variant) : null
+        if (cur && linked !== null) setHfLink(cur.section, cur.kind, cur.variant, !linked)
+        if (linked) refocus()
+        break
+      }
       case 'distance':
         setHfDistance(cur?.section ?? activeSection, action.kind, action.twips)
         refocus()
@@ -8725,6 +9573,21 @@ export function App() {
       ? t(kind === 'header' ? 'appHfHeaderSectionTag' : 'appHfFooterSectionTag', { n: si + 1 })
       : null
 
+  // Word marks the part being edited by a line across the page where the body
+  // starts (header) or ends (footer), tagged with the part's name
+  const hfBoundary = (() => {
+    if (!hfEditing || viewMode !== 'print') return null
+    const band = marginBandsNow()?.bands[hfEditing.pageIdx]
+    if (!band) return null
+    const { kind, section: si, variant } = hfEditing
+    return {
+      kind,
+      y: kind === 'header' ? band.headerBottom : band.footerTop,
+      label: hfSectionLabel(kind, si) ?? t(kind === 'header' ? 'ribbonHeader' : 'ribbonFooter'),
+      linked: hfLinkedAt(si, kind, variant) === true,
+    }
+  })()
+
   // Word: double-clicking a picture only selects it (the press already did);
   // the image viewer stays on the context menu
   const onDocDoubleClick = useCallback((e: ReactMouseEvent) => {
@@ -8754,6 +9617,9 @@ export function App() {
       exportHtmlTo: (path: string) => exportHtml(path),
       exportMarkdownTo: (path: string) => exportMarkdown(path),
       subEditor: () => getActiveSubEditor(),
+      // a save now would find the page layout standing for the document as it is
+      pagesSettled: () => pageSourceRef.current() !== null,
+      edited: () => anyDirtyRef.current || dirtyRef.current,
     }
   }, [editor, openRecent, save, status, exportPdf, exportHtml, exportMarkdown])
 
@@ -8763,37 +9629,126 @@ export function App() {
   const [liveStyles, setLiveStyles] = useState<{
     parsed: ParsedDocFull
     styles: Map<string, StyleInfo>
+    theme?: Pick<ParsedDocFull, 'docDefaults' | 'themeFonts' | 'themeColors'>
   } | null>(null)
+  const themeEdit = useMemo<ThemeEdit | null>(
+    () =>
+      themeFontsDirty || themeColorsDirty
+        ? {
+            ...(themeFontsDirty && themeFonts ? { fonts: themeFonts } : {}),
+            ...(themeColorsDirty && themeColors ? { colors: themeColors } : {}),
+          }
+        : null,
+    [themeFonts, themeFontsDirty, themeColors, themeColorsDirty],
+  )
   useEffect(() => {
     const parsed = doc?.parsed
     const upserts = Object.values(styleUpserts)
-    if (!parsed || upserts.length === 0) {
+    if (!parsed || (upserts.length === 0 && !themeEdit)) {
+      const shown = liveStylesRef.current
       liveStylesRef.current = null
       setLiveStyles(null)
+      // an undo took the last pending pick away: the file's own styles and theme show again
+      if (parsed && editor && shown?.parsed === parsed) {
+        editor.storage.listNumbering.styles = parsed.styles
+        editor.storage.listNumbering.docDefaults = parsed.docDefaults
+        if (shown.theme && parsed.themeColors) {
+          const before = editor.state.doc
+          retintThemeRuns(editor, parsed.themeColors)
+          repainted(editor, before)
+        }
+        setDocCss(liveDocCss(parsed))
+      }
       return
     }
     let cancelled = false
-    previewFontSettings(parsed, upserts, defaultFonts)
+    previewFontSettings(parsed, upserts, defaultFonts, themeEdit ?? undefined)
       .then((r) => {
         // a document switch or a save re-parse while resolving: their open path already set fresh styles
         if (cancelled || fileCtxRef.current.doc?.parsed !== parsed) return
-        liveStylesRef.current = { parsed, styles: r.styles }
-        setLiveStyles({ parsed, styles: r.styles })
+        const theme = themeEdit
+          ? { docDefaults: r.docDefaults, themeFonts: r.themeFonts, themeColors: r.themeColors }
+          : undefined
+        liveStylesRef.current = { parsed, styles: r.styles, theme }
+        setLiveStyles({ parsed, styles: r.styles, theme })
         editor.storage.listNumbering.styles = r.styles
-        setDocCss(liveDocCss({ ...parsed, styles: r.styles }))
+        if (theme) {
+          editor.storage.listNumbering.docDefaults = r.docDefaults
+          if (r.themeColors) {
+            const before = editor.state.doc
+            retintThemeRuns(editor, r.themeColors)
+            repainted(editor, before)
+          }
+        }
+        setDocCss(liveDocCss(liveParsed(parsed)))
       })
       .catch(() => {})
     return () => {
       cancelled = true
     }
-  }, [doc, styleUpserts, defaultFonts, editor, liveDocCss])
+  }, [doc, styleUpserts, defaultFonts, themeEdit, editor, liveDocCss, liveParsed])
+  // Tables, shapes, charts and runs on a theme face hold what the file read as:
+  // the body is read again under the picked theme and the difference put on the page.
+  useEffect(() => {
+    const parsed = doc?.parsed
+    if (!parsed || !editor) {
+      bodyThemeRef.current = null
+      return
+    }
+    if (bodyThemeRef.current?.parsed !== parsed) {
+      bodyThemeRef.current = null
+      if (!themeEdit) return
+      const own = bodyReading(editor, parsed)
+      bodyThemeRef.current = { parsed, shown: own, readings: new Map([['', own]]) }
+    }
+    const body = bodyThemeRef.current
+    const key = themeEdit ? JSON.stringify([themeEdit.fonts ?? null, themeEdit.colors ?? null]) : ''
+    let cancelled = false
+    const show = (reading: ThemeReading) => {
+      if (cancelled || fileCtxRef.current.doc?.parsed !== parsed) return
+      const before = editor.state.doc
+      rethemeBody(editor, body.shown.doc, reading.doc)
+      repainted(editor, before)
+      const from = body.shown.parts
+      const to = reading.parts
+      setHeader((v) => rethemedValue(v, from.strips.header, to.strips.header))
+      setFooter((v) => rethemedValue(v, from.strips.footer, to.strips.footer))
+      setHfVariants((v) => rethemedValue(v, from.strips.variants, to.strips.variants))
+      setFootnotes((v) => rethemedNotes(v, from.footnotes, to.footnotes))
+      setEndnotes((v) => rethemedNotes(v, from.endnotes, to.endnotes))
+      setThemedHf(key === '' ? null : { parsed, parts: to.parsed })
+      body.shown = reading
+    }
+    const read = body.readings.get(key)
+    if (read) show(read)
+    else if (themeEdit) {
+      void themedDocxBytes(parsed.internal.originalBytes, themeEdit)
+        .then((bytes) => parseDocxOffThread(bytes, { owned: true }))
+        .then((themed) => {
+          if (bodyThemeRef.current !== body) return
+          const reading = bodyReading(editor, themed)
+          // the file's own reading and the last few themes tried stay at hand for undo
+          const stale = [...body.readings.keys()].filter((k) => k !== '').slice(0, -2)
+          for (const k of stale) body.readings.delete(k)
+          body.readings.set(key, reading)
+          show(reading)
+        })
+        .catch(() => {})
+    }
+    return () => {
+      cancelled = true
+    }
+  }, [doc, editor, themeEdit])
+  const liveDocDefaults =
+    (liveStyles?.parsed === doc?.parsed ? liveStyles?.theme?.docDefaults : undefined) ??
+    doc?.parsed.docDefaults
   // shallow-stable snapshot of every editor read the ribbon displays: caret moves
   // that change none of it keep the reference, so the memoized Ribbon skips
   const formatState = useShallowStable(
     computeFormatState(
       editor,
       liveStyles?.parsed === doc?.parsed ? liveStyles?.styles : doc?.parsed.styles,
-      doc?.parsed.docDefaults,
+      liveDocDefaults,
       doc?.parsed.blocks,
     ),
   )
@@ -8810,8 +9765,8 @@ export function App() {
   const ribbonStylesRef = useRef(ribbonStyles)
   ribbonStylesRef.current = ribbonStyles
   const gridBasePt = useMemo(
-    () => gridBaseSizePt(ribbonStyles, doc?.parsed.docDefaults),
-    [ribbonStyles, doc],
+    () => gridBaseSizePt(ribbonStyles, liveDocDefaults),
+    [ribbonStyles, liveDocDefaults],
   )
   gridBasePtRef.current = gridBasePt
   const snapsToChars = useMemo(
@@ -8819,9 +9774,19 @@ export function App() {
     [sections],
   )
   const charCellPt = useMemo(() => docCharCellPt(sections, gridBasePt), [sections, gridBasePt])
+  // w:adjustRightInd: what a character grid adds to the right indent below compatibilityMode 15
+  const legacyGrid = (doc?.parsed.compatibilityMode ?? 0) < 15
+  const rightIndentPt = useMemo(
+    () => docRightIndentPt(sections, gridBasePt, legacyGrid),
+    [sections, gridBasePt, legacyGrid],
+  )
+  const gridMovesRightIndent = useMemo(
+    () => sections.some((s) => sectionRightIndentPt(s, gridBasePt, legacyGrid) !== 0),
+    [sections, gridBasePt, legacyGrid],
+  )
   const gridFont = useMemo(() => {
     const d = ribbonStyles?.get(defaultParagraphStyleId(ribbonStyles) ?? '')?.display
-    const dd = doc?.parsed.docDefaults
+    const dd = liveDocDefaults
     return {
       latin: d?.fontAscii ?? d?.font ?? dd?.asciiFont ?? '',
       eastAsia: d?.eastAsiaFont ?? dd?.eastAsiaFont ?? '',
@@ -8829,7 +9794,7 @@ export function App() {
       bold: (d?.bold ?? dd?.bold) === true,
       italic: (d?.italic ?? dd?.italic) === true,
     }
-  }, [ribbonStyles, doc, gridBasePt])
+  }, [ribbonStyles, liveDocDefaults, gridBasePt])
 
   /** every function prop of the memoized Ribbon, with stable identities (dispatches into the latest render's closures) */
   // ---- selection-scoped AI edit queue ----
@@ -8998,28 +9963,255 @@ export function App() {
   const upsertStyleDef = useCallback((up: StyleUpsert): string | null => {
     const ctx = fileCtxRef.current
     if (!ctx.doc) return 'no document is open'
-    const prev = aiStyleUpsertsRef.current[up.styleId]
-    // a removal or a copied definition stands alone; a style made again after its removal starts clean
-    const whole = up.remove || up.sourceXml !== undefined
-    const next = {
-      ...aiStyleUpsertsRef.current,
-      [up.styleId]: whole
-        ? up
-        : prev?.remove
-          ? { ...up, replace: true as const }
-          : prev
-            ? {
-                ...prev,
-                ...up,
-                pPr: up.pPr || prev.pPr ? { ...prev.pPr, ...up.pPr } : undefined,
-                rPr: up.rPr || prev.rPr ? { ...prev.rPr, ...up.rPr } : undefined,
-              }
-            : up,
-    }
+    const next = withStyleUpsert(aiStyleUpsertsRef.current, up)
     aiStyleUpsertsRef.current = next
     ctx.setStyleUpserts(next)
     return null
   }, [])
+  defineStyleRef.current = upsertStyleDef
+
+  const designStateRef = useRef<DesignState>(null as unknown as DesignState)
+  const designClockRef = useRef(0)
+  designStateRef.current = {
+    fonts: themeFonts,
+    fontsDirty: themeFontsDirty,
+    colors: themeColors,
+    colorsDirty: themeColorsDirty,
+    format: themeFormat,
+    styles: styleUpserts,
+  }
+  const commitDesign = (next: DesignState) => {
+    designStateRef.current = next
+    aiStyleUpsertsRef.current = next.styles
+    setThemeFonts(next.fonts)
+    setThemeFontsDirty(next.fontsDirty)
+    setThemeColors(next.colors)
+    setThemeColorsDirty(next.colorsDirty)
+    setThemeFormat(next.format)
+    setStyleUpserts(next.styles)
+  }
+  /**
+   * A Design command's change to the theme or the style definitions, as one undo
+   * step. `slot` is the step a command put in the history before it could read
+   * what the change needs.
+   */
+  const changeDesign = (
+    change: (state: DesignState) => DesignState,
+    slot?: DesignSlot,
+  ): boolean => {
+    const parsed = fileCtxRef.current.doc?.parsed
+    if (!parsed || !editor) return false
+    const before = designStateRef.current
+    const recorded = designChange(parsed, parsed.internal.originalBytes, before, change(before))
+    if (!recorded) return false
+    // its step was undone while it read the file: it stays out until that step is redone
+    if (slot?.undone) {
+      slot.change = recorded
+      return false
+    }
+    // a style change still reading the file gives way to this one; a theme pick leaves it be
+    if (recorded.redo.styles) designClockRef.current++
+    commitDesign(withDesignSide(before, recorded.redo, null))
+    if (slot) slot.change = recorded
+    else recordDesignStep(editor, { change: recorded })
+    return true
+  }
+  const withStyles = (upserts: StyleUpsert[]) => (state: DesignState) => ({
+    ...state,
+    styles: upserts.reduce(withStyleUpsert, state.styles),
+  })
+  // styles.xml with the pending definitions applied: what a style set is laid over
+  const stylesXmlRef = useRef<{ parsed: object; styles: object; xml: string } | null>(null)
+  useEffect(() => {
+    const parsed = doc?.parsed
+    if (!parsed) return
+    let cancelled = false
+    void readDocxStylesXml(parsed.internal.originalBytes, Object.values(styleUpserts))
+      .then((xml) => {
+        if (!cancelled) stylesXmlRef.current = { parsed, styles: styleUpserts, xml }
+      })
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [doc, styleUpserts])
+  const styleReadsRef = useRef<Promise<void>>(Promise.resolve())
+  /** runs `apply` on the current styles.xml: at once when it is at hand, so the command's step is in the history when it returns */
+  const withStylesXml = (apply: (xml: string, slot?: DesignSlot) => void) => {
+    const parsed = fileCtxRef.current.doc?.parsed
+    const at = stylesXmlRef.current
+    if (!parsed || !editor) return
+    if (at?.parsed === parsed && at.styles === designStateRef.current.styles) return apply(at.xml)
+    const slot: DesignSlot = { change: null }
+    recordDesignStep(editor, slot)
+    const wanted = pendingDesign(designClockRef, slot)
+    // picks made while a read is under way go one after the other, each over what the one before left
+    styleReadsRef.current = styleReadsRef.current.then(async () => {
+      if (!wanted() || fileCtxRef.current.doc?.parsed !== parsed) return
+      const pending = Object.values(designStateRef.current.styles)
+      const xml = await readDocxStylesXml(parsed.internal.originalBytes, pending).catch(() => null)
+      if (xml !== null && wanted() && fileCtxRef.current.doc?.parsed === parsed) apply(xml, slot)
+    })
+  }
+  // the styles the document had when it was opened, for Reset to the Default Style Set
+  const openedStylesRef = useRef<{ generation: number; xml: string | null } | null>(null)
+  useEffect(() => {
+    const parsed = doc?.parsed
+    const generation = currentDocGeneration()
+    if (!parsed || openedStylesRef.current?.generation === generation) return
+    const opened = { generation, xml: null as string | null }
+    openedStylesRef.current = opened
+    void readDocxStylesXml(parsed.internal.originalBytes)
+      .then((xml) => {
+        opened.xml = xml
+      })
+      .catch(() => {})
+  }, [doc])
+  // the theme the document had when it was opened, for Reset to Theme from Template
+  const openedThemeRef = useRef<{ generation: number; pick: ThemePick | null } | null>(null)
+  useEffect(() => {
+    const parsed = doc?.parsed
+    const generation = currentDocGeneration()
+    if (!parsed || openedThemeRef.current?.generation === generation) return
+    const opened = { generation, pick: null as ThemePick | null }
+    openedThemeRef.current = opened
+    void readDocxThemeXml(parsed.internal.originalBytes)
+      .then((xml) => {
+        const theme = themeOfXml(xml)
+        if (theme) opened.pick = themePickOf(theme)
+      })
+      .catch(() => {})
+  }, [doc])
+  const designRef = useRef<DesignActions>(null as unknown as DesignActions)
+  designRef.current = {
+    setTheme: ({ fonts, colors, format }) => {
+      const changed = changeDesign((state) => ({
+        ...state,
+        ...(fonts ? { fonts, fontsDirty: true } : {}),
+        ...(colors ? { colors, colorsDirty: true } : {}),
+        ...(format ? { format } : {}),
+      }))
+      if (!changed) return
+      setStatus(
+        colors
+          ? t('appThemeColorsApplied', { name: colors.name ?? '' })
+          : t('appThemeFontsChanged'),
+      )
+    },
+    setParagraphSpacing: ({ beforeTwips = 0, afterTwips, line }) => {
+      const styles = ribbonStylesRef.current
+      const styleId = defaultParagraphStyleId(styles) ?? 'Normal'
+      changeDesign(
+        withStyles([
+          {
+            styleId,
+            ...(styles?.has(styleId) ? {} : { builtIn: true }),
+            pPr: { spaceBeforeTwips: beforeTwips, spaceAfterTwips: afterTwips, lineSpacing: line },
+          },
+        ]),
+      )
+    },
+    applyStyleSet: (set) =>
+      withStylesXml((xml, slot) => {
+        if (typeof set === 'string')
+          return void changeDesign(withStyles(styleSetUpserts(set, xml)), slot)
+        const saved = customSets.find((s) => s.id === set.custom)
+        if (saved) changeDesign(withStyles(customStyleSetUpserts(saved.xml, xml)), slot)
+      }),
+    resetStyleSet: () =>
+      withStylesXml((xml, slot) => {
+        const opened = openedStylesRef.current?.xml
+        if (!opened) return
+        const now = new Map(listStylesXml(xml).map((s) => [s.styleId, s.xml]))
+        const back = styleRestoreUpserts(opened).filter(
+          (up) => now.get(up.styleId) !== up.sourceXml,
+        )
+        if (changeDesign(withStyles(back), slot)) setStatus(t('appStyleSetReset'))
+      }),
+    saveStyleSet: (name) => {
+      const parsed = fileCtxRef.current.doc?.parsed
+      if (!parsed) return
+      const pending = Object.values(designStateRef.current.styles)
+      void readDocxStylesXml(parsed.internal.originalBytes, pending).then((xml) => {
+        if (!saveCustomStyleSet(name, styleSetXmlOf(xml))) return
+        setCustomSets(customStyleSets())
+        setStatus(t('appStyleSetSaved', { name: name.trim() }))
+      })
+    },
+    deleteStyleSet: (id) => {
+      deleteCustomStyleSet(id)
+      setCustomSets(customStyleSets())
+    },
+    savedTheme: (name) => {
+      const saved = savedThemes.find((s) => s.file === name)
+      return saved && themePickOf(saved.theme)
+    },
+    openedTheme: () => openedThemeRef.current?.pick ?? undefined,
+    browseTheme: () => {
+      const parsed = fileCtxRef.current.doc?.parsed
+      void window.desktop.pickTheme().then((picked) => {
+        if (!picked || fileCtxRef.current.doc?.parsed !== parsed) return
+        const theme = picked.xml === null ? null : themeOfXml(picked.xml)
+        if (!theme) return setStatus(t('appThemeFileNoTheme', { name: picked.name }))
+        // as a pick from the gallery: one undo step, and Repeat runs it again
+        runCommand('document-theme', JSON.stringify(themePickOf(theme)))
+      })
+    },
+    saveTheme: () => {
+      const parsed = fileCtxRef.current.doc?.parsed
+      if (!parsed) return
+      const { fonts, fontsDirty, colors, colorsDirty, format } = designStateRef.current
+      const edit: ThemeEdit = {
+        ...(fontsDirty && fonts ? { fonts } : {}),
+        ...(colorsDirty && colors ? { colors } : {}),
+        ...(format ? { format } : {}),
+      }
+      void readDocxThemeXml(parsed.internal.originalBytes, edit)
+        .then((xml) => window.desktop.saveTheme(themeOfXml(xml)?.name || 'Theme', xml))
+        .then(async (saved) => {
+          if (saved.error) return setStatus(t('appSaveFailed', { error: saved.error }))
+          if (!saved.ok || !saved.path) return
+          setSavedThemes(await loadSavedThemes())
+          setStatus(t('appThemeSaved', { name: saved.path.replace(/^.*[\\/]|\.thmx$/gi, '') }))
+        })
+        .catch((err) => setStatus(t('appSaveFailed', { error: String(err) })))
+    },
+    deleteTheme: (name) => {
+      void window.desktop
+        .deleteTheme(name)
+        .then(loadSavedThemes)
+        .then(setSavedThemes)
+        .catch(() => {})
+    },
+  }
+  const replayDesign = (change: DesignChange, side: 'undo' | 'redo') => {
+    const parsed = fileCtxRef.current.doc?.parsed
+    if (!parsed) return
+    if (parsed === change.parsed)
+      return commitDesign(withDesignSide(designStateRef.current, change[side], null))
+    // a save came in between: the file holds the other side, so this one is said in full
+    void change.stated
+      .then((stated) => {
+        if (fileCtxRef.current.doc?.parsed !== parsed) return
+        commitDesign(withDesignSide(designStateRef.current, change[side], stated[side]))
+      })
+      .catch(() => {})
+  }
+  const replayDesignRef = useRef(replayDesign)
+  replayDesignRef.current = replayDesign
+  const styleSetSource = useMemo<StyleSetSource | null>(
+    () =>
+      doc
+        ? {
+            parsed: doc.parsed,
+            pending: Object.values(styleUpserts),
+            defaultFonts,
+            theme: themeEdit ?? undefined,
+            custom: customSets,
+          }
+        : null,
+    [doc, styleUpserts, defaultFonts, themeEdit, customSets],
+  )
   const aiDocExtras = useMemo<AiDocExtras>(
     () => ({
       styles: {
@@ -9157,6 +10349,7 @@ export function App() {
         if (ctx.locked) return 'the document is read-only; the page setup cannot be changed'
         const sec = ctx.sections[index]
         if (!sec || !editor) return `section ${index} does not exist`
+        armPageSetupUndo()
         const nextXml = applyResolvedPageSetup(ctx.effective[index] ?? sec.sectPrXml, resolved)
         const next: SectionInfo = {
           ...sec,
@@ -9222,7 +10415,7 @@ export function App() {
         return null
       },
     }),
-    [editor],
+    [editor, armPageSetupUndo],
   )
 
   const gutterAtTop = gutterAtTopEdit ?? doc?.parsed.gutterAtTop ?? false
@@ -9243,13 +10436,46 @@ export function App() {
     sectionNotes: sectionNoteProps,
     autoHyphenation,
     hyphenation: hyphenationSettings,
+    pageColor,
+    watermark: {
+      text: watermark,
+      style: watermarkStyle,
+      picture: watermarkPicture,
+      dirty: watermarkDirty,
+    },
+    typography: {
+      spacingControl: spacingControlEdit ?? spacingControlOf(doc?.parsed),
+      strictKinsoku: strictKinsokuEdit ?? doc?.parsed.strictFirstAndLastChars === true,
+      kinsokuCustom:
+        kinsokuCustomEdit === null
+          ? (doc?.parsed.kinsokuCustom ?? null)
+          : kinsokuCustomEdit || null,
+    },
   }
+  const pageSetupRender = ++pageSetupRenderRef.current
   useEffect(() => {
     const armed = pageSetupUndoRef.current
+    // the effects of a render from before the command can still be pending when
+    // it runs: they see none of its changes, and must leave it to its own render
+    const waits =
+      armed?.held === 'paragraph' ? showParaDialog : armed?.held === 'note' && notePrompt
+    if (!armed || waits || armed.render >= pageSetupRender) return
     pageSetupUndoRef.current = null
-    if (!armed || !editor || !pageSetupStateRef.current) return
+    if (!editor || !pageSetupStateRef.current) return
     const change = pageSetupChange(armed.before, pageSetupStateRef.current)
-    if (change) recordPageSetupChange(editor, change, armed.edited)
+    if (!change) return
+    const parsed = doc?.parsed
+    if (change.undo.watermark && change.redo.watermark && parsed) {
+      change.undo.watermark.parsed = change.redo.watermark.parsed = parsed
+      const own = parsed.headerImages?.find((img) => img.wordArt || img.watermark)
+      if (!change.undo.watermark.state.dirty && own) {
+        const stated = watermarkOfDocImage(own, watermarkPageBoxOf(sections.at(-1)?.settings))
+        // a shape that cannot be read again leaves the text the file was read with
+        stated.catch(() => {})
+        change.undo.watermark.stated = stated
+      }
+    }
+    recordPageSetupChange(editor, change, armed.edited)
   })
   const replayPageSetup = (patch: PageSetupPatch) => {
     const last = sections.length - 1
@@ -9260,6 +10486,10 @@ export function App() {
         .map(Number)
         .filter((i) => i < last && !sections[i]?.pendingBreak)
       if (rewritten.length > 0) setSectionsDirty((d) => [...new Set([...d, ...rewritten])])
+      const numbered = rewritten.filter((i) => patch.sections?.[i]?.pgNum)
+      if (numbered.length > 0) setPgNumDirtySections((d) => [...new Set([...d, ...numbered])])
+      const lastPgNum = patch.sections[last]?.pgNum
+      if (lastPgNum) setPgNumEdit(lastPgNum)
     }
     if (patch.section) {
       setSection((s) => s && { ...s, ...patch.section })
@@ -9298,9 +10528,64 @@ export function App() {
       // it dispatches, and this runs inside the undo's own dispatch
       queueMicrotask(() => applyHyphenation(next, manualHyphenationRef.current))
     }
+    if ('pageColor' in patch) {
+      setPageColor(patch.pageColor ?? null)
+      setPageColorDirty(true)
+    }
+    if (patch.watermark) replayWatermark(patch.watermark)
+    const typography = patch.typography
+    if (typography && editor) {
+      const now = pageSetupStateRef.current?.typography
+      if (typography.spacingControl !== undefined) setSpacingControlEdit(typography.spacingControl)
+      if (typography.strictKinsoku !== undefined) setStrictKinsokuEdit(typography.strictKinsoku)
+      if ('kinsokuCustom' in typography) setKinsokuCustomEdit(typography.kinsokuCustom ?? false)
+      queueMicrotask(() => {
+        if (typography.spacingControl !== undefined) {
+          setSpacingControl(editor.storage.cjkPunctShrink, typography.spacingControl)
+          document.dispatchEvent(new Event(DOC_CSS_COMMITTED_EVENT))
+        }
+        if (typography.strictKinsoku !== undefined || 'kinsokuCustom' in typography)
+          setKinsokuLevel(
+            editor,
+            typography.strictKinsoku ?? now?.strictKinsoku ?? false,
+            'kinsokuCustom' in typography
+              ? (typography.kinsokuCustom ?? null)
+              : (now?.kinsokuCustom ?? null),
+          )
+      })
+    }
+  }
+  const replayWatermark = ({ state, parsed, stated }: WatermarkSide) => {
+    const now = fileCtxRef.current.doc?.parsed
+    if (state.dirty || now === parsed) return putWatermark(state)
+    // a save came in between: the file holds the other side, so its earlier watermark is said in full
+    const said = (spec: Watermark | null) => {
+      if (fileCtxRef.current.doc?.parsed === now) putWatermark(watermarkStateOf(spec))
+    }
+    if (!stated) return said(state.text)
+    void stated.then(said, () => said(state.text))
   }
   const replayPageSetupRef = useRef(replayPageSetup)
   replayPageSetupRef.current = replayPageSetup
+  const replayListStyle = (change: ListStyleChange, at: 'undo' | 'redo') => {
+    const ctx = numberingCtxRef.current
+    if (!editor || !ctx.doc) return
+    const side = change[at]
+    if (ctx.doc.parsed !== change.parsed) {
+      // a save came in between: the file holds the other side, so the style is modified to this one
+      const style = listStyles.find((s) => s.styleId === change.styleId)
+      if (style) queueMicrotask(() => modifyListStyleImpl(ctx, style, side.name, side.levels))
+      return
+    }
+    setPendingNumbering((p) => withListStylePending(p, change, side.pending))
+    setStyleUpserts(({ [change.styleId]: _was, ...rest }) =>
+      side.upsert ? { ...rest, [change.styleId]: side.upsert } : rest,
+    )
+    // it dispatches, and this runs inside the undo's own dispatch
+    queueMicrotask(() => drawListStyleSide(editor, side))
+  }
+  const replayListStyleRef = useRef(replayListStyle)
+  replayListStyleRef.current = replayListStyle
   useEffect(() => {
     if (!editor) return
     const onTransaction = ({ transaction }: { transaction: Transaction }) => {
@@ -9308,6 +10593,11 @@ export function App() {
       if (armed && transaction.docChanged && transaction.getMeta('addToHistory') !== false)
         armed.edited = true
       for (const patch of replayedPageSetup(transaction)) replayPageSetupRef.current(patch)
+      if (replaysDesign(transaction)) designClockRef.current++
+      for (const { change, side } of replayedDesign(transaction))
+        replayDesignRef.current(change, side)
+      for (const { change, side } of replayedListStyles(transaction))
+        replayListStyleRef.current(change, side)
       for (const { fonts, converting } of replayedFontConversions(transaction))
         setFontConversions((state) =>
           converting ? withFontsConverted(state, fonts) : withFontsReverted(state, fonts),
@@ -9454,6 +10744,7 @@ export function App() {
     onInsertSectionBreak: (type: 'nextPage' | 'continuous' | 'evenPage' | 'oddPage') =>
       insertSectionBreak(type),
     onPageColor: (next: string | null) => {
+      armPageSetupUndo()
       setPageColor(next)
       setPageColorDirty(true)
     },
@@ -9465,16 +10756,6 @@ export function App() {
           ? t('appWatermarkSet', { text: text ?? t('ribbonWatermarkPicture') })
           : t('appWatermarkRemoved'),
       )
-    },
-    onThemeFonts: (fonts: ThemeFonts) => {
-      setThemeFonts(fonts)
-      setThemeFontsDirty(true)
-      setStatus(t('appThemeFontsChanged'))
-    },
-    onThemeColors: (colors: ThemeColors) => {
-      setThemeColors(colors)
-      setThemeColorsDirty(true)
-      setStatus(t('appThemeColorsApplied', { name: colors.name ?? '' }))
     },
     onInkTool: setInkTool,
     onInkPresets: setInkPresets,
@@ -9596,7 +10877,7 @@ export function App() {
   // selection / popup changes only restyle the margin layer: redraw it without a pagination pass
   useEffect(() => {
     if (!editor || !doc) return
-    const pm = document.querySelector('.editor-scroll .ProseMirror') as HTMLElement | null
+    const pm = document.querySelector('.editor-scroll .ProseMirror.doc-page') as HTMLElement | null
     const wrap = pm?.closest('.page-wrap') as HTMLElement | null
     if (!pm || !wrap) return
     syncMarginAnnotations(
@@ -9644,16 +10925,22 @@ export function App() {
     const own = hits.filter((r) => r.from <= pos && pos < r.to)
     return own.length ? own : hits
   }
-  const ctxCommentId = useMemo(() => {
-    if (!ctxMenu || !editor) return null
+  const ctxComment = useMemo(() => {
+    const none = { id: null, done: false }
+    if (!ctxMenu || !editor) return none
     const ids = ctxMenu.commentId
       ? [ctxMenu.commentId]
       : commentIdsAt(editor.state, ctxMenu.pos ?? editor.state.selection.from)
-    const open = ids
+    const at = ids
       .map((id) => comments.find((c) => c.id === id))
-      .filter((c): c is CommentInfo => !!c && !c.done)
-    const root = open.find((c) => !c.parentId) ?? open[0]
-    return root ? (root.parentId ?? root.id) : null
+      .filter((c): c is CommentInfo => !!c)
+    // an open thread first; a resolved one is offered Reopen
+    const open = at.filter((c) => !c.done)
+    const pool = open.length ? open : at
+    const hit = pool.find((c) => !c.parentId) ?? pool[0]
+    if (!hit) return none
+    const id = hit.parentId ?? hit.id
+    return { id, done: comments.find((c) => c.id === id)?.done === true }
   }, [ctxMenu, editor, comments])
   // the context menu acts on the document as it is now, not the throttled pane snapshot
   const liveRevisions = useMemo(
@@ -9704,56 +10991,61 @@ export function App() {
     hasTableOfFigures: menuHasTableOfFigures,
     hasIndex: menuHasIndex,
     hasTableOfAuthorities: menuHasTableOfAuthorities,
+    hasLinks: bodyHasLinks,
   } = formatState
+  const menuHasLinks = bodyHasLinks || hfLinkRows.length > 0
   const menuHasComments = comments.length > 0
   const menuHasMergeSource = Boolean(mergeSource)
   const menuInTextBox = Boolean(formatState.sub)
   const menuCanRepeat = canRepeatCommand({ editor })
   useEffect(() => {
-    window.desktop.reportCommandState?.(
-      menuCommandState({
-        aiSidebar: showAi,
-        darkPage,
-        hasDoc: menuHasDoc,
-        editable: menuEditable,
-        inTable: menuInTable,
-        inTextBox: menuInTextBox,
-        spellcheck: spellcheckActive,
-        readOnlyRecommended: Boolean(writeProtection?.recommended),
-        onDisk: Boolean(doc?.filePath),
-        view: {
-          mode: viewMode,
-          readMode,
-          ruler: showRuler,
-          grid: showGrid,
-          navigation: showNav,
-          thumbnails: showThumbnails,
-          markup: markupShown(revisionDisplay),
-          ribbon: !ribbonCollapsed,
-          focus: focusMode,
-          reviewPane: showReviewPane,
-        },
-        cellsSelected: menuCanMerge,
-        labelSheet: menuLabelSheet,
-        hasSelection: menuHasSelection,
-        pictureSelected: menuPictureSelected,
-        hasNotes: menuHasNotes,
-        hasChart: menuHasChart,
-        canSplitTable: menuCanSplitTable,
-        canComment: menuCanComment,
-        inEmptyParagraph: menuInEmptyParagraph,
-        hasComments: menuHasComments,
-        hasTableOfFigures: menuHasTableOfFigures,
-        hasIndex: menuHasIndex,
-        hasTableOfAuthorities: menuHasTableOfAuthorities,
-        hasMergeSource: menuHasMergeSource,
-        windowsDetached,
-        canUndo: histState.canUndo,
-        canRedo: histState.canRedo,
-        canRepeat: menuCanRepeat,
-        target: editTarget,
-      }),
-    )
+    const state = menuCommandState({
+      aiSidebar: showAi,
+      darkPage,
+      hasDoc: menuHasDoc,
+      editable: menuEditable,
+      inTable: menuInTable,
+      inTextBox: menuInTextBox,
+      spellcheck: spellcheckActive,
+      grammarHidden: hideGrammar,
+      readOnlyRecommended: Boolean(writeProtection?.recommended),
+      onDisk: Boolean(doc?.filePath),
+      view: {
+        mode: viewMode,
+        readMode,
+        ruler: showRuler,
+        grid: showGrid,
+        navigation: showNav,
+        split: splitView,
+        thumbnails: showThumbnails,
+        markup: markupShown(revisionDisplay),
+        ribbon: !ribbonCollapsed,
+        focus: focusMode,
+        reviewPane: showReviewPane,
+      },
+      cellsSelected: menuCanMerge,
+      labelSheet: menuLabelSheet,
+      hasSelection: menuHasSelection,
+      pictureSelected: menuPictureSelected,
+      hasNotes: menuHasNotes,
+      hasChart: menuHasChart,
+      canSplitTable: menuCanSplitTable,
+      canComment: menuCanComment,
+      inEmptyParagraph: menuInEmptyParagraph,
+      hasComments: menuHasComments,
+      hasTableOfFigures: menuHasTableOfFigures,
+      hasIndex: menuHasIndex,
+      hasTableOfAuthorities: menuHasTableOfAuthorities,
+      hasLinks: menuHasLinks,
+      hasMergeSource: menuHasMergeSource,
+      windowsDetached,
+      canUndo: histState.canUndo,
+      canRedo: histState.canRedo,
+      canRepeat: menuCanRepeat,
+      target: editTarget,
+    })
+    menuDisabledRef.current = state.disabled
+    window.desktop.reportCommandState?.(state)
   }, [
     showAi,
     darkPage,
@@ -9762,11 +11054,13 @@ export function App() {
     menuInTable,
     menuInTextBox,
     spellcheckActive,
+    hideGrammar,
     viewMode,
     readMode,
     showRuler,
     showGrid,
     showNav,
+    splitView,
     showThumbnails,
     revisionDisplay,
     ribbonCollapsed,
@@ -9787,6 +11081,7 @@ export function App() {
     menuHasTableOfFigures,
     menuHasIndex,
     menuHasTableOfAuthorities,
+    menuHasLinks,
     menuHasMergeSource,
     windowsDetached,
     histState.canUndo,
@@ -10084,6 +11379,11 @@ export function App() {
     )
   }, [editor, showMarks, viewMode, sections, lang])
 
+  /** the vertical ruler measures a page, so only Print Layout has it, as in Word */
+  const vRulerWanted = Boolean(doc && showRuler && !multipage && viewMode === 'print' && !readMode)
+  // its strip takes 16px from the view: a fit zoom follows, a zoom the user chose stays
+  useEffect(() => refitForCanvasWidth(false), [refitForCanvasWidth, vRulerWanted])
+
   if (!editor) return null
 
   // canvas geometry is anchored to the first section (stable across cursor moves);
@@ -10117,7 +11417,8 @@ export function App() {
     lastPageMargins &&
     (paperW - lastBox.width > 0.5 ||
       Math.abs(lastBox.contentWidth - canvasBox.contentWidth) > 0.5 ||
-      mirrorMargins)
+      mirrorMargins ||
+      lastPageMargins.left !== lastPageMargins.right)
       ? {
           width: `${lastBox.contentWidth}px`,
           left: `${pageLeftOf(lastSection!) + twipsToPx(lastPageMargins.left)}px`,
@@ -10126,12 +11427,15 @@ export function App() {
         }
       : undefined
   // symmetric pin for the leading header (it belongs to the first section): the
-  // widened shared paper would otherwise re-center it at the wrong x
+  // widened shared paper, or side margins that differ, would otherwise center it
+  // at the wrong x
   const edgeHeaderStyle =
     canvasBox &&
     canvasSection &&
     firstPageMargins &&
-    (paperW - canvasBox.width > 0.5 || mirrorMargins)
+    (paperW - canvasBox.width > 0.5 ||
+      mirrorMargins ||
+      firstPageMargins.left !== firstPageMargins.right)
       ? {
           width: `${canvasBox.contentWidth}px`,
           left: `${pageLeftOf(canvasSection) + twipsToPx(firstPageMargins.left)}px`,
@@ -10146,6 +11450,7 @@ export function App() {
       : rulerBase
   /** View ▸ Ruler: fixed bars around the document view (none in Multiple Pages) */
   const rulersShown = Boolean(doc && showRuler && rulerSection && !multipage)
+  const vRulerShown = rulersShown && vRulerWanted
   const docZoomStyle = {
     zoom: zoom / 100,
     '--page-w': canvasBox ? `${paperW}px` : undefined,
@@ -10183,13 +11488,16 @@ export function App() {
     multipage ? 'multipage' : '',
     showMarks ? 'show-marks' : '',
     `view-${viewMode}`,
+    viewMode === 'story' && storyFocus ? 'story-focus-on' : '',
     showGrid ? 'show-grid' : '',
     tableGridlines ? 'show-table-gridlines' : '',
-  ].join(' ')
+  ]
+    .filter(Boolean)
+    .join(' ')
 
   return (
     <div
-      className={`app ${readMode ? 'read-mode' : ''}${focusMode ? ' focus-mode' : ''}${commentsUi.panel ? ' comments-pane-open' : ''}${revisionDisplay !== 'all' ? ` rev-display-${revisionDisplay}` : ''}${balloonsActive && balloonMode === 'revisions' ? ' rev-balloon' : ''}${revisionFilter.insDel ? '' : ' rev-hide-insdel'}${revisionFilter.format ? '' : ' rev-hide-format'}${tcOptions.balloonLines ? '' : ' markup-no-lines'}`}
+      className={`app ${readMode ? 'read-mode' : ''}${viewMode === 'story' ? ' story-chrome' : ''}${focusMode ? ' focus-mode' : ''}${commentsUi.panel ? ' comments-pane-open' : ''}${revisionDisplay !== 'all' ? ` rev-display-${revisionDisplay}` : ''}${balloonsActive && balloonMode === 'revisions' ? ' rev-balloon' : ''}${revisionFilter.insDel ? '' : ' rev-hide-insdel'}${revisionFilter.format ? '' : ' rev-hide-format'}${tcOptions.balloonLines ? '' : ' markup-no-lines'}`}
       data-balloons={balloonsActive ? balloonMode : undefined}
       data-comment-cards={commentsUi.cards ? '' : undefined}
       data-comment-focus={commentFocus?.id}
@@ -10218,14 +11526,23 @@ export function App() {
       {doc && charCellPt != null && (
         <style>{`.doc-page { --doc-char-snap:${charCellSpacingCss(charCellPt)} }`}</style>
       )}
+      {doc && gridMovesRightIndent && (
+        <style data-grid-right-indent="">
+          {(rightIndentPt != null ? `.doc-page { --doc-rind-sect:${rightIndentPt}pt } ` : '') +
+            GRID_RIGHT_INDENT_RULE}
+        </style>
+      )}
       {doc && snapsToChars && (
         // snapToChars: a full-width character takes whole cells and sits centred in them
-        <style>{`.doc-page .doc-east-asian-font:not(.doc-east-asian-halfwidth, [style*='letter-spacing'] .doc-east-asian-font, .page-gap-hf *) { letter-spacing: var(--doc-char-snap, var(--doc-char-space, normal)); position: relative; inset-inline-start: calc(var(--doc-char-snap, 0px) / 2) }`}</style>
+        <style>{`.doc-page .doc-east-asian-font:not(.doc-east-asian-halfwidth, [style*='letter-spacing'] .doc-east-asian-font, .doc-off-grid .doc-east-asian-font, .page-gap-hf *) { letter-spacing: var(--doc-char-snap, var(--doc-char-space, normal)); position: relative; inset-inline-start: calc(var(--doc-char-snap, 0px) / 2) }`}</style>
       )}
       {doc && balancedGrid && !snapsToChars && (
         // full-width spans take the whole delta back (halfwidth kana stay single-byte);
         // an inline run letter-spacing still wins
-        <style>{`.doc-page .doc-east-asian-font:not(.doc-east-asian-halfwidth, [style*='letter-spacing'] .doc-east-asian-font, .page-gap-hf *) { letter-spacing: var(--doc-char-space, normal) }`}</style>
+        <style>{`.doc-page .doc-east-asian-font:not(.doc-east-asian-halfwidth, [style*='letter-spacing'] .doc-east-asian-font, .doc-off-grid .doc-east-asian-font, .page-gap-hf *) { letter-spacing: var(--doc-char-space, normal) }`}</style>
+      )}
+      {doc && drawingGrid && (
+        <style data-drawing-grid="">{`.doc-page { ${gridlinesCss(drawingGrid)} }`}</style>
       )}
       {doc && section && (
         // over-wide tables may spill into the margins (Word/LO), capped at the paper edge
@@ -10264,7 +11581,7 @@ export function App() {
         onCommand={runCommand}
         editTarget={editTarget}
         styles={ribbonStyles}
-        docDefaults={doc?.parsed.docDefaults}
+        docDefaults={liveDocDefaults}
         documentListPresets={documentLists}
         recentListPresets={recentLists}
         showAi={showAi}
@@ -10281,6 +11598,8 @@ export function App() {
             : (doc?.parsed.headerImages?.find((img) => img.wordArt || img.watermark) ?? null)
         }
         themeFonts={themeFonts}
+        styleSetSource={styleSetSource}
+        savedThemes={savedThemes}
         themeColors={themeColors}
         inkTool={inkTool}
         inkPresets={inkPresets}
@@ -10315,7 +11634,7 @@ export function App() {
         revisionFilter={revisionFilter}
         revisionAuthors={reviewAuthors}
         showReviewPane={showReviewPane}
-        isProtected={isProtected}
+        isProtected={bodyLocked}
         commentsAllowed={commentsAllowed}
         trackChangesForced={trackChangesForced}
         protectActive={
@@ -10423,7 +11742,14 @@ export function App() {
               />
             )}
             {doc && <PasteOptionsChip editor={editor} />}
-            <div className={rulersShown ? 'editor-area with-rulers' : 'editor-area'}>
+            <div
+              className={vRulerShown ? 'editor-area with-rulers' : 'editor-area'}
+              style={
+                vRulerShown
+                  ? ({ '--vruler-w': `${vrulerBarWidth(zoom / 100)}px` } as CSSProperties)
+                  : undefined
+              }
+            >
               {rulersShown && rulerSection && (
                 <RulerBar
                   editor={editor}
@@ -10451,7 +11777,7 @@ export function App() {
                   />
                 </RulerBar>
               )}
-              {rulersShown && rulerSection && (
+              {vRulerShown && rulerSection && (
                 <VerticalRuler
                   section={rulerSection}
                   editor={editor}
@@ -10464,7 +11790,12 @@ export function App() {
                 />
               )}
               <main
-                className={`editor-scroll${imageDragOver ? ' image-drop-target' : ''}${doc ? '' : ' start-screen-host'}`}
+                className={`editor-scroll${imageDragOver ? ' image-drop-target' : ''}${doc ? '' : ' start-screen-host'}${doc && styleAreaPx > 0 ? ' has-style-area' : ''}`}
+                style={
+                  doc && styleAreaPx > 0
+                    ? ({ '--style-area-w': `${styleAreaPx}px` } as CSSProperties)
+                    : undefined
+                }
                 ref={scrollContainerRef}
                 onScroll={(e) => {
                   scrollPosRef.current = {
@@ -10497,6 +11828,9 @@ export function App() {
               >
                 {doc && viewMode === 'draft' && (
                   <div className="draft-breaks" ref={draftBreaksRef} />
+                )}
+                {doc && editor && styleAreaPx > 0 && (
+                  <StyleArea editor={editor} widthPx={styleAreaPx} styles={ribbonStyles} />
                 )}
                 {doc ? (
                   <div
@@ -10544,6 +11878,7 @@ export function App() {
                           <HeaderFooterArea
                             kind="header"
                             value={shownHeader ?? { text: '' }}
+                            blank={hfBlankPara('header', doc?.parsed.styles)}
                             images={hfImagesOf('header')}
                             readOnly={isProtected || readMode}
                             onCommit={(next) => {
@@ -10553,7 +11888,6 @@ export function App() {
                             pageNo={firstPageNoText}
                             pageTotal={pageInfo.total}
                             sectionPages={edgeSectionPages?.first}
-                            sectionLabel={hfSectionLabel('header', 0)}
                             editRequest={
                               hfAreaEditRequest?.kind === 'header' ? hfAreaEditRequest.nonce : null
                             }
@@ -10585,6 +11919,20 @@ export function App() {
                             }
                           />
                         )}
+                        {hfBoundary && (
+                          <div
+                            className={`hf-boundary hf-boundary-${hfBoundary.kind}`}
+                            style={{ top: `${hfBoundary.y}px` }}
+                            contentEditable={false}
+                          >
+                            <span className="hf-boundary-tag">{hfBoundary.label}</span>
+                            {hfBoundary.linked && (
+                              <span className="hf-boundary-tag hf-boundary-tag-end">
+                                {t('appHfSameAsPrevious')}
+                              </span>
+                            )}
+                          </div>
+                        )}
                         <EditorContent editor={editor} />
                         {/* footnotes already shown per page in page gaps aren't repeated at the end (last page's footnotes still live here) */}
                         <PageFootnotes
@@ -10612,6 +11960,7 @@ export function App() {
                           <HeaderFooterArea
                             kind="footer"
                             value={shownFooter ?? { text: '' }}
+                            blank={hfBlankPara('footer', doc?.parsed.styles)}
                             images={hfImagesOf('footer')}
                             readOnly={isProtected || readMode}
                             onCommit={(next) => {
@@ -10627,8 +11976,6 @@ export function App() {
                             pageNo={lastPageNoText}
                             pageTotal={pageInfo.total}
                             sectionPages={edgeSectionPages?.last}
-                            linked={hfLinkedAt(lastSectionIdx, 'footer', footerAreaView)}
-                            sectionLabel={hfSectionLabel('footer', lastSectionIdx)}
                             editRequest={
                               hfAreaEditRequest?.kind === 'footer' ? hfAreaEditRequest.nonce : null
                             }
@@ -10722,6 +12069,60 @@ export function App() {
                 {t('appExitReadMode')}
               </button>
             )}
+            {doc && editor && viewMode === 'story' && !readMode && (
+              <div className="story-bar" role="toolbar" aria-label={t('ribbonStoryView')}>
+                <button type="button" className="story-bar-btn" onClick={() => runCommand('bold')}>
+                  {t('ribbonMarkerBold')}
+                </button>
+                <button
+                  type="button"
+                  className="story-bar-btn"
+                  onClick={() => runCommand('italic')}
+                >
+                  {t('ribbonMarkerItalic')}
+                </button>
+                <button
+                  type="button"
+                  className="story-bar-btn"
+                  onClick={() => runCommand('insert-link')}
+                >
+                  {t('ribbonLink')}
+                </button>
+                <button
+                  type="button"
+                  className="story-bar-btn"
+                  onClick={() => runCommand('bullets')}
+                >
+                  {t('storyBarList')}
+                </button>
+                <span className="story-bar-gap" />
+                <button
+                  type="button"
+                  className={`story-bar-btn${trackChanges ? ' on' : ''}`}
+                  aria-pressed={trackChanges}
+                  disabled={isProtected || trackChangesForced}
+                  onClick={() => runCommand('track-changes')}
+                >
+                  {t('ribbonTrackChanges')}
+                </button>
+                <button
+                  type="button"
+                  className={`story-bar-btn${storyFocus ? ' on' : ''}`}
+                  aria-pressed={storyFocus}
+                  onClick={() => setStoryFocus((v) => !v)}
+                >
+                  {t('storyBarFocus')}
+                </button>
+                <span className="story-bar-count">{t('appWordCountN', { n: wordCount })}</span>
+                <button
+                  type="button"
+                  className="story-bar-btn"
+                  onClick={() => setViewMode(storyReturnView)}
+                >
+                  {t('storyBarLeave')}
+                </button>
+              </div>
+            )}
             {doc && commentsUi.panel && (
               <CommentsPanel
                 comments={comments}
@@ -10741,7 +12142,7 @@ export function App() {
               <StylesPane
                 editor={editor}
                 styles={ribbonStyles}
-                docDefaults={doc.parsed.docDefaults}
+                docDefaults={liveDocDefaults}
                 docName={doc.fileName}
                 docBytes={doc.parsed.internal.originalBytes}
                 fs={formatState}
@@ -10907,6 +12308,7 @@ export function App() {
       {showCustomizeKeyboard && (
         <CustomizeKeyboardDialog
           styles={ribbonStyles ?? FALLBACK_STYLES}
+          documentName={doc && !isProtected && !readMode ? doc.fileName : null}
           onClose={() => setShowCustomizeKeyboard(false)}
         />
       )}
@@ -10973,6 +12375,7 @@ export function App() {
           onMerge={mergeMailings}
           recordIndex={mergeRecordIndex}
           onRecordIndex={setMergeRecordIndex}
+          previewAnswers={mergePreview ? previewAnswers : undefined}
           range={mergeRange}
           initialMode={mergePanel.mode}
           pick={mergePanel.pick}
@@ -11009,10 +12412,13 @@ export function App() {
         <AutoTextDialog
           {...autoText}
           onSave={(name) => saveAutoText(editor, name)}
-          onInsert={(entry) => insertAutoText(editor, entry)}
+          onInsert={insertAnyAutoText}
           onDelete={(name) => {
             deleteAutoText(name)
-            setAutoText({ ...autoText, entries: autoTextEntries() })
+            setAutoText({
+              ...autoText,
+              entries: [...autoTextEntries(), ...docAutoTextRef.current],
+            })
           }}
           onClose={() => setAutoText(null)}
         />
@@ -11058,6 +12464,13 @@ export function App() {
           onClose={() => setMarkEntryAt(null)}
         />
       )}
+      {markTocAt && editor && (
+        <MarkTocEntryDialog
+          selected={markTocAt.text}
+          onMark={(entry) => markTocEntry(editor, markTocAt.at, entry)}
+          onClose={() => setMarkTocAt(null)}
+        />
+      )}
       {languageTarget && (
         <LanguageDialog
           current={proofingLanguageOf(languageTarget)}
@@ -11070,10 +12483,24 @@ export function App() {
         <TextEffectsDialog
           fx={textFxOf(textEffectsTarget)}
           color={textFillOf(textEffectsTarget)}
-          onApply={(fx, color) => applyTextFx(textEffectsTarget, fx, color)}
+          shown={textFillShownOf(textEffectsTarget)}
+          onApply={(fx, color, fill) => applyTextFx(textEffectsTarget, fx, color, fill)}
           onClose={() => setTextEffectsTarget(null)}
         />
       )}
+      {eaLayoutDialog &&
+        (() => {
+          const Dialog =
+            eaLayoutDialog.kind === 'combine' ? TwoLinesInOneDialog : HorizontalInVerticalDialog
+          return (
+            <Dialog
+              text={eaLayoutDialog.text}
+              layout={eaLayoutOf(eaLayoutDialog.editor)}
+              onApply={(choice) => setEaLayout(eaLayoutDialog.editor, choice)}
+              onClose={() => setEaLayoutDialog(null)}
+            />
+          )
+        })()}
       {fitTextTarget && (
         <FitTextDialog
           width={fitTextOf(fitTextTarget)}
@@ -11238,6 +12665,12 @@ export function App() {
           onClose={() => setShowSort(false)}
         />
       )}
+      {showSaveStyleSet && (
+        <SaveStyleSetDialog
+          onSave={(name) => runCommand('design-style-set-save', name)}
+          onClose={() => setShowSaveStyleSet(false)}
+        />
+      )}
       {showParagraphSpacing && (
         <ParagraphSpacingDialog
           current={defaultParagraphSpacing()}
@@ -11259,10 +12692,28 @@ export function App() {
         <InsertFileRangeDialog
           fileName={insertFileRange.fileName}
           bookmarks={insertFileRange.bookmarks}
-          onAnswer={(range) => {
-            insertFileRange.answer(range)
+          onAnswer={(options) => {
+            insertFileRange.answer(options)
             setInsertFileRange(null)
           }}
+        />
+      )}
+      {insertPictureOptions && (
+        <InsertPictureOptionsDialog
+          fileName={insertPictureOptions.fileName}
+          onAnswer={(options) => {
+            insertPictureOptions.answer(options)
+            setInsertPictureOptions(null)
+          }}
+        />
+      )}
+      {showLinks && editor && doc && (
+        <LinksDialog
+          editor={editor}
+          blocks={doc.parsed.blocks}
+          notes={insertFileNotes()}
+          hf={{ rows: hfLinkRows, set: commitHfPictureLink }}
+          onClose={() => setShowLinks(false)}
         />
       )}
       {doc && showReduceFileSize && (
@@ -11301,6 +12752,20 @@ export function App() {
           onClose={() => setShowSizePosition(false)}
         />
       )}
+      {editor &&
+        showSizePosition &&
+        !selectedPictureGeometry(editor) &&
+        selectedShapeSize(editor) && (
+          <ShapeSizeDialog
+            current={selectedShapeSize(editor)!}
+            section={sections[activeSection]?.settings ?? section}
+            title={t('appSizeAndPosition').replace(/(?:\u2026|\.{3})$/, '')}
+            onApply={(next) =>
+              applyShapeSize(editor, next, sections[activeSection]?.settings ?? section)
+            }
+            onClose={() => setShowSizePosition(false)}
+          />
+        )}
       {editor && showTextDirection && (
         <TextDirectionDialog
           context={textDirectionContext(
@@ -11349,7 +12814,7 @@ export function App() {
         <HyphenationDialog
           auto={autoHyphenation}
           settings={hyphenationSettings}
-          hasPatterns={hyphenationDictFor(doc?.parsed.docDefaults?.lang) !== null}
+          hasPatterns={hyphenatesSomeText(editor?.state.doc, doc?.parsed)}
           zoneApplies={hyphenationZoneApplies(doc?.parsed)}
           canEdit={editor?.isEditable === true}
           onApply={(next) => {
@@ -11414,6 +12879,7 @@ export function App() {
           listStylesInUse={listStylesInUse(editor, doc?.parsed.numbering)}
           initialStyleId={addedListStyle}
           onAddListStyle={() => runCommand('list-dialog', 'style')}
+          onModifyListStyle={(styleId) => runCommand('list-dialog', `styleModify#${styleId}`)}
           onDeleteListStyle={(styleId) => runCommand('list-style-delete', styleId)}
           onApplyListStyle={(styleId) =>
             styleId === NO_LIST_STYLE_ID
@@ -11449,6 +12915,17 @@ export function App() {
             runCommand('insert-icon', names.join(','))
           }}
           onClose={() => setShowIconsDialog(false)}
+        />
+      )}
+      {showChangePictureIcon && (
+        <IconsDialog
+          single
+          onInsert={async ([name]) => {
+            await prepareLibraryIcons([name])
+            setShowChangePictureIcon(false)
+            runCommand('picture-replace-icon', name)
+          }}
+          onClose={() => setShowChangePictureIcon(false)}
         />
       )}
       {showSymbolDialog && (
@@ -11537,8 +13014,10 @@ export function App() {
             const tr = editor.state.tr
             const blocks = doc?.parsed.blocks ?? EMPTY_BLOCKS
             refreshTableFormulas(tr)
+            const headings = numberingContextOf(editor)
             renumberSeqFields(tr, blocks, {
-              skip: unreliableSeqLabelsOf(blocks, editor.schema),
+              skip: unreliableSeqLabelsOf(blocks, editor.schema, headings),
+              headings,
             })
             if (tr.docChanged) editor.view.dispatch(tr.setMeta('appendedTransaction', tr))
           }}
@@ -11604,6 +13083,15 @@ export function App() {
               runCommand('document-settings', JSON.stringify(sectionChanges))
             if (changes.titlePg !== undefined) toggleTitlePg(changes.titlePg)
             if (changes.evenOdd !== undefined) toggleEvenOddHf(changes.evenOdd)
+          }}
+          drawingGrid={drawingGrid}
+          snapToGrid={snapObjects}
+          showGrid={showGrid}
+          onDrawingGrid={({ grid, snap, show }) => {
+            if (grid) setDrawingGridEdit(grid)
+            setSnapsToGrid(snap)
+            setSnapObjects(snap)
+            setShowGrid(show)
           }}
           onDefault={(page) => {
             savePageDefault(page)
@@ -11677,7 +13165,7 @@ export function App() {
           onUpdateFields={updateFields}
           onEditField={setFieldEdit}
           onOpenLink={(href) => openLink(href, ctxMenu.link?.tocTitle)}
-          onRespell={() => requestAnimationFrame(() => setRespellNonce((n) => n + 1))}
+          onRespell={respell}
           revisions={
             isProtected || trackChangesForced
               ? null
@@ -11692,8 +13180,7 @@ export function App() {
                   onAll: (action) => handleRevision(action, 'all'),
                 }
           }
-          comment={{ id: ctxCommentId }}
-          trackChanges={isProtected || trackChangesForced ? null : { on: trackChanges }}
+          comment={ctxComment}
         />
       )}
       {viewImage && (
@@ -11728,18 +13215,24 @@ export function App() {
           styles={ribbonStyles}
           pageWidth={section?.pageWidth}
           typography={{
-            compressPunctuation: compressPunctEdit ?? doc?.parsed.compressPunctuation === true,
+            spacingControl: spacingControlEdit ?? spacingControlOf(doc?.parsed),
             strictKinsoku: strictKinsokuEdit ?? doc?.parsed.strictFirstAndLastChars === true,
-            onChange: (compress) => {
-              setCompressPunctEdit(compress)
-              // the same two switches the file's value sets on open; every paragraph re-measures
-              editor.storage.cjkPunctShrink.enabled = compress
-              editor.storage.cjkPunctShrink.hangPunct = !compress
+            onChange: (control) => {
+              armPageSetupUndo('paragraph')
+              setSpacingControlEdit(control)
+              // the switches the file's value sets on open; every paragraph re-measures
+              setSpacingControl(editor.storage.cjkPunctShrink, control)
               document.dispatchEvent(new Event(DOC_CSS_COMMITTED_EVENT))
             },
-            onStrictKinsoku: (strict) => {
+            kinsokuCustom:
+              kinsokuCustomEdit === null
+                ? (doc?.parsed.kinsokuCustom ?? null)
+                : kinsokuCustomEdit || null,
+            onKinsoku: (strict, custom) => {
+              armPageSetupUndo('paragraph')
               setStrictKinsokuEdit(strict)
-              setStrictKinsoku(editor, strict)
+              setKinsokuCustomEdit(custom ?? false)
+              setKinsokuLevel(editor, strict, custom)
             },
           }}
           onClose={() => setShowParaDialog(false)}
@@ -11862,6 +13355,35 @@ export function App() {
           onClose={() => setListDialog(null)}
         />
       )}
+      {doc &&
+        listDialog === 'styleModify' &&
+        (() => {
+          const style = listStyles.find((s) => s.styleId === modifiedListStyle)
+          if (!style) return null
+          const own = style.name.toLowerCase()
+          return (
+            <DefineMultilevelDialog
+              key={style.styleId}
+              styles={[]}
+              initial={style.levels}
+              modify={{
+                name: style.labelKey ? t(style.labelKey) : (style.label ?? style.name),
+                builtIn: !style.custom,
+              }}
+              takenStyleNames={[
+                ...listStyles.map((s) => s.name.toLowerCase()),
+                ...[...doc.parsed.styles.values()].map((s) => s.name.toLowerCase()),
+              ].filter((name) => name !== own)}
+              onApply={(levels, name) =>
+                runCommand(
+                  'list-style-modify',
+                  JSON.stringify({ styleId: style.styleId, name, levels }),
+                )
+              }
+              onClose={() => setListDialog(null)}
+            />
+          )
+        })()}
       {doc && listDialog === 'value' && listTarget && (
         <SetNumberingValueDialog
           numFmt={listTarget.level?.numFmt ?? 'decimal'}
@@ -11898,15 +13420,24 @@ export function App() {
             footnote: activeNoteProps('footnote'),
             endnote: activeNoteProps('endnote'),
           }}
+          columns={(() => {
+            const at = noteSectionAtCaret()
+            // the last section is written from its own state
+            const own = (at === sections.length - 1 && section) || sections[at]?.settings
+            return (own || section)?.footnoteColumns ?? null
+          })()}
+          columnsFixed={(compatibilityMode ?? 0) < 15}
           multiSection={sections.length > 1}
           counts={{ footnote: footnotes.length, endnote: endnotes.length }}
-          onApply={(next, scope) => {
+          onApply={(next, scope, columns) => {
             setShowFootnoteDialog(false)
             armPageSetupUndo()
-            applyNoteSettings(next, scope)
+            applyNoteSettings(next, scope, columns)
           }}
           onInsert={(kind, customMark) => {
             setShowFootnoteDialog(false)
+            // the settings just applied wait for the note: one undo step with it
+            if (pageSetupUndoRef.current) pageSetupUndoRef.current.held = 'note'
             setNotePrompt(customMark ? { kind, customMark } : { kind })
           }}
           onConvert={(mode) => convertNotesImpl(reviewCtxRef.current, mode)}
@@ -11955,12 +13486,12 @@ export function App() {
           sections={sections}
           mirrorMargins={mirrorMargins}
           delSectBreaks={delSectBreaks}
-          hfParts={doc.parsed.hfParts ?? {}}
+          hfParts={hfParsed?.hfParts ?? {}}
           legacyBands={legacyBands}
           colFlow={viewMode === 'print' ? colFlow : null}
           colMode={viewMode === 'print' ? colMode : 'none'}
           hf={{
-            header: hfPhantom ? hfWithPhantom(header, hfPhantom, doc.parsed.headerImages) : header,
+            header: hfPhantom ? hfWithPhantom(header, hfPhantom, hfParsed?.headerImages) : header,
             footer: hfPhantom ? hfFooterLine(footer, hfPhantom) : footer,
             ...hfVariants,
             ...(hfPhantom
@@ -11970,29 +13501,30 @@ export function App() {
                   headerFirst: hfWithPhantom(
                     hfVariants.headerFirst,
                     hfPhantom,
-                    doc.parsed.headerFirst?.images,
+                    hfParsed?.headerFirst?.images,
                   ),
                   headerEven: hfWithPhantom(
                     hfVariants.headerEven,
                     hfPhantom,
-                    doc.parsed.headerEven?.images,
+                    hfParsed?.headerEven?.images,
                   ),
                 }
               : {}),
             titlePg,
             evenOddHf,
             images: {
-              header: doc.parsed.headerImages ?? undefined,
-              footer: doc.parsed.footerImages ?? undefined,
-              headerFirst: doc.parsed.headerFirst?.images,
-              footerFirst: doc.parsed.footerFirst?.images,
-              headerEven: doc.parsed.headerEven?.images,
-              footerEven: doc.parsed.footerEven?.images,
+              header: hfParsed?.headerImages ?? undefined,
+              footer: hfParsed?.footerImages ?? undefined,
+              headerFirst: hfParsed?.headerFirst?.images,
+              footerFirst: hfParsed?.footerFirst?.images,
+              headerEven: hfParsed?.headerEven?.images,
+              footerEven: hfParsed?.footerEven?.images,
             },
           }}
           watermarkDirty={watermarkDirty}
           pendingWatermark={pendingWatermarkImage}
           blockMetaOf={blockMetaOf}
+          noteColumnsOf={hasNoteColumns ? noteColumnsOf : undefined}
           footnotesBeneathText={noteSettings.footnote.pos === 'beneathText'}
           endnoteItems={endnoteItems}
           resolveHf={(secs, si, kind, variant) =>
@@ -12040,7 +13572,11 @@ export function App() {
       )}
 
       {showSpelling && doc && editor && (
-        <SpellingDialog editor={editor} onClose={() => setShowSpelling(false)} />
+        <SpellingDialog
+          editor={editor}
+          grammarAt={spellingGrammarAt}
+          onClose={() => setShowSpelling(false)}
+        />
       )}
 
       {stats && (
@@ -12052,7 +13588,8 @@ export function App() {
           onClose={() => setShowAutoCorrect(false)}
           selection={selectionClip(editor)}
           autoText={{
-            entries: autoTextList,
+            entries: [...autoTextList, ...docAutoText],
+            documentName: docAutoText.length > 0 ? (doc?.fileName ?? '') : null,
             suggestedName: selectionSnippet(editor),
             onAdd: (name) => {
               saveAutoText(editor, name)
@@ -12060,7 +13597,7 @@ export function App() {
             },
             onInsert: (entry) => {
               setShowAutoCorrect(false)
-              insertAutoText(editor, entry)
+              insertAnyAutoText(entry)
             },
             onDelete: (name) => {
               deleteAutoText(name)
@@ -12093,6 +13630,10 @@ export function App() {
           encrypted={doc?.encrypted ?? false}
           writeProtection={writeProtection}
           protection={protection}
+          // w:formProt counts only under a forms protection: a new one starts with every section in
+          sectionsProtected={sections.map(
+            (s) => editRestriction !== 'forms' || s.settings.formProt !== false,
+          )}
           removePersonalInfo={removePersonalInfo}
           onCancel={() => setShowProtectDialog(false)}
           onApply={(result) => void applyProtectDialog(result)}

@@ -14,6 +14,8 @@ export interface OpenDocumentText {
   additiveSpacing: boolean
   /** docDefaults w:lang w:eastAsia as declared */
   eastAsiaLang: string | null
+  /** compatibilityMode below 15: a character grid moves the right indent (w:adjustRightInd) */
+  legacyLayout: boolean
 }
 
 const NONE: OpenDocumentText = {
@@ -22,6 +24,7 @@ const NONE: OpenDocumentText = {
   bodyEaSlot: null,
   additiveSpacing: false,
   eastAsiaLang: null,
+  legacyLayout: false,
 }
 
 let current: OpenDocumentText = NONE
@@ -35,6 +38,7 @@ export function setOpenDocumentText(ctx: Partial<OpenDocumentText> | null): void
         bodyEaSlot: ctx.bodyEaSlot ?? NONE.bodyEaSlot,
         additiveSpacing: ctx.additiveSpacing ?? NONE.additiveSpacing,
         eastAsiaLang: ctx.eastAsiaLang ?? NONE.eastAsiaLang,
+        legacyLayout: ctx.legacyLayout ?? NONE.legacyLayout,
       }
     : NONE
 }

@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { buildLineParagraphXml, buildShapeParagraphXml, patchShapeStyles } from '../src/generate'
+import {
+  applyShapeWrapAt,
+  buildLineParagraphXml,
+  buildShapeParagraphXml,
+  patchShapeStyles,
+  patchTextboxSizes,
+} from '../src/generate'
 import { parseDocx } from '../src/parse'
 import { buildDocx } from './helpers/build-docx'
 
@@ -122,5 +128,55 @@ describe('rotation and outline width round-trip through the parser', () => {
     ])
     const box = await firstBox(xml)
     expect(box?.borderWidthPx).toBe(3)
+  })
+})
+
+describe('a shape without text is patched through its own drawing', () => {
+  const BARE = buildShapeParagraphXml({ prst: 'rect', fillHex: '4472C4' })
+  const LABELLED = buildShapeParagraphXml({ prst: 'heart', fillHex: 'FF0000', withTextbox: true })
+  const run = (paragraphXml: string) => /<w:r>[\s\S]*<\/w:r>/.exec(paragraphXml)![0]
+  const BOTH = `<w:p>${run(BARE)}${run(LABELLED)}</w:p>`
+  const boxes = async (paragraphXml: string) => {
+    const doc = await parseDocx(await buildDocx({ bodyXml: paragraphXml }))
+    return doc.blocks.find((b) => b.textboxes?.length)?.textboxes ?? []
+  }
+
+  it('the parse records which drawing each ungrouped shape came from', async () => {
+    expect((await boxes(BOTH)).map((b) => b.drawingIndex)).toEqual([0, 1])
+  })
+
+  it('is left alone by an ordinal patch, as before', () => {
+    expect(patchShapeStyles(BARE, [{ rotDeg: 90 }])).toBe(BARE)
+  })
+
+  it('takes a rotation and a size addressed to its drawing', async () => {
+    const turned = patchShapeStyles(BARE, [{ rotDeg: 90, drawingIndex: 0 }])
+    expect(turned).toContain('<a:xfrm rot="5400000">')
+    const sized = patchTextboxSizes(turned, [{ wPx: 200, hPx: 100, drawingIndex: 0 }])
+    expect((await boxes(sized))[0]).toMatchObject({ rotDeg: 90, widthPx: 200, heightPx: 100 })
+  })
+
+  it('takes a wrap addressed to its drawing', () => {
+    const out = applyShapeWrapAt(BARE, { boxIndex: 0, drawingIndex: 0 }, 'behind')
+    expect(out).toContain('behindDoc="1"')
+    expect(applyShapeWrapAt(BARE, { boxIndex: 0 }, 'behind')).toBe(BARE)
+  })
+
+  it('patches each of two shapes in one paragraph, and only the one addressed', async () => {
+    const parsed = await boxes(BOTH)
+    const out = patchShapeStyles(BOTH, [
+      { rotDeg: 90, drawingIndex: parsed[0].drawingIndex },
+      { rotDeg: 180, drawingIndex: parsed[1].drawingIndex },
+    ])
+    expect((await boxes(out)).map((b) => b.rotDeg)).toEqual([90, 180])
+    const second = patchShapeStyles(BOTH, [null, { rotDeg: 180, drawingIndex: 1 }])
+    expect((await boxes(second)).map((b) => b.rotDeg)).toEqual([undefined, 180])
+    const firstDrawing = (xml: string) => xml.slice(0, xml.indexOf('</w:drawing>'))
+    expect(firstDrawing(second)).toBe(firstDrawing(BOTH))
+  })
+
+  it('a patch without a drawing still goes to the nth drawing that holds text', async () => {
+    const out = patchShapeStyles(BOTH, [{ rotDeg: 45 }])
+    expect((await boxes(out)).map((b) => b.rotDeg)).toEqual([undefined, 45])
   })
 })

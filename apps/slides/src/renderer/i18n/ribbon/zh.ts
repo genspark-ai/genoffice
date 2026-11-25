@@ -174,7 +174,7 @@ export const zh = {
   ribbonBulletHangNarrow: '窄',
   ribbonBulletHangNormal: '标准',
   ribbonBulletHangWide: '宽',
-  ribbonBulletHangCustomTip: '自定义符号缩进（px，回车应用）',
+  ribbonBulletHangCustomTip: '自定义符号缩进（{unit}，回车应用）',
   ribbonBulletSize: '符号大小',
   ribbonBulletColor: '符号颜色',
   ribbonNumberStyle: '编号样式',

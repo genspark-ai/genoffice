@@ -1,3 +1,4 @@
+import { typedFieldCode } from './field-codes'
 import { citationRuns } from './citations'
 import {
   mergePPrFormat,
@@ -27,6 +28,7 @@ import {
   patchTextboxSizes,
   patchShapeStyles,
   type ShapeStylePatch,
+  type RelSize,
   type TextboxSizePatch,
   patchTextboxParas,
   generateTableModelXml,
@@ -34,7 +36,9 @@ import {
   resolvePropChangeXml,
   inlinePictureDrawingXml,
   patchRunPictureXml,
+  pictureLinkToken,
   setRunPictureAlt,
+  withPictureLink,
   type RunPictureGeometry,
   NEW_PICTURE_SVG_SUFFIX,
   NEW_PICTURE_TOKEN_PREFIX,
@@ -87,9 +91,12 @@ import { parseLangAttr } from './proofing-language'
 import { parseTextOutlineAttr } from './text-outline'
 import {
   charScaleXAttr,
+  charScaleXFits,
+  liveTextFill,
   parseFxOwnAttr,
   parseGlowAttr,
   parseReflectionAttr,
+  textFillAttr,
   parseTextShadowAttr,
   parseTextEffectAttr,
 } from './text-effects'
@@ -186,6 +193,9 @@ export function blocksToPmDoc(
   options: PmDocOptions = {},
 ): PmNode {
   const content: PmNode[] = []
+  rangeEndsRead = 0
+  rangeOpening = []
+  rangeShutting = []
   for (const [i, block] of blocks.entries()) {
     if (block.hidden) continue
     content.push(
@@ -198,6 +208,7 @@ export function blocksToPmDoc(
       ),
     )
   }
+  if (rangeEndsRead > 0) markBookmarkRanges(content)
   // the trailing sectPr has no node of its own: its tracked change rides on the last
   // paragraph that carries no section record itself (none → the record stays pending)
   const trailingChange = blocks.find((b) => b.hidden && b.sectPrChange)?.sectPrChange
@@ -277,6 +288,7 @@ function formatAttrs(format: ParaFormat | undefined, runs?: Run[]): Record<strin
     contextualSpacing: format?.contextualSpacing ?? null,
     suppressAutoHyphens: format?.suppressAutoHyphens ?? null,
     mirrorIndents: format?.mirrorIndents ?? null,
+    collapsed: format?.collapsed ?? null,
     adjustRightInd: format?.adjustRightInd ?? null,
     keepNext: format?.keepNext ?? null,
     keepLines: format?.keepLines ?? null,
@@ -314,6 +326,8 @@ function formatAttrs(format: ParaFormat | undefined, runs?: Run[]): Record<strin
     emptyRunSize: format?.emptyRunSizeHalfPoints ?? null,
     emptyRunFont: format?.emptyRunFontFamily ?? null,
     markSize: format?.markSizeHalfPoints ?? null,
+    markColor: format?.markColor ?? null,
+    markHighlight: format?.markHighlight ?? null,
   }
 }
 
@@ -592,6 +606,7 @@ function blockToPmNode(
           imagePosV: block.imagePosV ?? null,
           imageRotDeg: block.imageRotDeg ?? null,
           imageAlt: block.imageAlt ?? null,
+          imageLink: block.imageLink ?? null,
           imageFlipH: block.imageFlipH ?? false,
           imageFlipV: block.imageFlipV ?? false,
           imageBorder: block.imageBorder ?? null,
@@ -978,6 +993,9 @@ function cellContentNodes(cell: TableCell): PmNode[] {
     const bookmarkAttrs = {
       ...(bookmarks?.length ? { bookmarks } : {}),
       ...(hiddenBookmarks?.length ? { hiddenBookmarks } : {}),
+      ...('pPrChange' in paragraph && paragraph.pPrChange
+        ? { pPrChange: paragraph.pPrChange }
+        : {}),
     }
     return list
       ? {
@@ -1011,6 +1029,7 @@ function cellContentNodes(cell: TableCell): PmNode[] {
   // each group's anchor paragraph, so the boxes' positionV offsets resolve from
   // that paragraph like Word and the row grows to max(text, boxes)
   const boxes = cell.anchoredBoxes ?? []
+  const boxXml = new Map(boxes.map((box, i) => [box, cell.anchoredBoxXml?.[i] ?? null]))
   const boxGroups = new Map<number, TextboxDisplay[]>()
   for (let i = 0; i < boxes.length; i++) {
     const at = Math.min(cell.anchoredBoxAnchors?.[i] ?? 0, paraNodes.length)
@@ -1019,8 +1038,17 @@ function cellContentNodes(cell: TableCell): PmNode[] {
     else boxGroups.set(at, [boxes[i]])
   }
   for (const [at, group] of boxGroups) {
-    for (const boxes of splitCellBoxGroup(group)) {
-      inserts.push({ at, node: { type: 'docCellBoxes', attrs: { boxes } } })
+    const split = splitCellBoxGroup(group)
+    for (const boxes of split) {
+      // the source is the paragraph's drawings together: boxes parted from each other have none
+      const xml = boxes.map((box) => (split.length === 1 ? (boxXml.get(box) ?? null) : null))
+      inserts.push({
+        at,
+        node: {
+          type: 'docCellBoxes',
+          attrs: xml.some((source) => source !== null) ? { boxes, xml } : { boxes },
+        },
+      })
     }
   }
   const content = [...paraNodes]
@@ -1110,7 +1138,15 @@ function inlineFormattingSignature(content: PmNode[] | undefined): string[] {
               .map((mark) => [mark.type, mark.attrs ?? null]),
           )
         : atom
-          ? JSON.stringify([node.type, node.attrs?.widthPx ?? null, node.attrs?.heightPx ?? null])
+          ? JSON.stringify([
+              node.type,
+              node.attrs?.widthPx ?? null,
+              node.attrs?.heightPx ?? null,
+              // a link made, renamed or broken, and bytes read again, rewrite the drawing
+              node.attrs?.link ?? null,
+              String(node.attrs?.xml ?? '').length,
+              String(node.attrs?.dataUrl ?? '').length,
+            ])
           : node.type
     if (atom || styles[styles.length - 1] !== style) styles.push(style)
   }
@@ -1342,15 +1378,18 @@ export function pmTableToModel(table: PmNode): TableModel {
       let paraCount = 0
       const cellBoxes: TextboxDisplay[] = []
       const cellBoxAnchors: number[] = []
+      const cellBoxXml: (string | null)[] = []
       for (const n of cellNode.content ?? []) {
         if (n.type === 'docParagraph' || n.type === 'docListItem') paraCount++
         else if (n.type === 'docNestedTable' && n.attrs?.model) {
           nestedModels.push(n.attrs.model as TableModel)
           nestedAnchors.push(paraCount)
         } else if (n.type === 'docCellBoxes' && Array.isArray(n.attrs?.boxes)) {
-          for (const box of n.attrs.boxes as TextboxDisplay[]) {
+          const xml = n.attrs.xml as (string | null)[] | null | undefined
+          for (const [i, box] of (n.attrs.boxes as TextboxDisplay[]).entries()) {
             cellBoxes.push(box)
             cellBoxAnchors.push(paraCount)
+            cellBoxXml.push(xml?.[i] ?? null)
           }
         }
       }
@@ -1367,6 +1406,9 @@ export function pmTableToModel(table: PmNode): TableModel {
               // the cell paragraph's w:pStyle rides along (generate.ts writes it
               // back); without it a style-only edit is lost on regeneration
               ...(paragraph.attrs?.styleId ? { styleId: String(paragraph.attrs.styleId) } : {}),
+              ...(paragraph.attrs?.pPrChange
+                ? { pPrChange: String(paragraph.attrs.pPrChange) }
+                : {}),
               // bookmark names opening inside the cell paragraph (REF/TOC anchors
               // would otherwise disappear when the cell rebuilds)
               ...(bookmarks?.length ? { bookmarks } : {}),
@@ -1387,7 +1429,13 @@ export function pmTableToModel(table: PmNode): TableModel {
             ? { nestedTables: nestedModels, nestedTableAnchors: nestedAnchors }
             : {}),
           ...(cellBoxes.length > 0
-            ? { anchoredBoxes: cellBoxes, anchoredBoxAnchors: cellBoxAnchors }
+            ? {
+                anchoredBoxes: cellBoxes,
+                anchoredBoxAnchors: cellBoxAnchors,
+                ...(cellBoxXml.some((source) => source !== null)
+                  ? { anchoredBoxXml: cellBoxXml }
+                  : {}),
+              }
             : {}),
           colSpan: colspan > 1 ? colspan : undefined,
           vMerge: rowspan > 1 ? 'restart' : undefined,
@@ -1523,6 +1571,9 @@ export function pmTableToModel(table: PmNode): TableModel {
     ...(tablePropsEdited('tblAutoFitEdited')
       ? { autoFit: table.attrs?.tblAutoFit as NonNullable<TableModel['autoFit']> }
       : {}),
+    ...(tablePropsEdited('tblIndentEdited') && !isNew
+      ? { indentTwips: Number(table.attrs?.indentTwips) || 0 }
+      : {}),
     ...(tablePropsEdited('cellMarEdited') && table.attrs?.cellMar
       ? { cellMarTwips: table.attrs.cellMar as NonNullable<TableModel['cellMarTwips']> }
       : {}),
@@ -1545,21 +1596,48 @@ export function pmTableToModel(table: PmNode): TableModel {
 
 export function runsToInline(runs: Run[]): PmNode[] {
   const nodes: PmNode[] = []
+  let noted = 0
+  // the first node read after an end of a range bookmark carries it
+  const noteRangeEnds = () => {
+    if (nodes.length === noted || rangeOpening.length + rangeShutting.length === 0) return
+    const node = nodes[noted] as RangeNoted
+    if (rangeShutting.length > 0) node.rangeShutBefore = rangeShutting
+    if (rangeOpening.length > 0) node.rangeOpen = rangeOpening
+    rangeShutting = []
+    rangeOpening = []
+  }
   for (const run of runs) {
+    noteRangeEnds()
+    noted = nodes.length
     const marks = runMarks(run)
     const atomMarks = marks.length > 0 ? { marks } : {}
     if (run.math) {
+      // MathType OLE equations carry a negative w:position on the run only to
+      // align their WMF preview image's bottom edge with the text baseline.
+      // Native MathML already centers on the math axis, so drop positionHalfPoints
+      // from the display mark while oleRawRPr preserves it verbatim on save.
+      const mathMarks =
+        run.math.oleXml && run.positionHalfPoints
+          ? runMarks({ ...run, positionHalfPoints: undefined })
+          : marks
+      const useDisplayMathStyle =
+        !!run.math.display || Boolean(run.math.oleXml && /<m:(?:f|nary)\b/.test(run.math.omml))
       nodes.push({
         type: 'docInlineMath',
-        ...atomMarks,
+        ...(mathMarks.length > 0 ? { marks: mathMarks } : {}),
         attrs: {
           omml: run.math.omml,
-          mathml: inlineMathML(run.math.omml, !!run.math.display),
+          mathml: inlineMathML(run.math.omml, useDisplayMathStyle),
           display: !!run.math.display,
           // recovered LaTeX makes parsed formulas re-editable; null = atom only
           latex: ommlToLatex(run.math.omml),
           text: run.text,
           sizeHalfPoints: run.sizeHalfPoints ?? null,
+          oleXml: run.math.oleXml ?? null,
+          oleRawRPr: run.math.oleRawRPr ?? null,
+          oleProgId: run.math.oleProgId ?? null,
+          olePositionHalfPoints:
+            run.math.oleXml && run.positionHalfPoints ? run.positionHalfPoints : null,
         },
       })
       if (run.math.breakAfter) nodes.push({ type: 'hardBreak', attrs: { mathBreak: true } })
@@ -1616,15 +1694,18 @@ export function runsToInline(runs: Run[]): PmNode[] {
     // A run can carry both w:t text and a w:drawing; generate.ts writes the
     // text before the drawing, so emit the image after the text segments
     if (run.image) {
+      const loweredInline = !run.image.wrap && (run.positionHalfPoints ?? 0) < 0
+      const imgMarks = loweredInline ? runMarks({ ...run, positionHalfPoints: undefined }) : marks
       nodes.push({
         type: 'docInlineImage',
-        ...atomMarks,
+        ...(imgMarks.length > 0 ? { marks: imgMarks } : {}),
         attrs: {
           dataUrl: run.image.dataUrl,
           vector: pictureVectorAttr(run.image.dataUrl, run.image.vectorUrl),
           widthPx: run.image.widthPx ?? null,
           heightPx: run.image.heightPx ?? null,
           xml: run.image.xml,
+          link: run.image.linkTarget ?? null,
           wrap: run.image.wrap ?? null,
           offsetXEmu: run.image.offsetXEmu ?? null,
           offsetYEmu: run.image.offsetYEmu ?? null,
@@ -1641,6 +1722,9 @@ export function runsToInline(runs: Run[]): PmNode[] {
           rotDeg: run.image.rotDeg ?? null,
           flipH: run.image.flipH ?? false,
           flipV: run.image.flipV ?? false,
+          zOrder: run.image.zOrder ?? null,
+          zOrderWas: run.image.zOrder ?? null,
+          zNormalized: !!run.image.zOrderNormalized,
           layers: run.image.layers ?? null,
           rule: run.image.rule
             ? {
@@ -1649,11 +1733,27 @@ export function runsToInline(runs: Run[]): PmNode[] {
                 ...((run.fontAscii ?? run.font) ? { fontAscii: run.fontAscii ?? run.font } : {}),
               }
             : null,
+          ...(loweredInline
+            ? {
+                baselineShiftPt: run.positionHalfPoints! / 2,
+                positionHalfPoints: run.positionHalfPoints!,
+              }
+            : {}),
           rawRPr: run.rawRPr ?? null,
         },
       })
     }
-    if (run.xeTerm !== undefined) {
+    if (run.rangeMark) {
+      rangeEndsRead++
+      const last = nodes[nodes.length - 1] as RangeNoted | undefined
+      const { name } = run.rangeMark
+      if (!run.rangeMark.end) rangeOpening.push(name)
+      // closed before anything was read into it: there is no range
+      else if (rangeOpening.includes(name)) rangeOpening = rangeOpening.filter((n) => n !== name)
+      else if (last && rangeOpening.length === 0)
+        last.rangeShut = [...(last.rangeShut ?? []), run.rangeMark.name]
+      else rangeShutting.push(run.rangeMark.name)
+    } else if (run.xeTerm !== undefined) {
       nodes.push({
         type: 'docXeMark',
         ...atomMarks,
@@ -1663,10 +1763,16 @@ export function runsToInline(runs: Run[]): PmNode[] {
           taRuns: run.taRuns ? JSON.stringify(run.taRuns) : null,
           tc: run.tcInstr ?? null,
           switches: run.xeSwitches ?? null,
+          ...(run.linkBegin !== undefined
+            ? { linkBegin: run.linkBegin, locked: run.fldLock === true }
+            : run.linkEnd
+              ? { linkEnd: true }
+              : {}),
         },
       })
     }
   }
+  noteRangeEnds()
   markLeadRule(nodes)
   return nodes
 }
@@ -1717,6 +1823,10 @@ function runMarks(run: Run): PmMark[] {
       attrs: {
         href: run.link.href,
         rId: run.link.rId ?? null,
+        anchor: run.link.anchor ?? null,
+        history: run.link.history ?? null,
+        targetFrame: run.link.targetFrame ?? null,
+        docLocation: run.link.docLocation ?? null,
         tooltip: run.link.tooltip ?? null,
         plain: run.link.plain === true,
       },
@@ -1724,7 +1834,12 @@ function runMarks(run: Run): PmMark[] {
   if (run.refField !== undefined)
     marks.push({
       type: 'refField',
-      attrs: { name: run.refField, instr: run.refInstr ?? null, dirty: run.fldDirty === true },
+      attrs: {
+        name: run.refField,
+        instr: run.refInstr ?? null,
+        dirty: run.fldDirty === true,
+        locked: run.fldLock === true,
+      },
     })
   if (run.sym) marks.push({ type: 'docSym', attrs: { font: run.sym.font, char: run.sym.char } })
   if (run.instrField !== undefined) {
@@ -1744,8 +1859,11 @@ function runMarks(run: Run): PmMark[] {
         instr: run.instrField,
         beginXml: run.fldBeginXml ?? null,
         dirty: run.fldDirty === true,
+        locked: run.fldLock === true,
+        codeEdit: false,
         fieldId,
         fieldPart: run.zoteroFieldPart ?? null,
+        bookmarkText: run.fldBookmarkText ?? null,
       },
     })
   }
@@ -1807,6 +1925,7 @@ function runMarks(run: Run): PmMark[] {
     run.glow ||
     run.textShadow ||
     run.textReflection ||
+    run.textFill ||
     run.fxOwn !== undefined ||
     run.positionHalfPoints ||
     run.bdr ||
@@ -1821,6 +1940,7 @@ function runMarks(run: Run): PmMark[] {
     run.italic === false ||
     run.caps ||
     run.vanish ||
+    run.offGrid ||
     run.eastAsiaLang ||
     run.cs ||
     run.rtl !== undefined ||
@@ -1829,10 +1949,10 @@ function runMarks(run: Run): PmMark[] {
     run.effective?.styleXor?.length
   ) {
     // an inline-block cannot wrap and drops inherited underlines: only
-    // whitespace-free, undecorated runs get the real glyph compression
+    // unbreakable, undecorated runs get the real glyph compression
     const scaleEm = run.charScalePct ? charScaleEm(run.text, run.charScalePct, run) : 0
     const scaleX =
-      run.charScalePct && !/\s/.test(run.text) && !run.underline && !run.strike && !run.link
+      run.charScalePct && charScaleXFits(run.text) && !run.underline && !run.strike && !run.link
         ? charScaleXAttr(run.text, run.charScalePct, scaleEm)
         : null
     // A run whose rPr carries our element came back from a file this editor
@@ -1874,6 +1994,7 @@ function runMarks(run: Run): PmMark[] {
         glow: run.glow ? JSON.stringify(run.glow) : null,
         textShadow: run.textShadow ? JSON.stringify(run.textShadow) : null,
         textReflection: run.textReflection ? JSON.stringify(run.textReflection) : null,
+        textFill: run.textFill ? textFillAttr(run.textFill, run.color) : null,
         fxOwn: run.fxOwn === undefined ? null : JSON.stringify(run.fxOwn),
         positionHalfPoints: run.positionHalfPoints ?? null,
         bdr: run.bdr ? JSON.stringify(run.bdr) : null,
@@ -1897,6 +2018,8 @@ function runMarks(run: Run): PmMark[] {
         caps: run.caps ?? null,
         vanish: run.vanish ?? null,
         vanishOwn: run.vanishOwn ?? null,
+        offGrid: run.offGrid ?? null,
+        snapToGridOwn: run.snapToGridOwn ?? null,
         eaLang: run.eastAsiaLang ?? null,
         cs: run.cs ?? null,
         rtl: run.rtl ?? null,
@@ -2102,6 +2225,7 @@ export function pmDocToSavePlan(inputDoc: PmNode, originalBlocks: Block[]): Save
   newPictureSeq = 0
   newPictureTokenOf = new WeakMap()
   const doc = normalizeZoteroFieldParts(inputDoc)
+  readRangeBookmarks(doc)
   const originalByIndex = new Map<number, Block>()
   for (const block of originalBlocks) {
     if (!block.hidden && block.docxIndex !== null) originalByIndex.set(block.docxIndex, block)
@@ -2137,12 +2261,21 @@ export function pmDocToSavePlan(inputDoc: PmNode, originalBlocks: Block[]): Save
             return true
         }
       }
+      if (n.type === 'docInlineImage' && runPictureRankEdited(n)) return true
       if (hasZOrderEdit(n.content)) return true
     }
     return false
   }
+  const hasNormalizedRunPicture = (nodes: PmNode[] | undefined): boolean =>
+    (nodes ?? []).some(
+      (n) =>
+        (n.type === 'docInlineImage' && !!n.attrs?.zNormalized) ||
+        hasNormalizedRunPicture(n.content),
+    )
   const harmonizeZOrders =
-    originalBlocks.some((b) => b.imageZOrderNormalized) && hasZOrderEdit(doc.content)
+    (originalBlocks.some((b) => b.imageZOrderNormalized) || hasNormalizedRunPicture(doc.content)) &&
+    hasZOrderEdit(doc.content)
+  harmonizeRunPictureRanks = harmonizeZOrders
 
   // Multi-block sdt groups (one w:sdt split into N blocks): the shell open/close
   // bytes live on the first/last member. Track which surviving member emits
@@ -2315,7 +2448,10 @@ export function pmDocToSavePlan(inputDoc: PmNode, originalBlocks: Block[]): Save
           usedIndexes.add(idx!)
           mapAnchor(idx!)
         }
-        const original = member ?? originalByIndex.get(idx!)!
+        const fromFileBlock = member ?? originalByIndex.get(idx!)!
+        // a link field of the block was locked, renamed or broken: its XML as it stands now
+        const linkXml = typeof node.attrs?.linkXml === 'string' ? node.attrs.linkXml : null
+        const original = linkXml ? { ...fromFileBlock, originalXml: linkXml } : fromFileBlock
         if (original.blockRevision && !revision && original.originalXml) {
           changedCount++
           pushBlock({ kind: 'xml', xml: unwrapBlockRevisionXml(original.originalXml) })
@@ -2373,9 +2509,16 @@ export function pmDocToSavePlan(inputDoc: PmNode, originalBlocks: Block[]): Save
             : null
         const imageReplace =
           original.type === 'image'
-            ? (node.attrs?.imageReplace as { base64: string; mime: string } | null)
+            ? (node.attrs?.imageReplace as {
+                base64: string
+                mime: string
+                linked?: boolean
+              } | null)
             : null
-        if ((imagePatch || imageReplace) && original.originalXml) {
+        const imageLink = (node.attrs?.imageLink as string | null) ?? null
+        const imageLinkChanged =
+          original.type === 'image' && imageLink !== (fromFileBlock.imageLink ?? null)
+        if ((imagePatch || imageReplace || imageLinkChanged) && original.originalXml) {
           changedCount++
           let xml = imagePatch
             ? patchImageParagraphXml(original.originalXml, imagePatch)
@@ -2437,6 +2580,8 @@ export function pmDocToSavePlan(inputDoc: PmNode, originalBlocks: Block[]): Save
                   },
                 }
               : {}),
+            // new bytes drop the picture's link unless they are the linked file read again
+            ...(imageLinkChanged || (imageReplace?.linked && imageLink) ? { imageLink } : {}),
           })
         } else if (tableTexts && original.originalXml) {
           changedCount++
@@ -2455,7 +2600,11 @@ export function pmDocToSavePlan(inputDoc: PmNode, originalBlocks: Block[]): Save
           if (textboxSizes) xml = patchTextboxSizes(xml, textboxSizes)
           if (textboxStyles) xml = patchShapeStyles(xml, textboxStyles)
           for (const change of [...shapeWrapChanges].sort((a, b) => b.index - a.index)) {
-            const location = { shapeId: change.shapeId, boxIndex: change.index }
+            const location = {
+              shapeId: change.shapeId,
+              boxIndex: change.index,
+              drawingIndex: original.textboxes?.[change.index]?.drawingIndex,
+            }
             if (change.wrapChanged) {
               xml = applyShapeWrapAt(
                 xml,
@@ -2530,9 +2679,9 @@ export function pmDocToSavePlan(inputDoc: PmNode, originalBlocks: Block[]): Save
             kind: 'xml',
             xml: applyImageZOrder(original.originalXml, original.imageZOrder),
           })
-        } else if (member) {
+        } else if (member || linkXml) {
           changedCount++
-          pushBlock({ kind: 'xml', xml: member.originalXml! })
+          pushBlock({ kind: 'xml', xml: original.originalXml! })
         } else {
           pushBlock({ kind: 'original', docxIndex: idx! })
         }
@@ -2572,11 +2721,11 @@ export function pmDocToSavePlan(inputDoc: PmNode, originalBlocks: Block[]): Save
         // (right only — the title is already in the genXml, and a left+right
         // patch bails out entirely when the title text nodes don't line up)
         const genField = node.attrs?.fieldDisplay as FieldDisplay | null
+        // (a line whose pages are runs of their own, bold or italic, keeps them apart from the separator)
         if (genField?.kind === 'tocLine' && genField.right) {
-          xml =
-            genField.pageSep !== undefined
-              ? patchFieldTablePageXml(xml, genField.pageSep + genField.right)
-              : tocLineWithPage(xml, genField.right)
+          if (genField.pageSep === undefined) xml = tocLineWithPage(xml, genField.right)
+          else if (!genField.rightRuns?.length)
+            xml = patchFieldTablePageXml(xml, genField.pageSep + genField.right)
         }
         // every line has its page now: the table is a result, not a request for Word to build it
         if (pagedTables.has(node)) xml = xml.replace(DIRTY_FIELD_BEGIN, '$1')
@@ -2614,6 +2763,8 @@ export function pmDocToSavePlan(inputDoc: PmNode, originalBlocks: Block[]): Save
               borderHex: genBox.borderColor ?? null,
               // undefined keeps the generated XML untouched when never edited
               rotDeg: genBox.rotDeg ?? undefined,
+              toggleFlipH: !!genBox.flipH,
+              toggleFlipV: !!genBox.flipV,
               borderWidthPx: genBox.borderWidthPx ?? undefined,
               vert: genBox.vert ?? null,
             },
@@ -2664,6 +2815,7 @@ export function pmDocToSavePlan(inputDoc: PmNode, originalBlocks: Block[]): Save
         if (node.attrs.imageFlipH) image.flipH = true
         if (node.attrs.imageFlipV) image.flipV = true
         if (node.attrs.imageAlt) image.altText = String(node.attrs.imageAlt)
+        if (node.attrs.imageLink) image.linkTarget = String(node.attrs.imageLink)
         pushBlock({ kind: 'image', image })
       } else if (node.attrs?.genChart) {
         // in-place edits live in chartDisplay; the saved part reflects them
@@ -3172,15 +3324,23 @@ function tableTextsPatchFromModel(
         return null
       }
       const origTexts = parsedCellParaTexts(originalCell)
-      if (cell.paras.join('\n') === origTexts.join('\n')) return null
-      changed = true
       const rich = cell.richParas
+      const origRich = originalCell.richParas
+      const hasMathChange =
+        !!rich &&
+        rich.length === origTexts.length &&
+        rich.some((p, i) => cellParaMathChanged(p.runs, origRich?.[i]?.runs))
+      if (cell.paras.join('\n') === origTexts.join('\n') && !hasMathChange) return null
+      changed = true
       // rich paragraph patches keep per-run formatting, hyperlinks and images;
-      // untouched paragraphs (per-index text match) keep their original bytes
+      // untouched paragraphs (per-index text and math match) keep their original bytes
       if (rich && rich.length === cell.paras.length) {
         if (rich.length === origTexts.length) {
           return rich.map((p, i): CellParaPatch =>
-            p.runs.map((run) => run.text).join('') === origTexts[i] ? null : { runs: p.runs },
+            p.runs.map((run) => run.text).join('') === origTexts[i] &&
+            !cellParaMathChanged(p.runs, origRich?.[i]?.runs)
+              ? null
+              : { runs: p.runs },
           )
         }
         return rich.map((p): CellParaPatch => ({ runs: p.runs }))
@@ -3189,6 +3349,14 @@ function tableTextsPatchFromModel(
     })
   })
   return changed ? texts : null
+}
+
+function cellParaMathChanged(current: Run[], original: Run[] | undefined): boolean {
+  const cur = current.filter((r) => r.math).map((r) => `${r.math!.omml}\0${r.math!.oleXml ?? ''}`)
+  const orig = (original ?? [])
+    .filter((r) => r.math)
+    .map((r) => `${r.math!.omml}\0${r.math!.oleXml ?? ''}`)
+  return cur.length !== orig.length || cur.some((m, i) => m !== orig[i])
 }
 
 /**
@@ -3312,6 +3480,9 @@ function textboxParasPatch(node: PmNode, original: Block): TextboxParasPatchSet 
   }
 }
 
+const sameRelSize = (a: RelSize | undefined, b: RelSize | undefined): boolean =>
+  a?.from === b?.from && a?.pct === b?.pct
+
 function textboxSizesPatch(node: PmNode, original: Block): (TextboxSizePatch | null)[] | null {
   const current = node.attrs?.textboxes as TextboxDisplay[] | null
   const initial = original.textboxes
@@ -3322,9 +3493,18 @@ function textboxSizesPatch(node: PmNode, original: Block): (TextboxSizePatch | n
     // patchTextboxSizes drops spAutoFit so Word honors the fixed extent
     const wPx = box.widthPx && box.widthPx !== initial[index].widthPx ? box.widthPx : null
     const hPx = box.heightPx && box.heightPx !== initial[index].heightPx ? box.heightPx : null
-    if (wPx == null && hPx == null) return null
+    const was = initial[index].sizeRel
+    const relW = !sameRelSize(box.sizeRel?.w, was?.w) || wPx != null
+    const relH = !sameRelSize(box.sizeRel?.h, was?.h) || hPx != null
+    if (wPx == null && hPx == null && !relW && !relH) return null
     changed = true
-    return { wPx, hPx }
+    return {
+      wPx,
+      hPx,
+      ...(relW ? { relW: box.sizeRel?.w ?? null } : {}),
+      ...(relH ? { relH: box.sizeRel?.h ?? null } : {}),
+      drawingIndex: initial[index].drawingIndex,
+    }
   })
   return changed ? sizes : null
 }
@@ -3345,6 +3525,8 @@ function textboxStylesPatch(node: PmNode, original: Block): (ShapeStylePatch | n
     // absent attribute and rotDeg 0 compare equal
     const rotDeg =
       (box.rotDeg ?? 0) !== (initial[index].rotDeg ?? 0) ? (box.rotDeg ?? 0) : undefined
+    const toggleFlipH = !!box.flipH !== !!initial[index].flipH
+    const toggleFlipV = !!box.flipV !== !!initial[index].flipV
     const borderWidthPx =
       (box.borderWidthPx ?? null) !== (initial[index].borderWidthPx ?? null)
         ? (box.borderWidthPx ?? null)
@@ -3355,15 +3537,32 @@ function textboxStylesPatch(node: PmNode, original: Block): (ShapeStylePatch | n
       fillHex === undefined &&
       borderHex === undefined &&
       rotDeg === undefined &&
+      !toggleFlipH &&
+      !toggleFlipV &&
       borderWidthPx === undefined &&
       vert === undefined
     )
       return null
     changed = true
-    return { fillHex, borderHex, rotDeg, borderWidthPx, vert }
+    return {
+      fillHex,
+      borderHex,
+      rotDeg,
+      toggleFlipH,
+      toggleFlipV,
+      borderWidthPx,
+      vert,
+      drawingIndex: initial[index].drawingIndex,
+    }
   })
   return changed ? styles : null
 }
+
+/** set per save: wild relativeHeights are re-encoded together once any rank or wrap was edited */
+let harmonizeRunPictureRanks = false
+
+const runPictureRankEdited = (node: PmNode): boolean =>
+  !!node.attrs?.wrap && Number(node.attrs.zOrder ?? 0) !== Number(node.attrs.zOrderWas ?? 0)
 
 interface ShapeWrapChange {
   index: number
@@ -3595,6 +3794,9 @@ function nodeFormat(node: PmNode): ParaFormat | undefined {
   if (node.attrs?.suppressAutoHyphens != null)
     format.suppressAutoHyphens = node.attrs.suppressAutoHyphens as boolean
   if (node.attrs?.mirrorIndents != null) format.mirrorIndents = node.attrs.mirrorIndents as boolean
+  if (node.attrs?.adjustRightInd != null)
+    format.adjustRightInd = node.attrs.adjustRightInd as boolean
+  if (node.attrs?.collapsed != null) format.collapsed = node.attrs.collapsed as boolean
   if (node.attrs?.snapToGrid != null) format.snapToGrid = node.attrs.snapToGrid as boolean
   if (node.attrs?.pageBreakBefore) format.pageBreakBefore = true
   if (node.attrs?.bidi) format.bidi = true
@@ -3667,6 +3869,8 @@ function nodeFormat(node: PmNode): ParaFormat | undefined {
   if (node.attrs?.emptyRunSize) format.emptyRunSizeHalfPoints = Number(node.attrs.emptyRunSize)
   if (node.attrs?.emptyRunFont) format.emptyRunFontFamily = String(node.attrs.emptyRunFont)
   if (node.attrs?.markSize) format.markSizeHalfPoints = Number(node.attrs.markSize)
+  if (node.attrs?.markColor) format.markColor = String(node.attrs.markColor)
+  if (node.attrs?.markHighlight) format.markHighlight = String(node.attrs.markHighlight)
   return Object.keys(format).length > 0 ? format : undefined
 }
 
@@ -3822,7 +4026,84 @@ function nodeBookmarks(
   attr: 'bookmarks' | 'hiddenBookmarks' | 'commentStarts' | 'commentEnds',
 ): string[] | undefined {
   const value = node.attrs?.[attr] as string[] | null | undefined
-  return Array.isArray(value) && value.length > 0 ? value : undefined
+  if (!Array.isArray(value) || value.length === 0) return undefined
+  if (attr !== 'bookmarks' || rangeNames.size === 0) return value
+  // a bookmark that covers a range is written by its two ends, not around a paragraph
+  const rest = value.filter((name) => !rangeNames.has(name))
+  return rest.length > 0 ? rest : undefined
+}
+
+/** the text a bookmark covers carries this mark; its first and last piece are where it starts and ends */
+export const RANGE_BOOKMARK_MARK = 'docRangeBookmark'
+/** a node read from runs, noted with the range bookmarks that open at it, close before it, or close after it */
+type RangeNoted = PmNode & {
+  rangeOpen?: string[]
+  rangeShutBefore?: string[]
+  rangeShut?: string[]
+}
+let rangeEndsRead = 0
+/** ends read with no node of their paragraph to note them on yet: they go on the next node read */
+let rangeOpening: string[] = []
+let rangeShutting: string[] = []
+
+/** the ends noted on the nodes become the mark on every inline node between them */
+function markBookmarkRanges(content: PmNode[]): void {
+  const open = new Set<string>()
+  const visit = (node: RangeNoted): void => {
+    for (const name of node.rangeShutBefore ?? []) open.delete(name)
+    for (const name of node.rangeOpen ?? []) open.add(name)
+    if (node.content) node.content.forEach(visit)
+    else if (open.size > 0 && (node.type === 'text' || node.rangeOpen || node.rangeShut))
+      node.marks = [
+        ...(node.marks ?? []),
+        ...[...open].map((name) => ({ type: RANGE_BOOKMARK_MARK, attrs: { name } })),
+      ]
+    for (const name of node.rangeShut ?? []) open.delete(name)
+    delete node.rangeOpen
+    delete node.rangeShutBefore
+    delete node.rangeShut
+  }
+  content.forEach(visit)
+  if (open.size === 0) return
+  // a range whose end was not among the runs is not one: its bookmark stays on its paragraph
+  const unmark = (node: PmNode): void => {
+    if (node.marks?.some((m) => m.type === RANGE_BOOKMARK_MARK && open.has(String(m.attrs?.name))))
+      node.marks = node.marks.filter(
+        (m) => m.type !== RANGE_BOOKMARK_MARK || !open.has(String(m.attrs?.name)),
+      )
+    node.content?.forEach(unmark)
+  }
+  content.forEach(unmark)
+}
+let rangeEnds = new WeakMap<PmNode, { start: string[]; end: string[] }>()
+let rangeNames = new Set<string>()
+
+function readRangeBookmarks(doc: PmNode): void {
+  rangeEnds = new WeakMap()
+  rangeNames = new Set()
+  const first = new Map<string, PmNode>()
+  const last = new Map<string, PmNode>()
+  const walk = (node: PmNode): void => {
+    for (const mark of node.marks ?? []) {
+      if (mark.type !== RANGE_BOOKMARK_MARK) continue
+      const name = String(mark.attrs?.name ?? '')
+      if (!name) continue
+      if (!first.has(name)) first.set(name, node)
+      last.set(name, node)
+    }
+    node.content?.forEach(walk)
+  }
+  walk(doc)
+  const endsOf = (node: PmNode) => {
+    let ends = rangeEnds.get(node)
+    if (!ends) rangeEnds.set(node, (ends = { start: [], end: [] }))
+    return ends
+  }
+  for (const [name, node] of first) {
+    rangeNames.add(name)
+    endsOf(node).start.push(name)
+    endsOf(last.get(name)!).end.push(name)
+  }
 }
 
 /** pictures the editor placed in cells this save: placeholder token -> bytes (see SaveOptions.newPictures) */
@@ -3919,9 +4200,58 @@ function newPictureXml(node: PmNode): string {
   })
 }
 
-export function inlineToRuns(content: PmNode[]): Run[] {
+const openFieldCodeOf = (node: PmNode | undefined) =>
+  node?.type === 'text'
+    ? node.marks?.find((m) => m.type === 'instrField' && m.attrs?.codeEdit === true)
+    : undefined
+
+/**
+ * A field code still being typed (Cmd+F9) saves as the field it spells, with
+ * no result and marked dirty for Word to compute; empty braces save nothing.
+ */
+function closeOpenFieldCodes(content: PmNode[]): PmNode[] {
+  if (!content.some(openFieldCodeOf)) return content
+  const out: PmNode[] = []
+  for (let i = 0; i < content.length; i++) {
+    const open = openFieldCodeOf(content[i])
+    if (!open) {
+      out.push(content[i])
+      continue
+    }
+    const first = content[i]
+    let code = first.text ?? ''
+    while (openFieldCodeOf(content[i + 1])?.attrs?.fieldId === open.attrs?.fieldId)
+      code += content[++i].text ?? ''
+    const instr = typedFieldCode(code)
+    if (!instr) continue
+    out.push({
+      ...first,
+      text: ' ',
+      marks: first.marks?.map((m) =>
+        m === open ? { ...m, attrs: { ...m.attrs, instr, dirty: true, codeEdit: false } } : m,
+      ),
+    })
+  }
+  return out
+}
+
+export function inlineToRuns(inline: PmNode[]): Run[] {
+  const content = closeOpenFieldCodes(inline)
   const runs: Run[] = []
+  let closing: string[] = []
+  const closeRanges = () => {
+    for (const name of closing)
+      runs.push({ text: '', xeTerm: '', rangeMark: { name, end: true, live: true } })
+    closing = []
+  }
   for (const node of content) {
+    closeRanges()
+    const ends = rangeEnds.get(node)
+    if (ends) {
+      for (const name of ends.start)
+        runs.push({ text: '', xeTerm: '', rangeMark: { name, live: true } })
+      closing = ends.end
+    }
     if (node.type === 'hardBreak') {
       // the break lives inside the preceding m:oMath fragment, which saves verbatim
       if (node.attrs?.mathBreak) continue
@@ -3980,17 +4310,48 @@ export function inlineToRuns(content: PmNode[]): Run[] {
         ...(typeof node.attrs?.switches === 'string' && node.attrs.switches
           ? { xeSwitches: node.attrs.switches }
           : {}),
+        ...(typeof node.attrs?.linkBegin === 'string'
+          ? { linkBegin: node.attrs.linkBegin, ...(node.attrs.locked ? { fldLock: true } : {}) }
+          : node.attrs?.linkEnd
+            ? { linkEnd: true }
+            : {}),
       })
       continue
     }
     if (node.type === 'docInlineMath') {
       const omml = String(node.attrs?.omml ?? '')
-      if (omml)
+      if (omml) {
+        const oleXml =
+          typeof node.attrs?.oleXml === 'string' && node.attrs.oleXml
+            ? node.attrs.oleXml
+            : undefined
+        const oleRawRPr =
+          typeof node.attrs?.oleRawRPr === 'string' && node.attrs.oleRawRPr
+            ? node.attrs.oleRawRPr
+            : undefined
+        const oleProgId =
+          typeof node.attrs?.oleProgId === 'string' && node.attrs.oleProgId
+            ? node.attrs.oleProgId
+            : undefined
+        const olePositionHalfPoints =
+          oleXml && node.attrs?.olePositionHalfPoints != null
+            ? Number(node.attrs.olePositionHalfPoints)
+            : undefined
         runs.push({
           ...atomBase(node),
+          ...(olePositionHalfPoints !== undefined
+            ? { positionHalfPoints: olePositionHalfPoints }
+            : {}),
           text: String(node.attrs?.text ?? ''),
-          math: { omml, ...(node.attrs?.display ? { display: true } : {}) },
+          math: {
+            omml,
+            ...(node.attrs?.display ? { display: true } : {}),
+            ...(oleXml ? { oleXml } : {}),
+            ...(oleRawRPr ? { oleRawRPr } : {}),
+            ...(oleProgId ? { oleProgId } : {}),
+          },
         })
+      }
       continue
     }
     if (node.type === 'docEqLayout') {
@@ -4038,20 +4399,33 @@ export function inlineToRuns(content: PmNode[]): Run[] {
           relH: (a.relH as RunPictureGeometry['relH']) ?? null,
           relV: (a.relV as RunPictureGeometry['relV']) ?? null,
           lineCenterV: !!a.lineCenterV,
+          rotDeg: Number(a.rotDeg) || 0,
+          flipH: !!a.flipH,
+          flipV: !!a.flipV,
+          // a rank nobody changed keeps the file's bytes, unless this save re-encodes every wild one
+          ...(runPictureRankEdited(node) || (harmonizeRunPictureRanks && a.zNormalized)
+            ? { zOrder: Number(a.zOrder ?? 0) }
+            : {}),
         })
         if (a.altText != null) xml = setRunPictureAlt(xml, String(a.altText))
+        // a picture put in with Link to File gets its drawing here: it names the file from now on
+        if (!a.xml && a.link) xml = withPictureLink(xml, pictureLinkToken(String(a.link)))
       }
       if ((dataUrl || rule) && xml) {
         registerHeldPicture(xml, dataUrl)
         const vector = node.attrs?.vector as PictureVector | null | undefined
         runs.push({
           ...atomBase(node),
+          ...(node.attrs?.positionHalfPoints != null
+            ? { positionHalfPoints: Number(node.attrs.positionHalfPoints) }
+            : {}),
           text: '',
           ...(node.attrs?.rawRPr ? { rawRPr: String(node.attrs.rawRPr) } : {}),
           image: {
             dataUrl,
             ...(vector?.url && vector.for === dataUrl ? { vectorUrl: vector.url } : {}),
             xml,
+            ...(node.attrs?.link ? { linkTarget: String(node.attrs.link) } : {}),
             ...(rule ? { rule } : {}),
             ...(node.attrs?.widthPx ? { widthPx: Number(node.attrs.widthPx) } : {}),
             ...(node.attrs?.heightPx ? { heightPx: Number(node.attrs.heightPx) } : {}),
@@ -4067,6 +4441,7 @@ export function inlineToRuns(content: PmNode[]): Run[] {
     if (node.type !== 'text' || !node.text) continue
     runs.push(...symRuns(runFromMarks(node.text, node.marks ?? [])))
   }
+  closeRanges()
   return mergeRuns(runs)
 }
 
@@ -4118,6 +4493,14 @@ function runFromMarks(text: string, marks: PmMark[]): Run {
       run.link = {
         href: String(mark.attrs?.href ?? ''),
         rId: (mark.attrs?.rId as string) ?? undefined,
+        ...(typeof mark.attrs?.anchor === 'string' ? { anchor: mark.attrs.anchor } : {}),
+        ...(typeof mark.attrs?.history === 'string' ? { history: mark.attrs.history } : {}),
+        ...(typeof mark.attrs?.targetFrame === 'string'
+          ? { targetFrame: mark.attrs.targetFrame }
+          : {}),
+        ...(typeof mark.attrs?.docLocation === 'string'
+          ? { docLocation: mark.attrs.docLocation }
+          : {}),
         tooltip: (mark.attrs?.tooltip as string) ?? undefined,
         ...(mark.attrs?.plain ? { plain: true } : {}),
       }
@@ -4125,14 +4508,18 @@ function runFromMarks(text: string, marks: PmMark[]): Run {
       run.refField = String(mark.attrs?.name ?? '')
       if (mark.attrs?.instr) run.refInstr = String(mark.attrs.instr)
       if (mark.attrs?.dirty === true) run.fldDirty = true
+      if (mark.attrs?.locked === true) run.fldLock = true
     } else if (mark.type === 'docSym') {
       run.sym = { font: String(mark.attrs?.font ?? ''), char: String(mark.attrs?.char ?? '') }
       if (run.text === symbolPuaChar(run.sym.char))
         run.text = symbolGlyph(run.sym.font, run.sym.char) ?? run.text
     } else if (mark.type === 'instrField') {
       run.instrField = String(mark.attrs?.instr ?? '')
+      if (typeof mark.attrs?.bookmarkText === 'string')
+        run.fldBookmarkText = mark.attrs.bookmarkText
       if (mark.attrs?.beginXml) run.fldBeginXml = String(mark.attrs.beginXml)
       if (mark.attrs?.dirty === true) run.fldDirty = true
+      if (mark.attrs?.locked === true) run.fldLock = true
       if (ZOTERO_FIELD_INSTR_RE.test(run.instrField)) {
         const fieldId = Number(mark.attrs?.fieldId)
         if (Number.isSafeInteger(fieldId) && fieldId > 0) run.zoteroFieldId = fieldId
@@ -4193,8 +4580,17 @@ function runFromMarks(text: string, marks: PmMark[]): Run {
         const reflection = parseReflectionAttr(String(mark.attrs.textReflection))
         if (reflection) run.textReflection = reflection
       }
+      const textFill = liveTextFill(mark.attrs?.textFill, mark.attrs?.color)
+      if (textFill) run.textFill = textFill
       const fxOwn = parseFxOwnAttr(mark.attrs?.fxOwn)
-      if (fxOwn) run.fxOwn = fxOwn
+      // a colour picked over a fill set here replaces it: the fill goes back to following the colour
+      if (fxOwn?.textFill && !textFill)
+        run.fxOwn = {
+          ...fxOwn,
+          textFill: null,
+          fill: mark.attrs?.color ? String(mark.attrs.color) : null,
+        }
+      else if (fxOwn) run.fxOwn = fxOwn
       if (mark.attrs?.positionHalfPoints)
         run.positionHalfPoints = Number(mark.attrs.positionHalfPoints)
       if (mark.attrs?.bdr) {
@@ -4206,7 +4602,9 @@ function runFromMarks(text: string, marks: PmMark[]): Run {
       if (eaLayout) {
         run.eaLayout = {
           ...(eaLayout.combine ? { combine: true as const } : {}),
+          ...(eaLayout.combine && eaLayout.brackets ? { brackets: eaLayout.brackets } : {}),
           ...(eaLayout.vert ? { vert: true as const } : {}),
+          ...(eaLayout.vert && eaLayout.vertCompress ? { vertCompress: true as const } : {}),
           ...(eaLayout.id === undefined ? {} : { id: eaLayout.id }),
         }
       }
@@ -4227,6 +4625,8 @@ function runFromMarks(text: string, marks: PmMark[]): Run {
       if (mark.attrs?.cs) run.cs = true
       if (mark.attrs?.vanish) run.vanish = true
       if (mark.attrs?.vanishOwn != null) run.vanishOwn = Boolean(mark.attrs.vanishOwn)
+      if (mark.attrs?.offGrid) run.offGrid = true
+      if (mark.attrs?.snapToGridOwn != null) run.snapToGridOwn = Boolean(mark.attrs.snapToGridOwn)
       if (mark.attrs?.caps) run.caps = mark.attrs.caps as Run['caps']
       if (mark.attrs?.eaLang) run.eastAsiaLang = String(mark.attrs.eaLang)
       if (mark.attrs?.rtl != null) run.rtl = Boolean(mark.attrs.rtl)
@@ -4291,6 +4691,7 @@ function charFormatKey(run: Run): unknown[] {
     run.caps ?? null,
     run.dstrike ?? null,
     run.vanishOwn ?? null,
+    run.snapToGridOwn ?? null,
     run.bdrOwn === undefined ? null : JSON.stringify(run.bdrOwn),
     run.textShadow === undefined ? null : JSON.stringify(run.textShadow),
     run.fxOwn === undefined ? null : JSON.stringify(run.fxOwn),
@@ -4326,6 +4727,10 @@ function runStyleKey(run: Run): string {
     run.vertAlign ?? null,
     run.link?.href ?? null,
     run.link?.rId ?? null,
+    run.link?.anchor ?? null,
+    run.link?.history ?? null,
+    run.link?.targetFrame ?? null,
+    run.link?.docLocation ?? null,
     run.commentIds?.join(' ') ?? null,
     revisionKey(run),
     run.noteRef
@@ -4341,12 +4746,21 @@ function runStyleKey(run: Run): string {
     run.taInstr ?? null,
     run.taRuns ? JSON.stringify(run.taRuns) : null,
     run.tcInstr ?? null,
+    run.linkBegin ?? null,
+    run.linkEnd ?? null,
+    run.rangeMark
+      ? [run.rangeMark.name, run.rangeMark.end ?? null, run.rangeMark.live ?? null]
+      : null,
     run.refField ?? null,
+    run.refInstr ?? null,
     run.instrField ?? null,
     run.fldBeginXml ?? null,
+    run.fldBookmarkText ?? null,
     run.fldDirty ?? null,
+    run.fldLock ?? null,
     run.sdtCheckboxXml ?? null,
     run.math?.omml ?? null,
+    run.math?.oleXml ?? null,
     run.sym ? [run.sym.font, run.sym.char] : null,
     run.ruby?.xml ?? null,
     run.eqLayout ?? null,
@@ -4411,13 +4825,22 @@ function normalizedRuns(runs: Run[]): unknown[] {
           r.taInstr ?? null,
           r.taRuns ? JSON.stringify(r.taRuns) : null,
           r.tcInstr ?? null,
+          r.linkBegin ?? null,
+          r.linkEnd ?? null,
+          r.rangeMark
+            ? [r.rangeMark.name, r.rangeMark.end ?? null, r.rangeMark.live ?? null]
+            : null,
           r.refField ?? null,
+          r.refInstr ?? null,
           r.instrField ?? null,
           r.zoteroFieldPart ?? null,
           r.fldBeginXml ?? null,
+          r.fldBookmarkText ?? null,
           r.fldDirty ?? null,
+          r.fldLock ?? null,
           r.sdtCheckboxXml ?? null,
           r.math?.omml ?? null,
+          r.math?.oleXml ?? null,
           r.sym ? [r.sym.font, r.sym.char] : null,
           r.ruby?.xml ?? null,
           r.eqLayout ?? null,
@@ -4470,6 +4893,8 @@ function normalizedFormatFields(format: ParaFormat): unknown[] {
     format.contextualSpacing ?? null,
     format.suppressAutoHyphens ?? null,
     format.mirrorIndents ?? null,
+    format.adjustRightInd ?? null,
+    format.collapsed ?? null,
     format.snapToGrid ?? null,
     format.shadingFill ?? null,
     format.shadingPattern ? JSON.stringify(format.shadingPattern) : null,

@@ -638,6 +638,7 @@ export function TabBar() {
           </svg>
         </button>
       </div>
+      <div className="tab-bar-drag-gutter" />
       <button
         className="tab-overflow-btn"
         title={t('tabList')}

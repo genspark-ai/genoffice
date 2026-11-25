@@ -41,6 +41,7 @@ export interface StyleParaProps {
   suppressLineNumbers?: boolean
   contextualSpacing?: boolean
   suppressAutoHyphens?: boolean
+  adjustRightInd?: boolean
   /** 1-9 (w:outlineLvl val + 1) */
   outlineLevel?: number | null
   /** list level linked to the style (w:numPr); null removes it */
@@ -162,6 +163,38 @@ export function builtInHeadingStyleUpsert(
     rPr: { bold: true, sizeHalfPoints: BUILT_IN_HEADING_SIZES[lvl] ?? 22 },
   }
 }
+
+/**
+ * Word's built-in "header" / "footer" for a document that defines none, as Word
+ * for Mac 16 writes it the first time a header is used (probe 2026-11-20): based
+ * on the default paragraph style, a center stop at 4680 and a right stop at 9360
+ * twips whatever the page width, no space after and single line spacing. Not a
+ * quick style.
+ */
+export function builtInHfStyleUpsert(
+  kind: 'header' | 'footer',
+  defaultParagraphStyleId: string | undefined,
+): StyleUpsert {
+  return {
+    styleId: kind === 'header' ? 'Header' : 'Footer',
+    type: 'paragraph',
+    name: kind,
+    ...(defaultParagraphStyleId ? { basedOn: defaultParagraphStyleId } : {}),
+    quickFormat: false,
+    builtIn: true,
+    pPr: {
+      tabStops: [...BUILT_IN_HF_TAB_STOPS],
+      spaceAfterTwips: 0,
+      lineSpacing: 1,
+    },
+  }
+}
+
+/** the stops Word's built-in Header and Footer styles carry */
+export const BUILT_IN_HF_TAB_STOPS: readonly TabStop[] = [
+  { pos: 4680, val: 'center' },
+  { pos: 9360, val: 'right' },
+]
 
 const STYLE_CHILD_ORDER = [
   'w:name',
@@ -375,6 +408,7 @@ function patchPara(children: Children, pp: StyleParaProps): void {
   children.flag('w:suppressLineNumbers', pp.suppressLineNumbers)
   children.flag('w:contextualSpacing', pp.contextualSpacing)
   children.flag('w:suppressAutoHyphens', pp.suppressAutoHyphens)
+  children.flag('w:adjustRightInd', pp.adjustRightInd)
   if (pp.outlineLevel !== undefined) {
     children.set(
       'w:outlineLvl',
@@ -504,6 +538,23 @@ export function upsertStyleXml(xml: string, up: StyleUpsert): string {
   return match
     ? xml.replace(existing, () => styleXml)
     : xml.replace('</w:styles>', () => `${styleXml}</w:styles>`)
+}
+
+/** a w:style with the run and paragraph properties of `rPr` / `pPr` (inner XML) it does not state itself */
+export function withDefaultPropsXml(styleXml: string, rPr: string, pPr: string): string {
+  const children = new Children(splitXmlChildren(innerOf(styleXml)), STYLE_CHILD_ORDER)
+  const fold = (name: 'w:rPr' | 'w:pPr', defaults: string, order: readonly string[]) => {
+    const own = new Children(
+      splitXmlChildren(innerOf(children.get(name)?.xml ?? `<${name}/>`)),
+      order,
+    )
+    for (const child of splitXmlChildren(defaults))
+      if (!own.get(child.name)) own.set(child.name, child.xml)
+    if (own.size) children.set(name, `<${name}>${own.toXml()}</${name}>`)
+  }
+  fold('w:pPr', pPr, PPR_CHILD_ORDER)
+  fold('w:rPr', rPr, RPR_CHILD_ORDER)
+  return tag('w:style', parseTag(styleXml).attrs, children.toXml())
 }
 
 export function hasStyleXml(xml: string, styleId: string): boolean {

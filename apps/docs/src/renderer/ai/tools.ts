@@ -10,6 +10,12 @@ import { clipExcerpt, repliesOf, resolveCommentAnchor } from './comment-ops'
 import { redactTextBetween } from './redact-view'
 import { insertPictureAtSelection } from '../editor/insert-picture'
 import {
+  DEFAULT_TEXT_WIDTH_TWIPS,
+  layoutAuditNote,
+  sectionOfBlock,
+  textColumnWidthTwips,
+} from './layout-audit'
+import {
   PAGE_SETUP_TOOL,
   SECTION_BREAK_TOOL,
   SECTION_BREAK_TYPES,
@@ -723,6 +729,12 @@ export interface ToolExecution {
   display?: ToolDisplay
 }
 
+export const PROTECTED_DOC_ERROR =
+  'Nothing was changed: the document is protected (Restrict Editing) and only its editable regions can be changed. ' +
+  'This edit fell outside them. Put the content inside an editable region, or tell the user the document is locked there.'
+export const PROTECTED_DOC_PARTIAL =
+  'Part of this edit fell outside the editable regions of this protected document and was not applied; check the result with get_document_context before reporting it.'
+
 const fail = (summary: string, output: string): ToolExecution => ({
   output,
   isError: true,
@@ -1026,9 +1038,13 @@ async function executeAsyncTool(
       if (!r.ok) return fail(t('aiSumCreateDocument'), r.error ?? 'creating the document failed')
       const name = `${title}.${type}`
       return {
-        output: r.path
-          ? `Created the new document at ${r.path} and opened it in a new tab.`
-          : `Created the new document "${name}" in a new tab; it saves itself into the default folder.`,
+        output:
+          (r.path
+            ? `Created the new document at ${r.path} and opened it in a new tab.`
+            : `Created the new document "${name}" in a new tab; it saves itself into the default folder.`) +
+          (type === 'docx' || type === 'pdf'
+            ? layoutAuditNote(content, DEFAULT_TEXT_WIDTH_TWIPS, type)
+            : ''),
         mutated: false,
         summary: t('aiSumCreatedDocument', { name }),
       }
@@ -1228,7 +1244,19 @@ export function executeTool(
   const scope = frozen && frozen.doc === editor.state.doc ? frozen.scope : null
   const staleSummary = staleSummaryOf(call)
   if (staleSummary && editedExternally(editor)) return fail(staleSummary(), STALE_DOC_ERROR)
+  // A read-only protected document turns away edits outside its open regions
+  // in a transaction filter, which the editing helpers cannot see: the tool
+  // would still report its change, and the model would tell the user it was
+  // made. The filter's counter tells a blocked edit apart.
+  const perm = editor.storage.permRegions
+  const blockedBefore = perm?.blocked ?? 0
+  const docBefore = editor.state.doc
   const settle = (exec: ToolExecution): ToolExecution => {
+    if (exec.mutated && !exec.isError && (perm?.blocked ?? 0) > blockedBefore) {
+      if (editor.state.doc === docBefore)
+        return fail(t('aiSumProtectedBlocked'), PROTECTED_DOC_ERROR)
+      exec = { ...exec, output: `${exec.output}\n${PROTECTED_DOC_PARTIAL}` }
+    }
     const readsDoc = call.name === 'get_document_context' || call.name === 'read_blocks'
     if (exec.mutated || (readsDoc && !exec.isError)) markDocSeen(editor)
     return exec
@@ -1249,12 +1277,17 @@ export function executeTool(
     return executeAsyncTool(editor, call, signal)
   }
   if (call.name === 'write_document')
-    return writeDocument(editor, call, numIds, track, signal, writer)
+    return writeDocument(editor, call, numIds, track, signal, writer, pageSetup)
   if (call.name === 'set_watermark' && typeof call.input.image === 'string')
     return setPictureWatermark(call, signal, extras)
   return settle(
     executeSyncTool(editor, call, numIds, track, scope, comments, hf, pageSetup, extras, notes),
   )
+}
+
+function layoutNote(html: string, pageSetup: AiPageSetupAccess | undefined, block: number): string {
+  const section = pageSetup ? sectionOfBlock(pageSetup.list(), block) : undefined
+  return layoutAuditNote(html, section ? textColumnWidthTwips(section) : undefined)
 }
 
 async function writeDocument(
@@ -1264,6 +1297,7 @@ async function writeDocument(
   track: AiTrack | undefined,
   signal: AbortSignal | undefined,
   writer: AiDocWriter | undefined,
+  pageSetup?: AiPageSetupAccess,
 ): Promise<ToolExecution> {
   const summary = t('aiSumWriteDocument')
   const plan = String(call.input.plan ?? '').trim()
@@ -1335,11 +1369,12 @@ async function writeDocument(
     insertBlocksAfter(editor, draft.indexBefore(), nodes, track)
   }
   markDocSeen(editor)
+  const layout = layoutNote(result.html, pageSetup, Math.max(0, draft.indexBefore()))
   const note = result.truncated
     ? ' The stream ended early, so the content is INCOMPLETE (the user chose to keep it): the tail is missing. Say so and offer to finish the missing sections with write_document (afterBlockIndex at the end) or insert_content.'
     : ''
   return {
-    output: `Content written by the system (${nodes.length} block(s), ${result.html.length} chars). Block indexes have changed; use get_document_context if needed.${note}\nReply with one or two sentences describing what was written; do not paste the content.`,
+    output: `Content written by the system (${nodes.length} block(s), ${result.html.length} chars). Block indexes have changed; use get_document_context if needed.${note}${layout}\nReply with one or two sentences describing what was written; do not paste the content.`,
     mutated: true,
     summary: result.truncated ? t('aiSumWriteDocumentPartial') : summary,
   }
@@ -1444,7 +1479,7 @@ function executeSyncTool(
         // the blank template's single empty paragraph gets replaced
         replaceBlockRange(editor, 0, count - 1, nodes, track)
         return {
-          output: `Inserted ${nodes.length} block(s) (the document was empty). Block indexes have changed; use get_document_context if needed.`,
+          output: `Inserted ${nodes.length} block(s) (the document was empty). Block indexes have changed; use get_document_context if needed.${layoutNote(html, pageSetup, 0)}`,
           mutated: true,
           summary: t('aiSumInsertedBlocks', { count: nodes.length }),
         }
@@ -1457,7 +1492,7 @@ function executeSyncTool(
       // -1 hits blockRangePositions' 0/0 default, i.e. insert at doc start
       insertBlocksAfter(editor, after, nodes, track)
       return {
-        output: `Inserted ${nodes.length} block(s) after block ${after}. Subsequent block indexes have shifted; use get_document_context if needed.`,
+        output: `Inserted ${nodes.length} block(s) after block ${after}. Subsequent block indexes have shifted; use get_document_context if needed.${layoutNote(html, pageSetup, Math.max(0, after))}`,
         mutated: true,
         summary: t('aiSumInsertedBlocks', { count: nodes.length }),
       }
@@ -1492,7 +1527,7 @@ function executeSyncTool(
           ? ` ${lost} picture(s) that were in the replaced range are not in the new content and have been deleted${track ? ' (as a tracked change the user can reject)' : ' (the user can undo this)'}; tell the user if that was not intended. To keep pictures, include their <img src="doc:B.I"> tags from read_blocks in the new HTML.`
           : ''
       return {
-        output: `Replaced blocks ${range.start}-${range.end} with ${nodes.length} block(s); the new blocks kept the replaced blocks' formatting.${pictureNote} Block indexes have changed; use get_document_context if needed.`,
+        output: `Replaced blocks ${range.start}-${range.end} with ${nodes.length} block(s); the new blocks kept the replaced blocks' formatting.${pictureNote} Block indexes have changed; use get_document_context if needed.${layoutNote(html, pageSetup, range.start)}`,
         mutated: true,
         summary: t('aiSumReplacedBlocks', { start: range.start, end: range.end }),
       }

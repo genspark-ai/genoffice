@@ -58,6 +58,7 @@ export function isStraightLineKind(prst: string | undefined): boolean {
 /** Diagonal / flip state of a straight connector with a real vertical extent. */
 export interface LineRenderOpts {
   diag?: boolean
+  vert?: boolean
   flipH?: boolean
   flipV?: boolean
 }
@@ -69,11 +70,11 @@ export interface LineRenderOpts {
  * lines so a head-only arrow (drawn at the path end) points the right way.
  */
 function straightLinePaths(prst: string, w: number, h: number, line?: LineRenderOpts): ShapePaths {
-  const x1 = line?.flipH ? w : 0
+  const x1 = line?.vert ? w / 2 : line?.flipH ? w : 0
   const x2 = w - x1
   let y1 = h / 2
   let y2 = y1
-  if (line?.diag) {
+  if (line?.diag || line?.vert) {
     y1 = line.flipV ? h : 0
     y2 = h - y1
   }
@@ -131,6 +132,12 @@ export function shapePreviewPathD(prst: string, w: number, h: number): string | 
   return [paths.main, paths.fillOnly, paths.strokeOnly].filter(Boolean).join(' ')
 }
 
+/** a:xfrm flipH / flipV of a drawn outline: mirrored about the middle of its box */
+export interface ShapeMirror {
+  h?: boolean
+  v?: boolean
+}
+
 /**
  * Shape visual as a CSS background-image url() (data-URI SVG at the box's
  * pixel size, insets included so the stroke isn't clipped at the edges).
@@ -143,12 +150,23 @@ export function shapeBackgroundImage(
   borderHex?: string,
   line?: LineRenderOpts,
   strokeWidthPx?: number,
+  mirror?: ShapeMirror,
 ): string | null {
-  const paths = isStraightLineKind(prst)
+  const straight = isStraightLineKind(prst)
+  const paths = straight
     ? straightLinePaths(prst, Math.max(8, w - 2), Math.max(8, h - 2), line)
     : shapePaths(prst, Math.max(8, w - 2), Math.max(8, h - 2))
   if (!paths) return null
-  return pathsBackgroundImage(paths, w, h, fillHex, borderHex, strokeWidthPx)
+  // a straight line's flips already chose its end points
+  return pathsBackgroundImage(
+    paths,
+    w,
+    h,
+    fillHex,
+    borderHex,
+    strokeWidthPx,
+    straight ? undefined : mirror,
+  )
 }
 
 function pathsBackgroundImage(
@@ -158,6 +176,7 @@ function pathsBackgroundImage(
   fillHex?: string,
   borderHex?: string,
   strokeWidthPx?: number,
+  mirror?: ShapeMirror,
 ): string {
   const fill = fillHex ? `#${fillHex}` : 'none'
   const stroke = borderHex ? `#${borderHex}` : 'none'
@@ -181,9 +200,17 @@ function pathsBackgroundImage(
   const viewH = strokeWidth === undefined ? h : R(h + 2 * (inset - 1))
   // printToPDF honors the intrinsic ratio over background-size 100% 100%: a
   // box whose live height differs from the measured one shrank uniformly
+  const pathW = Math.max(8, w - 2)
+  const pathH = Math.max(8, h - 2)
+  const drawn =
+    mirror?.h || mirror?.v
+      ? `<g transform="translate(${mirror.h ? pathW : 0} ${mirror.v ? pathH : 0}) scale(${mirror.h ? -1 : 1} ${mirror.v ? -1 : 1})">` +
+        parts.join('') +
+        '</g>'
+      : parts.join('')
   const svg =
     `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="${-inset} ${-inset} ${viewW} ${viewH}" preserveAspectRatio="none">` +
-    parts.join('') +
+    drawn +
     '</svg>'
   return `url("data:image/svg+xml,${encodeURIComponent(svg)}")`
 }
@@ -219,6 +246,7 @@ export function custGeomBackgroundCss(
   fillHex?: string,
   borderHex?: string,
   strokeWidthPx?: number,
+  mirror?: ShapeMirror,
 ): string {
   const sw = Math.max(8, w - 2)
   const sh = Math.max(8, h - 2)
@@ -227,7 +255,7 @@ export function custGeomBackgroundCss(
     fillOnly: geom.fillPath ? scaleNormPathD(geom.fillPath, sw, sh) : undefined,
     strokeOnly: geom.strokePath ? scaleNormPathD(geom.strokePath, sw, sh) : undefined,
   }
-  const image = pathsBackgroundImage(paths, w, h, fillHex, borderHex, strokeWidthPx)
+  const image = pathsBackgroundImage(paths, w, h, fillHex, borderHex, strokeWidthPx, mirror)
   return `background-image:${image};background-size:100% 100%;background-repeat:no-repeat`
 }
 
@@ -240,8 +268,9 @@ export function shapeBackgroundCss(
   borderHex?: string,
   line?: LineRenderOpts,
   strokeWidthPx?: number,
+  mirror?: ShapeMirror,
 ): string | null {
-  const image = shapeBackgroundImage(prst, w, h, fillHex, borderHex, line, strokeWidthPx)
+  const image = shapeBackgroundImage(prst, w, h, fillHex, borderHex, line, strokeWidthPx, mirror)
   if (!image) return null
   return `background-image:${image};background-size:100% 100%;background-repeat:no-repeat`
 }

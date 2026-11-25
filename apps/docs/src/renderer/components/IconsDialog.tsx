@@ -13,9 +13,12 @@ import { useModalKeys } from './modal-keys'
 
 /** Word's Insert > Icons: pick any number of icons by category or by search, Insert places them */
 export function IconsDialog({
+  single,
   onInsert,
   onClose,
 }: {
+  /** Change Picture takes one icon: picking another drops the first */
+  single?: boolean
   /** resolves once the icons are in; the dialog stays up, and inert, until then */
   onInsert: (names: string[]) => Promise<void>
   onClose: () => void
@@ -43,15 +46,21 @@ export function IconsDialog({
   }, [])
 
   const searching = query.trim() !== ''
+  const categoryNames = Object.fromEntries(
+    ICON_CATEGORIES.map((id) => [id, t(ICON_CATEGORY_LABEL[id])]),
+  ) as Record<IconCategory, string>
+  const categoryNamesKey = JSON.stringify(categoryNames)
   const shown = useMemo(() => {
     if (!icons) return []
     return searching
-      ? searchIcons(icons, query)
+      ? searchIcons(icons, query, JSON.parse(categoryNamesKey) as Record<IconCategory, string>)
       : icons.filter((icon) => icon.category === category)
-  }, [icons, searching, query, category])
+  }, [icons, searching, query, category, categoryNamesKey])
 
   const toggle = (name: string) =>
-    setPicked((now) => (now.includes(name) ? now.filter((n) => n !== name) : [...now, name]))
+    setPicked((now) =>
+      now.includes(name) ? now.filter((n) => n !== name) : single ? [name] : [...now, name],
+    )
 
   return (
     <div
@@ -103,7 +112,7 @@ export function IconsDialog({
           <div
             className="icons-dialog-grid"
             role="listbox"
-            aria-multiselectable="true"
+            aria-multiselectable={!single}
             aria-label={t('ribbonIcons')}
           >
             {shown.map((icon) => {

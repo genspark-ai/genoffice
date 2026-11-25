@@ -1,5 +1,6 @@
 import type { Editor } from '@tiptap/core'
 import type { Node as PmNode } from '@tiptap/pm/model'
+import type { Transaction } from '@tiptap/pm/state'
 import {
   fieldInstructionOfXml,
   generateFieldTableXml,
@@ -268,7 +269,11 @@ export function xmlOfNode(node: { attrs: Record<string, unknown> }, blocks: Bloc
   if (node.attrs.genXml) return String(node.attrs.genXml)
   const idx = node.attrs.docxIndex
   if (idx === null || idx === undefined) return ''
-  const xml = blocks.find((b) => b.docxIndex === idx)?.originalXml ?? ''
+  // a field of the block locked or renamed since the file was read
+  const xml =
+    typeof node.attrs.linkXml === 'string'
+      ? node.attrs.linkXml
+      : (blocks.find((b) => b.docxIndex === idx)?.originalXml ?? '')
   // captions renumbered since the file was read show their new numbers
   const renumbered = node.attrs.seqRenumber as { results: Array<string | null> } | null | undefined
   return renumbered ? rewriteSeqResultsXml(xml, renumbered.results) : xml
@@ -383,6 +388,100 @@ export function findFieldRanges(doc: PmNode, blocks: Block[], instr: RegExp): To
   return out
 }
 
+const TABLE_FIELD = /<w:instrText[^>]*>\s*(?:TOC|INDEX|TOA)[\s\\]/
+const FIELD_LOCK = /\s+w:fldLock\s*=\s*["'][^"']*["']/
+const LOCKED_BEGIN =
+  /w:fldCharType="begin"[^>]*\bw:fldLock\s*=\s*["'](?:1|true|on)["']|\bw:fldLock\s*=\s*["'](?:1|true|on)["'][^>]*w:fldCharType="begin"/
+
+/** the block that opens a table's field, with the place of its begin character in the block's XML */
+function tableFieldHead(
+  doc: PmNode,
+  blocks: Block[],
+  range: TocRange,
+): { pos: number; node: PmNode; xml: string; from: number; tag: string } | null {
+  let found: ReturnType<typeof tableFieldHead> = null
+  doc.forEach((node, pos) => {
+    // a table read as ordinary paragraphs carries its field in its text, not here
+    if (found || pos < range.from || pos >= range.to || node.type.name !== 'docProtected') return
+    const xml = xmlOfNode(node as never, blocks)
+    const instr = TABLE_FIELD.exec(xml)
+    if (!instr) return
+    const from = xml.lastIndexOf('<w:fldChar', instr.index)
+    const tag = from < 0 ? null : /^<w:fldChar\b[^>]*>/.exec(xml.slice(from))?.[0]
+    if (tag && /w:fldCharType="begin"/.test(tag)) found = { pos, node, xml, from, tag }
+  })
+  return found
+}
+
+/** Word's Lock Fields on a table of contents, an index or a table of figures or authorities: Update leaves it as it is */
+export function tableLocked(doc: PmNode, blocks: Block[], range: TocRange): boolean {
+  const head = tableFieldHead(doc, blocks, range)
+  return !!head && LOCKED_BEGIN.test(head.tag)
+}
+
+const originalsOf = new WeakMap<Block[], Map<number, string>>()
+
+/**
+ * Where the lines of locked tables stand: the page refresh that follows the
+ * layout leaves them as they are. Read on every layout pass, so a block's XML
+ * is looked up, not searched for.
+ */
+export function lockedTableLines(doc: PmNode, blocks: Block[]): Set<number> {
+  const out = new Set<number>()
+  let originals = originalsOf.get(blocks)
+  if (!originals) {
+    originals = new Map()
+    for (const block of blocks)
+      if (block.docxIndex != null && block.originalXml)
+        originals.set(block.docxIndex, block.originalXml)
+    originalsOf.set(blocks, originals)
+  }
+  // how many fields are open in the locked table being walked
+  let depth = 0
+  doc.forEach((node, pos) => {
+    if (node.type.name !== 'docProtected' || (depth === 0 && !node.attrs.fieldDisplay)) {
+      depth = 0
+      return
+    }
+    const xml =
+      (node.attrs.genXml as string | null) ??
+      (node.attrs.linkXml as string | null) ??
+      originals.get(node.attrs.docxIndex as number) ??
+      ''
+    if (depth === 0) {
+      const head = TABLE_FIELD.exec(xml)
+      const from = head ? xml.lastIndexOf('<w:fldChar', head.index) : -1
+      if (from < 0 || !LOCKED_BEGIN.test(/^<w:fldChar\b[^>]*>/.exec(xml.slice(from))?.[0] ?? ''))
+        return
+    }
+    depth += (xml.match(/w:fldCharType="begin"/g) ?? []).length
+    depth -= (xml.match(/w:fldCharType="end"/g) ?? []).length
+    depth = Math.max(depth, 0)
+    out.add(pos)
+  })
+  return out
+}
+
+/** the table's field locked or unlocked, in the block that opens it; false when nothing changed */
+export function setTableLocked(
+  tr: Transaction,
+  blocks: Block[],
+  range: TocRange,
+  locked: boolean,
+): boolean {
+  const head = tableFieldHead(tr.doc, blocks, range)
+  if (!head || tableLocked(tr.doc, blocks, range) === locked) return false
+  const tag = head.tag
+    .replace(FIELD_LOCK, '')
+    .replace(/\s*\/?>$/, (close) => `${locked ? ' w:fldLock="true"' : ''}${close.trim()}`)
+  const xml = head.xml.slice(0, head.from) + tag + head.xml.slice(head.from + head.tag.length)
+  tr.setNodeMarkup(head.pos, undefined, {
+    ...head.node.attrs,
+    ...(head.node.attrs.genXml ? { genXml: xml } : { linkXml: xml }),
+  })
+  return true
+}
+
 /**
  * Regenerate the document's table of contents from the current headings,
  * replacing the existing TOC (field or Word sdt shape) in place.
@@ -401,6 +500,8 @@ export function updateTocField(
   pagesOf?: (positions: number[]) => number[] | null,
 ): boolean {
   const range = at ?? findTocRange(editor.state.doc, blocks)
+  // a rebuild with other switches replaces the field; a plain update leaves a locked one alone
+  if (!spec && range && tableLocked(editor.state.doc, blocks, range)) return false
   const own = spec ?? (range && tableSpecAt(editor.state.doc, blocks, range.from, 'TOC')) ?? null
   const entries = own
     ? planEntriesWithPages(

@@ -4,6 +4,7 @@ import { VIEW_IMAGE_CHANNEL, type MarkdownImage, type PdfInternalLink } from '..
 import { toCommandMenuState, type CommandMenuState } from '../shared/commands'
 import type { KeyOverrides } from '../shared/keybindings'
 import type { AiPanelPrefs } from '@genoffice/ui'
+import { MEASUREMENT_UNIT_CHANNELS } from '@genoffice/ui/measurement'
 import type {
   AiChatRequest,
   AiSettings,
@@ -49,6 +50,13 @@ const api: DesktopApi = {
     const listener = (_event: IpcRendererEvent, theme: DocTheme) => handler(theme)
     ipcRenderer.on('app:document-theme-changed', listener)
     return () => ipcRenderer.removeListener('app:document-theme-changed', listener)
+  },
+  getMeasurementUnit: () => ipcRenderer.invoke(MEASUREMENT_UNIT_CHANNELS.get),
+  setMeasurementUnit: (unit) => ipcRenderer.invoke(MEASUREMENT_UNIT_CHANNELS.set, unit),
+  onMeasurementUnitChanged: (handler) => {
+    const listener = (_event: IpcRendererEvent, state: unknown) => handler(state)
+    ipcRenderer.on(MEASUREMENT_UNIT_CHANNELS.changed, listener)
+    return () => ipcRenderer.removeListener(MEASUREMENT_UNIT_CHANNELS.changed, listener)
   },
   getAutoSaveDefault: () => ipcRenderer.invoke('app:get-auto-save-default'),
   onAutoSaveDefaultChanged: (handler) => {
@@ -128,8 +136,6 @@ const api: DesktopApi = {
     ipcRenderer.on('docs:teardown', listener)
     return () => ipcRenderer.removeListener('docs:teardown', listener)
   },
-  respellKick: () => ipcRenderer.invoke('docs:respell-kick'),
-  spellDiag: (line: string) => ipcRenderer.send('docs:spell-diag', line),
   armContextMenu: () => ipcRenderer.send('docs:context-menu-arm'),
   claimContextMenu: (seq: number) => {
     ipcRenderer.sendSync('docs:context-menu-claim', seq)
@@ -147,10 +153,21 @@ const api: DesktopApi = {
   spellSuggestions: (word: string) => webFrame.getWordSuggestions(word),
   spellLanguages: () => ipcRenderer.invoke('docs:spell-languages'),
   spellSetLanguages: (langs: string[]) => ipcRenderer.invoke('docs:spell-set-languages', langs),
-  saveTemplate: (defaultName: string, data: ArrayBuffer, preview?: TemplatePreviewRect) =>
-    ipcRenderer.invoke('docs:save-template', defaultName, data, preview),
+  saveTemplate: (
+    defaultName: string,
+    data: ArrayBuffer,
+    preview?: TemplatePreviewRect,
+    thumbnail?: ArrayBuffer,
+  ) => ipcRenderer.invoke('docs:save-template', defaultName, data, preview, thumbnail),
   openTemplate: (fromGallery?: string) => ipcRenderer.invoke('docs:open-template', fromGallery),
+  openTemplateDecrypt: (password: string) =>
+    ipcRenderer.invoke('docs:open-template-decrypt', password),
   listTemplates: () => ipcRenderer.invoke('docs:list-templates'),
+  listThemes: () => ipcRenderer.invoke('docs:list-themes'),
+  saveTheme: (defaultName: string, themeXml: string) =>
+    ipcRenderer.invoke('docs:save-theme', defaultName, themeXml),
+  deleteTheme: (name: string) => ipcRenderer.invoke('docs:delete-theme', name),
+  pickTheme: () => ipcRenderer.invoke('docs:pick-theme'),
   saveDocxAs: (defaultName: string, data: ArrayBuffer, sourcePath?: string | null) =>
     ipcRenderer.invoke('docs:save-as', defaultName, data, sourcePath ?? null),
   saveDocxNew: (defaultName: string, data: ArrayBuffer) =>
@@ -168,6 +185,18 @@ const api: DesktopApi = {
   getRecentFiles: () => ipcRenderer.invoke('docs:recent'),
   pickImage: () => ipcRenderer.invoke('docs:pick-image'),
   pickDocx: () => ipcRenderer.invoke('docs:pick-docx'),
+  pickLinkFile: () => ipcRenderer.invoke('docs:pick-link-file'),
+  readLinkSource: (source, kind) => ipcRenderer.invoke('docs:read-link-source', source, kind),
+  openLinkSource: (source) => ipcRenderer.invoke('docs:open-link-source', source),
+  offerLinkSource: (token) => ipcRenderer.send('docs:link-source-offer', token),
+  claimLinkSource: (token, commit) => ipcRenderer.invoke('docs:link-source-claim', token, commit),
+  onLinkSourceMark: (handler) => {
+    const listener = (_event: IpcRendererEvent, token: string) => handler(token)
+    ipcRenderer.on('docs:link-source-mark', listener)
+    return () => ipcRenderer.removeListener('docs:link-source-mark', listener)
+  },
+  linkSourceMarked: (token, bookmark) =>
+    ipcRenderer.send('docs:link-source-marked', token, bookmark),
   organizerOpen: () => ipcRenderer.invoke('docs:organizer-open'),
   organizerSave: (path: string, data: ArrayBuffer) =>
     ipcRenderer.invoke('docs:organizer-save', path, data),
@@ -293,6 +322,15 @@ const api: DesktopApi = {
     ipcRenderer.on('menu:command', listener)
     return () => ipcRenderer.removeListener('menu:command', listener)
   },
+  onPastePlain: (handler: () => void) => {
+    const listener = () => {
+      handler()
+      // ack so the main process runs the paste only once the flag is armed
+      ipcRenderer.send('docs:paste-plain-armed')
+    }
+    ipcRenderer.on('docs:paste-plain', listener)
+    return () => ipcRenderer.removeListener('docs:paste-plain', listener)
+  },
   onCloseCheck: (handler: () => void) => {
     const listener = () => handler()
     ipcRenderer.on('docs:close-check', listener)
@@ -308,6 +346,7 @@ const api: DesktopApi = {
     ipcRenderer.on('docs:key-overrides-changed', listener)
     return () => ipcRenderer.removeListener('docs:key-overrides-changed', listener)
   },
+  setDocumentKeyOverrides: (overrides) => ipcRenderer.send('docs:doc-key-overrides', overrides),
   reportCloseCheck: (state: { dirty: boolean; autoSave: boolean; filePath?: string | null }) =>
     ipcRenderer.send('docs:close-check-result', {
       dirty: state?.dirty === true,

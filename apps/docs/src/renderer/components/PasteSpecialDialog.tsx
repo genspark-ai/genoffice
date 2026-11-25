@@ -7,6 +7,7 @@ import {
   type ClipboardPayload,
   type PasteChoice,
 } from '../editor/paste-actions'
+import { canPasteLink, pasteLink } from '../editor/paste-link'
 import { useI18n, type StringKey } from '../i18n/locale'
 import { useModalKeys } from './modal-keys'
 import { Unavailable } from './Unavailable'
@@ -43,7 +44,8 @@ export function availableFlavors(payload: ClipboardPayload): Flavor[] {
   const flavors: Flavor[] = []
   if (payload.html) flavors.push('html')
   if (payload.text.trim() || payload.html) flavors.push('text')
-  if (payload.image) flavors.push('picture')
+  // a bitmap pastes as itself; copied text or a table is drawn as one (Word's Paste as Picture)
+  if (payload.image || payload.html || payload.text.trim()) flavors.push('picture')
   return flavors
 }
 
@@ -52,22 +54,37 @@ export function PasteSpecialDialog({ editor, onClose }: { editor: Editor; onClos
   const keys = useModalKeys(onClose)
   const [payload, setPayload] = useState<ClipboardPayload | null>(null)
   const [flavor, setFlavor] = useState<Flavor | null>(null)
+  /** the clipboard was copied from a saved document that is still open: it can be linked to */
+  const [linkable, setLinkable] = useState(false)
+  const [asLink, setAsLink] = useState(false)
+  const [gone, setGone] = useState(false)
 
   useEffect(() => {
     let alive = true
-    void readClipboardPayload().then((read) => {
+    void readClipboardPayload().then(async (read) => {
+      const link = await canPasteLink(read)
       if (!alive) return
       setPayload(read)
       setFlavor(availableFlavors(read)[0] ?? null)
+      setLinkable(link)
     })
     return () => {
       alive = false
     }
   }, [])
 
-  const flavors = payload ? availableFlavors(payload) : []
-  const ok = () => {
-    if (payload && flavor) pastePayload(editor, payload, CHOICES[flavor])
+  // a link is to text: the picture flavor is not one of its forms
+  const flavors = (payload ? availableFlavors(payload) : []).filter(
+    (f) => !asLink || f !== 'picture',
+  )
+  const chosen = flavor && flavors.includes(flavor) ? flavor : (flavors[0] ?? null)
+  const ok = async () => {
+    if (payload && chosen && asLink) {
+      if (!(await pasteLink(editor, payload, chosen === 'text'))) {
+        setGone(true)
+        return
+      }
+    } else if (payload && chosen) pastePayload(editor, payload, CHOICES[chosen])
     onClose()
   }
 
@@ -90,29 +107,40 @@ export function PasteSpecialDialog({ editor, onClose }: { editor: Editor; onClos
             {(payload && clipboardSource(payload.html)) || t('ribbonPasteSpecialUnknown')}
           </span>
         </p>
-        {/* Paste alone is not a choice, so it comes back together with Paste link */}
-        <Unavailable id="paste-special.paste-link">
-          <div className="paste-special-modes">
-            <label className="protect-check">
-              <input type="radio" name="paste-special-mode" checked readOnly />
-              <span className="ctl" aria-hidden="true" />
-              {t('ribbonPaste')}
-            </label>
-            <label className="protect-check">
-              <input type="radio" name="paste-special-mode" disabled />
-              <span className="ctl" aria-hidden="true" />
-              {t('ribbonPasteLink')}
-            </label>
-          </div>
-        </Unavailable>
+        <div className="paste-special-modes">
+          <label className="protect-check">
+            <input
+              type="radio"
+              name="paste-special-mode"
+              checked={!asLink}
+              onChange={() => setAsLink(false)}
+            />
+            <span className="ctl" aria-hidden="true" />
+            {t('ribbonPaste')}
+          </label>
+          <label className="protect-check">
+            <input
+              type="radio"
+              name="paste-special-mode"
+              checked={asLink}
+              disabled={!linkable}
+              onChange={() => {
+                setAsLink(true)
+                setGone(false)
+              }}
+            />
+            <span className="ctl" aria-hidden="true" />
+            {t('ribbonPasteLink')}
+          </label>
+        </div>
         <label className="paste-special-as">
           {t('ribbonPasteSpecialAs')}
           <select
             size={4}
             aria-label={t('ribbonPasteSpecialAs')}
-            value={flavor ?? ''}
+            value={chosen ?? ''}
             onChange={(e) => setFlavor(e.target.value as Flavor)}
-            onDoubleClick={ok}
+            onDoubleClick={() => void ok()}
           >
             {flavors.map((f) => (
               <option key={f} value={f}>
@@ -131,15 +159,20 @@ export function PasteSpecialDialog({ editor, onClose }: { editor: Editor; onClos
         <p className="fld-hint paste-special-result">
           {payload && flavors.length === 0
             ? t('ribbonPasteSpecialEmpty')
-            : flavor
-              ? t(DESCRIPTIONS[flavor])
+            : chosen
+              ? `${t(DESCRIPTIONS[chosen])}${asLink ? ` ${t('ribbonPasteLinkResult')}` : ''}`
               : ''}
         </p>
+        {gone && (
+          <p className="fld-hint paste-special-gone" role="alert">
+            {t('ribbonPasteLinkGone')}
+          </p>
+        )}
         <div className="modal-actions">
           <button type="button" onClick={onClose}>
             {t('ribbonCancel')}
           </button>
-          <button type="button" className="primary" onClick={ok} disabled={!flavor}>
+          <button type="button" className="primary" onClick={() => void ok()} disabled={!chosen}>
             {t('ribbonOk')}
           </button>
         </div>

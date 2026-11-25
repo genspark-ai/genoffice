@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { Editor } from '@tiptap/core'
-import { buildBlankDocx, parseDocx } from '@genoffice/docx-engine'
+import { buildBlankDocx, parseDocx, type StyleUpsert } from '@genoffice/docx-engine'
 import { blocksToPmDoc } from '../src/renderer/editor/convert'
 import {
   AUTOCORRECT_KEY,
@@ -23,7 +23,9 @@ import {
   parseListPrefix,
   stopCorrecting,
 } from '../src/renderer/editor/autocorrect'
+import { isDateLine } from '../src/renderer/editor/autoformat-styles'
 import { pruneUnreferencedNumbering } from '../src/renderer/numbering-actions'
+import { SPELLCHECK_KEY } from '../src/renderer/spellcheck-pref'
 import { EMPTY_PENDING_NUMBERING } from '../src/renderer/doc-state'
 import type { PmNode } from '../src/renderer/editor/convert'
 
@@ -205,6 +207,63 @@ describe('autocorrect: sentence capitalization (opt-in)', () => {
     const on = await createEditor()
     type(on, 'hello world. next one? yes e.g. apples 3. items http://x.y/z ')
     expect(text(on)).toBe('Hello world. Next one? Yes e.g. apples 3. items http://x.y/z ')
+  })
+})
+
+describe('autocorrect: suggestions from the spelling checker', () => {
+  const dictionary: Record<string, string[]> = {
+    recieve: ['receive'],
+    Recieve: ['Receive'],
+    wierd: ['weird', 'wired'],
+    NASSA: ['NASA'],
+  }
+  const desktop = {
+    spellIsMisspelled: (word: string) => word in dictionary,
+    spellSuggestions: (word: string) => dictionary[word] ?? [],
+  }
+  beforeEach(() => {
+    ;(window as unknown as { desktop: unknown }).desktop = desktop
+    localStorage.removeItem(SPELLCHECK_KEY)
+  })
+  afterEach(() => {
+    delete (window as unknown as { desktop?: unknown }).desktop
+  })
+
+  it('is off until the option is switched on', async () => {
+    const editor = await createEditor()
+    type(editor, 'recieve ')
+    expect(text(editor)).toBe('recieve ')
+  })
+  it('replaces a word the checker has exactly one suggestion for, and Backspace brings it back', async () => {
+    setAutocorrectPref('spellSuggest', true)
+    const editor = await createEditor()
+    type(editor, 'I recieve ')
+    expect(text(editor)).toBe('I receive ')
+    expect(fixesKey.getState(editor.state)!.at(-1)).toMatchObject({
+      original: 'recieve',
+      corrected: 'receive',
+      rule: 'spellSuggest',
+    })
+    expect(backspace(editor)).toBe(true)
+    expect(text(editor)).toBe('I recieve ')
+    type(editor, 'Recieve.')
+    expect(text(editor)).toBe('I recieve Receive.')
+  })
+  it('leaves words with several suggestions, capitals, parts of a longer token and unchecked text', async () => {
+    setAutocorrectPref('spellSuggest', true)
+    const editor = await createEditor()
+    type(editor, 'wierd NASSA 2recieve ')
+    expect(text(editor)).toBe('wierd NASSA 2recieve ')
+    localStorage.setItem(SPELLCHECK_KEY, '0')
+    type(editor, 'recieve ')
+    expect(text(editor)).toBe('wierd NASSA 2recieve recieve ')
+  })
+  it('the table of entries wins over the checker', async () => {
+    setAutocorrectPref('spellSuggest', true)
+    setAutocorrectList('replace', [['recieve', 'got']])
+    const editor = await createEditor()
+    type(editor, 'recieve ')
+    expect(text(editor)).toBe('got ')
   })
 })
 
@@ -817,5 +876,229 @@ describe('autocorrect: the smart button keeps what was corrected', () => {
     const names = autocorrectLists().math.map(([from]) => from)
     expect(names).not.toContain('\\delta')
     expect(names).toContain('\\Delta')
+  })
+})
+
+describe('autocorrect: Date style and styles defined from formatting', () => {
+  async function styledEditor() {
+    const editor = await createEditor()
+    const parsed = await parseDocx(await buildBlankDocx())
+    editor.storage.listNumbering.styles = parsed.styles
+    editor.storage.listNumbering.docDefaults = parsed.docDefaults
+    const defined: StyleUpsert[] = []
+    editor.storage.autocorrect.hooks = {
+      ...editor.storage.autocorrect.hooks!,
+      defineStyle: (up) => defined.push(up),
+    }
+    return { editor, defined }
+  }
+  const blocks = (editor: Editor) => {
+    const out: Array<{ type: string; styleId: unknown; text: string }> = []
+    editor.state.doc.forEach((node) =>
+      out.push({ type: node.type.name, styleId: node.attrs.styleId, text: node.textContent }),
+    )
+    return out
+  }
+
+  it('reads a line that is a date and nothing else', () => {
+    for (const date of [
+      'November 23, 2026',
+      'Monday, November 23, 2026',
+      '23 November 2026',
+      '2026-11-23',
+      '11/23/2026',
+      '2026\u5e7411\u670823\u65e5',
+      '\u4ee4\u548c8\u5e7411\u670823\u65e5',
+      '\u4ee4\u548c\u5143\u5e745\u67081\u65e5',
+      '\uff12\uff10\uff12\uff16\u5e74\uff11\uff11\u6708\uff12\uff13\u65e5',
+      '2026\ub144 11\uc6d4 23\uc77c',
+    ])
+      expect(isDateLine(date), date).toBe(true)
+    for (const other of ['', 'Due November 23, 2026', 'November 2026', '1.2.3', '23/11', 'May'])
+      expect(isDateLine(other), other).toBe(false)
+  })
+
+  it('Date style is opt-in: Enter after a date gives the line the Date style and body text below', async () => {
+    const { editor, defined } = await styledEditor()
+    type(editor, 'November 23, 2026')
+    enterAndSplit(editor)
+    expect(blocks(editor).map((b) => b.styleId)).toEqual([null, null])
+    expect(defined).toEqual([])
+
+    setAutocorrectPref('dateStyle', true)
+    editor.commands.setContent({ type: 'doc', content: [{ type: 'docParagraph' }] })
+    editor.commands.focus('end')
+    type(editor, 'November 23, 2026')
+    enterAndSplit(editor)
+    expect(blocks(editor)).toEqual([
+      { type: 'docParagraph', styleId: 'Date', text: 'November 23, 2026' },
+      { type: 'docParagraph', styleId: null, text: '' },
+    ])
+    expect(defined).toEqual([
+      expect.objectContaining({ styleId: 'Date', name: 'Date', builtIn: true, basedOn: 'Normal' }),
+    ])
+    expect(editor.state.selection.$from.parent).toBe(editor.state.doc.child(1))
+    // one undo takes the new paragraph away, the next the style
+    editor.commands.undo()
+    expect(blocks(editor)).toEqual([
+      { type: 'docParagraph', styleId: 'Date', text: 'November 23, 2026' },
+    ])
+    editor.commands.undo()
+    expect(blocks(editor)).toEqual([
+      { type: 'docParagraph', styleId: null, text: 'November 23, 2026' },
+    ])
+    editor.commands.focus('end')
+    enterAndSplit(editor)
+    type(editor, 'Dear all, see you on November 23, 2026')
+    enterAndSplit(editor)
+    expect(blocks(editor).map((b) => b.styleId)).toEqual(['Date', null, null])
+  })
+
+  it('a document that has a Date style gets no second one', async () => {
+    setAutocorrectPref('dateStyle', true)
+    const { editor, defined } = await styledEditor()
+    const styles = new Map(editor.storage.listNumbering.styles)
+    styles.set('a7', { styleId: 'a7', name: 'Date', type: 'paragraph' })
+    editor.storage.listNumbering.styles = styles
+    type(editor, '2026-11-23')
+    enterAndSplit(editor)
+    expect(blocks(editor).map((b) => b.styleId)).toEqual(['a7', null])
+    expect(defined).toEqual([])
+  })
+
+  it('Define styles is opt-in: a bold short line becomes a heading whose style is made from it', async () => {
+    const { editor, defined } = await styledEditor()
+    const bold = [{ type: 'bold' }, { type: 'docTextStyle', attrs: { sizeHalfPoints: 36 } }]
+    const line = (text: string, marks = bold) => ({
+      type: 'doc',
+      content: [{ type: 'docParagraph', content: [{ type: 'text', text, marks }] }],
+    })
+    editor.commands.setContent(line('Quarterly results'))
+    editor.commands.focus('end')
+    enterAndSplit(editor)
+    expect(blocks(editor).map((b) => b.type)).toEqual(['docParagraph', 'docParagraph'])
+
+    setAutocorrectPref('defineStyles', true)
+    editor.commands.setContent(line('Quarterly results'))
+    editor.commands.focus('end')
+    enterAndSplit(editor)
+    expect(blocks(editor)).toEqual([
+      { type: 'docHeading', styleId: 'Heading1', text: 'Quarterly results' },
+      { type: 'docParagraph', styleId: null, text: '' },
+    ])
+    expect(editor.state.doc.firstChild!.attrs.level).toBe(1)
+    // the formatting is the style's now, not the text's
+    expect(editor.state.doc.firstChild!.firstChild!.marks).toEqual([])
+    expect(defined).toHaveLength(1)
+    expect(defined[0]).toMatchObject({
+      styleId: 'Heading1',
+      rPr: { bold: true, italic: false, sizeHalfPoints: 36 },
+      pPr: { align: null },
+    })
+    // what is typed below is plain body text
+    type(editor, 'Body')
+    expect(editor.state.doc.child(1).firstChild!.marks).toEqual([])
+
+    // a second line that looks the same takes the style just made, before the style table knows it
+    editor.commands.setContent({
+      type: 'doc',
+      content: [
+        ...(editor.getJSON().content ?? []),
+        { type: 'docParagraph', content: [{ type: 'text', text: 'Outlook', marks: bold }] },
+      ],
+    })
+    editor.commands.focus('end')
+    enterAndSplit(editor)
+    expect(blocks(editor).at(-2)).toEqual({
+      type: 'docHeading',
+      styleId: 'Heading1',
+      text: 'Outlook',
+    })
+    expect(defined).toHaveLength(1)
+
+    // another style table (another document): what was made before is not remembered
+    editor.storage.listNumbering.styles = new Map(editor.storage.listNumbering.styles)
+    editor.commands.setContent(line('Fresh start'))
+    editor.commands.focus('end')
+    enterAndSplit(editor)
+    expect(blocks(editor)[0]).toMatchObject({ type: 'docHeading', text: 'Fresh start' })
+    expect(defined).toHaveLength(2)
+  })
+
+  it('acts while Track Changes records: the heading is a tracked formatting change of the typed line', async () => {
+    setAutocorrectPref('defineStyles', true)
+    const { editor, defined } = await styledEditor()
+    editor.commands.setContent({ type: 'doc', content: [{ type: 'docParagraph' }] })
+    const storage = editor.storage.trackChanges as { enabled: boolean; author: string }
+    storage.enabled = true
+    storage.author = 'Tester'
+    editor.commands.focus('end')
+    editor.commands.setMark('bold')
+    type(editor, 'Quarterly results')
+    const typed = editor.state.doc.firstChild!.firstChild!
+    expect(typed.marks.map((m) => m.type.name).sort()).toEqual(['bold', 'ins'])
+    enterAndSplit(editor)
+    // bold at the size of body text: the heading style that already looks like it
+    expect(blocks(editor)).toEqual([
+      { type: 'docHeading', styleId: 'Heading5', text: 'Quarterly results' },
+      { type: 'docParagraph', styleId: null, text: '' },
+    ])
+    expect(defined).toEqual([])
+    const head = editor.state.doc.firstChild!
+    // the text stays a tracked insertion; the bold went into the style
+    expect(head.firstChild!.marks.some((m) => m.type.name === 'ins')).toBe(true)
+    expect(head.firstChild!.marks.some((m) => m.type.name === 'bold')).toBe(false)
+    // the paragraph remembers what it was before it took the style
+    const change = JSON.parse(String(head.attrs.pPrChange)) as { author: string }
+    expect(change.author).toBe('Tester')
+    storage.enabled = false
+  })
+
+  it('a second look takes the next free level; a sentence or plain text is left alone', async () => {
+    setAutocorrectPref('defineStyles', true)
+    const { editor, defined } = await styledEditor()
+    const text = (value: string, marks: Array<{ type: string }>) => ({
+      type: 'docParagraph',
+      content: [{ type: 'text', text: value, marks }],
+    })
+    editor.commands.setContent({
+      type: 'doc',
+      content: [
+        { type: 'docHeading', attrs: { level: 1 }, content: [{ type: 'text', text: 'Title' }] },
+        text('Italic and bold', [{ type: 'bold' }, { type: 'italic' }]),
+      ],
+    })
+    editor.commands.focus('end')
+    enterAndSplit(editor)
+    expect(blocks(editor)[1]).toMatchObject({ type: 'docHeading', styleId: 'Heading2' })
+    expect(defined.map((up) => up.styleId)).toEqual(['Heading2'])
+
+    for (const [value, marks] of [
+      ['It ends with a period.', [{ type: 'bold' }]],
+      ['Plain line', []],
+      ['Small italic', [{ type: 'italic' }]],
+    ] as const) {
+      editor.commands.setContent({ type: 'doc', content: [text(value, [...marks])] })
+      editor.commands.focus('end')
+      enterAndSplit(editor)
+      expect(blocks(editor).map((b) => b.type)).toEqual(['docParagraph', 'docParagraph'])
+    }
+    // half of the line bold is not a line formatted as a whole
+    editor.commands.setContent({
+      type: 'doc',
+      content: [
+        {
+          type: 'docParagraph',
+          content: [
+            { type: 'text', text: 'Half ', marks: [{ type: 'bold' }] },
+            { type: 'text', text: 'bold' },
+          ],
+        },
+      ],
+    })
+    editor.commands.focus('end')
+    enterAndSplit(editor)
+    expect(blocks(editor).map((b) => b.type)).toEqual(['docParagraph', 'docParagraph'])
+    expect(defined).toHaveLength(1)
   })
 })

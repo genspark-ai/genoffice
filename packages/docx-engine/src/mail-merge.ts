@@ -342,7 +342,7 @@ function mergeRun(
   if (!instr) return { run, effect: null, untouched: false }
   const [keyword] = splitInstruction(instr)
   // keep the run's formatting, drop the instruction — the value replaces both
-  const { instrField: _dropped, fldDirty: _dirty, ...rest } = run
+  const { instrField: _dropped, fldDirty: _dirty, fldLock: _lock, ...rest } = run
   if (keyword === 'MERGEFIELD') {
     return {
       run: { ...rest, text: mergeFieldText(instr, record) },

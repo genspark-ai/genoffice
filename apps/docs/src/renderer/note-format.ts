@@ -44,10 +44,24 @@ const propsIn = (kind: NoteKind, section?: number): NoteProps =>
 export const noteNumFmt = (kind: NoteKind, section?: number): string =>
   propsIn(kind, section).numFmt ?? DEFAULT_FMT[kind]
 
-/** how the reference marks of a kind count: per section, what the count opens at and whether it starts over there */
+export type NoteRestart = 'continuous' | 'eachSect' | 'eachPage'
+export interface NoteCountRule {
+  start: number
+  restart: NoteRestart
+  fmt: string
+}
+
+/** the page (0-based) the last layout put each footnote's first reference on; empty before a layout */
+let footnotePages: ReadonlyMap<string, number> = new Map()
+export function setFootnotePages(next: ReadonlyMap<string, number>): void {
+  footnotePages = next
+}
+
+/** how the reference marks of a kind count: per section, what the count opens at and where it starts over */
 export function noteNumbering(kind: NoteKind): {
   sections: readonly NoteSection[]
-  of: (section: number) => { start: number; restart: boolean; fmt: string }
+  of: (section: number) => NoteCountRule
+  pageOf: (id: string) => number | undefined
 } {
   return {
     sections,
@@ -55,11 +69,57 @@ export function noteNumbering(kind: NoteKind): {
       const p = propsIn(kind, section)
       return {
         start: p.numStart ?? 1,
-        restart: p.numRestart === 'eachSect',
+        // Word numbers endnotes continuously or per section only
+        restart:
+          p.numRestart === 'eachSect' || (p.numRestart === 'eachPage' && kind === 'footnote')
+            ? p.numRestart
+            : 'continuous',
         fmt: p.numFmt ?? DEFAULT_FMT[kind],
       }
     },
+    pageOf: (id) => (kind === 'footnote' ? footnotePages.get(id) : undefined),
   }
+}
+
+/** whether any section restarts its footnote numbers on each page */
+export const footnotesRestartPerPage = (list: readonly SectionNoteProps[] = props): boolean =>
+  list.some((p) => p.footnote.numRestart === 'eachPage')
+
+/** a numbered reference mark in body order: its note, its section, and the page it was laid out on when known */
+export interface NoteRefSite {
+  id: string
+  section: number
+  page?: number
+}
+
+/**
+ * The number each note shows. A mark is its section's start value plus the
+ * running count; the count starts over where an eachSect or eachPage section
+ * begins and, in an eachPage section, at the first mark of every page. A mark whose page is
+ * not known yet counts on the page of the mark before it. A note referenced
+ * twice keeps its first number.
+ */
+export function assignNoteNumbers(
+  refs: readonly NoteRefSite[],
+  of: (section: number) => NoteCountRule,
+): Map<string, { num: number; fmt: string }> {
+  const shown = new Map<string, { num: number; fmt: string }>()
+  let count = 0
+  let section = -1
+  let page: number | undefined
+  for (const ref of refs) {
+    const rule = of(ref.section)
+    // a section without marks of its own still starts a per-section count over; a
+    // per-page section opens at its start value even where it begins in the middle of a page
+    if (section < ref.section && rule.restart === 'eachPage') count = 0
+    for (; section < ref.section; section++) if (of(section + 1).restart === 'eachSect') count = 0
+    if (shown.has(ref.id)) continue
+    const here = ref.page ?? page
+    if (rule.restart === 'eachPage' && here !== page) count = 0
+    page = here
+    shown.set(ref.id, { num: rule.start + count++, fmt: rule.fmt })
+  }
+  return shown
 }
 
 const ROMAN: Array<[number, string]> = [

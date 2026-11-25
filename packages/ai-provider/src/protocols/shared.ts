@@ -289,17 +289,29 @@ export function openAiUsage(
   return inputTokens !== undefined || outputTokens !== undefined ? usage : undefined
 }
 
+/** `, "key":` right after a quote: the string ended and the next member starts. */
+const KEY_BOUNDARY = /^\s*,\s*"[^"\\\n]{1,64}"\s*:/
+
 /**
  * Models occasionally emit unescaped " inside string values (e.g. English quotes in Chinese copy).
  * Single-pass scan: a " inside a string whose next non-whitespace char is not structural gets escaped.
+ *
+ * A low-9 opening quote („, U+201E: Hungarian, German, Czech, Polish…) is often closed with a plain
+ * " (`„Minta Kft", a…`, `a „hónap terméke": …`). While such a quote is open, the next " is its
+ * closer and is escaped even when a comma or colon follows it. `lowQuotes: false` turns that off, for
+ * the rare value that opens „ and never closes it.
  */
-function repairUnescapedQuotes(json: string): string {
+function repairUnescapedQuotes(json: string, lowQuotes = true): string {
   let out = ''
   let inStr = false
+  let lowQuoteOpen = false
   for (let i = 0; i < json.length; i++) {
     const c = json[i]!
     if (!inStr) {
-      if (c === '"') inStr = true
+      if (c === '"') {
+        inStr = true
+        lowQuoteOpen = false
+      }
       out += c
       continue
     }
@@ -307,7 +319,17 @@ function repairUnescapedQuotes(json: string): string {
       out += c + (json[++i] ?? '')
       continue
     }
+    if (c === '\u201E') lowQuoteOpen = lowQuotes
+    else if (c === '\u201D' || c === '\u201C') lowQuoteOpen = false
     if (c === '"') {
+      // A " that starts the next key (`", "key":`) is never a low-9 closer: escaping it would
+      // swallow the key into this value and parse as wrong data instead of failing.
+      if (lowQuoteOpen && !KEY_BOUNDARY.test(json.slice(i + 1, i + 80))) {
+        lowQuoteOpen = false
+        out += '\\"'
+        continue
+      }
+      lowQuoteOpen = false
       let j = i + 1
       while (j < json.length && ' \n\r\t'.includes(json[j]!)) j++
       const next = json[j]
@@ -402,6 +424,22 @@ export function throwIfCreditsNotice(bodyText: string): void {
   if (notice) throw new AiCreditsError(notice)
 }
 
+/** A swallowed member boundary inside a string: `…", "key": …`. */
+const SWALLOWED_MEMBER = /",\s*"[\w.-]{1,64}"\s*:/
+
+/**
+ * A repair that parsed but merged two members into one, or turned value text into a key, is
+ * wrong data; failing lets the loop ask the model again instead.
+ */
+function looksMisrepaired(value: unknown): boolean {
+  if (typeof value === 'string') return SWALLOWED_MEMBER.test(value)
+  if (Array.isArray(value)) return value.some(looksMisrepaired)
+  if (value && typeof value === 'object') {
+    return Object.entries(value).some(([k, v]) => /[",]/.test(k) || looksMisrepaired(v))
+  }
+  return false
+}
+
 /** Don't throw on parse failure (it would kill the whole stream); return error so the loop feeds it back for retry */
 export function parseToolInput(json: string): { input: Record<string, unknown>; error?: string } {
   if (!json.trim()) return { input: {} }
@@ -409,9 +447,19 @@ export function parseToolInput(json: string): { input: Record<string, unknown>; 
   try {
     parsed = JSON.parse(json)
   } catch (e) {
-    try {
-      parsed = JSON.parse(repairUnescapedQuotes(json))
-    } catch {
+    parsed = undefined
+    for (const lowQuotes of [true, false]) {
+      try {
+        const repaired: unknown = JSON.parse(repairUnescapedQuotes(json, lowQuotes))
+        if (!looksMisrepaired(repaired)) {
+          parsed = repaired
+          break
+        }
+      } catch {
+        // try the next repair
+      }
+    }
+    if (parsed === undefined) {
       const msg = e instanceof Error ? e.message : String(e)
       return { input: {}, error: `${msg}; raw: ${json.slice(0, 500)}` }
     }

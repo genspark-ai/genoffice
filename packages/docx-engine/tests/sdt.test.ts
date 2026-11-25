@@ -325,3 +325,42 @@ describe('nested SDT (Word cover-page building blocks)', () => {
     expect(visible[0].previewText).toContain('bare run text')
   })
 })
+
+describe('block-level custom XML in tables', () => {
+  const custom = (inner: string) =>
+    '<w:customXml w:uri="urn:example" w:element="part">' +
+    '<w:customXmlPr><w:attr w:name="source" w:val="metadata-only"/></w:customXmlPr>' +
+    inner +
+    '</w:customXml>'
+
+  it.each(['row', 'cell', 'paragraph'] as const)(
+    'reads cell text through a wrapped %s',
+    async (level) => {
+      const para = '<w:p><w:r><w:t>Sample</w:t></w:r></w:p>'
+      const p = level === 'paragraph' ? custom(para) : para
+      const tc =
+        level === 'cell' ? custom(`<w:tc><w:tcPr/>${p}</w:tc>`) : `<w:tc><w:tcPr/>${p}</w:tc>`
+      const tr = level === 'row' ? custom(`<w:tr>${tc}</w:tr>`) : `<w:tr>${tc}</w:tr>`
+      const bodyXml =
+        '<w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="1000"/></w:tblGrid>' + tr + '</w:tbl>'
+
+      const doc = await parseDocx(await buildDocx({ bodyXml }))
+      const table = doc.blocks.find((b) => b.table)?.table
+      expect(table?.rows).toHaveLength(1)
+      expect(table?.rows[0]).toHaveLength(1)
+      expect(table?.rows[0][0].paras).toEqual(['Sample'])
+      expect(table?.rows[0][0].paras.join('')).not.toContain('metadata-only')
+    },
+  )
+
+  it('unwraps nested custom XML around an sdt-wrapped cell paragraph', async () => {
+    const p = custom(
+      '<w:sdt><w:sdtContent><w:p><w:r><w:t>Nested</w:t></w:r></w:p></w:sdtContent></w:sdt>',
+    )
+    const bodyXml =
+      '<w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="1000"/></w:tblGrid>' +
+      `<w:tr><w:tc><w:tcPr/>${p}</w:tc></w:tr></w:tbl>`
+    const doc = await parseDocx(await buildDocx({ bodyXml }))
+    expect(doc.blocks.find((b) => b.table)?.table?.rows[0][0].paras).toEqual(['Nested'])
+  })
+})

@@ -65,12 +65,14 @@ const caretAtStartOf = (page: Page, text: string) =>
   }, text)
 
 /** the End key scrolls the window on macOS instead of moving the caret */
+/** the page takes the focus a frame after focus('end'): a dialog opened before that frame would lose it */
 const caretAtDocEnd = (page: Page) =>
   page.evaluate(() => {
     const { editor } = (
       window as never as { __aidocs: { editor: { commands: { focus(at: string): boolean } } } }
     ).__aidocs
     editor.commands.focus('end')
+    return new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
   })
 
 const documentXml = async (docPath: string) =>
@@ -144,7 +146,8 @@ test('AutoCorrect Options: the replace table, exceptions, math names, AutoFormat
     await dialog.getByLabel('*Bold* and _italic_ with real formatting').check({ force: true })
     await expect(dialog.getByLabel('Automatic bulleted lists')).toBeChecked()
     await expect(dialog.getByLabel('Border lines')).toBeChecked()
-    await expect(dialog.getByLabel('Date style')).toHaveCount(0)
+    // off until asked for, as in Word
+    await expect(dialog.getByLabel('Date style')).not.toBeChecked()
     await page.screenshot({ path: test.info().outputPath('autocorrect-autoformat.png') })
     await closeDialog(dialog)
 
@@ -380,7 +383,7 @@ test('Paragraph > Asian Typography switches hanging punctuation and the automati
     await expect(typography).toBeHidden()
     await expect(hanging).not.toBeChecked()
     await dialog.getByRole('button', { name: 'Options…' }).click()
-    await expect(typography.getByLabel('Custom')).toHaveCount(0)
+    await expect(typography.getByLabel('Custom')).toBeEnabled()
     await typography.getByLabel('Compress punctuation only').check()
     await page.screenshot({ path: test.info().outputPath('typography-options.png') })
     await typography.getByRole('button', { name: 'OK', exact: true }).click()

@@ -590,20 +590,22 @@ export function KbAskPanel({
     if (!mention) return
     setDraft(removeMentionToken(draft, mention.start))
     void window.aiOffice
-      .addAttachmentPaths([file.path])
+      .kbGrantMention(file.path)
+      .then(() => window.aiOffice.addAttachmentPaths([file.path]))
       .then(mergeAttachments)
       .catch(() => {})
   }
 
   /** @ list keys: captured before the composer's own Enter/Escape handling */
   const imeEnter = useImeEnterGuard()
+  const mentionRows = Math.min(mentionFiles.length, MENTION_LIST_CAP)
   const onMentionKeyDown = (event: React.KeyboardEvent<HTMLDivElement>): void => {
     const decided = mentionKeyAction({
       key: event.key,
       shiftKey: event.shiftKey,
       isImeConfirm: imeEnter.isImeConfirm(event.nativeEvent),
       listOpen: mention !== null && !mentionDismissed,
-      listLength: mentionFiles.length,
+      listLength: mentionRows,
       navigated: mentionNavigated,
     })
     if (decided.action === 'none') return
@@ -618,12 +620,12 @@ export function KbAskPanel({
       event.preventDefault()
       event.stopPropagation()
       setMentionNavigated(true)
-      setMentionIndex((index) => nextMentionIndex(index, decided.step, mentionFiles.length))
+      setMentionIndex((index) => nextMentionIndex(index, decided.step, mentionRows))
       return
     }
     event.preventDefault()
     event.stopPropagation()
-    const file = mentionFiles[Math.min(mentionIndex, mentionFiles.length - 1)]
+    const file = mentionFiles[Math.min(mentionIndex, mentionRows - 1)]
     if (file) pickMention(file)
   }
 

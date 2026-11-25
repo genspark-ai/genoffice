@@ -394,7 +394,7 @@ describe('resolveFace', () => {
     // the macOS on-demand Nanum asset is a face Word lays out with
     expect(resolveFace('Nanum Myeongjo', ctxWith())?.source).toBe('asset')
     expect(resolveFace('NanumGothic', ctxWith())?.lineFactor).toBe(1.495)
-    // hangul names: Batang whatever the PANOSE; a style suffix or MT tag drops to the base family
+    // hangul names: Batang whatever the PANOSE; a style suffix drops to the base family
     expect(
       resolveFace(
         '\ud504\ub85c\ube0c',
@@ -422,6 +422,18 @@ describe('resolveFace', () => {
     expect(resolveFace('Arial MT', ctxWith({ 'arial mt': { altName: 'Arial MT' } }))?.family).toBe(
       'Arial',
     )
+    // the MT tag is Arial's own alias, not a style word: other families take the
+    // fallback even when the base name is a face Word has (probe 2026-11-20)
+    expect(resolveFace('Abadi MT', ctxWith({ 'abadi mt': { family: 'roman' } }))).toMatchObject({
+      family: 'Cambria',
+      substituted: true,
+      rules: ['fallback'],
+    })
+    expect(
+      resolveFace('Century Gothic MT', ctxWith({ 'century gothic mt': { family: 'swiss' } }))
+        ?.family,
+    ).toBe('Calibri')
+    expect(resolveFace('Montserrat Regular', ctxWith())?.family).toBe('Montserrat')
   })
 
   it('reports an embedded face with its own box', () => {

@@ -13,6 +13,7 @@ import {
   lazyWorkbookCellReader,
   loadSnapshotIntoUniver,
   loadVisibleRange,
+  getScrollAnchor,
   loadWorkbookSkeleton,
   matrixBounds,
   modelCellValue,
@@ -92,6 +93,7 @@ import {
   IUniverInstanceService,
   LocaleType,
   mergeLocales,
+  RANGE_TYPE,
   ThemeService,
   UniverInstanceType,
   type ICellData,
@@ -150,6 +152,7 @@ import {
   type AgentImage,
 } from '@genoffice/agent-core'
 import { imageGenerationAvailable, type AiSettings } from '@genoffice/ai-provider/browser'
+import { sendRoute } from '../ai/agent-configured'
 import { type WorkbookOperation } from '@genoffice/xlsx-gateway/domain/workbook-dsl'
 import {
   columnLabel,
@@ -384,7 +387,11 @@ import { installCfDisplayKeyCompare } from './cf-duplicate-key'
 import { installCfFormulaFold } from './cf-formula-fold'
 import { installSheetRenameFix } from './sheet-rename-fix'
 import { installArrowCollapse } from './arrow-collapse-fix'
-import { effectiveSheetProtection, installSheetProtectionGuard } from './sheet-protection'
+import {
+  effectiveSheetProtection,
+  fileSheetProtection,
+  installSheetProtectionGuard,
+} from './sheet-protection'
 import type { SheetProtectionAllow } from '@genoffice/xlsx-gateway/gateway/xlsx-protection'
 import { installCtrlDragFill } from './ctrl-drag-fill'
 import { installContextSubmenuReopenFix } from './context-submenu-reopen-fix'
@@ -403,21 +410,26 @@ import { installCenterContinuousRender } from './center-continuous'
 import { installExcelFilterButton } from './filter-button-excel-style'
 import {
   extendLargeFilterRange,
-  installLargeFilterValues,
+  filterModelFor,
+  setLargeFilterCriteria,
   isLargeFilterSheet,
   largeFilterAction,
 } from './large-filter'
 import { resetLargeFilter } from './large-filter-state'
+import { prepareLargeFilterPanel, streamedFilterTarget } from './LargeFilterPanel'
 import { installForceStringMarkGate, installLongTextRender } from './long-text-render'
 import { installAutofitWrapBudget } from './autofit-wrap-budget'
 import { installAutofitLinePitch } from './autofit-line-pitch'
-import { installHeaderUnhideDebounce } from './load-perf-patches'
+import { installHeaderUnhideDebounce, installRangeThemeVisibilityGate } from './load-perf-patches'
+import { installSparseSheetRender } from './sparse-sheet-render'
 import { installCopyAnimationIdle } from './copy-animation-idle'
 import { installNumberAsTextAlertSeverity } from './number-as-text-alert'
 import { installFormulaStreamHold } from './formula-stream-hold'
 import { installRichTextBidiFix } from './rich-text-bidi-fix'
 import { installRtlTextDirectionFix } from './rtl-text-fix'
 import { installRtlGridMirror } from './rtl-grid-mirror'
+import { installGridlinePrecision } from './gridline-precision'
+import { installDeferredVerticalThumb } from './vertical-thumb-scroll'
 import { installVertAlignRender } from './vert-align-render'
 import { installMultiRowAutofit } from './autofit-multi-row'
 import { registerExcelJumpNav } from './excel-jump-nav'
@@ -435,6 +447,7 @@ import {
   type PasteSpecialSource,
 } from './paste-special'
 import { installStatusBarFileStats } from './statusbar-file-stats'
+import { installStreamedColumnWidth } from './streamed-column-width'
 import {
   installStatusBarStatsFilter,
   readStatusBarFuncs,
@@ -460,6 +473,7 @@ import { installNotePopupCard, type NotePopupCard } from './note-hover-card'
 import { collectNotePictures, type NotePicture, type PendingNotePicture } from './note-pictures'
 import { handleRemoveNotePicture } from './note-picture-actions'
 import { installFormulaNullResultFix } from './formula-null-result'
+import { installNumberSeparators } from './number-separators-runtime'
 import { installNumberFormatFix } from './numfmt-fix'
 import { installIfsEmptySetFix } from './ifs-empty-set'
 import { installExcel365Aggregators } from './excel-365-aggregators'
@@ -495,6 +509,7 @@ import {
   readChartVector as readChartVectorImpl,
   type VisualSyncContext,
 } from './visual-edit-sync'
+import { formulaResultSyncBounds } from './chart-sync-pending'
 import {
   frameChangeEdit,
   handleVisualCommand,
@@ -1320,7 +1335,7 @@ export function App({
   }
 
   // ---- AI: real LLM agent (falls back to the deterministic planner above
-  // when no provider is configured — see isAgentConfigured/handleSend) ----
+  // when no provider is configured — see sendRoute/handleSend) ----
   const [aiSettings, setAiSettingsState] = useState<AiSettings | null>(null)
   const aiSettingsRef = useRef<AiSettings | null>(null)
   aiSettingsRef.current = aiSettings
@@ -1845,17 +1860,6 @@ export function App({
         },
       },
     })
-  }
-
-  function isAgentConfigured(): boolean {
-    const settings = aiSettingsRef.current
-    if (!settings) return false
-    const config = settings.providers[settings.provider]
-    if (!config?.model) return false
-    // Genspark's key never lands in the settings file; the main process injects
-    // it from the gsk login state. When logged out, requests return an error
-    // guiding sign-in — not intercepted here.
-    return settings.provider === 'genspark' || !!config.apiKey
   }
 
   /** Image attachments read as base64 and sent multimodal with this user message
@@ -2392,7 +2396,10 @@ export function App({
     installRtlTextDirectionFix()
     // sheetView rightToLeft="1": mirror the grid geometry (column A on the
     // right, headers on the right) while keeping logical indices.
+    installSparseSheetRender()
+    installGridlinePrecision()
     installRtlGridMirror()
+    installDeferredVerticalThumb()
     // Univer defines the right-to-left command/mutation pair but never
     // registers it; without this the View tab's toggle would silently no-op.
     installRightToLeftCommand(runtime)
@@ -2412,6 +2419,7 @@ export function App({
     // canvas line box (Calibri 10: 12.75 pt per line, not ~10 pt).
     installAutofitLinePitch()
     installHeaderUnhideDebounce()
+    installRangeThemeVisibilityGate(runtime)
     // The dashed border on a copied range is a per-frame animation. It must
     // not keep repainting the scene while nobody is looking at it.
     installCopyAnimationIdle()
@@ -2481,6 +2489,9 @@ export function App({
       runtime,
       () => lazyWorkbookRef.current?.file.date1904 === true,
     )
+    // Decimal-comma regions: the grid, the editors and the formula bar speak
+    // the region's notation; the model stays canonical.
+    const numberSeparatorsDisposable = installNumberSeparators(runtime)
     const errorAlignDisposable = installErrorValueAlignment(runtime)
     // CELL("filename") resolves the session's on-disk path; converted
     // imports (needsSaveAs) count as never-saved, like Excel.
@@ -2517,6 +2528,7 @@ export function App({
         showToast(message, 'error')
       },
     })
+    const streamedColumnWidthDisposable = installStreamedColumnWidth(runtime, lazyWorkbookRef)
     const ctrlDragFillDisposable = installCtrlDragFill(runtime)
     // The grid's right-click item that withholds the selected cells from the
     // AI. Contributed to Univer's own menu rather than replacing it, so every
@@ -2815,8 +2827,21 @@ export function App({
       (event) => {
         if (journalSuppression.active) return
         // The formula engine re-applies cached results with these execution
-        // options; they are derived state, never user edits.
+        // options; they are derived state, never user edits. They can still
+        // land inside a chart series' c:f range, so dirty those cells for the
+        // live chart sync (the user's own edit already queued its bounds).
         const options = event.options as { fromFormula?: boolean } | undefined
+        const resultSync = formulaResultSyncBounds(
+          { id: event.id, options, params: event.params },
+          (id) => id === SET_RANGE_VALUES_MUTATION,
+          cellValueBounds,
+        )
+        // Only after a user edit: the recalculation on open and volatile
+        // cells must not journal a chart edit into an untouched workbook.
+        const resultState = lazyWorkbookRef.current
+        if (resultSync && (!resultState || journalSize(resultState.editJournal) > 0)) {
+          queueChartDataSync(resultSync.sheetId, resultSync.bounds)
+        }
         if (options?.fromFormula) return
         // The copy finished (or failed); a stale source must not claim a
         // later, unrelated insert-sheet.
@@ -3083,6 +3108,10 @@ export function App({
           }
           if (event.id === 'sheet.mutation.remove-filter') {
             resetLargeFilter(state, params.subUnitId)
+            const worksheet = runtime.univerAPI.getActiveWorkbook()?.getActiveSheet()
+            if (worksheet?.getSheetId() === params.subUnitId) {
+              void loadVisibleRange(runtime, lazyWorkbookRef, worksheet, setMessage)
+            }
           }
           setPendingEdits(journalSize(state.editJournal))
           return
@@ -3565,24 +3594,66 @@ export function App({
               cellCounts: workbookCellCounts(state.file.sheets),
             })
             if (verdict === 'workbookTooLarge' && subUnitId !== undefined) {
-              // Past the budget the filter runs on column projections read
-              // from the file (large-filter.ts); the panel opens as usual.
-              installLargeFilterValues(runtime, lazyWorkbookRef, isLargeFilterSheet, (loading) =>
-                setMessage(t(loading ? 'appLargeFilterLoading' : 'appReadyInitial')),
-              )
-              const worksheet = runtime.univerAPI.getActiveWorkbook()?.getSheetBySheetId(subUnitId)
+              const workbook = runtime.univerAPI.getActiveWorkbook()
+              const worksheet = workbook?.getSheetBySheetId(subUnitId)
+              const current = () => lazyWorkbookRef.current === state
+              const finish = async () => {
+                if (!current()) return
+                setPendingEdits(journalSize(state.editJournal))
+                if (
+                  workbook &&
+                  worksheet &&
+                  workbook.getActiveSheet()?.getSheetId() === subUnitId
+                ) {
+                  const range = filterModelFor(runtime, worksheet)?.getRange()
+                  const anchor = getScrollAnchor(workbook, worksheet)
+                  const column = anchor?.column ?? 0
+                  if (range && anchor?.row !== range.startRow) {
+                    worksheet.scrollToCell(range.startRow, column)
+                  }
+                  await loadVisibleRange(
+                    runtime,
+                    lazyWorkbookRef,
+                    worksheet,
+                    setMessage,
+                    range ? { row: range.startRow, column } : undefined,
+                  )
+                }
+                if (current()) setMessage(t('appReadyInitial'))
+              }
+              if (event.id === OPEN_FILTER_PANEL_OPERATION && worksheet) {
+                const column = (event.params as { col?: number } | undefined)?.col
+                if (typeof column === 'number') {
+                  const target = streamedFilterTarget(
+                    runtime,
+                    state,
+                    worksheet,
+                    column,
+                    async (criteria) => {
+                      await setLargeFilterCriteria(
+                        runtime,
+                        state,
+                        worksheet,
+                        column,
+                        criteria,
+                        current,
+                      )
+                      if (!current()) return
+                      await runtime.univerAPI.executeCommand('sheet.operation.close-filter-panel')
+                      await finish()
+                    },
+                  )
+                  if (target) prepareLargeFilterPanel(runtime, lazyWorkbookRef, target)
+                }
+              }
               const action = worksheet ? largeFilterAction(event.id, event.params, worksheet) : null
               if (!action) {
                 event.cancel = false
                 return
               }
-              event.cancel = true
               setMessage(t('appLargeFilterApplying'))
-              void action(runtime, state)
-                .then(() => {
-                  setPendingEdits(journalSize(state.editJournal))
-                  setMessage(t('appReadyInitial'))
-                })
+              void action(runtime, state, current)
+                .then(finish)
                 .catch((error: unknown) => setMessage(String(error)))
               return
             }
@@ -3622,8 +3693,16 @@ export function App({
                 setMessage(t('appFullLoadRunning'))
                 showToast(t('appFullLoadRunning'), 'info')
               } else if (verdict === 'offerFullLoad') setFullLoadPrompt('ask')
-              else if (verdict === 'workbookTooLarge') setFullLoadPrompt('tooLarge')
-              else if (verdict === 'valueModeFormulas') setMessage(t('appSortValueModeFormulas'))
+              else if (verdict === 'workbookTooLarge') {
+                if (event.id === MOVE_RANGE_COMMAND && ranges[0]?.rangeType === RANGE_TYPE.COLUMN) {
+                  // A full-column selection border can start a drag-move
+                  // next to the header's resize handle. Keep a move blocked
+                  // without putting a full-load dialog over the grid.
+                  const message = t('appMoveRowsColsUnsaved')
+                  setMessage(message)
+                  showToast(message, 'info')
+                } else setFullLoadPrompt('tooLarge')
+              } else if (verdict === 'valueModeFormulas') setMessage(t('appSortValueModeFormulas'))
               else setMessage(t('appSortRangeTooLarge'))
               return
             }
@@ -3939,6 +4018,7 @@ export function App({
       tsvClipboardDisposable.dispose()
       formulaViewDisposable.dispose()
       formulaTextDisposable.dispose()
+      numberSeparatorsDisposable.dispose()
       formulaBarAutosizeDisposable.dispose()
       fxButtonDisposable.dispose()
       pickRelayDisposable.dispose()
@@ -3958,6 +4038,7 @@ export function App({
       selectionWrapGuardDisposable.dispose()
       arrowCollapseDisposable.dispose()
       sheetProtectionDisposable.dispose()
+      streamedColumnWidthDisposable.dispose()
       ctrlDragFillDisposable.dispose()
       redactMenuDisposable.dispose()
       contextSubmenuReopenDisposable.dispose()
@@ -4043,7 +4124,6 @@ export function App({
     // skills ride with this one message only: the chips clear like attachments do
     const sentSkills = overrideInstruction ? [] : attachedSkillsRef.current
     if (sentSkills.length > 0) setAttachedSkills([])
-    const agentConfigured = isAgentConfigured()
     // Retry re-sends in place: drop the failed bubble and its error reply instead
     // of stacking a "Not sent" duplicate above the resent copy.
     const alreadyPersisted = retryIndex !== undefined && chat[retryIndex]?.persisted === true
@@ -4084,7 +4164,7 @@ export function App({
     // real LLM configured → let the agent read context and propose operations;
     // otherwise fall back to the local, deterministic regex planner
     // (kept for offline use and for the fixed micro-DSL it still supports).
-    if (agentConfigured) {
+    if (sendRoute(aiSettingsRef.current, instruction) === 'agent') {
       runAgent(instruction, sentAtts, sentSkills)
       return
     }
@@ -5089,10 +5169,18 @@ export function App({
       appliedRowKeys: new Map(),
       measuredWrapRows: new Map(),
       rowColStyleKeys: new Map(),
-      sheetProtections: new Map(),
+      sheetProtections: new Map(
+        selected.sheets.flatMap(({ id, protection }) =>
+          protection ? [[id, fileSheetProtection(protection.sheetProtection)] as const] : [],
+        ),
+      ),
       sheetPageBreaks: new Map(),
       sheetFilePageSetups: new Map(),
-      sheetProtectedRanges: new Map(),
+      sheetProtectedRanges: new Map(
+        selected.sheets.flatMap(({ id, protection }) =>
+          protection ? [[id, mapProtectedRanges(protection.protectedRanges, [])] as const] : [],
+        ),
+      ),
       uninstalledDefinedNames: new Set(),
       appliedCfSheets: new Set(),
       appliedFilterSheets: new Set(),

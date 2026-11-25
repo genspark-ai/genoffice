@@ -319,6 +319,10 @@ test('Field Options adds switches that shape the result; Horizontal Line goes in
         { timeout: 30_000 },
       )
       .toEqual([true, true, true])
+    // the page count is known here: the field is saved with it, not left for Word to update
+    expect(await documentXml(docPath)).toMatch(
+      /<w:fldChar w:fldCharType="begin"\/><\/w:r><w:r><w:instrText[^>]*> NUMPAGES \\\* ROMAN [^<]*<\/w:instrText><\/w:r><w:r><w:fldChar w:fldCharType="separate"\/><\/w:r><w:r><w:t[^>]*>I</,
+    )
 
     await closeAndSaveVideo(launched, VIDEO_DIR)
     launched = await launchShell({ onboardingSeen: true, videoDir: VIDEO_DIR, openFile: docPath })
@@ -405,6 +409,12 @@ test('Update Labels copies the first label of a label sheet into the others; the
         { timeout: 30_000 },
       )
       .toEqual([5, 6])
+    // a label sheet prints no grid: Word draws the table's lines over a cell's "none", not over "nil"
+    const borderless = (xml: string) => [
+      (xml.match(/<w:tcBorders><w:top w:val="nil"\/><w:left w:val="nil"\/>/g) ?? []).length,
+      /<w:tcBorders>(?:(?!<\/w:tcBorders>).)*w:val="none"/.test(xml),
+    ]
+    expect(borderless(await documentXml(docPath))).toEqual([6, false])
 
     await big('Finish & Merge').click()
     await panel.locator('input[name="mailmerge-output"]').nth(2).check()
@@ -420,6 +430,7 @@ test('Update Labels copies the first label of a label sheet into the others; the
     ])
     expect((merged.match(/To Dear/g) ?? []).length).toBe(6)
     expect(merged).not.toContain('NEXT')
+    expect(borderless(merged)).toEqual([6, false])
   } finally {
     await closeAndSaveVideo(launched, VIDEO_DIR)
     rmSync(dir, { recursive: true, force: true })

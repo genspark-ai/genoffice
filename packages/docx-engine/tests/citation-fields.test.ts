@@ -320,7 +320,7 @@ describe('mail-merge rule fields', () => {
     ])
   })
 
-  it('a SET that Word has run keeps its bookmark: the paragraph stays as it was read', async () => {
+  it('a SET that Word has run keeps its bookmark with the field, in an editable paragraph', async () => {
     const body =
       '<w:p>' +
       fld('begin') +
@@ -330,6 +330,10 @@ describe('mail-merge rule fields', () => {
       fld('end') +
       '</w:p>'
     const doc = await parseDocx(await buildDocx({ bodyXml: body }))
-    expect(doc.blocks[0]!.type).toBe('passthrough')
+    expect(doc.blocks[0]!.type).toBe('paragraph')
+    expect(doc.blocks[0]!.runs!.map((r) => [r.instrField, r.fldBookmarkText])).toEqual([
+      ['SET Greeting "Hello"', 'Hello'],
+    ])
+    expect(doc.blocks[0]!.bookmarks).toBeUndefined()
   })
 })

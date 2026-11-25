@@ -25,7 +25,7 @@ import type { LocalImageEdit } from '../ImageEditLayer'
 import { imageRectKey } from '../ImageEditLayer'
 import type { LocalTextEdit, LocalTextInsert } from '../text-edit-preview'
 import type { SavedNoteAnnot } from '../note-threads'
-import type { LocalBlankPage, LocalFormField, SavedMarkupAnnot, StampConfig } from '../edit-state'
+import type { LocalBlankPage, LocalFormField, SavedAnnot, StampConfig } from '../edit-state'
 import { GuidedError, register, type Op, type OpContext } from './registry'
 
 type Rect = [number, number, number, number]
@@ -118,12 +118,12 @@ register({
   touches: ['annotDeletes', 'noteEdits'],
   additive: true,
   validate(op, ctx) {
-    const a = obj<SavedMarkupAnnot | SavedNoteAnnot>(op.annot, 'annot')
+    const a = obj<SavedAnnot>(op.annot, 'annot')
     pageIndex(a.pageIndex, ctx, 'annot.pageIndex')
     if (typeof a.objNum !== 'number') throw new GuidedError('annot.objNum must be a number')
   },
   apply(op, s) {
-    const annot = op.annot as SavedMarkupAnnot | SavedNoteAnnot
+    const annot = op.annot as SavedAnnot
     return {
       annotDeletes: [...s.annotDeletes, { id: id(op), annot }],
       noteEdits: s.noteEdits.filter((e) => e.annot.objNum !== annot.objNum),

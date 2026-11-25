@@ -10,13 +10,16 @@ import {
 } from '../text-layout/run-faces'
 import { textParaLineBox } from '../text-layout/para-line-box'
 import { planStrayTab } from '../text-layout/stray-tab-stop'
+import { runOwnLatinFace } from '../text-layout/script-rules'
 import { inlineSegments, type InlineRun, type InlineSegments } from '../text-layout/inline-segments'
 import { MultiSelect } from './multi-select'
 import { pictureDisplaySrc, type PictureVector } from './picture-vectors'
 import { CrossCellDrag } from './cross-cell-drag'
 import { Editor, Extension, Node } from '@tiptap/core'
 import { SHAPE_INLINE_WRAP } from './floating-z-order'
+import { snappedDragPointer } from './drawing-grid'
 import { selectBoxAt, selectedBoxPlugin } from './selected-box'
+import { boxWithSize } from './shape-size'
 import {
   objectMultiSelectPlugin,
   type GroupBox,
@@ -25,8 +28,10 @@ import {
 } from './object-multi-select'
 import { encloseMarkClass, eqLayoutText } from './eq-layout'
 import { StreamingTailGuardExtension } from './streaming-tail-guard'
+import { SectionEditGuardExtension } from './section-edit-guard'
 import { PermRegionsExtension } from './perm-regions'
 import { wrapGroupCss, type WrapPicture } from './wrap-group'
+import { linkMarkPairing } from './link-mark-pairing'
 import type { ChainedCommands, RawCommands } from '@tiptap/core'
 import { Gapcursor, UndoRedo } from '@tiptap/extensions'
 import { DOMSerializer } from '@tiptap/pm/model'
@@ -107,6 +112,7 @@ import {
   type TabStop,
   type TableCell,
   type TableModel,
+  type RelSize,
   type TextboxDisplay,
   type TextboxListMarker,
   TEXTBOX_VERTS,
@@ -134,6 +140,7 @@ import {
 import { borderLineCss } from './hf-dom'
 import {
   clipboardParaAttrs,
+  endIndentDecl,
   fromPmNode,
   isBandOffsetPicture,
   isSpaceOnlyParagraph,
@@ -142,6 +149,7 @@ import {
   paraDeclaredFontFamily,
   perLineFactors,
   pictureMarkLineFactor,
+  strutHalfPoints,
   toAttrs,
   type ParaLayoutNode,
   type ParaLayoutOptions,
@@ -239,18 +247,21 @@ import {
   InsMark,
   CtrlCheckboxMark,
   FormatOffClearExtension,
+  HIGHLIGHT_CSS,
   InstrFieldMark,
   SymMark,
   ItalicMark,
   LinkMark,
   RefFieldMark,
   RevisionOriginalExtension,
+  RangeBookmarkMark,
   RprChangeMark,
   StrikeMark,
   TextStyleMark,
   UnderlineMark,
 } from './marks'
 import { DocRedaction } from './redaction'
+import { textColorValue } from './text-color'
 import {
   DropCapExtension,
   MoveRevisionExtension,
@@ -276,7 +287,10 @@ import { AutoCorrectExtension } from './autocorrect'
 import { LanguageDetectExtension } from './language-detect'
 import { autocorrectEnabled } from '../autocorrect-pref'
 import { InactiveSelectionExtension } from './inactive-selection'
+import { GrammarMarksExtension } from './grammar-marks'
 import { FieldCodesExtension } from './field-codes'
+import { GoBackExtension } from './word-keys'
+import { NumberRefsExtension } from './number-refs'
 import type { SeqRenumber } from './field-results'
 import { TableFormulaExtension } from './table-formula'
 import { MergePreviewExtension } from './merge-preview'
@@ -284,9 +298,13 @@ import { FormattingMarksExtension } from './formatting-marks'
 import { AiQueueAnchorsExtension } from './ai-queue-anchors'
 import { CheckboxToggleExtension } from './checkbox-toggle'
 import { DoubleClickWordExtension } from './dblclick-word'
+import { SpellMarksExtension } from './spell-marks'
+import { SpellIgnoreOnceExtension } from './spell-menu'
 import { OutlineViewExtension } from './outline-view'
+import { HeadingCollapseExtension } from './heading-collapse'
 import { StoryViewExtension } from './story-view'
 import { PageGapNavExtension } from './page-gap-nav'
+import { PromptFocusExtension } from './prompt-focus'
 import { TrailingTableExitExtension } from './trailing-table-exit'
 import { carriedBlock, carriedNoteRef } from './carried-nodes'
 import { moveBlocks } from './move-block'
@@ -333,6 +351,11 @@ const anchorAttrs = {
   bookmarks: { default: null as string[] | null },
   /** Word internal bookmarks (_Ref/_Toc…): kept out of the bookmark manager, written back verbatim on paragraph rebuild so cross-references don't break */
   hiddenBookmarks: { default: null as string[] | null },
+  /** names a tracked conversion moved to the converted content: back on this paragraph if the conversion is rejected (never saved) */
+  bookmarksHeld: {
+    default: null as { bookmarks?: string[]; hiddenBookmarks?: string[] } | null,
+    rendered: false,
+  },
   /** inside an editing permission range open to everyone: editable while the document is protected read-only (display only, never written back) */
   permEditable: { default: false },
   /** Endpoints of cross-paragraph comment ranges (only one end in this paragraph); written back on paragraph rebuild to avoid orphan marks */
@@ -365,11 +388,12 @@ const anchorAttrs = {
   styleSpaceAfterAuto: { default: null as boolean | null },
   /** w:contextualSpacing on the pPr itself; false = explicit off overriding the style */
   contextualSpacing: { default: null as boolean | null },
-  /** w:suppressAutoHyphens / w:mirrorIndents on the pPr itself (tri-state) */
+  /** w:suppressAutoHyphens / w:mirrorIndents / w:adjustRightInd on the pPr itself (tri-state) */
   suppressAutoHyphens: { default: null as boolean | null },
   mirrorIndents: { default: null as boolean | null },
-  /** w:adjustRightInd explicitly off; display only, never written back */
-  adjustRightInd: { default: null as boolean | null, rendered: false, keepOnSplit: false },
+  adjustRightInd: { default: null as boolean | null },
+  /** w15:collapsed on the pPr itself (tri-state): the heading opens with its body folded */
+  collapsed: { default: null as boolean | null, rendered: false, keepOnSplit: false },
   /** anchored thin lines drawn over the paragraph (display only, RuleOverlayExtension) */
   ruleOverlays: { default: null as RuleOverlay[] | null, rendered: false, keepOnSplit: false },
   /** pagination flags on the pPr itself (tri-state; null = the style's value shows through) */
@@ -423,6 +447,9 @@ const anchorAttrs = {
   emptyRunFont: { default: null as string | null },
   /** w:sz (half-points) of the paragraph mark; sizes the list marker */
   markSize: { default: null as number | null },
+  /** w:color / w:highlight of the paragraph mark; paint the list marker */
+  markColor: { default: null as string | null },
+  markHighlight: { default: null as string | null },
   /** subset of "tblr": which sides have a single-line border */
   borders: { default: null as string | null },
   /** JSON per-side {color?,szPt?,spacePt?,val?} for `borders` (w:pBdr declared look) */
@@ -591,14 +618,47 @@ export const DocXeMark = Node.create({
         parseHTML: (el: HTMLElement) => el.getAttribute('data-xe-switches'),
         rendered: false,
       },
+      // where a link field (INCLUDETEXT, INCLUDEPICTURE, LINK) opens: its instruction
+      linkBegin: {
+        default: null as string | null,
+        parseHTML: (el: HTMLElement) => el.getAttribute('data-link-begin'),
+        rendered: false,
+      },
+      // where the link field opened before it closes
+      linkEnd: {
+        default: false,
+        parseHTML: (el: HTMLElement) => el.hasAttribute('data-link-end'),
+        rendered: false,
+      },
+      locked: {
+        default: false,
+        parseHTML: (el: HTMLElement) => el.hasAttribute('data-link-locked'),
+        rendered: false,
+      },
     }
   },
   parseHTML() {
     return [{ tag: 'span[data-xe-term]' }]
   },
+  addProseMirrorPlugins() {
+    return [linkMarkPairing()]
+  },
   renderHTML({ node }) {
     const ta = node.attrs.ta as string | null
     const tc = node.attrs.tc as string | null
+    const linkBegin = node.attrs.linkBegin as string | null
+    if (linkBegin !== null || node.attrs.linkEnd)
+      return [
+        'span',
+        {
+          'data-xe-term': '',
+          ...(linkBegin !== null
+            ? { 'data-link-begin': linkBegin, 'data-link-code': `{ ${linkBegin.trim()}` }
+            : { 'data-link-end': '', 'data-link-code': '}' }),
+          ...(node.attrs.locked ? { 'data-link-locked': '' } : {}),
+          class: 'doc-xe-mark doc-link-mark',
+        },
+      ]
     return [
       'span',
       {
@@ -766,6 +826,8 @@ export const DocInlineImage = Node.create({
       xml: { default: '' },
       /** alternative text set in this session; null = what the xml carries */
       altText: { default: null as string | null, rendered: false },
+      /** Word's Link to File: the outside file the picture also names */
+      link: { default: null as string | null, rendered: false },
       /** floating (wp:anchor) picture: wrap kind + anchor offsets (display only) */
       wrap: { default: null as string | null },
       groupId: { default: null as string | null, rendered: false },
@@ -784,12 +846,21 @@ export const DocInlineImage = Node.create({
       border: { default: null as { color: string; widthPt: number } | null },
       /** positionV line/center: the picture centers on its anchor line (display only) */
       lineCenterV: { default: false },
-      /** pic a:xfrm rot (deg clockwise) / mirror flips (display only; the xml saves verbatim) */
+      /** pic a:xfrm rot (deg clockwise) / mirror flips; the save writes them where they differ from the xml */
       rotDeg: { default: null as number | null },
       flipH: { default: false },
       flipV: { default: false },
+      /** stacking rank of a floating picture; the save writes it where it differs from zOrderWas, the rank the file gave */
+      zOrder: { default: null as number | null },
+      zOrderWas: { default: null as number | null, rendered: false },
+      /** the file's relativeHeight is a wild value the rank was compressed from */
+      zNormalized: { default: false, rendered: false },
       /** pictures of a picture-only group, bottom first, in fractions of the box (display only) */
       layers: { default: null as PictureLayer[] | null },
+      /** lowered inline image/OLE baseline shift (pt, negative = lowered) so line box expands instead of overlapping */
+      baselineShiftPt: { default: null as number | null },
+      /** original w:position (half-points) stripped from docTextStyle for lowered inline images */
+      positionHalfPoints: { default: null as number | null, rendered: false },
       /** the run's raw <w:rPr> slice, re-emitted before the fragment on save (not rendered) */
       rawRPr: { default: null as string | null, rendered: false },
       /** VML horizontal rule (alone or sharing the paragraph): {colorHex?, thicknessPx?, sizeHalfPoints?, widthPx?, align?}; drawn as a rule on its own line */
@@ -829,6 +900,10 @@ export const DocInlineImage = Node.create({
     const h = Number(node.attrs.heightPx)
     const styles: string[] = []
     if (w > 0) styles.push(`width:${w}px`, h > 0 ? `height:${h}px` : 'height:auto')
+    const shiftPt = node.attrs.baselineShiftPt as number | null
+    if (shiftPt && shiftPt < 0 && !node.attrs.wrap) {
+      styles.push(`vertical-align:${shiftPt}pt`)
+    }
     const ib = node.attrs.border as { color: string; widthPt: number } | null
     if (ib) {
       // picture outline (document data, not chrome)
@@ -857,6 +932,11 @@ export const DocInlineImage = Node.create({
       // page-wide picture's static box right would create that same overflow.
       const lx = Math.min(left, 0)
       const ty = Math.min(top, 0)
+      // the bands and ranks of a floating picture block: under the text or over it, by rank within
+      const rank = Number(node.attrs.zOrder ?? 0)
+      styles.push(
+        `z-index:${wrap === 'behind' ? Math.min(-1, -1000 + rank) : Math.max(1, 2 + rank)}`,
+      )
       // page-relative Y in content-area coordinates; pagination re-pins it on
       // the anchor's page. A paragraph-relative offset counts from above the
       // paragraph's spacing-before (Word), which the host's margin-top keeps
@@ -1130,6 +1210,14 @@ export const DocInlineMath = Node.create({
       /** flat token strip (word count / AI read fallback) */
       text: { default: '' },
       sizeHalfPoints: { default: null as number | null },
+      /** original <w:object> XML when decoded from a MathType OLE embed (null for native OMML) */
+      oleXml: { default: null as string | null, rendered: false },
+      /** original <w:rPr> XML of the MathType OLE run */
+      oleRawRPr: { default: null as string | null, rendered: false },
+      /** original o:OLEObject ProgID (e.g. "Equation.DSMT4") */
+      oleProgId: { default: null as string | null, rendered: false },
+      /** original w:position (half-points) stripped from docTextStyle for MathType OLE display */
+      olePositionHalfPoints: { default: null as number | null, rendered: false },
       /** came from an m:oMathPara (display equation in a table cell) */
       display: { default: false },
     }
@@ -1157,13 +1245,21 @@ export const DocInlineMath = Node.create({
       }
       render()
       dom.addEventListener('dblclick', () => {
-        // only editor-created formulas carry LaTeX and can be re-edited
+        // formulas with recovered LaTeX can be re-edited; MathType OLE formulas
+        // can also be converted to native OMML even when outside the LaTeX subset
         const latex = currentNode.attrs.latex
+        const isMathType = Boolean(currentNode.attrs.oleXml)
+        const omml = String(currentNode.attrs.omml ?? '')
         const pos = (getPos as () => number | undefined)()
-        if (latex && typeof pos === 'number') {
+        if (typeof pos === 'number' && (latex || (isMathType && omml))) {
           window.dispatchEvent(
             new CustomEvent('ai-docs-edit-inline-math', {
-              detail: { pos, latex: String(latex), kind: 'inline' },
+              detail: {
+                pos,
+                latex: latex ? String(latex) : '',
+                kind: 'inline',
+                ...(isMathType ? { isMathType: true, omml } : {}),
+              },
             }),
           )
         }
@@ -1183,13 +1279,16 @@ export const DocInlineMath = Node.create({
 
 function inlineMathDomAttrs(node: { attrs: Record<string, unknown> }): Record<string, string> {
   const size = node.attrs.sizeHalfPoints as number | null
+  const isMathType = Boolean(node.attrs.oleXml)
   return {
     'data-inline-math': '1',
     class: node.attrs.display ? 'doc-inline-math doc-inline-math-display' : 'doc-inline-math',
     ...(size ? { style: `font-size:${size / 2}pt` } : {}),
-    title: node.attrs.latex
-      ? t('editorEquationEditHint', { latex: String(node.attrs.latex) })
-      : t('editorEquation'),
+    title: isMathType
+      ? t('appMathTypeEditHint')
+      : node.attrs.latex
+        ? t('editorEquationEditHint', { latex: String(node.attrs.latex) })
+        : t('editorEquation'),
   }
 }
 
@@ -1406,9 +1505,25 @@ export const EnterReplacesSelection = Extension.create({
  * swallow Cmd+Enter from the renderer inputs that submit with it (comments
  * panel, prompt modal).
  */
+const IS_MAC = typeof navigator !== 'undefined' && /mac/i.test(navigator.platform)
+
 export const WordEditorShortcuts = Extension.create({
   name: 'wordEditorShortcuts',
   addKeyboardShortcuts() {
+    const insert = (text: string) => this.editor.commands.insertContent(text)
+    // Word for Mac: ⇧⌘- is Subscript and ⌥⇧↑ / ⌥⇧↓ extend the selection, so these sit elsewhere there
+    const WORD_MAC_KEYS = {
+      'Ctrl-Shift-Space': () => insert('\u00a0'),
+      'Mod-Alt-Shift--': () => insert('\u2011'),
+      'Mod-Alt--': () => insert('\u00ad'),
+      'Ctrl-Shift-ArrowUp': () => moveBlocks(this.editor, -1),
+      'Ctrl-Shift-ArrowDown': () => moveBlocks(this.editor, 1),
+    }
+    const WORD_WINDOWS_KEYS = {
+      'Mod-Shift--': () => insert('\u2011'),
+      'Alt-Shift-ArrowUp': () => moveBlocks(this.editor, -1),
+      'Alt-Shift-ArrowDown': () => moveBlocks(this.editor, 1),
+    }
     return {
       // Enter inside a break paragraph: exactly ONE half keeps the break.
       // Word's page break is a character right before the paragraph content,
@@ -1456,13 +1571,11 @@ export const WordEditorShortcuts = Extension.create({
           })
           .run()
       },
+      // U+00A0, U+2011 and U+00AD: the characters Word inserts for these chords
       'Mod-Enter': () => insertPageBreak(this.editor),
       'Mod-Shift-Enter': () => insertColumnBreak(this.editor),
-      // U+00A0 and U+2011: the characters Word inserts for these two chords
-      'Mod-Shift-Space': () => this.editor.commands.insertContent('\u00a0'),
-      'Mod-Shift--': () => this.editor.commands.insertContent('\u2011'),
-      'Alt-Shift-ArrowUp': () => moveBlocks(this.editor, -1),
-      'Alt-Shift-ArrowDown': () => moveBlocks(this.editor, 1),
+      'Mod-Shift-Space': () => insert('\u00a0'),
+      ...(IS_MAC ? WORD_MAC_KEYS : WORD_WINDOWS_KEYS),
     }
   },
 })
@@ -2035,9 +2148,9 @@ function pushLineFactorDecos(
     decos.push(Decoration.node(pos + 1 + g.offset, pos + 1 + g.offset + 1, { style: g.style }))
   }
   const para = layoutParaOf(node)
-  // the strut took the runs' declared face: a break run without one is the
-  // inherited face in Word, so its row is that face's line, not the strut's
-  if (breakRows.inherited.length > 0 && paraDeclaredFontFamily(para)) {
+  // the strut took the runs' declared face or size: a break run without one is
+  // the inherited face and size in Word, so its row is that line, not the strut's
+  if (breakRows.inherited.length > 0 && (paraDeclaredFontFamily(para) || strutHalfPoints(para))) {
     for (const off of breakRows.inherited) if (wraps(off)) brLine(off, 'doc-br-line doc-br-inherit')
   }
   if (node.textContent && !isSpaceOnlyParagraph(para)) {
@@ -2138,11 +2251,14 @@ export const LineFactorExtension = Extension.create({
 
 function firstRunFontAscii(node: PmNode): string | null {
   let font: string | null = null
+  let seen = false
   node.descendants((child) => {
-    if (font !== null) return false
+    if (seen) return false
     if (child.isText) {
       const mark = child.marks.find((m) => m.type.name === 'docTextStyle')
-      font = ((mark?.attrs.fontAscii ?? mark?.attrs.font) as string | null) ?? null
+      font = runOwnLatinFace(mark?.attrs ?? {}, child.text ?? '')
+      // a run that declares faces settles it, also when its Latin face is the inherited one
+      seen = font !== null || !!mark?.attrs.font
       return false
     }
     return true
@@ -2593,6 +2709,40 @@ export const RuleOverlayExtension = Extension.create({
   },
 })
 
+/** the numbered paragraphs of the document in order, as the list counters take them */
+export function listItemRefsOf(doc: PmNode): {
+  refs: ListItemRef[]
+  nodes: Array<{ pos: number; node: PmNode }>
+} {
+  const refs: ListItemRef[] = []
+  const nodes: Array<{ pos: number; node: PmNode }> = []
+  doc.descendants((node, pos) => {
+    if (node.type.name === 'docListItem') {
+      const deleted =
+        !!node.attrs.paraMarkDel ||
+        (node.attrs.blockRevision as { kind?: string } | null)?.kind === 'del'
+      refs.push({
+        numId: (node.attrs.numId as string | null) ?? null,
+        ilvl: Number(node.attrs.ilvl) || 0,
+        ...(deleted ? { deleted: true } : {}),
+      })
+      nodes.push({ pos, node })
+      return false
+    }
+    // numbered anchor paragraph of a textbox block: Word keeps it in the
+    // sequence, and its stray line shows the marker
+    const strayList =
+      node.type.name === 'docProtected' ? (node.attrs.strayList as ListItemRef | null) : null
+    if (strayList) {
+      refs.push({ numId: strayList.numId, ilvl: strayList.ilvl })
+      nodes.push({ pos, node })
+      return false
+    }
+    return true
+  })
+  return { refs, nodes }
+}
+
 export const ListNumberingExtension = Extension.create<object, ListNumberingStorage>({
   name: 'listNumbering',
   addStorage() {
@@ -2602,32 +2752,7 @@ export const ListNumberingExtension = Extension.create<object, ListNumberingStor
     const storage = this.storage
     const compute = (doc: PmNode): DecorationSet | null => {
       if (storage.defs.size === 0) return null
-      const refs: ListItemRef[] = []
-      const nodes: Array<{ pos: number; node: PmNode }> = []
-      doc.descendants((node, pos) => {
-        if (node.type.name === 'docListItem') {
-          const deleted =
-            !!node.attrs.paraMarkDel ||
-            (node.attrs.blockRevision as { kind?: string } | null)?.kind === 'del'
-          refs.push({
-            numId: (node.attrs.numId as string | null) ?? null,
-            ilvl: Number(node.attrs.ilvl) || 0,
-            ...(deleted ? { deleted: true } : {}),
-          })
-          nodes.push({ pos, node })
-          return false
-        }
-        // numbered anchor paragraph of a textbox block: Word keeps it in the
-        // sequence, and its stray line shows the marker
-        const strayList =
-          node.type.name === 'docProtected' ? (node.attrs.strayList as ListItemRef | null) : null
-        if (strayList) {
-          refs.push({ numId: strayList.numId, ilvl: strayList.ilvl })
-          nodes.push({ pos, node })
-          return false
-        }
-        return true
-      })
+      const { refs, nodes } = listItemRefsOf(doc)
       if (refs.length === 0) return null
       const markers = computeListMarkerInfos(refs, storage.defs)
       const decos: Decoration[] = []
@@ -2673,7 +2798,7 @@ export const ListNumberingExtension = Extension.create<object, ListNumberingStor
             styles.push(`--li-left:${level.indentLeft / 20}pt`)
           }
           if (nodeAttrs.indentRight == null && level.indentRight !== undefined) {
-            styles.push(`margin-inline-end:${level.indentRight / 20}pt`)
+            styles.push(endIndentDecl(`${level.indentRight / 20}pt`))
           }
           const ownFirst =
             nodeAttrs.indentFirstLine == null ? null : Number(nodeAttrs.indentFirstLine)
@@ -2747,11 +2872,21 @@ export const ListNumberingExtension = Extension.create<object, ListNumberingStor
               `--li-marker-lh:calc(var(--doc-line-factor,1.2) * ${textHalf / 2}pt * var(--doc-line-mult,1) + ${extraPt}pt)`,
             )
           }
+          // the level's colour, else the mark's own (an explicit auto beats the style colour)
+          const markColor = stray ? null : (nodes[i].node.attrs.markColor as string | null)
           if (level.color) {
             styles.push(
               `--li-marker-color:#${level.color}`,
               `--dk-li-mc:${darkPageColor(level.color)}`,
             )
+          } else if (markColor) {
+            styles.push(`--li-marker-color:${textColorValue(markColor)}`)
+            if (markColor !== 'auto') styles.push(`--dk-li-mc:${darkPageColor(markColor)}`)
+          }
+          const markHighlight = stray ? null : (nodes[i].node.attrs.markHighlight as string | null)
+          if (markHighlight) {
+            const bg = HIGHLIGHT_CSS[markHighlight] ?? markHighlight
+            styles.push(`--li-marker-bg:${bg}`, `--dk-li-mbg:${darkPageColor(bg)}`)
           }
           if (level.bold) styles.push('--li-marker-weight:bold')
           if (level.italic) styles.push('--li-marker-style:italic')
@@ -3449,6 +3584,8 @@ export const DocTable = Node.create({
       /** grid wider than the text column (display-only): w:noWrap cells wrap like Word's */
       tblOverWide: { default: false },
       indentTwips: { default: null as number | null },
+      /** w:tblInd was edited (AutoFit Window resets it): the save writes indentTwips */
+      tblIndentEdited: { default: false },
       tblStyleId: { default: null as string | null },
       tblLook: { default: null as Record<string, boolean> | null },
       tblLookEdited: { default: false },
@@ -3775,7 +3912,11 @@ export const DocCellBoxes = Node.create({
   atom: true,
   selectable: false,
   addAttributes() {
-    return { boxes: { default: null as TextboxDisplay[] | null } }
+    return {
+      boxes: { default: null as TextboxDisplay[] | null },
+      /** per box: a paragraph of its anchor's drawings alone, which the boxes save from once out of the table */
+      xml: { default: null as (string | null)[] | null, rendered: false },
+    }
   },
   parseHTML() {
     return []
@@ -4365,6 +4506,8 @@ export const DocProtected = Node.create({
       imageFlipV: { default: false },
       /** alternative text (wp:docPr descr) */
       imageAlt: { default: null as string | null, rendered: false },
+      imageLink: { default: null as string | null, rendered: false },
+      linkXml: { default: null as string | null, rendered: false },
       /** picture outline (pic:spPr a:ln solid fill, display-only) */
       imageBorder: { default: null as { color: string; widthPt: number } | null },
       /** replacement bytes for an original image (crop/background removal/replace):
@@ -4510,7 +4653,9 @@ export const DocProtected = Node.create({
             (event as MouseEvent).detail < 2 &&
             target?.closest?.('.doc-textbox') &&
             !dom.classList.contains('doc-content-editing') &&
-            (currentNode.attrs.textboxes as TextboxDisplay[] | null)?.[0]?.prst
+            ((currentNode.attrs.textboxes as TextboxDisplay[] | null)?.[0]?.prst ||
+              // a picture drawn as a box is grabbed like a picture, whatever stands beside it
+              target.closest('.doc-textbox-picture'))
           ) {
             return false
           }
@@ -4757,6 +4902,12 @@ function protectedDomSpec(node: PmNode): DomSpec {
   // field/TOC paragraphs keep their paragraph style so document CSS
   // (TOC1 spacing etc.) reaches the wrapper like any styled paragraph
   if (node.attrs.styleId) attrs['data-style'] = String(node.attrs.styleId)
+  // the anchor paragraph's style, for the sibling rules that pair same-style neighbours
+  // (a side-wrapped picture's line is a sibling widget with its own data-style)
+  const lineStyle = (node.attrs.anchorLine as { styleId?: unknown } | null)?.styleId
+  const lineBeside =
+    !node.attrs.invisibleMarker && /-(?:left|right)$/.test(String(node.attrs.imageWrap ?? ''))
+  if (lineStyle && !node.attrs.styleId && !lineBeside) attrs['data-line-style'] = String(lineStyle)
   if (node.attrs.pageBreakBefore) {
     attrs.class += ' page-break-before'
     attrs['data-page-break-label'] = t('editorPageBreak')
@@ -6063,39 +6214,51 @@ function wireFieldEditing(
   }
 }
 
-/** hover button on display formulas whose LaTeX was recovered: full re-edit */
+/** hover button on display formulas whose LaTeX was recovered (or MathType OLE formulas): full re-edit / convert */
 function wireFormulaLatexEdit(
   dom: HTMLElement,
   getNode: () => PmNode,
   getPos: () => number | undefined,
 ): (() => void) | null {
   const formula = getNode().attrs.formulaDisplay as FormulaDisplay | null
-  if (!formula?.latex) return null
+  const isMathType = Boolean(formula?.oleMathType)
+  if (!formula?.latex && !(isMathType && formula?.omml)) return null
   const host = dom.querySelector('.doc-formula-wrap') ?? dom
+  const openModal = (e: Event) => {
+    e.preventDefault()
+    e.stopPropagation()
+    const pos = getPos()
+    const current = getNode().attrs.formulaDisplay as FormulaDisplay | null
+    const currentMathType = Boolean(current?.oleMathType)
+    if (typeof pos === 'number' && (current?.latex || (currentMathType && current?.omml))) {
+      window.dispatchEvent(
+        new CustomEvent('ai-docs-edit-inline-math', {
+          detail: {
+            pos,
+            latex: current?.latex ?? '',
+            kind: 'block',
+            ...(currentMathType ? { isMathType: true, omml: current?.omml ?? '' } : {}),
+          },
+        }),
+      )
+    }
+  }
   const button = document.createElement('button')
   button.className = 'doc-formula-edit'
-  button.title = t('editorEditFormulaLatex')
+  button.title = isMathType ? t('appMathTypeEditHint') : t('editorEditFormulaLatex')
   button.textContent = t('editorEdit')
   button.setAttribute('contenteditable', 'false')
   button.addEventListener('mousedown', (e) => {
     e.preventDefault()
     e.stopPropagation()
   })
-  button.addEventListener('click', (e) => {
-    e.preventDefault()
-    e.stopPropagation()
-    const pos = getPos()
-    const latex = (getNode().attrs.formulaDisplay as FormulaDisplay | null)?.latex
-    if (typeof pos === 'number' && latex) {
-      window.dispatchEvent(
-        new CustomEvent('ai-docs-edit-inline-math', {
-          detail: { pos, latex, kind: 'block' },
-        }),
-      )
-    }
-  })
+  button.addEventListener('click', openModal)
+  if (isMathType) host.addEventListener('dblclick', openModal)
   host.appendChild(button)
-  return () => button.remove()
+  return () => {
+    if (isMathType) host.removeEventListener('dblclick', openModal)
+    button.remove()
+  }
 }
 
 /** Edit OMML leaf tokens while keeping formula structure outside the editor. */
@@ -6106,7 +6269,9 @@ function wireFormulaEditing(
   view: EditorView,
 ): (ProtectedContentEditor & { cleanup(): void }) | null {
   const formula = getNode().attrs.formulaDisplay as FormulaDisplay | null
-  if (!formula?.tokens.length) return null
+  // MathType OLE blocks have <w:object> in originalXml, not <m:t> tokens;
+  // editing goes through the convert-to-native-equation modal instead.
+  if (!formula?.tokens.length || formula.oleMathType) return null
   const targets = Array.from(dom.querySelectorAll<HTMLElement>('.doc-formula-token'))
   if (targets.length !== formula.tokens.length) return null
 
@@ -6657,10 +6822,18 @@ function startRunPictureDrag(view: EditorView, event: MouseEvent): boolean {
   // the drag translate composes in front of it and it comes back on drop
   const baseTransform = img.style.transform
   let dragging = false
+  const pointer = (e: MouseEvent) => snappedDragPointer(img, { x: startX, y: startY }, startRect, e)
   const onMove = (e: MouseEvent) => {
-    const dx = (e.clientX - startX) / zoom
-    const dy = (e.clientY - startY) / zoom
-    if (!dragging && Math.abs(dx) < 3 && Math.abs(dy) < 3) return
+    // the click threshold is the pointer's own travel, before any snapping
+    if (
+      !dragging &&
+      Math.abs(e.clientX - startX) < 3 * zoom &&
+      Math.abs(e.clientY - startY) < 3 * zoom
+    )
+      return
+    const at = pointer(e)
+    const dx = (at.x - startX) / zoom
+    const dy = (at.y - startY) / zoom
     dragging = true
     document.body.classList.add('docs-run-pic-dragging')
     img.style.transform = `translate(${dx}px, ${dy}px)${baseTransform ? ` ${baseTransform}` : ''}`
@@ -6677,10 +6850,11 @@ function startRunPictureDrag(view: EditorView, event: MouseEvent): boolean {
       return
     }
     const attrs = current.attrs
-    const dx = (e.clientX - startX) / zoom
-    const dy = (e.clientY - startY) / zoom
-    const dropLeft = startRect.left + (e.clientX - startX)
-    const dropTop = startRect.top + (e.clientY - startY)
+    const at = pointer(e)
+    const dx = (at.x - startX) / zoom
+    const dy = (at.y - startY) / zoom
+    const dropLeft = startRect.left + (at.x - startX)
+    const dropTop = startRect.top + (at.y - startY)
     const wrap = String(attrs.wrap)
     const overlay = wrap === 'front' || wrap === 'behind'
     // a float cannot rise to a page position: once moved it measures from its anchor line
@@ -6895,14 +7069,15 @@ function imageResizePlugin(): Plugin {
               const box = (node.attrs.textboxes as TextboxDisplay[] | null)?.[0]
               if (!box) return
               // straight lines keep their zero-height extent: never give them a heightPx
-              const next = lockH
-                ? { ...box, widthPx: Math.round(w) }
-                : {
-                    ...box,
-                    widthPx: Math.round(w),
-                    heightPx: Math.round(h),
-                    minHeightPx: Math.round(h),
-                  }
+              // a dragged side is absolute from here on; one left alone keeps its share of the page
+              const dragged = (px: number, was: number | undefined, rel: RelSize | undefined) => ({
+                px,
+                rel: Math.round(px) === was ? (rel ?? null) : null,
+              })
+              const next = boxWithSize(box, {
+                w: dragged(w, box.widthPx, box.sizeRel?.w),
+                ...(lockH ? {} : { h: dragged(h, box.heightPx, box.sizeRel?.h) }),
+              })
               view.dispatch(
                 view.state.tr.setNodeMarkup(boxPos, undefined, {
                   ...node.attrs,
@@ -7648,10 +7823,22 @@ function floatingObjectDragPlugin(): Plugin {
           // 3px threshold keeps plain clicks (select, first click of a
           // double-click-to-edit) from nudging the object
           let dragging = false
+          const snapCorner =
+            (isTextbox ? wrapper.querySelector('.doc-textbox') : null)?.getBoundingClientRect() ??
+            startVisualRect
+          const pointer = (e: MouseEvent) =>
+            snappedDragPointer(wrapper, { x: startX, y: startY }, snapCorner, e)
           const onMove = (e: MouseEvent) => {
-            const dx = (e.clientX - startX) / zoom
-            const dy = (e.clientY - startY) / zoom
-            if (!dragging && Math.abs(dx) < 3 && Math.abs(dy) < 3) return
+            // the click threshold is the pointer's own travel, before any snapping
+            if (
+              !dragging &&
+              Math.abs(e.clientX - startX) < 3 * zoom &&
+              Math.abs(e.clientY - startY) < 3 * zoom
+            )
+              return
+            const at = pointer(e)
+            const dx = (at.x - startX) / zoom
+            const dy = (at.y - startY) / zoom
             // measure before the drag transform below touches the layout
             if (!dragging) dropAnchors()
             dragging = true
@@ -7661,8 +7848,8 @@ function floatingObjectDragPlugin(): Plugin {
             }
             follow?.move(dx, dy)
             if (isImage) {
-              const clientDx = e.clientX - startX
-              const clientDy = e.clientY - startY
+              const clientDx = at.x - startX
+              const clientDy = at.y - startY
               paragraphAnchor = placeAt(
                 startVisualRect.left + clientDx,
                 startVisualRect.top + clientDy,
@@ -7687,8 +7874,9 @@ function floatingObjectDragPlugin(): Plugin {
               delete anchorMarker.dataset.anchorTargetPos
             }
 
-            const dx = (e.clientX - startX) / zoom
-            const dy = (e.clientY - startY) / zoom
+            const at = pointer(e)
+            const dx = (at.x - startX) / zoom
+            const dy = (at.y - startY) / zoom
             // Only commit a real drag (past the threshold)
             if (!dragging) {
               follow?.drop(pos)
@@ -7699,8 +7887,8 @@ function floatingObjectDragPlugin(): Plugin {
             // anchor paragraph): no clamping
             const newX = Math.round((startPxX + dx) * EMU_PER_PX)
             // where the picture was let go (client px)
-            const dropLeft = startVisualRect.left + (e.clientX - startX)
-            let dropTop = startVisualRect.top + (e.clientY - startY)
+            const dropLeft = startVisualRect.left + (at.x - startX)
+            let dropTop = startVisualRect.top + (at.y - startY)
             let restDy = dy
             if (isImage) {
               const placed = placeAt(dropLeft, dropTop)
@@ -8006,6 +8194,7 @@ export const TextboxListRenumber = Extension.create({
 /** shared with the main editor: same mark names, so ribbon commands route 1:1 */
 export const textboxSubExtensions = [
   Node.create({ name: 'doc', topNode: true, content: 'block+' }),
+  PromptFocusExtension,
   DocText,
   DocHardBreak,
   TextboxParagraph,
@@ -8043,6 +8232,8 @@ export const textboxSubExtensions = [
 export interface SearchHighlight {
   ranges: Array<{ from: number; to: number }>
   activeIndex: number
+  /** the hits stay marked after the Find panel is gone, until the next click or key in the document */
+  kept?: boolean
 }
 
 /**
@@ -8096,6 +8287,8 @@ export const AutoLinkOnDelimiter = Extension.create({
 
 export const editorExtensions = [
   StreamingTailGuardExtension,
+  PromptFocusExtension,
+  SectionEditGuardExtension,
   PermRegionsExtension,
   ScriptFonts,
   DocDocument,
@@ -8127,6 +8320,7 @@ export const editorExtensions = [
   SymMark,
   CtrlCheckboxMark,
   RprChangeMark,
+  RangeBookmarkMark,
   TextStyleMark,
   DocRedaction,
   FormatOffClearExtension,
@@ -8140,6 +8334,7 @@ export const editorExtensions = [
   PendingCommentHighlightExtension,
   ResolvedCommentsExtension,
   FieldCodesExtension,
+  GoBackExtension,
   TableFormulaExtension,
   MergePreviewExtension,
   NativeTableSupport,
@@ -8151,6 +8346,7 @@ export const editorExtensions = [
   TrackChangesExtension,
   LineFactorExtension,
   ListNumberingExtension,
+  NumberRefsExtension,
   AnchorLineExtension,
   RuleOverlayExtension,
   PaginationGapsExtension,
@@ -8159,10 +8355,14 @@ export const editorExtensions = [
   FloatVShiftsExtension,
   FloatTableSpacingExtension,
   InactiveSelectionExtension,
+  GrammarMarksExtension,
   AiQueueAnchorsExtension,
   CheckboxToggleExtension,
   DoubleClickWordExtension,
+  SpellIgnoreOnceExtension,
+  SpellMarksExtension,
   OutlineViewExtension,
+  HeadingCollapseExtension,
   PageGapNavExtension,
   TrailingTableExitExtension,
   Gapcursor,

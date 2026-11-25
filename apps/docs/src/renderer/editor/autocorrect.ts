@@ -25,10 +25,11 @@ import {
 import { keymap } from '@tiptap/pm/keymap'
 import { closeHistory } from '@tiptap/pm/history'
 import { Decoration, DecorationSet, type EditorView } from '@tiptap/pm/view'
-import type { StyleInfo } from '@genoffice/docx-engine'
+import type { StyleInfo, StyleUpsert } from '@genoffice/docx-engine'
 import { t } from '../i18n/locale'
 import { headingStyleId } from '../style-gallery'
 import type { AutoTextEntry } from './auto-text'
+import { dateStyleOnEnter, definedStyleOnEnter } from './autoformat-styles'
 import { effectiveSizeHalfPoints } from './text-style-resolve'
 import {
   autocorrectEnabled,
@@ -38,6 +39,7 @@ import {
   type AutocorrectRule,
   type ReplaceEntry,
 } from '../autocorrect-pref'
+import { spellcheckEnabled } from '../spellcheck-pref'
 
 export interface AutocorrectListHooks {
   /** numId for a typed "- " / "* " bullet (document definition or a new one) */
@@ -52,6 +54,8 @@ export interface AutocorrectListHooks {
   insertAutoText?: (entry: AutoTextEntry) => void
   /** Tools > AutoCorrect Options…, from the smart button's menu */
   openOptions?: () => void
+  /** a style definition to write with the document: one a rule applies and the document lacks */
+  defineStyle?: (up: StyleUpsert) => void
 }
 
 export interface AutocorrectStorage {
@@ -286,6 +290,32 @@ const replaceText: Rule = (ctx) => {
     ? ctx.state.tr.replaceWith(ctx.from - count, ctx.from, formatted)
     : replaceTail(ctx, count, hit.to)
   return hit.word ? insertTyped(tr, ctx, tr.mapping.map(ctx.from)) : tr
+}
+
+// ---- suggestions from the spelling checker ----
+
+const SPELL_WORD = /(?<![\p{L}\p{N}'\u2019])\p{L}[\p{L}'\u2019]*$/u
+
+/**
+ * The word a delimiter just ended becomes the spelling checker's suggestion
+ * when it is misspelled and the checker offers exactly one. As in Word it
+ * follows "check spelling as you type"; words in capitals, deleted text and
+ * text marked as not to be proofed are left alone.
+ */
+const spellSuggest: Rule = (ctx) => {
+  if (!DELIMITER.test(ctx.text) || !spellcheckEnabled()) return null
+  const word = SPELL_WORD.exec(ctx.before)?.[0]
+  if (!word || word.length < 2 || word === word.toUpperCase()) return null
+  const unchecked = ctx.$from
+    .marks()
+    .some((m) => m.type.name === 'del' || (m.type.name === 'docTextStyle' && m.attrs.noProof))
+  if (unchecked) return null
+  const api = window.desktop
+  if (!api?.spellIsMisspelled?.(word)) return null
+  const offered = api.spellSuggestions?.(word) ?? []
+  if (offered.length !== 1 || !offered[0] || offered[0] === word) return null
+  const tr = replaceTail(ctx, word.length, offered[0])
+  return insertTyped(tr, ctx, tr.mapping.map(ctx.from))
 }
 
 // "\alpha " in body text; the AutoCorrect table above wins a conflict, as in Word
@@ -555,6 +585,7 @@ const RULES: Array<[AutocorrectRule, Rule]> = [
   ['autoBullets', (ctx) => autoList(ctx, 'bullet')],
   ['autoNumbers', (ctx) => autoList(ctx, 'ordered')],
   ['replaceText', replaceText],
+  ['spellSuggest', spellSuggest],
   ['mathOutside', mathOutside],
   ['fractions', fractions],
   ['ordinals', ordinals],
@@ -1063,6 +1094,17 @@ export const AutoCorrectExtension = Extension.create<Record<string, never>, Auto
                 return true
               }
             }
+            const defineStyle = storage.hooks?.defineStyle
+            if (
+              autocorrectEnabled('dateStyle') &&
+              dateStyleOnEnter(editor, numbering?.styles, defineStyle)
+            )
+              return true
+            if (
+              autocorrectEnabled('defineStyles') &&
+              definedStyleOnEnter(editor, numbering?.styles, numbering?.docDefaults, defineStyle)
+            )
+              return true
             // these two change the paragraph and let Enter go on to split it
             if (autocorrectEnabled('closingPhrase')) {
               const { $from } = state.selection

@@ -19,6 +19,7 @@ import { spellcheckEnabled } from '../spellcheck-pref'
 import {
   hfCellGeometry,
   hfAnchoredImgStyle,
+  hfRowBoxLeftPx,
   hfCellParaBox,
   hfImageHangsOnPara,
   hfCellSegStyle,
@@ -59,6 +60,7 @@ import { hfEditablePara, mountHfEditor, type HfEditorHandle } from '../editor/hf
 import { dkStyleProps } from '../editor/dark-page'
 import { INLINE_RULE_CLASS, inlineRuleStyle } from '../editor/inline-rule'
 import { textColorValue } from '../editor/text-color'
+import { declStyle, textFillDecls } from '../editor/text-effects'
 import { textOutlineCssValue } from '../editor/text-outline'
 import { fontKerningCss, runLetterSpacingCss } from '../line-metrics'
 import { cssRunFontFamily } from '../text-layout/font-rules'
@@ -95,6 +97,7 @@ function runStyle(run: Run): React.CSSProperties {
   if (kerning) style.fontKerning = kerning
   if (face.font || face.fontAscii) style.fontFamily = cssRunFontFamily(face.fontAscii, face.font)
   if (run.textOutline) style.WebkitTextStroke = textOutlineCssValue(run.textOutline)
+  if (run.textFill) Object.assign(style, declStyle(textFillDecls(run.textFill)))
   if (run.caps === 'all') style.textTransform = 'uppercase'
   else if (run.caps === 'small') style.fontVariantCaps = 'small-caps'
   else if (run.caps === 'none') {
@@ -147,10 +150,9 @@ export function HeaderFooterArea({
   sectionPages,
   style,
   boxGeom,
-  linked,
-  sectionLabel,
   editRequest,
   onEditingChange,
+  blank,
 }: {
   kind: 'header' | 'footer'
   value: HfValue
@@ -158,10 +160,6 @@ export function HeaderFooterArea({
   images?: HfImage[]
   readOnly?: boolean
   onCommit: (next: HfValue) => void
-  /** Word's "Same as Previous" tag: this section inherits the strip from the previous one */
-  linked?: boolean | null
-  /** "Header -Section 2-" style label shown while editing */
-  sectionLabel?: string | null
   /** bump to enter editing from outside (ribbon Edit Header / Go to Footer) */
   editRequest?: number | null
   /** editing mode changes, with the live editor handle while open */
@@ -172,6 +170,8 @@ export function HeaderFooterArea({
   pageTotal?: number
   /** Page count of this page's section shown for SECTION_PAGES_MARK (SECTIONPAGES field), defaults to pageTotal */
   sectionPages?: number
+  /** the paragraph a blank part starts editing with (Word: the Header / Footer style) */
+  blank?: HfParagraph
   /** geometry override: on differing-width sections the strip is pinned to its own section's box */
   style?: React.CSSProperties
   /** page geometry: floating textboxes render at their anchor position (absent: stacked) */
@@ -206,8 +206,16 @@ export function HeaderFooterArea({
   // The editor host is a standalone element React never populates: the nested
   // editor owns its children and the whole element unmounts on exit, so no
   // stale DOM survives section/variant switches
-  const latest = useRef({ value, onCommit, onEditingChange, pageNo, pageTotal, sectionPages })
-  latest.current = { value, onCommit, onEditingChange, pageNo, pageTotal, sectionPages }
+  const latest = useRef({
+    value,
+    onCommit,
+    onEditingChange,
+    pageNo,
+    pageTotal,
+    sectionPages,
+    blank,
+  })
+  latest.current = { value, onCommit, onEditingChange, pageNo, pageTotal, sectionPages, blank }
   useEffect(() => {
     if (!editing) return
     const el = editRef.current
@@ -219,6 +227,7 @@ export function HeaderFooterArea({
       pageTotal: String(pt ?? 1),
       sectionPages: String(sp ?? pt ?? 1),
       spellcheck: spellcheckEnabled(),
+      blank: latest.current.blank,
       onCommit: (next) => latest.current.onCommit(next),
       onExit: () => {
         latest.current.onEditingChange?.(false, null)
@@ -261,7 +270,7 @@ export function HeaderFooterArea({
         ...style,
       }}
       data-tip={
-        readOnly
+        readOnly || editing
           ? undefined
           : t(kind === 'header' ? 'appDblclickEditHeader' : 'appDblclickEditFooter') +
             (value.pageNumber
@@ -326,12 +335,6 @@ export function HeaderFooterArea({
         </>
       ) : (
         <HfContent kind={kind} paras={paras} images={images} display={display} boxGeom={boxGeom} />
-      )}
-      {editing && (sectionLabel || linked) && (
-        <div className="page-hf-tags" contentEditable={false}>
-          {sectionLabel && <span className="page-hf-tag">{sectionLabel}</span>}
-          {linked && <span className="page-hf-tag">{t('appHfSameAsPrevious')}</span>}
-        </div>
       )}
     </div>
   )
@@ -590,7 +593,15 @@ export function HfContent({
         src={img.dataUrl}
         alt=""
         draggable={false}
-        style={hfAnchoredImgStyle(img, boxGeom)}
+        style={hfAnchoredImgStyle(
+          img,
+          boxGeom,
+          hfRowBoxLeftPx(
+            paras[img.anchorPara!].row,
+            hfRowGeomOf(kind, boxGeom),
+            img.posHRel === 'margin',
+          ),
+        )}
       />
     )
     hostedBy.set(img.anchorPara!, [...(hostedBy.get(img.anchorPara!) ?? []), node])

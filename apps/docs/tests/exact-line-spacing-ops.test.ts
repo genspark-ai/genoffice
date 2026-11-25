@@ -7,6 +7,7 @@ import { editorExtensions } from '../src/renderer/editor/extensions'
 import { blocksToPmDoc, pmDocToSavePlan, type PmNode } from '../src/renderer/editor/convert'
 import { executeOps } from '../src/renderer/ai/ops'
 import { resolveStyleDefinition } from '../src/renderer/ai/style-ops'
+import { withStyleUpsert } from '../src/renderer/editor/design-history'
 
 const editors = new Set<Editor>()
 afterEach(() => {
@@ -109,5 +110,20 @@ describe('define_style exact line spacing', () => {
   it.each([0, -1, '0pt', '30', 'thirty'])('rejects %j', (value) => {
     const r = resolve(value)
     expect('error' in r && r.error).toContain('paragraph.lineSpacing')
+  })
+
+  it.each([
+    [1.5, 'w:line="360" w:lineRule="auto"'],
+    [null, '<w:qFormat/></w:style>'],
+  ])('%j after an unsaved exact rule replaces it', (next, expected) => {
+    let pending = {}
+    for (const value of ['30pt', next]) {
+      const r = resolve(value)
+      if ('error' in r) throw new Error(r.error)
+      pending = withStyleUpsert(pending, r.value.upsert)
+    }
+    const xml = mergeStyleXml(null, (pending as Record<string, never>).Body)
+    expect(xml).toContain(expected)
+    expect(xml).not.toContain('exact')
   })
 })

@@ -12,6 +12,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import JSZip from 'jszip'
 import { launchShell, closeAndSaveVideo, waitForPageWithUrl } from './helpers'
+import { saveFromMenu, withLanguage } from './docs-objects-fixture'
+import { selectParagraph } from './docs-word-acceptance-kit'
 
 // The menu bar's check marks and greyed-out items follow the renderer's state through the command-state report.
 
@@ -21,16 +23,6 @@ const viewItem = (app: ElectronApplication, label: string) =>
     const item = view?.submenu?.items.find((candidate) => candidate.label === label)
     return item ? { checked: item.checked, enabled: item.enabled } : null
   }, label)
-
-/**
- * File > Save, run from the menu. A save shortcut pressed right after a click can land before
- * the editor has the focus, and then nothing is saved; the menu item does not depend on focus.
- */
-const saveFromMenu = (app: ElectronApplication) =>
-  app.evaluate(({ Menu }) => {
-    const file = Menu.getApplicationMenu()?.items.find((item) => item.label === 'File')
-    file?.submenu?.items.find((candidate) => candidate.label === 'Save')?.click()
-  })
 
 /**
  * The saved main part parses as XML. One prefix that no element declares is a
@@ -976,11 +968,14 @@ test('the Tools items, Add Text and Finish & Merge that held a place now run', a
       }, path)
     const status = page.locator('.status-msg')
 
-    // with nothing selected, Thesaurus and Translate Selection say what they need
+    // with nothing selected and the caret in no word, Thesaurus and Translate Selection say what they need
+    await page.keyboard.type('  ')
     await tools(['Thesaurus…'])
     await expect(status).toContainText('Select a word or a short phrase first')
     await tools(['Translate', 'Translate Selection'])
     await expect(status).toContainText('Select the text to translate first')
+    await page.keyboard.press('Backspace')
+    await page.keyboard.press('Backspace')
 
     // the translation language is kept
     const language = page.locator('.translation-language-dialog')
@@ -1219,6 +1214,108 @@ test('Ribbon, Footnotes, Reset Ignored Words, Properties, Always Open Read-Only 
   }
 })
 
+test('a dialog opened while Reset Ignored Words rechecks the page keeps its focus and its tab', async () => {
+  test.setTimeout(120_000)
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), 'genoffice-e2e-menu-respell-')))
+  const docPath = join(dir, 'letter.docx')
+  writeFileSync(docPath, await docxWithTable())
+  const launched = await launchShell({
+    onboardingSeen: true,
+    videoDir: 'docs-menu-command-state',
+    openFile: docPath,
+  })
+  const { app } = launched
+  try {
+    const page = await waitForPageWithUrl(app, '://docs/')
+    const first = page.locator('.doc-page p', { hasText: 'Before' }).first()
+    await first.click()
+    const text = await first.innerText()
+    const enabled = (path: string[]) =>
+      app.evaluate(({ Menu }, path) => {
+        let items = Menu.getApplicationMenu()?.items
+        let item: Electron.MenuItem | undefined
+        for (const label of path) {
+          item = items?.find((candidate) => candidate.label === label)
+          items = item?.submenu?.items
+        }
+        return !!item?.enabled
+      }, path)
+    await expect.poll(() => enabled(['File', 'Properties…']), { timeout: 30_000 }).toBe(true)
+    // both commands reach the page before it has drawn a frame
+    await app.evaluate(({ Menu }) => {
+      const top = Menu.getApplicationMenu()?.items
+      const under = (label: string) => top?.find((item) => item.label === label)?.submenu?.items
+      under('Tools')
+        ?.find((item) => item.label === 'Spelling and Grammar')
+        ?.submenu?.items.find((item) => item.label.startsWith('Reset Ignored Words'))
+        ?.click()
+      under('File')
+        ?.find((item) => item.label === 'Properties…')
+        ?.click()
+    })
+    const properties = page.locator('.properties-dialog')
+    await expect(properties).toBeVisible()
+    await expect(properties.locator('.bs-tabs button.active')).toHaveText('Summary')
+    expect(await page.evaluate(() => !!document.activeElement?.closest('.properties-dialog'))).toBe(
+      true,
+    )
+    // the keyboard is the dialog's: typing fills its field, not the page behind it
+    await properties.locator('input[name="core.title"]').focus()
+    await page.keyboard.type('Plan')
+    await expect(properties.locator('input[name="core.title"]')).toHaveValue('Plan')
+    await properties.getByRole('button', { name: 'Cancel' }).click()
+    await expect(properties).toBeHidden()
+    // the recheck leaves the text as it was
+    await expect(first).toHaveText(text)
+  } finally {
+    await closeAndSaveVideo(launched, 'docs-menu-command-state')
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('a dialog opened from the menu bar closes on an Escape that comes as it appears', async () => {
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), 'genoffice-e2e-menu-escape-')))
+  const docPath = join(dir, 'letter.docx')
+  writeFileSync(docPath, await docxWithTable(['cherry', 'apple']))
+  const launched = await launchShell({
+    onboardingSeen: true,
+    videoDir: 'docs-menu-command-state',
+    openFile: docPath,
+  })
+  const { app } = launched
+  try {
+    const page = await waitForPageWithUrl(app, '://docs/')
+    await page.locator('.doc-page p', { hasText: 'Before' }).first().click()
+    // Escape in the same turn the dialog is put on the page, to whatever has the focus then
+    await page.evaluate(() => {
+      new MutationObserver((_, observer) => {
+        if (!document.querySelector('.sort-dialog')) return
+        observer.disconnect()
+        document.body.dataset.escapeSent = '1'
+        document.activeElement?.dispatchEvent(
+          new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }),
+        )
+      }).observe(document.body, { childList: true, subtree: true })
+    })
+    await expect
+      .poll(() =>
+        app.evaluate(({ Menu }) => {
+          const table = Menu.getApplicationMenu()?.items.find((item) => item.label === 'Table')
+          const sort = table?.submenu?.items.find((item) => item.label === 'Sort…')
+          if (!sort?.enabled) return false
+          sort.click()
+          return true
+        }),
+      )
+      .toBe(true)
+    await expect(page.locator('body[data-escape-sent]')).toHaveCount(1)
+    await expect(page.locator('.sort-dialog')).toHaveCount(0)
+  } finally {
+    await closeAndSaveVideo(launched, 'docs-menu-dialog-escape')
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
 test('Focus, Number, Text Direction, Sort, Rename and Move run from the places Word has them in', async () => {
   test.setTimeout(180_000)
   const dir = realpathSync(mkdtempSync(join(tmpdir(), 'genoffice-e2e-menu-batch12-')))
@@ -1266,8 +1363,9 @@ test('Focus, Number, Text Direction, Sort, Rename and Move run from the places W
     await sortButton.click()
     await ok(sort)
     await expect(status).toContainText('Select two or more paragraphs to sort')
-    await page.locator('.doc-page p', { hasText: 'cherry' }).first().click()
-    await page.keyboard.press('Shift+ArrowDown')
+    // not a click and Shift+ArrowDown: the editor redraws its own selection 20 ms after the
+    // click gives it the focus, and a selection the key made before that is lost
+    await selectParagraph(page, 'cherry', 'apple')
     await sortButton.click()
     await page.screenshot({ path: test.info().outputPath('sort.png') })
     await ok(sort)
@@ -1509,7 +1607,8 @@ test('Character Shading, Index and Tables and Hyphenation run, and Hyphenation i
   test.setTimeout(120_000)
   const dir = realpathSync(mkdtempSync(join(tmpdir(), 'genoffice-e2e-menu-state-')))
   const docPath = join(dir, 'hyphenation.docx')
-  writeFileSync(docPath, await docxWithTable())
+  // Hyphenation is offered for a document that declares its language
+  writeFileSync(docPath, await withLanguage(await docxWithTable()))
   const launched = await launchShell({
     onboardingSeen: true,
     videoDir: 'docs-menu-command-state',
@@ -1883,6 +1982,12 @@ test('Language marks the selected text and saves it; the Selection Pane selects 
     await page.screenshot({ path: test.info().outputPath('language.png') })
     await language.locator('button.primary').click()
     await expect(language).toBeHidden()
+    // the word is still selected, and a double-click on a selected word leaves a caret:
+    // the caret goes elsewhere first
+    await page.locator('.doc-page p', { hasText: 'After' }).first().click()
+    await expect
+      .poll(() => page.evaluate(() => document.getSelection()?.anchorNode?.textContent))
+      .toBe('After')
     await before.dblclick()
     await click('Tools', 'Language…')
     await expect(list).toHaveValue('fr-FR')
@@ -2175,6 +2280,8 @@ test('Two Lines in One, Fit Text and the Asian Layout button set the layout of s
     // Two Lines in One, from the menu: the word is drawn half size in a box two lines tall
     await before.dblclick()
     await asian('Two Lines in One…')
+    const twoLines = page.locator('.two-lines-dialog')
+    await twoLines.locator('button.primary').click()
     const combined = before.locator('span[style*="word-break"]')
     await expect(combined).toHaveCount(1)
     await expect(combined).toHaveCSS('display', 'inline-block')
@@ -2200,9 +2307,10 @@ test('Two Lines in One, Fit Text and the Asian Layout button set the layout of s
     await expect(dialog.getByLabel('New text width')).toHaveValue('2"')
     await dialog.getByRole('button', { name: 'Remove' }).click()
     await expect(fitted).toHaveCount(0)
-    // Two Lines in One again takes it off
+    // the Two Lines in One dialog opens on the layout, and Remove takes it off
     await before.dblclick()
     await asian('Two Lines in One…')
+    await twoLines.getByRole('button', { name: 'Remove' }).click()
     await expect(combined).toHaveCount(0)
     await saveFromMenu(app)
     await expect.poll(documentXml, { timeout: 30_000 }).not.toContain('w:fitText')

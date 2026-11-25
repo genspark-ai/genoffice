@@ -244,4 +244,45 @@ describe('createZoomWheelClassifier', () => {
   it('ignores zero deltas', () => {
     expect(createZoomWheelClassifier().feed(wheel(0), 0)).toBeNull()
   })
+
+  for (const modifier of [
+    { ctrlKey: true, metaKey: false },
+    { ctrlKey: false, metaKey: true },
+  ]) {
+    for (const delta of [-60, -100, -120, 120]) {
+      it(`retains rapid matching ${delta}px packets with ${JSON.stringify(modifier)}`, () => {
+        const c = createZoomWheelClassifier()
+        const expected = delta < 0 ? 'zoom-in' : 'zoom-out'
+        for (const t of [0, 8, 16, 24]) expect(c.feed(wheel(delta, modifier), t)).toBe(expected)
+      })
+    }
+
+    for (const stream of [
+      [-10, -20, -40, -120, -80],
+      [-10, -20, -40, -120, -120, -80],
+      [-70, -90, -110, -80, -50, -25, -12, -5],
+    ]) {
+      it(`keeps a changing swipe to one step with ${JSON.stringify(modifier)}: ${stream}`, () => {
+        const c = createZoomWheelClassifier()
+        const intents = stream.map((delta, i) => c.feed(wheel(delta, modifier), i * 16))
+        expect(intents.filter(Boolean)).toEqual(['zoom-in'])
+      })
+    }
+  }
+
+  it('does not promote a swipe tail to a wheel but resets after a gap or reversal', () => {
+    const c = createZoomWheelClassifier()
+    for (const [i, delta] of [-10, -20, -40, -120, -120].entries()) c.feed(wheel(delta), i * 16)
+    expect(c.feed(wheel(-120), 80)).toBeNull()
+    expect(c.feed(wheel(-120), 400)).toBe('zoom-in')
+    expect(c.feed(wheel(120), 408)).toBe('zoom-out')
+    expect(c.feed(wheel(120), 416)).toBe('zoom-out')
+  })
+
+  it('a fractional pinch interrupts matching integer packets without changing pinch output', () => {
+    const c = createZoomWheelClassifier()
+    expect(c.feed(wheel(-120), 0)).toBe('zoom-in')
+    expect(c.feed(wheel(-3.4), 8)).toBe('pinch')
+    expect(c.feed(wheel(-120), 16)).toBeNull()
+  })
 })

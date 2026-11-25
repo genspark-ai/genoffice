@@ -10,6 +10,7 @@ import { TextSelection } from '@tiptap/pm/state'
 import {
   compareDocuments,
   nextNoteId,
+  labelUnattributedRevisions,
   parseDocx,
   readSections,
   type CommentImage,
@@ -174,9 +175,14 @@ export type NoteConversion = 'toEndnotes' | 'toFootnotes' | 'swap'
 /**
  * Word's Convert Notes: every footnote becomes an endnote, every endnote a
  * footnote, or both at once. A note whose reference mark lives only in a
- * protected block's XML stays what it is. Returns how many notes changed kind.
+ * protected block's XML stays what it is. `only` moves that one note, as the
+ * right-click Convert to Endnote / Footnote does. Returns how many notes changed kind.
  */
-export function convertNotes(ctx: ReviewContext, mode: NoteConversion): number {
+export function convertNotes(
+  ctx: ReviewContext,
+  mode: NoteConversion,
+  only?: { kind: NoteKind; id: string },
+): number {
   const editor = ctx.editor
   if (!editor) return 0
   const lists = { footnote: ctx.footnotes, endnote: ctx.endnotes }
@@ -185,6 +191,7 @@ export function convertNotes(ctx: ReviewContext, mode: NoteConversion): number {
     if (node.type.name !== 'docNoteRef') return true
     const kind = node.attrs.kind as NoteKind
     if (mode === (kind === 'footnote' ? 'toFootnotes' : 'toEndnotes')) return false
+    if (only && (only.kind !== kind || only.id !== String(node.attrs.id))) return false
     const key = `${kind}:${node.attrs.id}`
     moving.set(key, [...(moving.get(key) ?? []), { pos, node }])
     return false
@@ -538,12 +545,14 @@ export async function pickCompareFile(): Promise<
   if (!picked) return null
   if ('needsPassword' in picked) return { error: t('appDocPwdTitle') }
   try {
-    const parsed = await parseDocx(await fetchDocBytes(picked.dataUrl))
+    const bytes = await fetchDocBytes(picked.dataUrl)
+    const parsed = await parseDocx(bytes)
     const core = parsed.properties?.core ?? {}
     return {
       kind: 'file',
       name: picked.name,
       parsed,
+      bytes,
       author: core.lastModifiedBy?.trim() || core.creator?.trim() || authorName(),
     }
   } catch (err) {
@@ -559,17 +568,25 @@ export async function pickCompareFile(): Promise<
  */
 export async function runCompare(ctx: ReviewContext, request: CompareRequest): Promise<void> {
   const failed = request.mode === 'combine' ? 'appCombineFailed' : 'appCompareFailed'
-  const other = request.original.kind === 'file' ? request.original : request.revised
+  let other = request.original.kind === 'file' ? request.original : request.revised
   const name = other.kind === 'file' ? other.name : ''
   try {
+    /** the original with its unnamed tracked changes under the name given for its side */
+    const labelled = async (bytes: Uint8Array): Promise<ParsedDocFull | null> => {
+      const label = request.mode === 'combine' ? (request.originalAuthor?.trim() ?? '') : ''
+      if (!label) return null
+      const named = await labelUnattributedRevisions(bytes, label)
+      return named.count > 0 ? parseDocx(named.bytes) : null
+    }
     if (request.target === 'new') {
-      const side = async (s: CompareSide): Promise<ParsedDocFull | null> => {
-        if (s.kind === 'file') return s.parsed
-        const bytes = await ctx.currentDocBytes()
-        return bytes ? parseDocx(bytes) : null
+      const side = async (s: CompareSide, original: boolean): Promise<ParsedDocFull | null> => {
+        const bytes = s.kind === 'file' ? s.bytes : await ctx.currentDocBytes()
+        if (!bytes) return null
+        const renamed = original ? await labelled(bytes) : null
+        return renamed ?? (s.kind === 'file' ? s.parsed : parseDocx(bytes))
       }
-      const original = await side(request.original)
-      const revised = await side(request.revised)
+      const original = await side(request.original, true)
+      const revised = await side(request.revised, false)
       if (!original || !revised) return
       const { bytes, summary } = await compareDocuments(original, revised, {
         author: request.author,
@@ -603,6 +620,10 @@ export async function runCompare(ctx: ReviewContext, request: CompareRequest): P
     }
     const editor = ctx.editor
     if (!ctx.doc || !editor || other.kind !== 'file') return
+    if (other === request.original) {
+      const renamed = await labelled(other.bytes)
+      if (renamed) other = { ...other, parsed: renamed }
+    }
     const styles = ctx.doc.parsed.styles
     const summary = combineDocuments(
       editor,
@@ -618,6 +639,7 @@ export async function runCompare(ctx: ReviewContext, request: CompareRequest): P
           whitespace: !request.settings.whiteSpace,
         },
         tables: request.settings.tables,
+        formatting: request.settings.formatting,
         openIsRevised: request.target === 'revised',
         keepRevisions: request.mode === 'combine',
       },
@@ -626,7 +648,8 @@ export async function runCompare(ctx: ReviewContext, request: CompareRequest): P
       ctx.setStatus(t('appCombineUnrelated', { name }))
       return
     }
-    const changed = summary.insertions + summary.deletions + (summary.carried ?? 0) > 0
+    const changed =
+      summary.insertions + summary.deletions + summary.formatChanges + (summary.carried ?? 0) > 0
     if (changed) {
       ctx.dirtyRef.current = true
       ctx.showAllMarkup()
@@ -638,6 +661,7 @@ export async function runCompare(ctx: ReviewContext, request: CompareRequest): P
             name,
             ins: summary.insertions,
             del: summary.deletions,
+            fmt: summary.formatChanges,
             author: request.author,
           })
         : t('appCombineSame', { name })) + left,

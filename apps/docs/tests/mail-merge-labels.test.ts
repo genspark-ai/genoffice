@@ -7,6 +7,7 @@ import {
   saveDocx,
 } from '@genoffice/docx-engine'
 import { pmDocToSavePlan, type PmNode } from '../src/renderer/editor/convert'
+import { mailMergeMainTypeToWrite } from '../src/renderer/file-actions'
 import { substituteMergeFields } from '../src/renderer/mail-merge/template'
 import {
   AVERY_5160,
@@ -78,13 +79,29 @@ describe('the label sheet document', () => {
     expect(xml).toMatch(
       /<w:gridCol w:w="3780"\/><w:gridCol w:w="180"\/><w:gridCol w:w="3780"\/><w:gridCol w:w="180"\/><w:gridCol w:w="3780"\/>/,
     )
-    // no printed frame: every cell declares all four sides none
+    // no printed frame: every cell declares all four sides nil (Word draws the table's lines over "none")
     expect(xml).toMatch(
-      /<w:tcBorders><w:top w:val="none"\/><w:left w:val="none"\/><w:bottom w:val="none"\/><w:right w:val="none"\/><\/w:tcBorders>/,
+      /<w:tcBorders><w:top w:val="nil"\/><w:left w:val="nil"\/><w:bottom w:val="nil"\/><w:right w:val="nil"\/><\/w:tcBorders>/,
     )
+    expect(xml).not.toContain('w:val="none"')
     // the label rows carry the exact 1in height
     expect(xml).toMatch(/<w:trHeight w:val="1440" w:hRule="exact"\/>/)
     // Word wants a paragraph between the table and the section properties
     expect(xml).toMatch(/<\/w:tbl><w:p[\s/>][\s\S]*<w:sectPr/)
+  })
+})
+
+describe('the mail-merge kind a save writes', () => {
+  it('marks a sheet of labels as a labels main document, once', () => {
+    expect(mailMergeMainTypeToWrite(undefined, true, false)).toBe('mailingLabels')
+    expect(mailMergeMainTypeToWrite('formLetters', true, false)).toBe('mailingLabels')
+    expect(mailMergeMainTypeToWrite('mailingLabels', true, false)).toBeUndefined()
+  })
+
+  it('leaves any other document as it is, and takes the mark off the labels a merge wrote', () => {
+    expect(mailMergeMainTypeToWrite(undefined, false, false)).toBeUndefined()
+    expect(mailMergeMainTypeToWrite('mailingLabels', false, false)).toBeUndefined()
+    expect(mailMergeMainTypeToWrite('formLetters', false, true)).toBeUndefined()
+    expect(mailMergeMainTypeToWrite('mailingLabels', false, true)).toBeNull()
   })
 })

@@ -9,6 +9,8 @@ import { isPlanned, type CommandId } from './commands'
 /** items the host builds itself: dynamic lists, shell-dependent or platform-only entries */
 export type MenuSlot =
   | 'new-window'
+  | 'window-head'
+  | 'window-tail'
   | 'open-recent'
   | 'extra-file-items'
   | 'close'
@@ -32,6 +34,8 @@ export type MenuNode<K extends string = string> =
 
 export interface MenuTop<K extends string = string> {
   readonly label: K
+  /** the menu macOS adds its window list to */
+  readonly role?: 'window'
   readonly items: readonly MenuNode<K>[]
 }
 
@@ -55,7 +59,7 @@ function withoutPlanned<K extends string>(nodes: readonly MenuNode<K>[]): MenuNo
 }
 
 function shownMenu<K extends string>(tops: readonly MenuTop<K>[]): readonly MenuTop<K>[] {
-  return tops.map((top) => ({ label: top.label, items: withoutPlanned(top.items) }))
+  return tops.map((top) => ({ ...top, items: withoutPlanned(top.items) }))
 }
 
 /** the menu bar with every command Word has in its place, built or not */
@@ -87,7 +91,6 @@ const WORD_MENU = [
       'file-properties',
       // not in Word's File menu: kept below its items so their order stays Word's
       '---',
-      { slot: 'new-window' },
       // also in the native File menu, the only entry on macOS: the ribbon's
       // File tab is Windows/Linux-only
       { slot: 'name-with-ai' },
@@ -190,7 +193,10 @@ const WORD_MENU = [
     label: 'menuInsert',
     items: [
       // Word's Photo Browser, Stock Images and Online Pictures are not offered
-      { submenu: 'menuPictures', items: [{ cmd: 'insert-image', label: 'menuPictureFromFile' }] },
+      {
+        submenu: 'menuPictures',
+        items: [{ cmd: 'insert-image', label: 'menuPictureFromFile' }],
+      },
       {
         submenu: 'menuShape',
         items: [
@@ -368,7 +374,7 @@ const WORD_MENU = [
       'tools-labels',
       '---',
       'tools-customize-keyboard',
-      // Word for Mac keeps Settings in the application menu
+      // Word for Mac keeps Preferences in the application menu
       { slot: 'settings-off-mac' },
     ],
   },
@@ -380,10 +386,13 @@ const WORD_MENU = [
         submenu: 'menuTableInsert',
         items: [
           { cmd: 'insert-table', label: 'menuTableInsertTable' },
+          '---',
           'table-insert-cols-left',
           'table-insert-cols-right',
+          '---',
           'table-insert-rows-above',
           'table-insert-rows-below',
+          '---',
           'table-insert-cells',
         ],
       },
@@ -405,7 +414,6 @@ const WORD_MENU = [
           'table-select-cell',
         ],
       },
-      '---',
       'table-merge-cells',
       'table-split-cells',
       'table-split-table',
@@ -432,6 +440,22 @@ const WORD_MENU = [
       'table-gridlines',
       '---',
       'table-properties',
+    ],
+  },
+  {
+    // Word's Window menu: the system's items come first and last, around New Window, Arrange All and Split
+    label: 'menuWindow',
+    role: 'window',
+    items: [
+      { slot: 'window-head' },
+      '---',
+      { slot: 'new-window' },
+      'view-arrange-all',
+      // no Word counterpart: Word has no tab strip to return windows to
+      'view-merge-windows',
+      'split-view',
+      '---',
+      { slot: 'window-tail' },
     ],
   },
 ] as const satisfies readonly MenuTop[]

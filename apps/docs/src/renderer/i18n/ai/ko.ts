@@ -152,6 +152,7 @@ export const ko = {
   aiPartialBody: '{blocks}개 블록을 받은 뒤 작성이 중단되었습니다. 이 부분을 사용할까요, 버릴까요?',
   aiPartialAdopt: '사용',
   aiPartialDiscard: '버리기',
+  aiSumProtectedBlocked: '적용되지 않음: 편집 가능한 영역 외에는 문서가 보호되어 있습니다',
   aiSumInsertedBlocks: '블록 {count}개 삽입',
   aiSumCreateDocument: '새 문서 만들기',
   aiSumCreatedDocument: '{name} 생성됨',

@@ -5,10 +5,13 @@
  * differ only in the context they hand in (header/footer resolver, resume),
  * never in the steps, so a step added for one side runs for the other.
  */
-import type { SectionInfo, SectionSettings } from '@genoffice/docx-engine'
+import { CHAPTER_SEPARATORS, type SectionInfo, type SectionSettings } from '@genoffice/docx-engine'
 import { buildPageCuts, type PageCut } from './pagination-cuts'
 import { sliceWithLineSplit, type PassResume } from './pagination-lines'
-import { appendEndnotesBlock, appendFloatSpillBlock } from './pagination-measure'
+import { noteSeparatorPx } from './line-metrics'
+import type { NoteColumns } from './note-columns'
+import { appendEndnotesBlock, appendFloatSpillBlock, applyBlockMeta } from './pagination-measure'
+import { noteColumnsPass, type NoteColumnsStats } from './pagination-note-columns'
 import { assignSections, liveSections, sectionGeoms } from './pagination-sections'
 import type {
   BlockBox,
@@ -49,6 +52,9 @@ export interface PassContext {
   /** measure as a full-width single flow: the geometry drops column flow to match */
   dropCols: boolean
   blockMetaOf?: BlockMetaOf
+  /** set when a section lays its footnote area out in columns: the columns a
+   *  section gives, and where the pass reports the re-slicings text columns took */
+  noteColumns?: { of: (section: SectionSettings) => NoteColumns | null; stats?: NoteColumnsStats }
   /** vertical-text sections: a block's inline extras (indents the writing-mode
    *  decoration moves off the physical margins), captured while measuring */
   inlineExtraOf?: (el: HTMLElement) => number
@@ -134,6 +140,21 @@ export function sliceFlow(flow: PreparedFlow, ctx: PassContext): SlicedFlow {
   const { blocks, floats, geoms, secList } = flow
   const out = ctx.out
   const resume = ctx.resumeFor?.(blocks, flow.secSig)
+  const noteCols = ctx.noteColumns
+  let settleNotes: ReturnType<typeof noteColumnsPass> = null
+  if (noteCols) {
+    applyBlockMeta(blocks, ctx.blockMetaOf, ctx.factor)
+    settleNotes = noteColumnsPass(
+      blocks,
+      out,
+      (si) => noteCols.of(secList?.[Math.min(si, secList.length - 1)]?.settings ?? ctx.section),
+      noteSeparatorPx('footnote'),
+      Math.max(...geoms.map((g) => g.contentHeight)),
+      noteCols.stats,
+    )
+  }
+  // under text columns a page's area is reserved from the whole slicing: no resume there
+  const textColumns = geoms.some((g) => (g.cols ?? 1) > 1)
   let slices = sliceWithLineSplit(
     blocks,
     geoms,
@@ -141,8 +162,12 @@ export function sliceFlow(flow: PreparedFlow, ctx: PassContext): SlicedFlow {
     ctx.factor,
     ctx.blockMetaOf,
     out,
-    resume,
+    settleNotes && textColumns ? undefined : resume,
   )
+  if (settleNotes)
+    slices = settleNotes(slices, () =>
+      sliceWithLineSplit(blocks, geoms, flow.flowH, ctx.factor, ctx.blockMetaOf, out),
+    )
   const floatTops = floats.map((f) => f.top)
   const pullFloats = () => {
     floats.forEach((f, i) => (f.top = floatTops[i]))
@@ -179,15 +204,7 @@ export function sliceFlow(flow: PreparedFlow, ctx: PassContext): SlicedFlow {
     floatSplits: out.floatSplits,
     floats,
   })
-  return { slices, cuts, resumed: !!resume }
-}
-
-const CHAPTER_SEPARATORS: Record<string, string> = {
-  hyphen: '-',
-  period: '.',
-  colon: ':',
-  emDash: '\u2014',
-  enDash: '\u2013',
+  return { slices, cuts, resumed: !!resume && !(settleNotes && textColumns) }
 }
 
 /** the chapter number of a page: the number of the last heading of the section's

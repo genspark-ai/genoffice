@@ -24,7 +24,12 @@ const SEPARATORS = ['.page-gap-notes::before', '.pv-footnotes::before', '.pv-end
 describe('note separator CSS', () => {
   it.each(SEPARATORS)('%s draws Word’s 2in rule at the bottom of the reserved row', (sel) => {
     const rule = ruleOf(sel)
-    expect(rule).toContain('width: min(2in, 100%)')
+    // over an area in columns the rule is no wider than the first column
+    expect(rule).toContain(
+      sel === '.pv-endnote-separator'
+        ? 'width: min(2in, 100%)'
+        : 'width: min(2in, var(--note-col-w, 100%))',
+    )
     expect(rule).toContain('border-bottom: 1px solid')
     expect(rule).not.toContain('border-top')
     // rule offset + 1px border + spacing consume the row; the fallbacks are the engine's default

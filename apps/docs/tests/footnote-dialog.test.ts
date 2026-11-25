@@ -7,7 +7,12 @@ import { FootnoteDialog } from '../src/renderer/components/FootnoteDialog'
 
 type Props = Parameters<typeof FootnoteDialog>[0]
 
-async function mount(settings: Props['settings'], multiSection = false) {
+async function mount(
+  settings: Props['settings'],
+  multiSection = false,
+  columns: Props['columns'] = null,
+  columnsFixed = false,
+) {
   const host = document.createElement('div')
   document.body.appendChild(host)
   const onApply = vi.fn<Props['onApply']>()
@@ -18,6 +23,8 @@ async function mount(settings: Props['settings'], multiSection = false) {
     root.render(
       createElement(FootnoteDialog, {
         settings,
+        columns,
+        columnsFixed,
         multiSection,
         counts: { footnote: 0, endnote: 0 },
         onApply,
@@ -107,5 +114,49 @@ describe('FootnoteDialog', () => {
       { footnote: { numStart: 2, numRestart: 'eachSect' }, endnote: {} },
       'section',
     )
+  })
+
+  const pick = async (select: HTMLSelectElement, value: string) => {
+    await act(async () => {
+      select.value = value
+      select.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+  }
+
+  it('Columns opens on the count the section states and applies a new one', async () => {
+    const { q, click, onApply } = await mount({ footnote: {}, endnote: {} }, false, 2)
+    const columns = q<HTMLSelectElement>('select[name="note-columns"]')
+    expect(columns.disabled).toBe(false)
+    expect(columns.value).toBe('2')
+    expect([...columns.options].map((o) => o.value)).toEqual(['match', '1', '2', '3', '4'])
+    const apply = q<HTMLButtonElement>('button[name="apply"]')
+    expect(apply.disabled).toBe(true)
+    await pick(columns, '3')
+    expect(apply.disabled).toBe(false)
+    await click(apply)
+    expect(onApply).toHaveBeenCalledWith({ footnote: {}, endnote: {} }, 'document', 3)
+  })
+
+  it('Match section layout applies as no count; an untouched Columns is left out', async () => {
+    const stated = await mount({ footnote: {}, endnote: {} }, false, 2)
+    await pick(stated.q<HTMLSelectElement>('select[name="note-columns"]'), 'match')
+    await stated.click(stated.q<HTMLButtonElement>('button[name="apply"]'))
+    expect(stated.onApply).toHaveBeenCalledWith({ footnote: {}, endnote: {} }, 'document', null)
+    const untouched = await mount({ footnote: {}, endnote: {} })
+    expect(untouched.q<HTMLSelectElement>('select[name="note-columns"]').value).toBe('match')
+    await pick(untouched.q<HTMLSelectElement>('select[name="note-format"]'), 'upperRoman')
+    await untouched.click(untouched.q<HTMLButtonElement>('button[name="apply"]'))
+    expect(untouched.onApply).toHaveBeenCalledWith(
+      { footnote: { numFmt: 'upperRoman' }, endnote: {} },
+      'document',
+    )
+  })
+
+  it('Columns is for footnotes, and not for a document laid out as Word 2010 or older', async () => {
+    const { q, click } = await mount({ footnote: {}, endnote: {} })
+    await click(q('input[value="endnote"]'))
+    expect(q<HTMLSelectElement>('select[name="note-columns"]').disabled).toBe(true)
+    const old = await mount({ footnote: {}, endnote: {} }, false, null, true)
+    expect(old.q<HTMLSelectElement>('select[name="note-columns"]').disabled).toBe(true)
   })
 })

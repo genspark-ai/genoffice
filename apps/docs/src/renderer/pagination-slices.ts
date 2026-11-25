@@ -573,6 +573,11 @@ export function computeSectionedSlicesF2(
 
   // first block index of the current region (balancing walks this range for line boundaries)
   let regionStartBi = 0
+  // what the page's footnote area takes from the current column beyond the notes
+  // charged in it (SliceOutputs.noteReserve), and from every column of the page for
+  // the notes it opens with (SliceOutputs.notePage)
+  let colNoteReserve = 0
+  let pageNoteShift = 0
   // an explicit column break inside the region disqualifies it from balancing
   // ("any effective page breaks stop the balancing act"); natural overflow turns
   // are re-distributed by the balance pass
@@ -594,6 +599,8 @@ export function computeSectionedSlicesF2(
       ...(headerH > 0 ? { repeatHeader: { top: headerTop, height: headerH } } : {}),
     })
     usedInCol = headerH
+    colNoteReserve =
+      (page.regions.length === 1 && out?.noteReserve?.get(noteReserveKey(pageStart, colIdx))) || 0
   }
   // open a new region at the current page's regionTop (column count/height per section)
   const openRegion = (y: number, section: number, headerH = 0, headerTop = 0) => {
@@ -633,6 +640,8 @@ export function computeSectionedSlicesF2(
     regionTop = 0
     pagePlaced = false
     pageFirstBi = curBi
+    const opened = out?.notePage?.(blocks[curBi], y, section, pages.length === 0)
+    pageNoteShift = opened?.shiftPx ?? 0
     // the section's first page renders the titlePg header/footer variant, so it
     // gets its own capacity (same "first page" rule as sectionFirstPages)
     const continued = (midPageStart.get(section) ?? Infinity) < y - 0.5
@@ -653,7 +662,7 @@ export function computeSectionedSlicesF2(
     curFirstOfSection = firstOfSection
     pages.push({ section, regions: [], ...(continued ? { continued: true } : {}) })
     openRegion(y, section, headerH, headerTop)
-    pageNoteSepPx = curBlockNotes ? noteSeparatorPx('footnote') : 0
+    pageNoteSepPx = curBlockNotes || opened?.withNotes ? noteSeparatorPx('footnote') : 0
     pageFloatBottom = 0
   }
   // advance on overflow: change column if not the last, turn the page on the last (headerH/headerTop: table header repeated at column top after a table break)
@@ -908,7 +917,7 @@ export function computeSectionedSlicesF2(
   }
 
   // usable column capacity: the page's footnote separator strip is not placeable
-  const capColH = () => colH - pageNoteSepPx
+  const capColH = () => colH - pageNoteSepPx - colNoteReserve - pageNoteShift
   // capacity of a fresh page for the CURRENT block: the separator only follows
   // blocks that carry footnotes (empty-page / one-page-height checks). A block
   // of a section other than the page's owner would open that section's first
@@ -2871,6 +2880,10 @@ export function pageAt(slices: ReadonlyArray<{ start: number }>, y: number): num
   }
   return page
 }
+
+/** key of a text column in SliceOutputs.noteReserve: where its page starts in the flow, and its index */
+export const noteReserveKey = (pageStart: number, column: number): number =>
+  Math.round(pageStart * 10) * 16 + column
 
 /** 0-based page a block or line top belongs to: a top sitting on a page
  *  boundary (within `tol`) opens that page rather than closing the previous one */

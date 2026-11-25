@@ -18,6 +18,7 @@ import type {
   BlockMetaOf,
   ColWrapRequest,
   ColWrapTable,
+  NoteBand,
   PageSlice,
   RowCellBox,
   RowSplitPatch,
@@ -616,7 +617,7 @@ export function fillLineBoxes(
         if (rows.every((r) => r.keepNext)) block.keepNext = true
         const bands =
           block.docxIndex !== undefined ? metaOf?.(block.docxIndex)?.footnoteBands : undefined
-        if (bands) applyRowNotes(block.el, rows, bands)
+        if (bands) applyRowNotes(block.el, rows, bands, block.noteBands)
         block.tableRows = rows
         changed = true
       }
@@ -785,15 +786,20 @@ export function applyRowNotes(
   el: HTMLElement,
   rows: TableRowBox[],
   bands: Array<{ heightPx: number }>,
+  resolved?: NoteBand[],
 ): void {
   const refs = Array.from(
     el.querySelectorAll('sup.doc-note-ref[data-note-kind="footnote"]'),
   ).filter((ref) => !ref.closest('.page-gap, .page-float-host, .page-repeat-header'))
   if (refs.length !== bands.length) return
   const trs = outerTableRows(el)
+  // the block's resolved bands carry what a footnote area in columns charges
+  const own = resolved?.length === bands.length ? resolved : undefined
   refs.forEach((ref, i) => {
     const ri = trs.findIndex((tr) => tr.contains(ref))
-    if (ri >= 0 && rows[ri]) rows[ri].notesPx = (rows[ri].notesPx ?? 0) + bands[i].heightPx
+    if (ri < 0 || !rows[ri]) return
+    rows[ri].notesPx = (rows[ri].notesPx ?? 0) + (own ? own[i].height : bands[i].heightPx)
+    if (own) own[i].row = ri
   })
 }
 

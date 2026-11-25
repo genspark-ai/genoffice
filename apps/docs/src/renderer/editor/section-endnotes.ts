@@ -152,6 +152,7 @@ function rowEl(item: PageNoteItem, first: boolean): HTMLElement {
   row.contentEditable = 'false'
   row.title = t('appEditEndnote')
   row.dataset.noteId = item.id
+  row.dataset.noteRow = 'endnote'
   for (const [k, v] of Object.entries(box.style)) {
     if (k.startsWith('--')) row.style.setProperty(k, v)
     else row.style[k as 'lineHeight'] = v

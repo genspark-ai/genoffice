@@ -35,123 +35,235 @@ Word has a full menu bar, so the file and formatting chords below work whenever 
 
 ### File
 
-| Action      | macOS | Windows / Linux |
-| ----------- | ----- | --------------- |
-| New         | ⌘N    | Ctrl+N          |
-| New Window  | ⇧⌘N   | Ctrl+Shift+N    |
-| Open…       | ⌘O    | Ctrl+O          |
-| Save        | ⌘S    | Ctrl+S          |
-| Save As…    | ⇧⌘S   | Ctrl+Shift+S    |
-| Print       | ⌘P    | Ctrl+P          |
-| Close (tab) | ⌘W    | Ctrl+W          |
+| Action            | macOS   | Windows / Linux |
+| ----------------- | ------- | --------------- |
+| New               | ⌘N / ⌃N | Ctrl+N          |
+| New Window        | —       | Ctrl+Shift+N    |
+| Open…             | ⌘O      | Ctrl+O          |
+| Save              | ⌘S / ⌃S | Ctrl+S          |
+| Save As…          | ⇧⌘S     | Ctrl+Shift+S    |
+| Print             | ⌘P / ⌃P | Ctrl+P          |
+| Close (tab)       | ⌘W      | Ctrl+W          |
+| New from Template | ⇧⌘P     | —               |
 
 ⌘P is not the browser's print. Word lays out a print preview first, so one printed sheet is exactly one on-screen page, then opens its own print dialog.
 
 ### Edit
 
-| Action              | macOS | Windows / Linux |
-| ------------------- | ----- | --------------- |
-| Undo                | ⌘Z    | Ctrl+Z          |
-| Redo                | ⇧⌘Z   | Ctrl+Shift+Z    |
-| Cut                 | ⌘X    | Ctrl+X          |
-| Copy                | ⌘C    | Ctrl+C          |
-| Paste               | ⌘V    | Ctrl+V          |
-| Paste as Plain Text | ⌥⇧⌘V  | Ctrl+Shift+V    |
-| Select All          | ⌘A    | Ctrl+A          |
-| Find                | ⌘F    | Ctrl+F          |
-| Replace             | ⌃H    | Ctrl+H          |
-| Go To               | ⌥⌘G   | Ctrl+G          |
-| Keyboard Shortcuts  | ⌘/    | Ctrl+/          |
+| Action                | macOS           | Windows / Linux |
+| --------------------- | --------------- | --------------- |
+| Undo                  | ⌘Z / ⌃Z         | Ctrl+Z          |
+| Redo                  | ⇧⌘Z             | Ctrl+Shift+Z    |
+| Cut                   | ⌘X / ⌃X / F2    | Ctrl+X          |
+| Copy                  | ⌘C / ⌃C / F3    | Ctrl+C          |
+| Paste                 | ⌘V / ⌃V / F4    | Ctrl+V          |
+| Paste as Plain Text   | ⌥⇧⌘V            | Ctrl+Shift+V    |
+| Select All            | ⌘A / ⌃A         | Ctrl+A          |
+| Find                  | ⌘F / ⌃F         | Ctrl+F          |
+| Replace               | ⇧⌘H / ⌃H        | Ctrl+H          |
+| Go To                 | ⌥⌘G / F5        | Ctrl+G          |
+| Keyboard Shortcuts    | ⌘/              | Ctrl+/          |
+| Redo or Repeat        | ⌘Y / ⌃Y / ⌥⏎    | Ctrl+Y          |
+| Keep Text Only        | ⇧⌘V             | —               |
+| Paste Special         | ⌃⌘V             | —               |
+| Find Next             | ⌘G / ⇧F4 / ⇧⌘F4 | —               |
+| Find Previous         | ⇧⌘G             | —               |
+| Toggle Drawing        | ⌃⌘Z             | —               |
+| Delete Rows           | ⌃⌘X             | —               |
+| Insert Above          | ⌃⌘I             | —               |
+| Delete Previous Word  | ⌥⌫ / ⌘⌫         | —               |
+| Delete Next Word      | ⌥⌦ / ⌘⌦         | —               |
+| Cut to Spike          | ⌘F3             | —               |
+| Insert Spike Contents | ⇧⌘F3            | —               |
+| Clear Contents        | Clear           | —               |
+| Copy Text             | ⇧F2             | —               |
 
-Replace is Ctrl+H on both platforms because ⌘H hides the window on macOS and never reaches Word. Go To follows Word's own split: ⌥⌘G on the Mac so ⇧⌘G stays free for Word Count.
+Replace is Ctrl+H on both platforms because ⌘H hides the window on macOS and never reaches Word. Go To follows Word's own split: ⌥⌘G on the Mac, where ⌘G and ⇧⌘G are Find Next and Find Previous.
+
+### Navigation & Selection
+
+| Action                                | macOS                  | Windows / Linux |
+| ------------------------------------- | ---------------------- | --------------- |
+| Start of Line                         | ⌘← / Home / ⌃↑         | —               |
+| End of Line                           | ⌘→ / End / ⌃↓          | —               |
+| Previous Paragraph                    | ⌘↑ / ⌥↑                | —               |
+| Next Paragraph                        | ⌘↓ / ⌥↓                | —               |
+| Start of Document                     | ⌘Home / ⌥Home          | —               |
+| End of Document                       | ⌘End / ⌥End            | —               |
+| Select to Start of Line               | ⇧⌘← / ⇧Home            | —               |
+| Select to End of Line                 | ⇧⌘→ / ⇧End             | —               |
+| Select to Previous Paragraph          | ⇧⌘↑ / ⌥⇧↑              | —               |
+| Select to Next Paragraph              | ⇧⌘↓ / ⌥⇧↓              | —               |
+| Select to Start of Document           | ⇧⌘Home                 | —               |
+| Select to End of Document             | ⇧⌘End                  | —               |
+| Up One Screen                         | PageUp                 | —               |
+| Down One Screen                       | PageDown               | —               |
+| Select Up One Screen                  | ⇧PageUp                | —               |
+| Select Down One Screen                | ⇧PageDown              | —               |
+| Top of Window                         | ⌥⌘PageUp               | —               |
+| Bottom of Window                      | ⌥⌘PageDown             | —               |
+| Select to Top of Window               | ⌥⇧⌘PageUp              | —               |
+| Select to Bottom of Window            | ⌥⇧⌘PageDown            | —               |
+| Browse Previous (Page, Find or Go To) | ⌘PageUp                | —               |
+| Browse Next (Page, Find or Go To)     | ⌘PageDown              | —               |
+| Previous Section                      | ⌥PageUp                | —               |
+| Next Section                          | ⌥PageDown              | —               |
+| Extend Selection                      | F8                     | —               |
+| Shrink Selection                      | ⇧F8                    | —               |
+| Go Back to Previous Edit              | ⇧F5 / ⌥⌘Z              | —               |
+| First Cell in Row                     | ⌃Home / ⌥⇧Home         | —               |
+| Last Cell in Row                      | ⌃End / ⌥⇧End           | —               |
+| First Cell in Column                  | ⌃PageUp / ⌥⇧PageUp     | —               |
+| Last Cell in Column                   | ⌃PageDown / ⌥⇧PageDown | —               |
+| Select Table                          | ⌥Clear                 | —               |
 
 ### Text Formatting
 
-| Action                                     | macOS    | Windows / Linux       |
-| ------------------------------------------ | -------- | --------------------- |
-| Bold                                       | ⌘B       | Ctrl+B                |
-| Italic                                     | ⌘I       | Ctrl+I                |
-| Underline                                  | ⌘U       | Ctrl+U                |
-| Font… (dialog)                             | ⌘D       | Ctrl+D                |
-| Increase Font Size                         | ⇧⌘.      | Ctrl+Shift+.          |
-| Decrease Font Size                         | ⇧⌘,      | Ctrl+Shift+,          |
-| Increase Font Size 1 pt                    | ⌘]       | Ctrl+]                |
-| Decrease Font Size 1 pt                    | ⌘[       | Ctrl+[                |
-| Superscript                                | ⇧⌘= / ⌘. | Ctrl+Shift+= / Ctrl+. |
-| Subscript                                  | ⌘,       | Ctrl+,                |
-| Change Case                                | ⇧F3      | Shift+F3              |
-| Copy Formatting (with text selected)       | ⇧⌘C      | Ctrl+Shift+C          |
-| Paste Formatting (after a Copy Formatting) | ⇧⌘V      | Ctrl+Alt+Shift+V      |
-| Clear All Formatting                       | ⌃␣       | Ctrl+Space            |
+| Action                                     | macOS               | Windows / Linux       |
+| ------------------------------------------ | ------------------- | --------------------- |
+| Bold                                       | ⌘B / ⇧⌘B / ⌃B / ⌃⇧B | Ctrl+B                |
+| Italic                                     | ⌘I / ⇧⌘I / ⌃I / ⌃⇧I | Ctrl+I                |
+| Underline                                  | ⌘U / ⇧⌘U / ⌃U / ⌃⇧U | Ctrl+U                |
+| Font… (dialog)                             | ⌘D                  | Ctrl+D                |
+| Increase Font Size                         | ⇧⌘.                 | Ctrl+Shift+.          |
+| Decrease Font Size                         | ⇧⌘,                 | Ctrl+Shift+,          |
+| Increase Font Size 1 pt                    | ⌘]                  | Ctrl+]                |
+| Decrease Font Size 1 pt                    | ⌘[                  | Ctrl+[                |
+| Superscript                                | ⇧⌘=                 | Ctrl+Shift+= / Ctrl+. |
+| Subscript                                  | ⇧⌘-                 | Ctrl+,                |
+| Change Case                                | ⇧F3                 | Shift+F3              |
+| Copy Formatting (with text selected)       | ⌥⌘C / ⇧⌘C           | Ctrl+Shift+C          |
+| Paste Formatting (after a Copy Formatting) | ⌥⌘V                 | Ctrl+Alt+Shift+V      |
+| Clear All Formatting                       | ⌃␣                  | Ctrl+Space            |
+| Double underline                           | ⇧⌘D                 | —                     |
+| Underline Words Only                       | ⇧⌘W                 | —                     |
+| Strikethrough                              | ⇧⌘X                 | —                     |
+| All caps                                   | ⇧⌘A                 | —                     |
+| Small caps                                 | ⇧⌘K                 | —                     |
+| Hidden                                     | ⌃⇧H                 | —                     |
 
-The two formatting-painter chords are the one place the Windows key is not a plain rename: Paste Formatting carries Alt because Ctrl+Shift+V already pastes and matches style there.
+Copy and Paste Formatting follow Word on each platform: ⌥⌘C / ⌥⌘V on the Mac, where ⇧⌘V pastes the text alone; on Windows and Linux Paste Formatting carries Alt because Ctrl+Shift+V already pastes and matches style there.
 
 ### Paragraph Formatting
 
-| Action                                      | macOS | Windows / Linux |
-| ------------------------------------------- | ----- | --------------- |
-| Align Left                                  | ⌘L    | Ctrl+L          |
-| Center                                      | ⌘E    | Ctrl+E          |
-| Align Right                                 | ⌘R    | Ctrl+R          |
-| Justify                                     | ⌘J    | Ctrl+J          |
-| Line Spacing 1.0                            | ⌘1    | Ctrl+1          |
-| Line Spacing 1.5                            | ⌘5    | Ctrl+5          |
-| Line Spacing 2.0                            | ⌘2    | Ctrl+2          |
-| Increase Indent                             | ⌃M    | Ctrl+M          |
-| Decrease Indent                             | ⌃⇧M   | Ctrl+Shift+M    |
-| Hanging Indent                              | ⌘T    | Ctrl+T          |
-| Remove Hanging Indent                       | ⇧⌘T   | Ctrl+Shift+T    |
-| Clear Paragraph Formatting                  | ⌃Q    | Ctrl+Q          |
-| Normal (style)                              | ⌥⌘0   | Ctrl+Alt+0      |
-| Heading 1 (style)                           | ⌥⌘1   | Ctrl+Alt+1      |
-| Heading 2 (style)                           | ⌥⌘2   | Ctrl+Alt+2      |
-| Heading 3 (style)                           | ⌥⌘3   | Ctrl+Alt+3      |
-| Paragraph… (dialog)                         | ⌥⌘M   | Ctrl+Alt+M      |
-| Move Paragraph Up                           | ⌥⇧↑   | Alt+Shift+↑     |
-| Move Paragraph Down                         | ⌥⇧↓   | Alt+Shift+↓     |
-| Demote List Item (at the start of an item)  | Tab   | Tab             |
-| Promote List Item (at the start of an item) | ⇧Tab  | Shift+Tab       |
+| Action                                      | macOS               | Windows / Linux |
+| ------------------------------------------- | ------------------- | --------------- |
+| Align Left                                  | ⌘L                  | Ctrl+L          |
+| Center                                      | ⌘E                  | Ctrl+E          |
+| Align Right                                 | ⌘R                  | Ctrl+R          |
+| Justify                                     | ⌘J                  | Ctrl+J          |
+| Line Spacing 1.0                            | ⌘1                  | Ctrl+1          |
+| Line Spacing 1.5                            | ⌘5                  | Ctrl+5          |
+| Line Spacing 2.0                            | ⌘2                  | Ctrl+2          |
+| Increase Indent                             | ⌃⇧M / ⌃M            | Ctrl+M          |
+| Decrease Indent                             | ⇧⌘M                 | Ctrl+Shift+M    |
+| Hanging Indent                              | ⌘T                  | Ctrl+T          |
+| Remove Hanging Indent                       | ⇧⌘T                 | Ctrl+Shift+T    |
+| Clear Paragraph Formatting                  | ⌥⌘Q / ⌃Q            | Ctrl+Q          |
+| Normal (style)                              | ⇧⌘N / ⌥⌘0 / ⌥⇧Clear | Ctrl+Alt+0      |
+| Heading 1 (style)                           | ⌥⌘1                 | Ctrl+Alt+1      |
+| Heading 2 (style)                           | ⌥⌘2                 | Ctrl+Alt+2      |
+| Heading 3 (style)                           | ⌥⌘3                 | Ctrl+Alt+3      |
+| Paragraph… (dialog)                         | ⌥⌘M                 | Ctrl+Alt+M      |
+| Move Paragraph Up                           | ⌃⇧↑                 | Alt+Shift+↑     |
+| Move Paragraph Down                         | ⌃⇧↓                 | Alt+Shift+↓     |
+| Promote Heading                             | ⌃⇧←                 | —               |
+| Demote Heading                              | ⌃⇧→                 | —               |
+| Expand Heading (Outline View)               | ⌃⇧= / ⌃⇧Num+        | —               |
+| Collapse Heading (Outline View)             | ⌃⇧- / ⌃⇧Num-        | —               |
+| Show Outline Level 1                        | ⌃⇧1                 | —               |
+| Show Outline Level 2                        | ⌃⇧2                 | —               |
+| Show Outline Level 3                        | ⌃⇧3                 | —               |
+| Show Outline Level 4                        | ⌃⇧4                 | —               |
+| Show Outline Level 5                        | ⌃⇧5                 | —               |
+| Show Outline Level 6                        | ⌃⇧6                 | —               |
+| Show Outline Level 7                        | ⌃⇧7                 | —               |
+| Show Outline Level 8                        | ⌃⇧8                 | —               |
+| Show Outline Level 9                        | ⌃⇧9                 | —               |
+| Show All Headings (Outline View)            | ⌃⇧A                 | —               |
+| Demote List Item (at the start of an item)  | Tab                 | Tab             |
+| Promote List Item (at the start of an item) | ⇧Tab                | Shift+Tab       |
+| Bullets                                     | ⇧⌘L                 | —               |
 
-Indent, hanging indent and Clear Paragraph Formatting are Ctrl-only on both platforms: ⌘M minimizes the window and ⌘Q quits, so a Command chord would be a silent edit on the way out. Tab only changes a list level when the caret is at the start of an item or spans several items; inside the text it inserts a tab character, and ⇧Tab always promotes.
+Indent and outdent follow Word on each platform: ⌃⇧M / ⇧⌘M on the Mac, Ctrl+M / Ctrl+Shift+M on Windows and Linux; bare ⌘M minimizes the window and ⌘Q quits. Tab only changes a list level when the caret is at the start of an item or spans several items; inside the text it inserts a tab character, and ⇧Tab always promotes.
 
 ### Insert
 
-| Action              | macOS | Windows / Linux  |
-| ------------------- | ----- | ---------------- |
-| Page Break          | ⌘⏎    | Ctrl+Enter       |
-| Column Break        | ⇧⌘⏎   | Ctrl+Shift+Enter |
-| Line Break          | ⇧⏎    | Shift+Enter      |
-| Link…               | ⌘K    | Ctrl+K           |
-| New Comment         | ⌥⌘A   | Ctrl+Alt+A       |
-| Insert Footnote     | ⌥⌘F   | Ctrl+Alt+F       |
-| Insert Endnote      | ⌥⌘E   | Ctrl+Alt+D       |
-| Date (field)        | ⌥⇧D   | Alt+Shift+D      |
-| Time (field)        | ⌥⇧T   | Alt+Shift+T      |
-| Non-breaking Space  | ⇧⌘␣   | Ctrl+Shift+Space |
-| Non-breaking Hyphen | ⇧⌘-   | Ctrl+Shift+-     |
+| Action                        | macOS       | Windows / Linux  |
+| ----------------------------- | ----------- | ---------------- |
+| Page Break                    | ⌘⏎          | Ctrl+Enter       |
+| Column Break                  | ⇧⌘⏎         | Ctrl+Shift+Enter |
+| Line Break                    | ⇧⏎          | Shift+Enter      |
+| Link…                         | ⌘K          | Ctrl+K           |
+| New Comment                   | ⌥⌘A         | Ctrl+Alt+A       |
+| Insert Footnote               | ⌥⌘F         | Ctrl+Alt+F       |
+| Insert Endnote                | ⌥⌘E         | Ctrl+Alt+D       |
+| Date (field)                  | ⌃⇧D / ⌥⇧D   | Alt+Shift+D      |
+| Time (field)                  | ⌃⇧T / ⌥⇧T   | Alt+Shift+T      |
+| Non-breaking Space            | ⌃⇧␣ / ⇧⌘␣   | Ctrl+Shift+Space |
+| Non-breaking Hyphen           | ⌥⇧⌘-        | Ctrl+Shift+-     |
+| Page number (current page)    | ⌃⇧P         | —                |
+| Insert Field Braces           | ⌘F9         | —                |
+| Link to Previous              | ⌃⇧R         | —                |
+| Insert Merge Field            | ⌃⇧F         | —                |
+| Mark Table of Contents Entry  | ⌥⇧⌘O        | —                |
+| Section Break (Next Page)     | ⌘⌤          | —                |
+| En Dash                       | ⌘Num-       | —                |
+| Em Dash                       | ⌥⌘Num-      | —                |
+| Equation                      | ⌃=          | —                |
+| Bookmark                      | ⇧⌘F5        | —                |
+| Create New AutoText           | ⌥F3         | —                |
+| Mark Index Entry              | ⌥⇧⌘X        | —                |
+| Mark Citation                 | ⌥⇧⌘I        | —                |
+| Optional Hyphen               | ⌥⌘-         | —                |
+| Tab Character in a Table Cell | ⌃Tab / ⌥Tab | —                |
 
 Insert Endnote is a real platform split, not a rename: Word uses ⌥⌘E on the Mac because ⌥⌘D belongs to the Dock there.
 
 ### Review & Tools
 
-| Action             | macOS | Windows / Linux |
-| ------------------ | ----- | --------------- |
-| Track Changes      | ⇧⌘E   | Ctrl+Shift+E    |
-| Word Count         | ⇧⌘G   | Ctrl+Shift+G    |
-| Proofread          | F7    | F7              |
-| Update Field       | F9    | F9              |
-| Toggle Field Codes | ⌥F9   | Alt+F9          |
+| Action                             | macOS      | Windows / Linux |
+| ---------------------------------- | ---------- | --------------- |
+| Track Changes                      | ⇧⌘E        | Ctrl+Shift+E    |
+| Word Count                         | —          | Ctrl+Shift+G    |
+| Proofread                          | —          | F7              |
+| Update Field                       | F9 / ⌥⇧⌘U  | F9              |
+| Toggle Field Codes                 | ⌥F9        | Alt+F9          |
+| Thesaurus                          | ⌃⌥⌘R / ⇧F7 | —               |
+| Spelling and Grammar               | ⌥⌘L / F7   | Ctrl+Alt+L      |
+| Next Misspelling                   | ⌥F7        | —               |
+| Translate                          | ⌃⌥⌘T       | —               |
+| Toggle Field Code at the Selection | ⇧F9        | —               |
+| Lock Fields                        | ⌘F11 / ⌘3  | —               |
+| Unlock Fields                      | ⇧⌘F11 / ⌘4 | —               |
+| Unlink Fields                      | ⇧⌘F9 / ⌘6  | —               |
+| Next Field                         | F11        | —               |
+| Previous Field                     | ⇧F11       | —               |
+| Edit Recipient List                | ⌃⇧E        | —               |
+| Finish & Merge                     | ⌃⇧N        | —               |
 
-F7 runs the AI proofread and F9 updates fields; both need a loaded document. Once an editing restriction turns Track Changes on, it cannot be switched back off.
+F7 opens Spelling and Grammar on the Mac, as in Word, and runs the AI proofread on Windows and Linux; F9 updates fields. Once an editing restriction turns Track Changes on, it cannot be switched back off.
 
 ### View
 
-| Action                     | macOS | Windows / Linux |
-| -------------------------- | ----- | --------------- |
-| Zoom In                    | ⌘=    | Ctrl+=          |
-| Zoom Out                   | ⌘-    | Ctrl+-          |
-| Zoom to 100%               | ⌘0    | Ctrl+0          |
-| Show/hide formatting marks | ⌘8    | Ctrl+Shift+8    |
+| Action                     | macOS       | Windows / Linux |
+| -------------------------- | ----------- | --------------- |
+| Zoom In                    | ⌘=          | Ctrl+=          |
+| Zoom Out                   | ⌘-          | Ctrl+-          |
+| Zoom to 100%               | ⌘0          | Ctrl+0          |
+| Show/hide formatting marks | ⌘8          | Ctrl+Shift+8    |
+| Print Layout               | ⌥⌘P         | —               |
+| Outline                    | ⌥⌘O         | —               |
+| Draft                      | ⌥⌘N         | —               |
+| Split                      | ⌥⌘S         | —               |
+| Remove Split               | ⌃⇧C         | —               |
+| Next Window                | ⌘F6 / ⌥F6   | —               |
+| Previous Window            | ⇧⌘F6 / ⌥⇧F6 | —               |
+| Styles Pane                | ⌥⇧⌘S        | —               |
+| Focus                      | ⌃⇧⌘F        | —               |
+| Ribbon                     | ⌥⌘R         | —               |
+| Format Object              | ⇧⌘1         | —               |
+| Selection Pane             | ⌥⌘U         | —               |
 
 The formatting-marks chord follows Word's own split, ⌘8 against Ctrl+Shift+8. Word takes zoom only through the three menu chords above — ⌘+ does nothing here.
 

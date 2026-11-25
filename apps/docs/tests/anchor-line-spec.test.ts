@@ -249,3 +249,31 @@ describe('ruleOverlays attribute', () => {
     expect(attr.rendered).toBe(false)
   })
 })
+
+describe('anchor paragraph style on the wrapper', () => {
+  const attrsOf = (extra: Record<string, unknown>) =>
+    (
+      DocProtected.config.renderHTML!.call(
+        DocProtected as never,
+        {
+          node: {
+            attrs: {
+              blockType: 'image',
+              docxIndex: 1,
+              anchorLine: { styleId: 'ListParagraph' },
+              ...extra,
+            },
+          },
+          HTMLAttributes: {},
+        } as never,
+      ) as unknown as [string, Record<string, string>]
+    )[1]
+
+  it('names the style when the wrapper holds the line', () => {
+    expect(attrsOf({ invisibleMarker: true })['data-line-style']).toBe('ListParagraph')
+  })
+
+  it('leaves it off when the line sits beside a side-wrapped picture as its own sibling', () => {
+    expect(attrsOf({ imageWrap: 'square-left' })['data-line-style']).toBeUndefined()
+  })
+})

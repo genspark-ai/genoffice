@@ -35,123 +35,235 @@ Word punya bilah menu penuh, jadi pintasan berkas dan format di bawah ini berlak
 
 ### Berkas
 
-| Tindakan        | macOS | Windows / Linux |
-| --------------- | ----- | --------------- |
-| Baru            | ⌘N    | Ctrl+N          |
-| Jendela Baru    | ⇧⌘N   | Ctrl+Shift+N    |
-| Buka…           | ⌘O    | Ctrl+O          |
-| Simpan          | ⌘S    | Ctrl+S          |
-| Simpan Sebagai… | ⇧⌘S   | Ctrl+Shift+S    |
-| Cetak           | ⌘P    | Ctrl+P          |
-| Tutup (tab)     | ⌘W    | Ctrl+W          |
+| Tindakan          | macOS   | Windows / Linux |
+| ----------------- | ------- | --------------- |
+| Baru              | ⌘N / ⌃N | Ctrl+N          |
+| Jendela Baru      | —       | Ctrl+Shift+N    |
+| Buka…             | ⌘O      | Ctrl+O          |
+| Simpan            | ⌘S / ⌃S | Ctrl+S          |
+| Simpan Sebagai…   | ⇧⌘S     | Ctrl+Shift+S    |
+| Cetak             | ⌘P / ⌃P | Ctrl+P          |
+| Tutup (tab)       | ⌘W      | Ctrl+W          |
+| Baru dari Templat | ⇧⌘P     | —               |
 
 `⌘P` bukan perintah cetak peramban. Word menyusun pratinjau cetak lebih dulu, sehingga satu lembar cetak sama persis dengan satu halaman di layar, lalu membuka dialog cetiknya sendiri.
 
 ### Edit
 
-| Tindakan                  | macOS | Windows / Linux |
-| ------------------------- | ----- | --------------- |
-| Urungkan                  | ⌘Z    | Ctrl+Z          |
-| Ulangi                    | ⇧⌘Z   | Ctrl+Shift+Z    |
-| Potong                    | ⌘X    | Ctrl+X          |
-| Salin                     | ⌘C    | Ctrl+C          |
-| Tempel                    | ⌘V    | Ctrl+V          |
-| Tempel sebagai Teks Biasa | ⌥⇧⌘V  | Ctrl+Shift+V    |
-| Pilih Semua               | ⌘A    | Ctrl+A          |
-| Temukan                   | ⌘F    | Ctrl+F          |
-| Ganti                     | ⌃H    | Ctrl+H          |
-| Ke                        | ⌥⌘G   | Ctrl+G          |
-| Pintasan Papan Ketik      | ⌘/    | Ctrl+/          |
+| Tindakan                  | macOS           | Windows / Linux |
+| ------------------------- | --------------- | --------------- |
+| Urungkan                  | ⌘Z / ⌃Z         | Ctrl+Z          |
+| Ulangi                    | ⇧⌘Z             | Ctrl+Shift+Z    |
+| Potong                    | ⌘X / ⌃X / F2    | Ctrl+X          |
+| Salin                     | ⌘C / ⌃C / F3    | Ctrl+C          |
+| Tempel                    | ⌘V / ⌃V / F4    | Ctrl+V          |
+| Tempel sebagai Teks Biasa | ⌥⇧⌘V            | Ctrl+Shift+V    |
+| Pilih Semua               | ⌘A / ⌃A         | Ctrl+A          |
+| Temukan                   | ⌘F / ⌃F         | Ctrl+F          |
+| Ganti                     | ⇧⌘H / ⌃H        | Ctrl+H          |
+| Ke                        | ⌥⌘G / F5        | Ctrl+G          |
+| Pintasan Papan Ketik      | ⌘/              | Ctrl+/          |
+| Ulangi                    | ⌘Y / ⌃Y / ⌥⏎    | Ctrl+Y          |
+| Pertahankan Teks Saja     | ⇧⌘V             | —               |
+| Tempel Spesial            | ⌃⌘V             | —               |
+| Temukan Berikutnya        | ⌘G / ⇧F4 / ⇧⌘F4 | —               |
+| Temukan Sebelumnya        | ⇧⌘G             | —               |
+| Alihkan Gambar            | ⌃⌘Z             | —               |
+| Hapus Baris               | ⌃⌘X             | —               |
+| Sisipkan di Atas          | ⌃⌘I             | —               |
+| Hapus Kata Sebelumnya     | ⌥⌫ / ⌘⌫         | —               |
+| Hapus Kata Berikutnya     | ⌥⌦ / ⌘⌦         | —               |
+| Potong ke Spike           | ⌘F3             | —               |
+| Sisipkan Isi Spike        | ⇧⌘F3            | —               |
+| Hapus Konten              | Clear           | —               |
+| Salin Teks                | ⇧F2             | —               |
 
-Ganti memakai Ctrl+H di kedua platform karena `⌘H` menyembunyikan jendela di macOS dan tidak pernah sampai ke Word. Ke mengikuti pembagian milik Word sendiri: `⌥⌘G` di Mac supaya `⇧⌘G` tetap kosong untuk Jumlah Kata.
+Ganti memakai Ctrl+H di kedua platform karena `⌘H` menyembunyikan jendela di macOS dan tidak pernah sampai ke Word. Ke mengikuti pembagian milik Word sendiri: `⌥⌘G` di Mac, tempat `⌘G` dan `⇧⌘G` adalah Temukan Berikutnya dan Temukan Sebelumnya.
+
+### Navigasi & Pemilihan
+
+| Tindakan                                              | macOS                  | Windows / Linux |
+| ----------------------------------------------------- | ---------------------- | --------------- |
+| Awal Baris                                            | ⌘← / Home / ⌃↑         | —               |
+| Akhir Baris                                           | ⌘→ / End / ⌃↓          | —               |
+| Paragraf Sebelumnya                                   | ⌘↑ / ⌥↑                | —               |
+| Paragraf Berikutnya                                   | ⌘↓ / ⌥↓                | —               |
+| Awal Dokumen                                          | ⌘Home / ⌥Home          | —               |
+| Akhir Dokumen                                         | ⌘End / ⌥End            | —               |
+| Pilih hingga Awal Baris                               | ⇧⌘← / ⇧Home            | —               |
+| Pilih hingga Akhir Baris                              | ⇧⌘→ / ⇧End             | —               |
+| Pilih hingga Paragraf Sebelumnya                      | ⇧⌘↑ / ⌥⇧↑              | —               |
+| Pilih hingga Paragraf Berikutnya                      | ⇧⌘↓ / ⌥⇧↓              | —               |
+| Pilih hingga Awal Dokumen                             | ⇧⌘Home                 | —               |
+| Pilih hingga Akhir Dokumen                            | ⇧⌘End                  | —               |
+| Naik Satu Layar                                       | PageUp                 | —               |
+| Turun Satu Layar                                      | PageDown               | —               |
+| Pilih Naik Satu Layar                                 | ⇧PageUp                | —               |
+| Pilih Turun Satu Layar                                | ⇧PageDown              | —               |
+| Bagian Atas Jendela                                   | ⌥⌘PageUp               | —               |
+| Bagian Bawah Jendela                                  | ⌥⌘PageDown             | —               |
+| Pilih hingga Bagian Atas Jendela                      | ⌥⇧⌘PageUp              | —               |
+| Pilih hingga Bagian Bawah Jendela                     | ⌥⇧⌘PageDown            | —               |
+| Telusuri Sebelumnya (Halaman, Temukan, atau Pergi ke) | ⌘PageUp                | —               |
+| Telusuri Berikutnya (Halaman, Temukan, atau Pergi ke) | ⌘PageDown              | —               |
+| Bagian Sebelumnya                                     | ⌥PageUp                | —               |
+| Bagian Berikutnya                                     | ⌥PageDown              | —               |
+| Perluas Pilihan                                       | F8                     | —               |
+| Persempit Pilihan                                     | ⇧F8                    | —               |
+| Kembali ke Pengeditan Sebelumnya                      | ⇧F5 / ⌥⌘Z              | —               |
+| Sel Pertama di Baris                                  | ⌃Home / ⌥⇧Home         | —               |
+| Sel Terakhir di Baris                                 | ⌃End / ⌥⇧End           | —               |
+| Sel Pertama di Kolom                                  | ⌃PageUp / ⌥⇧PageUp     | —               |
+| Sel Terakhir di Kolom                                 | ⌃PageDown / ⌥⇧PageDown | —               |
+| Pilih Tabel                                           | ⌥Clear                 | —               |
 
 ### Format Teks
 
-| Tindakan                             | macOS    | Windows / Linux       |
-| ------------------------------------ | -------- | --------------------- |
-| Tebal                                | ⌘B       | Ctrl+B                |
-| Miring                               | ⌘I       | Ctrl+I                |
-| Garis bawah                          | ⌘U       | Ctrl+U                |
-| Font… (dialog)                       | ⌘D       | Ctrl+D                |
-| Perbesar Ukuran Font                 | ⇧⌘.      | Ctrl+Shift+.          |
-| Perkecil Ukuran Font                 | ⇧⌘,      | Ctrl+Shift+,          |
-| Perbesar Ukuran Font 1 pt            | ⌘]       | Ctrl+]                |
-| Perkecil Ukuran Font 1 pt            | ⌘[       | Ctrl+[                |
-| Superskrip                           | ⇧⌘= / ⌘. | Ctrl+Shift+= / Ctrl+. |
-| Subskrip                             | ⌘,       | Ctrl+,                |
-| Ubah Huruf Besar-Kecil               | ⇧F3      | Shift+F3              |
-| Salin Format (dengan teks terpilih)  | ⇧⌘C      | Ctrl+Shift+C          |
-| Tempel Format (setelah Salin Format) | ⇧⌘V      | Ctrl+Alt+Shift+V      |
-| Hapus Semua Format                   | ⌃␣       | Ctrl+Space            |
+| Tindakan                             | macOS               | Windows / Linux       |
+| ------------------------------------ | ------------------- | --------------------- |
+| Tebal                                | ⌘B / ⇧⌘B / ⌃B / ⌃⇧B | Ctrl+B                |
+| Miring                               | ⌘I / ⇧⌘I / ⌃I / ⌃⇧I | Ctrl+I                |
+| Garis bawah                          | ⌘U / ⇧⌘U / ⌃U / ⌃⇧U | Ctrl+U                |
+| Font… (dialog)                       | ⌘D                  | Ctrl+D                |
+| Perbesar Ukuran Font                 | ⇧⌘.                 | Ctrl+Shift+.          |
+| Perkecil Ukuran Font                 | ⇧⌘,                 | Ctrl+Shift+,          |
+| Perbesar Ukuran Font 1 pt            | ⌘]                  | Ctrl+]                |
+| Perkecil Ukuran Font 1 pt            | ⌘[                  | Ctrl+[                |
+| Superskrip                           | ⇧⌘=                 | Ctrl+Shift+= / Ctrl+. |
+| Subskrip                             | ⇧⌘-                 | Ctrl+,                |
+| Ubah Huruf Besar-Kecil               | ⇧F3                 | Shift+F3              |
+| Salin Format (dengan teks terpilih)  | ⌥⌘C / ⇧⌘C           | Ctrl+Shift+C          |
+| Tempel Format (setelah Salin Format) | ⌥⌘V                 | Ctrl+Alt+Shift+V      |
+| Hapus Semua Format                   | ⌃␣                  | Ctrl+Space            |
+| Garis bawah ganda                    | ⇧⌘D                 | —                     |
+| Garis Bawahi Kata Saja               | ⇧⌘W                 | —                     |
+| Coretan                              | ⇧⌘X                 | —                     |
+| Semua kapital                        | ⇧⌘A                 | —                     |
+| Kapital kecil                        | ⇧⌘K                 | —                     |
+| Tersembunyi                          | ⌃⇧H                 | —                     |
 
-Dua pintasan penyalin format adalah satu-satunya tempat tombol Windows bukan sekadar nama ulang: Tempel Format memakai Alt karena di sana Ctrl+Shift+V sudah menempel sekaligus mencocokkan gaya.
+Salin dan Tempel Format mengikuti Word di tiap platform: `⌥⌘C` / `⌥⌘V` di Mac, tempat `⇧⌘V` menempelkan teksnya saja; di Windows dan Linux Tempel Format memakai Alt karena Ctrl+Shift+V di sana sudah menempel dan menyesuaikan gaya.
 
 ### Format Paragraf
 
-| Tindakan                                    | macOS | Windows / Linux |
-| ------------------------------------------- | ----- | --------------- |
-| Rata Kiri                                   | ⌘L    | Ctrl+L          |
-| Rata Tengah                                 | ⌘E    | Ctrl+E          |
-| Rata Kanan                                  | ⌘R    | Ctrl+R          |
-| Rata Penuh                                  | ⌘J    | Ctrl+J          |
-| Jarak Baris 1.0                             | ⌘1    | Ctrl+1          |
-| Jarak Baris 1.5                             | ⌘5    | Ctrl+5          |
-| Jarak Baris 2.0                             | ⌘2    | Ctrl+2          |
-| Tambah Indentasi                            | ⌃M    | Ctrl+M          |
-| Kurangi Indentasi                           | ⌃⇧M   | Ctrl+Shift+M    |
-| Indentasi Menggantung                       | ⌘T    | Ctrl+T          |
-| Hapus Indentasi Menggantung                 | ⇧⌘T   | Ctrl+Shift+T    |
-| Hapus Format Paragraf                       | ⌃Q    | Ctrl+Q          |
-| Normal (gaya)                               | ⌥⌘0   | Ctrl+Alt+0      |
-| Judul 1 (gaya)                              | ⌥⌘1   | Ctrl+Alt+1      |
-| Judul 2 (gaya)                              | ⌥⌘2   | Ctrl+Alt+2      |
-| Judul 3 (gaya)                              | ⌥⌘3   | Ctrl+Alt+3      |
-| Paragraf… (dialog)                          | ⌥⌘M   | Ctrl+Alt+M      |
-| Pindahkan Paragraf ke Atas                  | ⌥⇧↑   | Alt+Shift+↑     |
-| Pindahkan Paragraf ke Bawah                 | ⌥⇧↓   | Alt+Shift+↓     |
-| Turunkan Tingkat Daftar Item (di awal item) | Tab   | Tab             |
-| Naikkan Tingkat Daftar Item (di awal item)  | ⇧Tab  | Shift+Tab       |
+| Tindakan                                    | macOS               | Windows / Linux |
+| ------------------------------------------- | ------------------- | --------------- |
+| Rata Kiri                                   | ⌘L                  | Ctrl+L          |
+| Rata Tengah                                 | ⌘E                  | Ctrl+E          |
+| Rata Kanan                                  | ⌘R                  | Ctrl+R          |
+| Rata Penuh                                  | ⌘J                  | Ctrl+J          |
+| Jarak Baris 1.0                             | ⌘1                  | Ctrl+1          |
+| Jarak Baris 1.5                             | ⌘5                  | Ctrl+5          |
+| Jarak Baris 2.0                             | ⌘2                  | Ctrl+2          |
+| Tambah Indentasi                            | ⌃⇧M / ⌃M            | Ctrl+M          |
+| Kurangi Indentasi                           | ⇧⌘M                 | Ctrl+Shift+M    |
+| Indentasi Menggantung                       | ⌘T                  | Ctrl+T          |
+| Hapus Indentasi Menggantung                 | ⇧⌘T                 | Ctrl+Shift+T    |
+| Hapus Format Paragraf                       | ⌥⌘Q / ⌃Q            | Ctrl+Q          |
+| Normal (gaya)                               | ⇧⌘N / ⌥⌘0 / ⌥⇧Clear | Ctrl+Alt+0      |
+| Judul 1 (gaya)                              | ⌥⌘1                 | Ctrl+Alt+1      |
+| Judul 2 (gaya)                              | ⌥⌘2                 | Ctrl+Alt+2      |
+| Judul 3 (gaya)                              | ⌥⌘3                 | Ctrl+Alt+3      |
+| Paragraf… (dialog)                          | ⌥⌘M                 | Ctrl+Alt+M      |
+| Pindahkan Paragraf ke Atas                  | ⌃⇧↑                 | Alt+Shift+↑     |
+| Pindahkan Paragraf ke Bawah                 | ⌃⇧↓                 | Alt+Shift+↓     |
+| Naikkan Tingkat Judul                       | ⌃⇧←                 | —               |
+| Turunkan Tingkat Judul                      | ⌃⇧→                 | —               |
+| Perluas Judul (Tampilan Kerangka)           | ⌃⇧= / ⌃⇧Num+        | —               |
+| Ciutkan Judul (Tampilan Kerangka)           | ⌃⇧- / ⌃⇧Num-        | —               |
+| Tampilkan Tingkat Kerangka 1                | ⌃⇧1                 | —               |
+| Tampilkan Tingkat Kerangka 2                | ⌃⇧2                 | —               |
+| Tampilkan Tingkat Kerangka 3                | ⌃⇧3                 | —               |
+| Tampilkan Tingkat Kerangka 4                | ⌃⇧4                 | —               |
+| Tampilkan Tingkat Kerangka 5                | ⌃⇧5                 | —               |
+| Tampilkan Tingkat Kerangka 6                | ⌃⇧6                 | —               |
+| Tampilkan Tingkat Kerangka 7                | ⌃⇧7                 | —               |
+| Tampilkan Tingkat Kerangka 8                | ⌃⇧8                 | —               |
+| Tampilkan Tingkat Kerangka 9                | ⌃⇧9                 | —               |
+| Tampilkan Semua Judul (Tampilan Kerangka)   | ⌃⇧A                 | —               |
+| Turunkan Tingkat Daftar Item (di awal item) | Tab                 | Tab             |
+| Naikkan Tingkat Daftar Item (di awal item)  | ⇧Tab                | Shift+Tab       |
+| Poin                                        | ⇧⌘L                 | —               |
 
-Indentasi, indentasi menggantung, dan Hapus Format Paragraf hanya memakai Ctrl di kedua platform: `⌘M` memperkecil jendela dan `⌘Q` keluar, jadi pintasan Command akan menjadi suntingan diam-diam di tengah jalan keluar. Tab hanya mengubah tingkat daftar ketika caret berada di awal sebuah item atau membentang di beberapa item; di dalam teks ia menyisipkan karakter tab, dan `⇧Tab` selalu menaikkan tingkat.
+Tambah dan kurangi indentasi mengikuti Word di tiap platform: `⌃⇧M` / `⇧⌘M` di Mac, Ctrl+M / Ctrl+Shift+M di Windows dan Linux; `⌘M` saja memperkecil jendela dan `⌘Q` keluar. Tab hanya mengubah tingkat daftar ketika caret berada di awal sebuah item atau membentang di beberapa item; di dalam teks ia menyisipkan karakter tab, dan `⇧Tab` selalu menaikkan tingkat.
 
 ### Sisipkan
 
-| Tindakan                       | macOS | Windows / Linux  |
-| ------------------------------ | ----- | ---------------- |
-| Pemisah Halaman                | ⌘⏎    | Ctrl+Enter       |
-| Pemisah Kolom                  | ⇧⌘⏎   | Ctrl+Shift+Enter |
-| Pemisah Baris                  | ⇧⏎    | Shift+Enter      |
-| Tautan…                        | ⌘K    | Ctrl+K           |
-| Komentar Baru                  | ⌥⌘A   | Ctrl+Alt+A       |
-| Sisipkan Catatan Kaki          | ⌥⌘F   | Ctrl+Alt+F       |
-| Sisipkan Catatan Akhir         | ⌥⌘E   | Ctrl+Alt+D       |
-| Tanggal (field)                | ⌥⇧D   | Alt+Shift+D      |
-| Waktu (field)                  | ⌥⇧T   | Alt+Shift+T      |
-| Spasi Tanpa Pemenggalan        | ⇧⌘␣   | Ctrl+Shift+Space |
-| Tanda Hubung Tanpa Pemenggalan | ⇧⌘-   | Ctrl+Shift+-     |
+| Tindakan                            | macOS       | Windows / Linux  |
+| ----------------------------------- | ----------- | ---------------- |
+| Pemisah Halaman                     | ⌘⏎          | Ctrl+Enter       |
+| Pemisah Kolom                       | ⇧⌘⏎         | Ctrl+Shift+Enter |
+| Pemisah Baris                       | ⇧⏎          | Shift+Enter      |
+| Tautan…                             | ⌘K          | Ctrl+K           |
+| Komentar Baru                       | ⌥⌘A         | Ctrl+Alt+A       |
+| Sisipkan Catatan Kaki               | ⌥⌘F         | Ctrl+Alt+F       |
+| Sisipkan Catatan Akhir              | ⌥⌘E         | Ctrl+Alt+D       |
+| Tanggal (field)                     | ⌃⇧D / ⌥⇧D   | Alt+Shift+D      |
+| Waktu (field)                       | ⌃⇧T / ⌥⇧T   | Alt+Shift+T      |
+| Spasi Tanpa Pemenggalan             | ⌃⇧␣ / ⇧⌘␣   | Ctrl+Shift+Space |
+| Tanda Hubung Tanpa Pemenggalan      | ⌥⇧⌘-        | Ctrl+Shift+-     |
+| Nomor halaman (halaman saat ini)    | ⌃⇧P         | —                |
+| Sisipkan Kurung Kurawal Bidang      | ⌘F9         | —                |
+| Tautkan ke Sebelumnya               | ⌃⇧R         | —                |
+| Sisipkan Bidang Penggabungan        | ⌃⇧F         | —                |
+| Tandai Entri Daftar Isi             | ⌥⇧⌘O        | —                |
+| Hentian Bagian (Halaman Berikutnya) | ⌘⌤          | —                |
+| Tanda pisah en                      | ⌘Num-       | —                |
+| Tanda pisah em                      | ⌥⌘Num-      | —                |
+| Persamaan                           | ⌃=          | —                |
+| Bookmark                            | ⇧⌘F5        | —                |
+| Buat Teks Otomatis Baru             | ⌥F3         | —                |
+| Tandai Entri Indeks                 | ⌥⇧⌘X        | —                |
+| Tandai Kutipan                      | ⌥⇧⌘I        | —                |
+| Tanda hubung opsional               | ⌥⌘-         | —                |
+| Karakter Tab dalam Sel Tabel        | ⌃Tab / ⌥Tab | —                |
 
 Sisipkan Catatan Akhir adalah pembagian platform yang sungguhan, bukan sekadar nama ulang: Word memakai `⌥⌘E` di Mac karena `⌥⌘D` milik Dock di sana.
 
 ### Tinjau & Alat
 
-| Tindakan           | macOS | Windows / Linux |
-| ------------------ | ----- | --------------- |
-| Lacak Perubahan    | ⇧⌘E   | Ctrl+Shift+E    |
-| Jumlah Kata        | ⇧⌘G   | Ctrl+Shift+G    |
-| Proofread          | F7    | F7              |
-| Perbarui Field     | F9    | F9              |
-| Alihkan Kode Field | ⌥F9   | Alt+F9          |
+| Tindakan                         | macOS      | Windows / Linux |
+| -------------------------------- | ---------- | --------------- |
+| Lacak Perubahan                  | ⇧⌘E        | Ctrl+Shift+E    |
+| Jumlah Kata                      | —          | Ctrl+Shift+G    |
+| Proofread                        | —          | F7              |
+| Perbarui Field                   | F9 / ⌥⇧⌘U  | F9              |
+| Alihkan Kode Field               | ⌥F9        | Alt+F9          |
+| Tesaurus                         | ⌃⌥⌘R / ⇧F7 | —               |
+| Ejaan dan Tata Bahasa            | ⌥⌘L / F7   | Ctrl+Alt+L      |
+| Salah Eja Berikutnya             | ⌥F7        | —               |
+| Terjemahkan                      | ⌃⌥⌘T       | —               |
+| Alihkan Kode Bidang yang Dipilih | ⇧F9        | —               |
+| Kunci Bidang                     | ⌘F11 / ⌘3  | —               |
+| Buka Kunci Bidang                | ⇧⌘F11 / ⌘4 | —               |
+| Putuskan Tautan Bidang           | ⇧⌘F9 / ⌘6  | —               |
+| Bidang Berikutnya                | F11        | —               |
+| Bidang Sebelumnya                | ⇧F11       | —               |
+| Edit Daftar Penerima             | ⌃⇧E        | —               |
+| Selesaikan & Gabungkan           | ⌃⇧N        | —               |
 
-F7 menjalankan proofread AI dan F9 memperbarui field; keduanya butuh dokumen yang sudah termuat. Begitu pembatasan penyuntingan menyalakan Lacak Perubahan, itu tidak bisa dimatikan lagi.
+F7 membuka Ejaan dan Tata Bahasa di Mac, seperti di Word, dan menjalankan proofread AI di Windows dan Linux; F9 memperbarui field. Begitu pembatasan penyuntingan menyalakan Lacak Perubahan, itu tidak bisa dimatikan lagi.
 
 ### Tampilan
 
-| Tindakan                           | macOS | Windows / Linux |
-| ---------------------------------- | ----- | --------------- |
-| Perbesar                           | ⌘=    | Ctrl+=          |
-| Perkecil                           | ⌘-    | Ctrl+-          |
-| Perbesar ke 100%                   | ⌘0    | Ctrl+0          |
-| Tampilkan/sembunyikan tanda format | ⌘8    | Ctrl+Shift+8    |
+| Tindakan                           | macOS       | Windows / Linux |
+| ---------------------------------- | ----------- | --------------- |
+| Perbesar                           | ⌘=          | Ctrl+=          |
+| Perkecil                           | ⌘-          | Ctrl+-          |
+| Perbesar ke 100%                   | ⌘0          | Ctrl+0          |
+| Tampilkan/sembunyikan tanda format | ⌘8          | Ctrl+Shift+8    |
+| Tata Letak Cetak                   | ⌥⌘P         | —               |
+| Kerangka                           | ⌥⌘O         | —               |
+| Draf                               | ⌥⌘N         | —               |
+| Pisahkan                           | ⌥⌘S         | —               |
+| Hapus Pemisahan                    | ⌃⇧C         | —               |
+| Jendela Berikutnya                 | ⌘F6 / ⌥F6   | —               |
+| Jendela Sebelumnya                 | ⇧⌘F6 / ⌥⇧F6 | —               |
+| Panel Gaya                         | ⌥⇧⌘S        | —               |
+| Fokus                              | ⌃⇧⌘F        | —               |
+| Pita                               | ⌥⌘R         | —               |
+| Format Objek                       | ⇧⌘1         | —               |
+| Panel Pilihan                      | ⌥⌘U         | —               |
 
 Pintasan tanda format mengikuti pembagian milik Word sendiri, `⌘8` melawan Ctrl+Shift+8. Word mengambil pembesaran hanya lewat tiga pintasan menu di atas — `⌘+` tidak melakukan apa pun di sini.
 

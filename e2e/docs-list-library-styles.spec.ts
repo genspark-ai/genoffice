@@ -192,7 +192,7 @@ test('List Styles: Add makes a named list style that is saved and listed on reop
     // a built-in list style cannot be deleted
     await options(dialog).nth(2).click()
     await expect(remove).toBeDisabled()
-    await expect(dialog.getByRole('button', { name: 'Modify…' })).toHaveCount(0)
+    await expect(dialog.getByRole('button', { name: 'Modify…' })).toBeEnabled()
     await add.click()
     await expect(dialog).toBeHidden()
 

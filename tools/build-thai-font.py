@@ -24,6 +24,10 @@ modified).
 Upstream: https://github.com/notofonts/notofonts.github.io
           fonts/NotoSansThai/hinted/ttf/NotoSansThai-{Regular,Bold}.ttf
 
+The legacy Thai forms of U+F700-F71A map to the matching Noto variants
+(LEGACY_PUA); `--legacy-pua <built.woff2>...` adds that mapping to faces
+already built.
+
 Usage: python3 tools/build-thai-font.py <NotoSansThai-*.ttf> <word-face.ttf|ttc[#index]> <family> [Regular|Bold] [out.woff2]
   e.g. build-thai-font.py NotoSansThai-Regular.ttf cordia.ttc#0 "GenOffice Cordia"
        build-thai-font.py NotoSansThai-Bold.ttf cordia.ttc#1 "GenOffice Cordia" Bold
@@ -46,6 +50,35 @@ OUT_DIR = Path("apps/docs/src/renderer/fonts")
 THAI_BLOCK = range(0x0E00, 0x0E80)
 CONSONANTS = range(0x0E01, 0x0E2F)
 GLYPH_CPS = re.compile(r"^uni((?:[0-9A-F]{4})+)(?:\.|$)")
+
+
+# Legacy Windows Thai fonts keep pre-positioned consonant, vowel and tone-mark
+# forms at U+F700-F71A and old documents store those code points (Word draws
+# them from the Thai face); Noto's shaping variants are the same forms. Noto
+# has no raised left-shifted tone marks, so F713-F717 take the raised ones.
+LEGACY_PUA = {
+    0xF700: "uni0E10.less",
+    **{0xF701 + i: f"uni0E{0x34 + i:02X}.narrow" for i in range(4)},
+    **{0xF705 + i: f"uni0E{0x48 + i:02X}.narrow" for i in range(5)},
+    **{0xF70A + i: f"uni0E{0x48 + i:02X}" for i in range(5)},
+    0xF70F: "uni0E0D.less",
+    0xF710: "uni0E31.narrow",
+    0xF711: "uni0E4D.narrow",
+    0xF712: "uni0E47.narrow",
+    **{0xF713 + i: f"uni0E{0x48 + i:02X}.small" for i in range(5)},
+    **{0xF718 + i: f"uni0E{0x38 + i:02X}.small" for i in range(3)},
+}
+
+
+def map_legacy_pua(font: TTFont) -> int:
+    glyphs = set(font.getGlyphOrder())
+    missing = sorted(g for g in LEGACY_PUA.values() if g not in glyphs)
+    if missing:
+        raise SystemExit(f"no glyph for legacy Thai forms: {missing}")
+    for table in font["cmap"].tables:
+        if table.isUnicode():
+            table.cmap.update(LEGACY_PUA)
+    return len(LEGACY_PUA)
 
 
 def open_face(spec: str) -> TTFont:
@@ -148,7 +181,18 @@ def scale_gpos(font: TTFont, sx_of, sy: float) -> None:
                 raise SystemExit("unexpected GPOS pair adjustment; extend scale_gpos")
 
 
+def remap_built(paths: list[str]) -> None:
+    for path in paths:
+        font = TTFont(path)
+        count = map_legacy_pua(font)
+        font.flavorData = WOFF2FlavorData(transformedTables=())
+        font.save(path)
+        print(f"{path}: {count} legacy Thai forms mapped")
+
+
 def main() -> None:
+    if len(sys.argv) > 2 and sys.argv[1] == "--legacy-pua":
+        return remap_built(sys.argv[2:])
     if len(sys.argv) < 4:
         sys.exit(__doc__)
     src, word, family = sys.argv[1], sys.argv[2], sys.argv[3]
@@ -236,6 +280,7 @@ def main() -> None:
     noto["head"].macStyle = (noto["head"].macStyle & ~1) | (1 if bold else 0)
     noto["head"].flags &= ~(1 << 3)  # no ppem rounding without hinting
 
+    map_legacy_pua(noto)
     rename(noto, family, style)
     noto.flavor = "woff2"
     noto.flavorData = WOFF2FlavorData(transformedTables=())

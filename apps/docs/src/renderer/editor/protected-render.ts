@@ -29,6 +29,7 @@ import {
 import { cjkDeclaredLineFactor, lineHeightFactor } from '../text-layout/font-rules'
 import {
   custGeomBackgroundCss,
+  isStraightLineKind,
   shapeBackgroundCss,
   shapePaths,
   shapeTextInsetsPx,
@@ -67,6 +68,7 @@ import {
   positionDecl,
   reflectionDecl,
   textEffectDecls,
+  textFillDecls,
 } from './text-effects'
 import { t } from '../i18n/locale'
 import {
@@ -2460,7 +2462,8 @@ export function textboxFloatPlacement(box: TextboxDisplay, opts?: { inCell?: boo
   // (100% = 0px collapses the cap below the floor, pinning every in-cell
   // float at the page edge) and position from the cell anyway: no clamp.
   const geom = resolveAnchor(textboxAnchor(box), {}, TEXTBOX_CTX)
-  const rawLeftPx = (geom.x ?? 0).toFixed(1)
+  // a vertical line's band straddles the stroke
+  const rawLeftPx = ((geom.x ?? 0) - (box.lineVert ? (box.widthPx ?? 0) / 2 : 0)).toFixed(1)
   const leftCss =
     box.widthPx && !box.pagePinned && !box.pageRelX && !opts?.inCell
       ? `clamp(calc(0px - var(--doc-margin-left,0px)), ${rawLeftPx}px, ` +
@@ -2499,10 +2502,24 @@ export function textboxBoxStyle(
     box.fillImageDataUrl && box.prst && !box.pathData
       ? (shapePaths(box.prst, boxW, boxH)?.main ?? null)
       : null
+  // a:xfrm flipH / flipV: the outline is mirrored and the text stays upright,
+  // as in Word. A picture can only turn over with its whole box, so a picture
+  // box without text is mirrored whole. A straight line's flips pick its ends
+  const flipped = (box.flipH || box.flipV) && !isStraightLineKind(box.prst)
+  const flipsWhole = flipped && !!box.fillImageDataUrl && box.paras.length === 0
+  const mirror = flipped && !flipsWhole ? { h: box.flipH, v: box.flipV } : undefined
   const geomCss = picClip
     ? null
     : box.pathData
-      ? custGeomBackgroundCss(box.pathData, boxW, boxH, fill, box.borderColor, box.borderWidthPx)
+      ? custGeomBackgroundCss(
+          box.pathData,
+          boxW,
+          boxH,
+          fill,
+          box.borderColor,
+          box.borderWidthPx,
+          mirror,
+        )
       : box.prst
         ? shapeBackgroundCss(
             box.prst,
@@ -2510,8 +2527,9 @@ export function textboxBoxStyle(
             boxH,
             fill,
             box.borderColor,
-            { diag: box.lineDiag, flipH: box.flipH, flipV: box.flipV },
+            { diag: box.lineDiag, vert: box.lineVert, flipH: box.flipH, flipV: box.flipV },
             box.borderWidthPx,
+            mirror,
           )
         : null
   const waStyle = box.wordArtId ? WORDART_CSS[box.wordArtId] : undefined
@@ -2525,7 +2543,11 @@ export function textboxBoxStyle(
     : ''
   // the editor's chrome layer (.box-rotator) carries the rotation so the
   // selection handles turn with the box; the box itself stays unturned there
-  const transforms = [box.rotDeg && !opts?.editorChrome ? `rotate(${box.rotDeg}deg)` : '']
+  const transforms = [
+    box.rotDeg && !opts?.editorChrome ? `rotate(${box.rotDeg}deg)` : '',
+    flipsWhole && box.flipH ? 'scaleX(-1)' : '',
+    flipsWhole && box.flipV ? 'scaleY(-1)' : '',
+  ]
   // the float slot normally lives on the box; in the editor's chrome the
   // rotator mirrors it and the box goes static inside (see textboxFloatPlacement)
   const floatPos = opts?.editorChrome ? '' : textboxFloatPlacement(box, opts)
@@ -2695,6 +2717,7 @@ function textSpanSpec(
     run.dstrike ? doubleStrikeDecl() : '',
     run.glow ? glowDecl(run.glow) : '',
     run.textReflection ? reflectionDecl(run.textReflection) : '',
+    run.textFill && !paperColorEffect(run.textEffect) ? textFillDecls(run.textFill).join(';') : '',
     run.positionHalfPoints ? positionDecl(run.positionHalfPoints) : '',
     run.caps === 'all' ? 'text-transform:uppercase' : '',
     run.caps === 'small' ? 'font-variant-caps:small-caps' : '',
@@ -2710,7 +2733,9 @@ function textSpanSpec(
   const attrs: Record<string, string> = {}
   if (runStyle) attrs.style = runStyle
   if (run.styleId) attrs['data-style'] = run.styleId
-  const revClass = [run.ins && 'doc-ins', run.del && 'doc-del'].filter(Boolean).join(' ')
+  const revClass = [run.ins && 'doc-ins', run.del && 'doc-del', run.offGrid && 'doc-off-grid']
+    .filter(Boolean)
+    .join(' ')
   if (revClass) attrs.class = revClass
   // cs-slot run: styles.css .doc-cs-mixed collapses its line box
   if (cs) attrs['data-cs'] = ''

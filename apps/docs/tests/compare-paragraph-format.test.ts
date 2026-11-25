@@ -103,6 +103,33 @@ describe('a paragraph formatting difference found by Compare is a tracked change
     expect((await saved())[1]).toBe('<w:pPr><w:pStyle w:val="Heading1"/></w:pPr>')
   })
 
+  it('rejecting restores keep with next, keep lines together, widow control and contextual spacing', async () => {
+    const { editor, saved } = await redline(
+      para('This paragraph stays.') +
+        para('Flow settings.', '<w:keepNext/><w:widowControl w:val="0"/>') +
+        para('Plain once.'),
+      para('This paragraph stays.') +
+        para('Flow settings.', '<w:keepLines/><w:contextualSpacing/>') +
+        para('Plain once.', '<w:keepNext/><w:keepLines/><w:contextualSpacing/>'),
+    )
+    expect(editor.state.doc.child(1).attrs).toMatchObject({ keepLines: true, keepNext: null })
+    rejectAllRevisions(editor)
+    expect(editor.state.doc.child(1).attrs).toMatchObject({
+      keepNext: true,
+      keepLines: null,
+      widowControl: false,
+      contextualSpacing: null,
+    })
+    expect(editor.state.doc.child(2).attrs).toMatchObject({
+      keepNext: null,
+      keepLines: null,
+      contextualSpacing: null,
+    })
+    const pPrs = await saved()
+    expect(pPrs[1]).toBe('<w:pPr><w:keepNext/><w:widowControl w:val="0"/></w:pPr>')
+    expect(pPrs[2]).toBe('<w:pPr></w:pPr>')
+  })
+
   it('rejecting a list change puts the paragraph back in its list', async () => {
     const list = '<w:numPr><w:ilvl w:val="0"/><w:numId w:val="2"/></w:numPr>'
     const { bytes } = await compareDocuments(

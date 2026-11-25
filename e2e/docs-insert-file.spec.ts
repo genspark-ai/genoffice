@@ -59,6 +59,12 @@ test('the body of another document is inserted at the caret and saved', async ()
       const insert = Menu.getApplicationMenu()?.items.find((item) => item.label === 'Insert')
       insert?.submenu?.items.find((item) => item.label === 'File…')?.click()
     })
+    // a file without bookmarks has one range to offer; Link to File is left off
+    const options = page.locator('.insert-file-range-dialog')
+    await expect(options).toBeVisible({ timeout: 15_000 })
+    await expect(options.locator('select option')).toHaveText(['Whole document'])
+    await expect(options.locator('input[name="link"]')).not.toBeChecked()
+    await options.locator('button.primary').click()
 
     await expect(page.locator('.doc-page', { hasText: 'Imported closing' })).toBeVisible()
     // the formatting, the table and the picture came along
@@ -67,9 +73,9 @@ test('the body of another document is inserted at the caret and saved', async ()
     ).toHaveCount(1)
     await expect(page.locator('.doc-page td', { hasText: 'South' })).toHaveCount(1)
     await expect(page.locator('.doc-page img')).toHaveCount(1)
-    // and the shape, which a file without bookmarks brings in without asking anything
+    // and the shape
     await expect(page.locator('.doc-page .doc-textbox')).toHaveCount(1)
-    await expect(page.locator('.insert-file-range-dialog')).toHaveCount(0)
+    await expect(options).toHaveCount(0)
     // in order: the host's first line, what was inserted, the host's last line
     const text = await page.locator('.doc-page').innerText()
     expect(text.indexOf('Host first')).toBeLessThan(text.indexOf('Imported heading'))
@@ -256,6 +262,90 @@ test('a bookmark of the other document is inserted as a range, with the footnote
     await expect(reopened.locator('.doc-page sup.doc-note-ref')).toHaveText(['1', '2'])
     await expect(reopened.locator('body')).toContainText('Note inside the range')
     await reopened.screenshot({ path: test.info().outputPath('range-reopened.png') })
+  } finally {
+    await closeAndSaveVideo(launched, 'docs-insert-file')
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('a section break of the other document comes along with its page setup', async () => {
+  test.setTimeout(180_000)
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), 'genoffice-e2e-insert-file-section-')))
+  const docPath = join(dir, 'host.docx')
+  const otherPath = join(dir, 'other.docx')
+  const margins =
+    '<w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="720" w:footer="720" w:gutter="0"/>'
+  const portrait = `<w:sectPr><w:pgSz w:w="12240" w:h="15840"/>${margins}</w:sectPr>`
+  const landscape = `<w:sectPr><w:pgSz w:w="15840" w:h="12240" w:orient="landscape"/>${margins}</w:sectPr>`
+  writeFileSync(docPath, await docxWith(para('Host first') + para('Host last') + portrait))
+  writeFileSync(
+    otherPath,
+    await docxWith(
+      para('Wide part') +
+        `<w:p><w:pPr>${landscape}</w:pPr></w:p>` +
+        para('Imported tail') +
+        portrait,
+    ),
+  )
+  const launched = await launchShell({
+    onboardingSeen: true,
+    videoDir: 'docs-insert-file',
+    openFile: docPath,
+  })
+  try {
+    const { app } = launched
+    const page = await waitForPageWithUrl(app, '://docs/')
+    await expect(page.locator('.doc-page p', { hasText: 'Host first' })).toBeVisible({
+      timeout: 30_000,
+    })
+    await page.evaluate(() => {
+      const { editor } = (
+        window as never as {
+          __aidocs: {
+            editor: { chain(): { focus(): { setTextSelection(p: number): { run(): boolean } } } }
+          }
+        }
+      ).__aidocs
+      editor.chain().focus().setTextSelection(11).run()
+    })
+    await app.evaluate(({ dialog }, file) => {
+      dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [file] })
+    }, otherPath)
+    await app.evaluate(({ Menu }) => {
+      const insert = Menu.getApplicationMenu()?.items.find((item) => item.label === 'Insert')
+      insert?.submenu?.items.find((item) => item.label === 'File…')?.click()
+    })
+    const options = page.locator('.insert-file-range-dialog')
+    await expect(options).toBeVisible({ timeout: 15_000 })
+    await options.locator('button.primary').click()
+    await expect(page.locator('.doc-page', { hasText: 'Imported tail' })).toBeVisible()
+
+    // as after Insert > Break: the file is written at once and read again
+    const documentXml = async () =>
+      (await (
+        await JSZip.loadAsync(readFileSync(docPath))
+      )
+        .file('word/document.xml')
+        ?.async('string')) ?? ''
+    await expect
+      .poll(async () => (await documentXml()).match(/<w:sectPr\b/g)?.length ?? 0, {
+        timeout: 30_000,
+      })
+      .toBe(2)
+    const xml = await documentXml()
+    const wide = xml.indexOf('w:orient="landscape"')
+    expect(wide).toBeGreaterThan(xml.indexOf('Wide part'))
+    expect(wide).toBeLessThan(xml.indexOf('Imported tail'))
+    // the section the break closes is laid out on its wider paper, what follows on the host's:
+    // the text column of the first is the wider one (12960 against 9360 twips)
+    const columnOf = async (text: string) =>
+      (await page.locator('.doc-page p', { hasText: text }).first().boundingBox())!.width
+    await expect
+      .poll(async () => (await columnOf('Wide part')) / (await columnOf('Host last')), {
+        timeout: 30_000,
+      })
+      .toBeGreaterThan(1.2)
+    await page.screenshot({ path: test.info().outputPath('section-came-along.png') })
   } finally {
     await closeAndSaveVideo(launched, 'docs-insert-file')
     rmSync(dir, { recursive: true, force: true })

@@ -55,6 +55,14 @@ describe('lengthToEmu / emuToLength', () => {
     expect(emuToLength(10692000, 'cm')).toBe('29.7')
     expect(emuToLength(12192000, 'in')).toBe('13.33')
   })
+
+  it('takes points and picas too', () => {
+    // a 16:9 slide is 960 × 540 pt, 80 × 45 pi
+    expect(emuToLength(12192000, 'pt')).toBe('960')
+    expect(emuToLength(6858000, 'pi')).toBe('45')
+    expect(lengthToEmu('960', 'pt')).toBe(12192000)
+    expect(lengthToEmu('80', 'pi')).toBe(12192000)
+  })
 })
 
 describe('defaultNewSlideSize', () => {

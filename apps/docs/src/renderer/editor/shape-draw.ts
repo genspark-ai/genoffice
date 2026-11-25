@@ -10,6 +10,7 @@ import type { Editor } from '@tiptap/core'
 import { shapeClipCss } from '@genoffice/ui'
 import { LINE_KINDS } from '@genoffice/docx-engine'
 import { isStraightLineKind, shapeBackgroundImage } from './shape-svg'
+import { snappedPoint } from './drawing-grid'
 
 const EMU_PER_PX = 9525
 /** Word's predefined single-click insert size: 1x1 inch. */
@@ -128,6 +129,8 @@ export function startShapeDrawMode(
   dom.classList.add('doc-shape-drawing')
 
   let start: { x: number; y: number } | null = null
+  // where the button went down, before snapping: a click is judged by the pointer's own travel
+  let pressed = { x: 0, y: 0 }
   let cur: { x: number; y: number } | null = null
   let shift = false
   let ghost: HTMLDivElement | null = null
@@ -230,7 +233,8 @@ export function startShapeDrawMode(
     if (e.button !== 0) return
     e.preventDefault()
     e.stopPropagation()
-    start = { x: e.clientX, y: e.clientY }
+    pressed = { x: e.clientX, y: e.clientY }
+    start = snappedPoint(dom, e)
     cur = { ...start }
     shift = e.shiftKey
     window.addEventListener('mousemove', onWinMove, true)
@@ -238,17 +242,18 @@ export function startShapeDrawMode(
   }
   const onWinMove = (e: MouseEvent) => {
     if (!start) return
-    cur = { x: e.clientX, y: e.clientY }
+    cur = snappedPoint(dom, e)
     shift = e.shiftKey
     updateGhost()
   }
   const onWinUp = (e: MouseEvent) => {
     if (!start) return
     const s = start
-    const isClick = Math.hypot(e.clientX - s.x, e.clientY - s.y) <= CLICK_THRESHOLD_PX
+    const end = snappedPoint(dom, e)
+    const isClick = Math.hypot(e.clientX - pressed.x, e.clientY - pressed.y) <= CLICK_THRESHOLD_PX
     const rect = isClick
       ? { x: s.x, y: s.y, w: 0, h: 0 }
-      : resolveDrawRect(s.x, s.y, e.clientX, e.clientY, e.shiftKey)
+      : resolveDrawRect(s.x, s.y, end.x, end.y, e.shiftKey)
     cleanup()
     commit(rect, isClick)
   }

@@ -375,6 +375,8 @@ export function measureBlocks(
   const imgsByBlock = bucketByBlock(pm, 'img')
   const tablesByBlock = bucketByBlock(pm, 'table')
   for (const el of Array.from(pm.children) as HTMLElement[]) {
+    // the body of a collapsed heading takes no space and breaks no page (Word)
+    if (el.classList.contains('doc-collapsed-body')) continue
     const rect = el.getBoundingClientRect()
     if (el.classList.contains('page-gap') || el.classList.contains('page-float-host')) {
       gapAccum += rect.height
@@ -1183,7 +1185,11 @@ export function resolveNoteBands(
     if (!bands?.length) continue
     const offsets = noteRefOffsets(b.el, zoomFactor)
     if (offsets.length !== bands.length) continue
-    b.noteBands = bands.map((band, i) => ({ offset: offsets[i], height: band.heightPx }))
+    b.noteBands = bands.map((band, i) => ({
+      offset: offsets[i],
+      height: band.heightPx,
+      ...(band.lines ? { lines: band.lines } : {}),
+    }))
   }
 }
 

@@ -269,12 +269,115 @@ function mmlOf(node: XNode): string {
   }
 }
 
+type MathAlphabet = 'bold' | 'bold-italic' | 'script' | 'double-struck' | 'fraktur'
+
+const SCRIPT_UPPER_EXCEPTIONS: Record<number, string> = {
+  1: '\u212C', // B
+  4: '\u2130', // E
+  5: '\u2131', // F
+  7: '\u210B', // H
+  8: '\u2110', // I
+  11: '\u2112', // L
+  12: '\u2133', // M
+  17: '\u211B', // R
+}
+const SCRIPT_LOWER_EXCEPTIONS: Record<number, string> = {
+  4: '\u212F', // e
+  6: '\u210A', // g
+  14: '\u2134', // o
+}
+const DOUBLE_STRUCK_UPPER_EXCEPTIONS: Record<number, string> = {
+  2: '\u2102', // C
+  7: '\u210D', // H
+  13: '\u2115', // N
+  15: '\u2119', // P
+  16: '\u211A', // Q
+  17: '\u211D', // R
+  25: '\u2124', // Z
+}
+const FRAKTUR_UPPER_EXCEPTIONS: Record<number, string> = {
+  2: '\u212D', // C
+  7: '\u210C', // H
+  8: '\u2111', // I
+  17: '\u211C', // R
+  25: '\u2128', // Z
+}
+
+/** Map an ASCII/Greek character to its Unicode Mathematical Alphanumeric Symbol
+ *  so MathML Core (which only supports mathvariant="normal") renders bold,
+ *  script, blackboard-bold and fraktur styles natively. */
+function styleMathChar(ch: string, alphabet: MathAlphabet): string {
+  const cp = ch.codePointAt(0)
+  if (cp === undefined) return ch
+  const isUpper = cp >= 0x41 && cp <= 0x5a
+  const isLower = cp >= 0x61 && cp <= 0x7a
+  const isDigit = cp >= 0x30 && cp <= 0x39
+  const isGreekUpper = cp >= 0x0391 && cp <= 0x03a9
+  const isGreekLower = cp >= 0x03b1 && cp <= 0x03c9
+  switch (alphabet) {
+    case 'bold':
+      if (isUpper) return String.fromCodePoint(0x1d400 + (cp - 0x41))
+      if (isLower) return String.fromCodePoint(0x1d41a + (cp - 0x61))
+      if (isDigit) return String.fromCodePoint(0x1d7ce + (cp - 0x30))
+      if (isGreekUpper) return String.fromCodePoint(0x1d6a8 + (cp - 0x0391))
+      if (isGreekLower) return String.fromCodePoint(0x1d6c2 + (cp - 0x03b1))
+      if (cp === 0x2207) return String.fromCodePoint(0x1d6c1) // nabla
+      if (cp === 0x2202) return String.fromCodePoint(0x1d6db) // partial
+      return ch
+    case 'bold-italic':
+      if (isUpper) return String.fromCodePoint(0x1d468 + (cp - 0x41))
+      if (isLower) return String.fromCodePoint(0x1d482 + (cp - 0x61))
+      if (isGreekUpper) return String.fromCodePoint(0x1d71c + (cp - 0x0391))
+      if (isGreekLower) return String.fromCodePoint(0x1d736 + (cp - 0x03b1))
+      return ch
+    case 'script':
+      if (isUpper) {
+        const idx = cp - 0x41
+        return SCRIPT_UPPER_EXCEPTIONS[idx] ?? String.fromCodePoint(0x1d49c + idx)
+      }
+      if (isLower) {
+        const idx = cp - 0x61
+        return SCRIPT_LOWER_EXCEPTIONS[idx] ?? String.fromCodePoint(0x1d4b6 + idx)
+      }
+      return ch
+    case 'double-struck':
+      if (isUpper) {
+        const idx = cp - 0x41
+        return DOUBLE_STRUCK_UPPER_EXCEPTIONS[idx] ?? String.fromCodePoint(0x1d538 + idx)
+      }
+      if (isLower) return String.fromCodePoint(0x1d552 + (cp - 0x61))
+      if (isDigit) return String.fromCodePoint(0x1d7d8 + (cp - 0x30))
+      return ch
+    case 'fraktur':
+      if (isUpper) {
+        const idx = cp - 0x41
+        return FRAKTUR_UPPER_EXCEPTIONS[idx] ?? String.fromCodePoint(0x1d504 + idx)
+      }
+      if (isLower) return String.fromCodePoint(0x1d51e + (cp - 0x61))
+      return ch
+  }
+}
+
+function runAlphabetOf(run: XNode): MathAlphabet | null {
+  const scr = propVal(run, 'm:rPr', 'm:scr')
+  if (scr === 'script' || scr === 'double-struck' || scr === 'fraktur') return scr
+  const sty = propVal(run, 'm:rPr', 'm:sty')
+  if (sty === 'b') return 'bold'
+  if (sty === 'bi') return 'bold-italic'
+  return null
+}
+
 function runToMml(run: XNode): string {
   const sty = propVal(run, 'm:rPr', 'm:sty')
-  const plain = sty === 'p' || !!findChild(findChild(run, 'm:rPr') ?? {}, 'm:nor')
+  const alphabet = runAlphabetOf(run)
+  const plain = !alphabet && (sty === 'p' || !!findChild(findChild(run, 'm:rPr') ?? {}, 'm:nor'))
   let out = ''
   for (const child of childrenOf(run)) {
-    if (nameOf(child) === 'm:t') out += runTextToMml(textOf(child), plain)
+    if (nameOf(child) === 'm:t') {
+      const raw = textOf(child)
+      const styled = alphabet ? [...raw].map((ch) => styleMathChar(ch, alphabet)).join('') : raw
+      out += runTextToMml(styled, plain)
+    }
   }
   return out
 }
@@ -297,7 +400,11 @@ function runTextToMml(text: string, plain: boolean): string {
       let num = ''
       while (i < chars.length && /[0-9.]/.test(chars[i])) num += chars[i++]
       out += `<mn>${num}</mn>`
-    } else if (/[A-Za-z\u0370-\u03FF\u{1D400}-\u{1D7FF}]/u.test(ch)) {
+    } else if (
+      /[A-Za-z\u0370-\u03FF\u2102\u210A-\u2113\u2115\u2119-\u211D\u2124\u2128\u212C\u212D\u212F-\u2131\u2133\u2134\u{1D400}-\u{1D7FF}]/u.test(
+        ch,
+      )
+    ) {
       out += `<mi>${escapeXmlText(ch)}</mi>`
       i++
     } else if (ch === ' ') {
@@ -711,12 +818,26 @@ function plainTextOfRuns(node: XNode | undefined): string {
   return out
 }
 
+const ALPHABET_LATEX_CMD: Record<MathAlphabet, string> = {
+  bold: 'mathbf',
+  'bold-italic': 'boldsymbol',
+  script: 'mathcal',
+  'double-struck': 'mathbb',
+  fraktur: 'mathfrak',
+}
+
 function runToLatex(run: XNode): string {
   const sty = propVal(run, 'm:rPr', 'm:sty')
-  const plain = sty === 'p' || !!findChild(findChild(run, 'm:rPr') ?? {}, 'm:nor')
+  const alphabet = runAlphabetOf(run)
+  const plain = !alphabet && (sty === 'p' || !!findChild(findChild(run, 'm:rPr') ?? {}, 'm:nor'))
   let text = ''
   for (const child of childrenOf(run)) {
     if (nameOf(child) === 'm:t') text += textOf(child)
+  }
+  if (alphabet) {
+    if (text === '') return ''
+    if (/[{}\\]/.test(text)) throw new UnsupportedOmml()
+    return `\\${ALPHABET_LATEX_CMD[alphabet]}{${charsToLatex(text)}}`
   }
   if (!plain) return charsToLatex(text)
   const trimmed = text.trim()
@@ -789,10 +910,37 @@ export function mathParagraphXml(
   )
 }
 
-function mathRun(text: string, plain = false): string {
+function mathRun(text: string, plain = false, alphabet?: MathAlphabet): string {
   if (text === '') return ''
-  const rPr = plain ? '<m:rPr><m:sty m:val="p"/></m:rPr>' : ''
+  let rPr = ''
+  if (alphabet === 'bold') rPr = '<m:rPr><m:sty m:val="b"/></m:rPr>'
+  else if (alphabet === 'bold-italic') rPr = '<m:rPr><m:sty m:val="bi"/></m:rPr>'
+  else if (alphabet === 'script' || alphabet === 'double-struck' || alphabet === 'fraktur') {
+    rPr = `<m:rPr><m:scr m:val="${alphabet}"/></m:rPr>`
+  } else if (plain) {
+    rPr = '<m:rPr><m:sty m:val="p"/></m:rPr>'
+  }
   return `<m:r>${rPr}<m:t xml:space="preserve">${escapeXmlText(text)}</m:t></m:r>`
+}
+
+/** Resolve plain text or simple \symbol commands inside a style wrapper like \mathbf{...} */
+function readStyledLatexText(p: LatexParser): string {
+  const raw = readBraceText(p)
+  let out = ''
+  let i = 0
+  while (i < raw.length) {
+    if (raw[i] === '\\') {
+      const m = /^\\([A-Za-z]+)\s*/.exec(raw.slice(i))
+      if (m && m[1] in LATEX_SYMBOLS) {
+        out += LATEX_SYMBOLS[m[1]]
+        i += m[0].length
+        continue
+      }
+      throw new LatexError(`Unsupported command inside style group: ${raw.slice(i, i + 12)}`)
+    }
+    out += raw[i++]
+  }
+  return out
 }
 
 function peek(p: LatexParser): string {
@@ -1086,6 +1234,17 @@ function parseControl(p: LatexParser): string {
     case 'mathrm':
     case 'operatorname':
       return mathRun(readBraceText(p), true)
+    case 'mathbf':
+      return mathRun(readStyledLatexText(p), false, 'bold')
+    case 'boldsymbol':
+    case 'bm':
+      return mathRun(readStyledLatexText(p), false, 'bold-italic')
+    case 'mathcal':
+      return mathRun(readStyledLatexText(p), false, 'script')
+    case 'mathbb':
+      return mathRun(readStyledLatexText(p), false, 'double-struck')
+    case 'mathfrak':
+      return mathRun(readStyledLatexText(p), false, 'fraktur')
     case 'lim': {
       skipSpaces(p)
       if (peek(p) === '_') {

@@ -8,6 +8,8 @@ import {
   saveDocx,
   type SaveBlock,
 } from '../src/index'
+import { restoreTablePermMarkers } from '../src/generate'
+import { injectIntoParagraph } from '../src/perm-ranges'
 import { buildDocx } from './helpers/build-docx'
 
 /**
@@ -270,6 +272,15 @@ describe('editing permission ranges: save', () => {
     expect(rebuilt).toMatch(/added<\/w:t>(?:(?!<w:tr[ >]).)*<\/w:tr><w:permEnd w:id="22"\/><w:tr/)
   })
 
+  it('keeps the order of several markers between the same two rows', () => {
+    const row = (text: string) =>
+      `<w:tr><w:tc><w:p><w:r><w:t>${text}</w:t></w:r></w:p></w:tc></w:tr>`
+    const between = '<w:permEnd w:id="1"/><w:permStart w:id="2" w:edGrp="everyone"/>'
+    const original = `<w:tbl><w:permStart w:id="1" w:edGrp="everyone"/>${row('a')}${between}${row('b')}<w:permEnd w:id="2"/></w:tbl>`
+    const rebuilt = restoreTablePermMarkers(original, `<w:tbl>${row('a')}${row('b')}</w:tbl>`)
+    expect(rebuilt).toContain(`</w:tr>${between}<w:tr>`)
+  })
+
   it('saves an untouched protected template byte for byte', async () => {
     const source = await template()
     const doc = await parseDocx(source)
@@ -280,5 +291,18 @@ describe('editing permission ranges: save', () => {
       ),
     )
     expect(saved).toEqual(source)
+  })
+
+  it('puts a marker after the whole w:pPr of a paragraph with a tracked format change', () => {
+    const pPr =
+      '<w:pPr><w:jc w:val="center"/><w:pPrChange w:id="9" w:author="A"><w:pPr><w:jc w:val="left"/></w:pPr></w:pPrChange></w:pPr>'
+    const mark = '<w:permStart w:id="1" w:edGrp="everyone"/>'
+    expect(injectIntoParagraph(`<w:p>${pPr}<w:r><w:t>x</w:t></w:r></w:p>`, mark, '')).toBe(
+      `<w:p>${pPr}${mark}<w:r><w:t>x</w:t></w:r></w:p>`,
+    )
+    expect(injectIntoParagraph('<w:p><w:pPr/><w:r/></w:p>', mark, '')).toBe(
+      `<w:p><w:pPr/>${mark}<w:r/></w:p>`,
+    )
+    expect(injectIntoParagraph('<w:p><w:r/></w:p>', mark, '')).toBe(`<w:p>${mark}<w:r/></w:p>`)
   })
 })

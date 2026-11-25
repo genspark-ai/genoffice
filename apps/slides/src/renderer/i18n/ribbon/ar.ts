@@ -174,7 +174,7 @@ export const ar = {
   ribbonBulletHangNarrow: 'ضيق',
   ribbonBulletHangNormal: 'عادي',
   ribbonBulletHangWide: 'واسع',
-  ribbonBulletHangCustomTip: 'مسافة بادئة مخصصة للتعداد (px، اضغط Enter للتطبيق)',
+  ribbonBulletHangCustomTip: 'مسافة بادئة مخصصة للتعداد ({unit}، اضغط Enter للتطبيق)',
   ribbonBulletSize: 'حجم التعداد النقطي',
   ribbonBulletColor: 'لون التعداد النقطي',
   ribbonNumberStyle: 'نمط الترقيم',

@@ -847,17 +847,19 @@ function mergeBorders(
   input: unknown,
   h: TableOpHelpers,
 ): CellBorders | null {
-  const none: CellBorder = { style: 'none' }
+  // "nil": Word draws the table's own border under a cell's "none"
+  const none: CellBorder = { style: 'nil' }
+  const drawn = (style: string) => style !== 'none' && style !== 'nil'
   if (input === null) return { top: none, left: none, bottom: none, right: none }
   const spec = input as Record<string, BorderInput | null | undefined>
   const out: CellBorders = { ...(current ?? {}) }
   const toBorder = (side: string, b: BorderInput | null): CellBorder => {
-    if (b === null) return none
+    if (b === null || (b.style !== undefined && !drawn(b.style))) return none
     const base = (current?.[side as keyof CellBorders] as CellBorder | undefined) ?? {
       style: 'single',
     }
     return {
-      style: b.style ?? (base.style === 'none' ? 'single' : base.style),
+      style: b.style ?? (drawn(base.style) ? base.style : 'single'),
       ...(b.width !== undefined
         ? { szEighths: Math.round(b.width * 8) }
         : base.szEighths !== undefined

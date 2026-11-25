@@ -185,34 +185,30 @@ const switchArg = (args: string[], name: string): string => {
   return at === -1 ? '' : (args[at + 1] ?? '')
 }
 
+const MERGESEQ = /^\s*MERGESEQ(?=\s|$)/i
+
+const newWalk = (index: number): MergeWalk => ({ index, skipped: false, asked: 0, prompts: [] })
+
 /**
- * The documents a merge writes, one per pass over the template.
- *
- * A pass opens with the next unread record. MERGEFIELD and IF take that
- * record's values; NEXT and a NEXTIF that holds move to the record after it
- * inside the same document; a SKIPIF that holds drops the document. MERGEREC
- * is the record's place in the list and MERGESEQ counts the documents kept.
- * SET and ASK give a bookmark its text, which REF fields to it then show;
- * FILLIN shows its answer where it stands. Questions with no answer yet come
- * back in `prompts` and take their default meanwhile.
+ * What each field leaves in the text as a pass meets it; null for a field the
+ * merge does not touch. `kept` counts the documents written before the pass,
+ * `known` lists the questions earlier passes put.
  */
-export function mergeDocuments(
-  doc: PmNode,
+function fieldEvaluator(
   records: readonly MergeRecord[],
-  options: MergeRunOptions = {},
-): { documents: MergedDocument[]; prompts: MergePrompt[] } {
+  options: MergeRunOptions,
+  kept: () => number,
+  known: () => readonly MergePrompt[],
+): (instr: string, walk: MergeWalk) => string | null {
   const first = options.firstRecord ?? 1
-  const documents: MergedDocument[] = []
-  const prompts: MergePrompt[] = []
   const bookmarks = new Map<string, string>()
-  const ruleNodes = new WeakSet<PmNode>()
   const answer = (walk: MergeWalk, args: string[], promptAt: number): string => {
     const once = args.some((arg) => arg.toLowerCase() === '\\o')
     const key = once ? `${walk.asked}` : `${walk.asked}:${first + walk.index}`
     walk.asked += 1
     const fallback = switchArg(args, '\\d')
     const given = options.answers?.get(key)
-    if (given === undefined && ![...prompts, ...walk.prompts].some((p) => p.key === key))
+    if (given === undefined && ![...known(), ...walk.prompts].some((p) => p.key === key))
       walk.prompts.push({
         key,
         prompt: args[promptAt] ?? '',
@@ -221,8 +217,7 @@ export function mergeDocuments(
       })
     return given ?? fallback
   }
-  /** what a field leaves in the text; null for a field the merge does not touch */
-  const fieldText = (instr: string, walk: MergeWalk): string | null => {
+  return (instr, walk) => {
     const record = records[walk.index] ?? {}
     const [keyword] = splitInstruction(instr)
     const args = fieldArgs(instr)
@@ -243,7 +238,7 @@ export function mergeDocuments(
       case 'MERGEREC':
         return String(first + walk.index)
       case 'MERGESEQ':
-        return String(documents.length + 1)
+        return String(kept() + 1)
       case 'SET':
         if (args[0]) bookmarks.set(args[0], args[1] ?? '')
         return ''
@@ -260,6 +255,107 @@ export function mergeDocuments(
         return null
     }
   }
+}
+
+/** whether the field only steers the merge: it shows nothing where it stands */
+export const isRuleOnlyField = (instr: string): boolean => RULE_ONLY.test(instr)
+
+/**
+ * Preview Results: what each field of the template shows for the record at
+ * `index`, the fields given in document order. The pass opens with that
+ * record, so NEXT and NEXTIF read on from it; MERGESEQ counts the records
+ * before it that a SKIPIF does not drop. Ask and Fill-in show the answer in
+ * `answers`, their default while they have none.
+ */
+export function previewFieldTexts(
+  instrs: readonly string[],
+  records: readonly MergeRecord[],
+  index: number,
+  answers?: ReadonlyMap<string, string>,
+): Array<string | null> {
+  return previewPass(instrs, records, index, answers).texts
+}
+
+/** the questions the Ask and Fill-in fields put for the record at `index` that `answers` does not hold yet */
+export function previewPrompts(
+  instrs: readonly string[],
+  records: readonly MergeRecord[],
+  index: number,
+  answers?: ReadonlyMap<string, string>,
+): MergePrompt[] {
+  return previewPass(instrs, records, index, answers).prompts
+}
+
+function previewPass(
+  instrs: readonly string[],
+  records: readonly MergeRecord[],
+  index: number,
+  answers?: ReadonlyMap<string, string>,
+): { texts: Array<string | null>; prompts: MergePrompt[] } {
+  let kept = 0
+  const evaluate = fieldEvaluator(
+    records,
+    { answers },
+    () => kept,
+    () => [],
+  )
+  if (instrs.some((instr) => MERGESEQ.test(instr)))
+    for (let at = 0, pass = 0; at < index && pass < index; pass += 1) {
+      const walk = newWalk(at)
+      for (const instr of instrs) evaluate(instr, walk)
+      if (!walk.skipped) kept += 1
+      at = walk.index + 1
+    }
+  const walk = newWalk(index)
+  const texts = instrs.map((instr) => evaluate(instr, walk))
+  return { texts, prompts: walk.prompts }
+}
+
+/**
+ * The documents a merge writes, one per pass over the template.
+ *
+ * A pass opens with the next unread record. MERGEFIELD and IF take that
+ * record's values; NEXT and a NEXTIF that holds move to the record after it
+ * inside the same document; a SKIPIF that holds drops the document. MERGEREC
+ * is the record's place in the list and MERGESEQ counts the documents kept.
+ * SET and ASK give a bookmark its text, which REF fields to it then show;
+ * FILLIN shows its answer where it stands. Questions with no answer yet come
+ * back in `prompts` and take their default meanwhile.
+ */
+export function mergeDocuments(
+  doc: PmNode,
+  records: readonly MergeRecord[],
+  options: MergeRunOptions = {},
+): { documents: MergedDocument[]; prompts: MergePrompt[] } {
+  return mergePasses(doc, records, options)
+}
+
+interface PassOptions extends MergeRunOptions {
+  /** index of the record the first pass opens with */
+  from?: number
+  /** documents counted as written before the first pass (MERGESEQ) */
+  kept?: number
+  /** how many passes to make; every record when absent */
+  passes?: number
+  /** a pass a SKIPIF drops is returned all the same */
+  keepSkipped?: boolean
+}
+
+function mergePasses(
+  doc: PmNode,
+  records: readonly MergeRecord[],
+  options: PassOptions,
+): { documents: MergedDocument[]; prompts: MergePrompt[] } {
+  const documents: MergedDocument[] = []
+  const prompts: MergePrompt[] = []
+  const ruleNodes = new WeakSet<PmNode>()
+  const fieldText = fieldEvaluator(
+    records,
+    options,
+    () => (options.kept ?? 0) + documents.length,
+    () => prompts,
+  )
+  const passes = Math.min(options.passes ?? records.length, records.length)
   const walkContent = (content: readonly PmNode[] | undefined, walk: MergeWalk) => {
     if (!content) return undefined
     const out: PmNode[] = []
@@ -302,16 +398,48 @@ export function mergeDocuments(
       return inline.length === 0 || !inline.every((child) => ruleNodes.has(child))
     })
   }
-  for (let index = 0, pass = 0; index < records.length && pass < records.length; pass += 1) {
-    const walk: MergeWalk = { index, skipped: false, asked: 0, prompts: [] }
+  for (
+    let index = options.from ?? 0, pass = 0;
+    index < records.length && pass < passes;
+    pass += 1
+  ) {
+    const walk = newWalk(index)
     const content = walkBlocks(doc.content, walk)
-    if (!walk.skipped) {
+    if (!walk.skipped || options.keepSkipped) {
       documents.push({ doc: { ...doc, content }, record: records[index]! })
       prompts.push(...walk.prompts)
     }
     index = walk.index + 1
   }
   return { documents, prompts }
+}
+
+const hasField = (node: PmNode, keyword: RegExp): boolean =>
+  (node.marks ?? []).some(
+    (m) => m.type === FIELD_MARK && keyword.test(String(m.attrs?.instr ?? '')),
+  ) || (node.content ?? []).some((child) => hasField(child, keyword))
+
+/**
+ * The template as Preview Results reads it for the record at `index`: the
+ * pass that opens with that record, whether or not a SKIPIF would drop it.
+ */
+export function previewDocument(
+  doc: PmNode,
+  records: readonly MergeRecord[],
+  index: number,
+  answers?: ReadonlyMap<string, string>,
+): PmNode {
+  const kept = hasField(doc, MERGESEQ)
+    ? mergePasses(doc, records.slice(0, index), {}).documents.length
+    : index
+  const pass = mergePasses(doc, records, {
+    from: index,
+    kept,
+    passes: 1,
+    keepSkipped: true,
+    answers,
+  })
+  return pass.documents[0]?.doc ?? doc
 }
 
 /**

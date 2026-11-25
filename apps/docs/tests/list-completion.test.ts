@@ -32,6 +32,7 @@ import {
   editListLevel,
   listStyleNum,
   listStylesInUse,
+  modifyListStyle,
   pruneUnreferencedNumbering,
   setNumberingValue,
   type NumberingContext,
@@ -45,7 +46,20 @@ import {
   previewLevelText,
 } from '../src/renderer/list-presets'
 import { toggleParaSpace } from '../src/renderer/components/ribbon-tabs'
-import { NO_LIST_STYLE_ID, listStyleEntries, listStylePreview } from '../src/renderer/list-styles'
+import {
+  drawListStyleSide,
+  modifyListStyleAsStep,
+  replayedListStyles,
+  withListStylePending,
+  type ListStyleSide,
+} from '../src/renderer/editor/list-style-history'
+import {
+  NO_LIST_STYLE_ID,
+  listStyleEdits,
+  listStyleEntries,
+  listStylePreview,
+  nineListLevels,
+} from '../src/renderer/list-styles'
 
 const PNG_1PX =
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=='
@@ -85,6 +99,9 @@ async function harness(bytes?: Uint8Array): Promise<Harness> {
     setStatus: () => {},
     linkStyle: (styleId, numId, ilvl) => {
       styleUpserts.push({ styleId, pPr: { numPr: { numId, ilvl } } })
+    },
+    renameStyle: (styleId, name) => {
+      styleUpserts.push({ styleId, name })
     },
   }
   const save = async () => {
@@ -780,6 +797,281 @@ describe('List Styles', () => {
     h.editor.commands.undo()
     const listed = await h.save()
     expect(listed.numbering.get(list.numId)!.levels[0]).toMatchObject({ indentLeft: 1234 })
+  })
+})
+
+describe('Modify Style on a list style', () => {
+  /** the List Styles tab as the app shows it, edits of this session included */
+  const shown = (h: Harness) =>
+    listStyleEntries(
+      h.parsed.listStyles,
+      h.pending().styleDefs,
+      h.pending().removedStyles,
+      listStyleEdits(
+        h.parsed,
+        h.pending(),
+        new Map(h.styleUpserts.flatMap((u) => (u.name ? [[u.styleId, u.name] as const] : []))),
+      ),
+    )
+  const entry = (styles: ReturnType<typeof shown>, styleId: string) =>
+    styles.find((s) => s.styleId === styleId)!
+  const withLevel = (
+    style: ReturnType<typeof entry>,
+    ilvl: number,
+    patch: Partial<(typeof style.levels)[number]>,
+  ) => nineListLevels(style.levels).map((l, i) => (i === ilvl ? { ...l, ...patch } : l))
+
+  async function documentWithClauses(): Promise<Uint8Array> {
+    const blank = await JSZip.loadAsync(await buildBlankDocx())
+    blank.file(
+      'word/styles.xml',
+      (await blank.file('word/styles.xml')!.async('string')).replace(
+        '</w:styles>',
+        '<w:style w:type="numbering" w:styleId="Clauses" w:customStyle="1"><w:name w:val="Clauses"/>' +
+          '<w:pPr><w:numPr><w:numId w:val="40"/></w:numPr></w:pPr></w:style></w:styles>',
+      ),
+    )
+    blank.file(
+      'word/numbering.xml',
+      (await blank.file('word/numbering.xml')!.async('string'))
+        .replace(
+          /<w:num /,
+          '<w:abstractNum w:abstractNumId="40"><w:multiLevelType w:val="multilevel"/><w:styleLink w:val="Clauses"/>' +
+            '<w:lvl w:ilvl="0"><w:start w:val="1"/><w:numFmt w:val="upperLetter"/><w:lvlText w:val="%1:"/></w:lvl>' +
+            '<w:lvl w:ilvl="1"><w:start w:val="1"/><w:numFmt w:val="decimal"/><w:lvlText w:val="%2)"/></w:lvl>' +
+            '</w:abstractNum>' +
+            '<w:abstractNum w:abstractNumId="41"><w:multiLevelType w:val="multilevel"/><w:numStyleLink w:val="Clauses"/></w:abstractNum>' +
+            '<w:num ',
+        )
+        .replace(
+          '</w:numbering>',
+          '<w:num w:numId="40"><w:abstractNumId w:val="40"/></w:num>' +
+            '<w:num w:numId="41"><w:abstractNumId w:val="41"/></w:num></w:numbering>',
+        ),
+    )
+    return blank.generateAsync({ type: 'uint8array' })
+  }
+
+  it("rewrites the style's own abstractNum: every list following it changes, on the page, in the file and on reopen", async () => {
+    const h = await harness(await documentWithClauses())
+    threeItems(h.editor, '41')
+    expect(markers(h.editor)).toEqual(['A:', 'B:', 'C:'])
+    const style = entry(shown(h), 'Clauses')
+    expect(style.levels.map((l) => l.lvlText)).toEqual(['%1:', '%2)'])
+    expect(
+      modifyListStyle(
+        h.ctx,
+        style,
+        'Terms',
+        withLevel(style, 0, { numFmt: 'lowerRoman', lvlText: '(%1)', start: 3 }),
+      ),
+    ).toBe(true)
+    expect(markers(h.editor)).toEqual(['(iii)', '(iv)', '(v)'])
+    expect(h.pending().levelEdits).toEqual([
+      { abstractNumId: '40', ilvl: 0, level: expect.objectContaining({ lvlText: '(%1)' }) },
+    ])
+    // the tab shows the edit before any save
+    expect(entry(shown(h), 'Clauses')).toMatchObject({ name: 'Terms', label: 'Terms' })
+    expect(entry(shown(h), 'Clauses').levels[0]).toMatchObject({ numFmt: 'lowerRoman', start: 3 })
+
+    const saved = await h.save()
+    const xml = await numberingXml(saved.zip)
+    const abstract = /<w:abstractNum w:abstractNumId="40">[\s\S]*?<\/w:abstractNum>/.exec(xml)![0]
+    expect(abstract).toContain('<w:styleLink w:val="Clauses"/>')
+    expect(abstract).toMatch(
+      /<w:lvl w:ilvl="0"[^>]*><w:start w:val="3"\/><w:numFmt w:val="lowerRoman"\/>/,
+    )
+    expect(abstract).toContain('<w:lvlText w:val="(%1)"/>')
+    expect(abstract).toContain('<w:lvlText w:val="%2)"/>')
+    expect(abstract.match(/<w:lvl /g)).toHaveLength(2)
+    expect(xml.match(/<w:numStyleLink w:val="Clauses"\/>/g)).toHaveLength(1)
+    expect(await saved.zip.file('word/styles.xml')!.async('string')).toMatch(
+      /w:styleId="Clauses"[^>]*><w:name w:val="Terms"\/>/,
+    )
+
+    const reopened = await harness(await saved.zip.generateAsync({ type: 'uint8array' }))
+    expect(entry(shown(reopened), 'Clauses')).toMatchObject({ name: 'Terms', custom: true })
+    expect(markers(reopened.editor)).toEqual(['(iii)', '(iv)', '(v)'])
+    expect(saved.numbering.get('41')!.listStyleId).toBe('Clauses')
+  })
+
+  it('legal numbering on a style of two levels rewrites those two and adds none', async () => {
+    const h = await harness(await documentWithClauses())
+    const style = entry(shown(h), 'Clauses')
+    const legal = nineListLevels(style.levels).map((l) => ({ ...l, isLgl: true }))
+    expect(modifyListStyle(h.ctx, style, style.name, legal)).toBe(true)
+    expect(h.pending().levelEdits.map((e) => e.ilvl)).toEqual([0, 1])
+    const saved = await h.save()
+    const xml = await numberingXml(saved.zip)
+    const abstract = /<w:abstractNum w:abstractNumId="40">[\s\S]*?<\/w:abstractNum>/.exec(xml)![0]
+    expect(abstract.match(/<w:lvl /g)).toHaveLength(2)
+    expect(abstract.match(/<w:isLgl\/>/g)).toHaveLength(2)
+  })
+
+  it('Modify Style is one undo step, in order with text edits, and an undone one leaves the file as it was', async () => {
+    const h = await harness(await documentWithClauses())
+    threeItems(h.editor, '41')
+    h.editor.on('transaction', ({ transaction }) => {
+      for (const { change, side } of replayedListStyles(transaction)) {
+        h.ctx.setPendingNumbering((p) => withListStylePending(p, change, change[side].pending))
+        queueMicrotask(() => drawListStyleSide(h.editor, change[side]))
+      }
+    })
+    const settled = () => new Promise<void>((done) => queueMicrotask(done))
+    const text = () => h.editor.state.doc.lastChild!.textContent
+    const type = (text: string) =>
+      h.editor.commands.insertContentAt(h.editor.state.doc.content.size - 1, text)
+    const modify = (lvlText: string) =>
+      modifyListStyleAsStep(
+        h.ctx,
+        entry(shown(h), 'Clauses'),
+        'Clauses',
+        withLevel(entry(shown(h), 'Clauses'), 0, { lvlText }),
+        () => undefined,
+      )
+
+    type(' a')
+    expect(modify('(%1)')).toBe(true)
+    type(' b')
+    expect(modify('[%1]')).toBe(true)
+    expect(markers(h.editor)).toEqual(['[A]', '[B]', '[C]'])
+    // OK without a change is not a step
+    expect(modify('[%1]')).toBe(true)
+
+    h.editor.commands.undo()
+    await settled()
+    expect(markers(h.editor)).toEqual(['(A)', '(B)', '(C)'])
+    expect(h.pending().levelEdits).toEqual([
+      { abstractNumId: '40', ilvl: 0, level: expect.objectContaining({ lvlText: '(%1)' }) },
+    ])
+    expect(text()).toBe('three a b')
+    h.editor.commands.undo()
+    expect(text()).toBe('three a')
+    h.editor.commands.undo()
+    await settled()
+    expect(markers(h.editor)).toEqual(['A:', 'B:', 'C:'])
+    expect(h.pending()).toEqual(EMPTY_PENDING_NUMBERING)
+    expect(entry(shown(h), 'Clauses').levels[0].lvlText).toBe('%1:')
+    const untouched = await numberingXml((await h.save()).zip)
+    expect(untouched).toBe(await numberingXml(await JSZip.loadAsync(await documentWithClauses())))
+
+    h.editor.commands.redo()
+    h.editor.commands.redo()
+    h.editor.commands.redo()
+    await settled()
+    expect(markers(h.editor)).toEqual(['[A]', '[B]', '[C]'])
+    expect(text()).toBe('three a b')
+    const saved = await h.save()
+    expect(await numberingXml(saved.zip)).toContain('<w:lvlText w:val="[%1]"/>')
+
+    // after a save the file holds the new levels: the undo side is what the style is modified back to
+    const reopened = await harness(await saved.zip.generateAsync({ type: 'uint8array' }))
+    threeItems(reopened.editor, '41')
+    expect(markers(reopened.editor)).toEqual(['[A]', '[B]', '[C]'])
+    let undo: ListStyleSide | undefined
+    h.editor.on('transaction', ({ transaction }) => {
+      undo = replayedListStyles(transaction)[0]?.change.undo ?? undo
+    })
+    h.editor.commands.undo()
+    modifyListStyle(reopened.ctx, entry(shown(reopened), 'Clauses'), undo!.name, undo!.levels)
+    expect(markers(reopened.editor)).toEqual(['(A)', '(B)', '(C)'])
+  })
+
+  it("Modify Style on one of Word's own styles the document lacks undoes to no definition at all", async () => {
+    const h = await harness()
+    h.editor.on('transaction', ({ transaction }) => {
+      for (const { change, side } of replayedListStyles(transaction))
+        h.ctx.setPendingNumbering((p) => withListStylePending(p, change, change[side].pending))
+    })
+    const style = entry(shown(h), '1ai')
+    expect(
+      modifyListStyleAsStep(
+        h.ctx,
+        style,
+        style.name,
+        withLevel(style, 0, { lvlText: '%1 -' }),
+        () => undefined,
+      ),
+    ).toBe(true)
+    expect(h.pending().styleDefs).toHaveLength(1)
+    h.editor.commands.undo()
+    expect(h.pending()).toEqual(EMPTY_PENDING_NUMBERING)
+    h.editor.commands.redo()
+    expect(h.pending().styleDefs[0]).toMatchObject({ styleId: '1ai', builtIn: true })
+    expect(entry(shown(h), '1ai').levels[0].lvlText).toBe('%1 -')
+  })
+
+  it('OK without a change writes nothing', async () => {
+    const h = await harness()
+    const article = entry(shown(h), 'ArticleSection')
+    expect(modifyListStyle(h.ctx, article, article.name, nineListLevels(article.levels))).toBe(true)
+    expect(h.pending()).toEqual(EMPTY_PENDING_NUMBERING)
+  })
+
+  it("one of Word's own styles the document lacks is saved with the new levels, not as a custom style, and a list applied later follows them", async () => {
+    const h = await harness()
+    const style = entry(shown(h), '1ai')
+    modifyListStyle(h.ctx, style, 'ignored', withLevel(style, 0, { lvlText: '%1 -' }))
+    expect(entry(shown(h), '1ai')).toMatchObject({ name: 'Outline List 1', inDocument: false })
+    expect(entry(shown(h), '1ai').levels[0].lvlText).toBe('%1 -')
+    expect(shown(h).map((s) => s.styleId)).toEqual([
+      NO_LIST_STYLE_ID,
+      '111111',
+      '1ai',
+      'ArticleSection',
+    ])
+
+    const unused = await h.save()
+    expect(await unused.zip.file('word/styles.xml')!.async('string')).toContain(
+      '<w:style w:type="numbering" w:styleId="1ai"><w:name w:val="Outline List 1"/>',
+    )
+    expect(unused.listStyles!.find((s) => s.styleId === '1ai')!.levels[0].lvlText).toBe('%1 -')
+
+    const list = listStyleNum(h.ctx, entry(shown(h), '1ai'))!
+    threeItems(h.editor, list.numId)
+    expect(markers(h.editor)).toEqual(['1 -', '2 -', '3 -'])
+    const saved = await h.save()
+    expect((await numberingXml(saved.zip)).match(/<w:styleLink w:val="1ai"\/>/g)).toHaveLength(1)
+    const reopened = await harness(await saved.zip.generateAsync({ type: 'uint8array' }))
+    expect(markers(reopened.editor)).toEqual(['1 -', '2 -', '3 -'])
+  })
+
+  it('a style applied or added in this session is modified where it is still pending', async () => {
+    const h = await harness()
+    const list = listStyleNum(h.ctx, entry(shown(h), '1ai'))!
+    threeItems(h.editor, list.numId)
+    const applied = entry(shown(h), '1ai')
+    modifyListStyle(h.ctx, applied, applied.name, withLevel(applied, 0, { numFmt: 'upperLetter' }))
+    expect(markers(h.editor)).toEqual(['A)', 'B)', 'C)'])
+    expect(h.pending().styleDefs).toEqual([])
+    expect(entry(shown(h), '1ai').levels[0].numFmt).toBe('upperLetter')
+
+    const styleId = addListStyle(h.ctx, 'My Steps', MULTILEVEL_LIBRARY[0], shown(h))!
+    const mine = entry(shown(h), styleId)
+    modifyListStyle(h.ctx, mine, 'Our Steps', withLevel(mine, 1, { lvlText: '[%2]' }))
+    expect(entry(shown(h), styleId)).toMatchObject({ name: 'Our Steps', label: 'Our Steps' })
+
+    const saved = await h.save()
+    expect(saved.numbering.get(list.numId)!.levels[0]).toMatchObject({ numFmt: 'upperLetter' })
+    const steps = saved.listStyles!.find((s) => s.styleId === styleId)!
+    expect(steps).toMatchObject({ name: 'Our Steps', custom: true })
+    expect(steps.levels[1].lvlText).toBe('[%2]')
+  })
+
+  it('a style the document names without levels has nothing to modify', async () => {
+    const blank = await JSZip.loadAsync(await buildBlankDocx())
+    blank.file(
+      'word/styles.xml',
+      (await blank.file('word/styles.xml')!.async('string')).replace(
+        '</w:styles>',
+        '<w:style w:type="numbering" w:styleId="1ai"><w:name w:val="Outline List 1"/></w:style></w:styles>',
+      ),
+    )
+    const h = await harness(await blank.generateAsync({ type: 'uint8array' }))
+    const style = entry(shown(h), '1ai')
+    expect(style.numberless).toBe(true)
+    expect(modifyListStyle(h.ctx, style, style.name, withLevel(style, 0, { start: 5 }))).toBe(false)
+    expect(h.pending()).toEqual(EMPTY_PENDING_NUMBERING)
   })
 })
 

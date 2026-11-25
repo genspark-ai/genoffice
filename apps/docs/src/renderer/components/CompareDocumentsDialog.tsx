@@ -4,6 +4,7 @@ import {
   ALL_COMPARE_SETTINGS,
   COMPARE_SETTING_KEYS,
   effectiveSettings,
+  originalLabelAvailable,
   settingAvailable,
   targetAvailable,
   type CompareRequest,
@@ -13,7 +14,6 @@ import {
 } from '../compare-request'
 import { useI18n, type StringKey } from '../i18n/locale'
 import { useModalKeys } from './modal-keys'
-import { Unavailable } from './Unavailable'
 
 type PickedFile = Extract<CompareSide, { kind: 'file' }>
 
@@ -64,6 +64,8 @@ export function CompareDocumentsDialog({
   const [revised, setRevised] = useState<CompareSide | null>(null)
   /** null follows the revised document's own author */
   const [label, setLabel] = useState<string | null>(null)
+  /** null follows the original document's own author */
+  const [originalLabel, setOriginalLabel] = useState<string | null>(null)
   const [expanded, setExpanded] = useState(false)
   const [settings, setSettings] = useState(ALL_COMPARE_SETTINGS)
   const [granularity, setGranularity] = useState<CompareGranularity>('word')
@@ -72,6 +74,8 @@ export function CompareDocumentsDialog({
 
   const target = targetAvailable(wanted, original, revised, canWrite) ? wanted : 'new'
   const author = label ?? (revised?.kind === 'file' ? revised.author : userName)
+  const originalAuthor =
+    originalLabel ?? (original?.kind === 'file' ? original.author : original ? userName : '')
   const ready =
     !!original && !!revised && !(original.kind === 'current' && revised.kind === 'current')
   const sides = { original, revised }
@@ -93,6 +97,34 @@ export function CompareDocumentsDialog({
     setError(null)
     choose(side, picked)
   }
+
+  const originalLabelBox =
+    mode === 'compare' ? (
+      <>
+        <label htmlFor="cmp-label-original">{t('ribbonCmpDlgLabel')}</label>
+        {/* always-disabled: Word keeps this box grey in Compare Documents, a comparison takes the revised side's name only */}
+        <input
+          disabled
+          id="cmp-label-original"
+          name="compare-label-original"
+          type="text"
+          title={t('ribbonCmpDlgLabelReason')}
+        />
+      </>
+    ) : (
+      <>
+        <label htmlFor="cmp-label-original">{t('ribbonCmpDlgLabel')}</label>
+        <input
+          id="cmp-label-original"
+          name="compare-label-original"
+          type="text"
+          value={originalLabelAvailable(mode, original, target) ? originalAuthor : ''}
+          disabled={!originalLabelAvailable(mode, original, target)}
+          title={t('ribbonCmpDlgOriginalLabelHint')}
+          onChange={(e) => setOriginalLabel(e.target.value)}
+        />
+      </>
+    )
 
   const sideFields = (side: 'original' | 'revised') => {
     const value = sides[side]
@@ -129,11 +161,7 @@ export function CompareDocumentsDialog({
             />
           </>
         ) : (
-          <Unavailable id="compare.original-label">
-            <label htmlFor="cmp-label-original">{t('ribbonCmpDlgLabel')}</label>
-            <input id="cmp-label-original" name="compare-label-original" type="text" disabled />
-            <p className="cmp-reason">{t('ribbonCmpDlgLabelReason')}</p>
-          </Unavailable>
+          originalLabelBox
         )}
       </div>
     )
@@ -157,6 +185,9 @@ export function CompareDocumentsDialog({
             original,
             revised,
             author: author.trim() || userName,
+            ...(originalLabelAvailable(mode, original, target)
+              ? { originalAuthor: originalAuthor.trim() || userName }
+              : {}),
             settings: effectiveSettings(settings, target),
             granularity,
             target,
@@ -182,6 +213,8 @@ export function CompareDocumentsDialog({
             onClick={() => {
               setOriginal(revised)
               setRevised(original)
+              setLabel(originalLabel)
+              setOriginalLabel(label)
             }}
           >
             {'⇄'}

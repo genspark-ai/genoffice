@@ -20,12 +20,14 @@ import {
   glowAndShadowDecl,
   parseReflectionAttr,
   parseTextShadowAttr,
+  liveTextFill,
   reflectionDecl,
   paperColorEffect,
   parseGlowAttr,
   parseTextEffectAttr,
   positionDecl,
   textEffectDecls,
+  textFillDecls,
 } from './text-effects'
 import { symbolGlyph, symbolPuaChar } from '@genoffice/docx-engine'
 import { symbolFontCovers } from '../font-check'
@@ -136,6 +138,10 @@ export const LinkMark = Mark.create({
     return {
       href: { default: '' },
       rId: { default: null as string | null },
+      anchor: { default: null as string | null },
+      history: { default: null as string | null },
+      targetFrame: { default: null as string | null },
+      docLocation: { default: null as string | null },
       tooltip: { default: null as string | null },
       plain: { default: false },
     }
@@ -281,7 +287,12 @@ export const RefFieldMark = Mark.create({
   name: 'refField',
   addAttributes() {
     // instr: the original instruction with its switches (null = plain REF name \h); dirty: Word recomputes on open
-    return { name: { default: '' }, instr: { default: null }, dirty: { default: false } }
+    return {
+      name: { default: '' },
+      instr: { default: null },
+      dirty: { default: false },
+      locked: { default: false, rendered: false },
+    }
   },
   parseHTML() {
     return [{ tag: 'span[data-ref-field]' }]
@@ -431,8 +442,13 @@ export const InstrFieldMark = Mark.create({
       instr: { default: '' },
       beginXml: { default: null },
       dirty: { default: false },
+      locked: { default: false, rendered: false },
+      // Cmd+F9: the text is the code being typed, not a result yet (field-chars.ts)
+      codeEdit: { default: false, rendered: false },
       fieldId: { default: null, rendered: false },
       fieldPart: { default: null, rendered: false },
+      // a SET / ASK Word has run: the text its bookmark holds
+      bookmarkText: { default: null, rendered: false },
     }
   },
   parseHTML() {
@@ -444,11 +460,17 @@ export const InstrFieldMark = Mark.create({
         // loses its instruction and saves as an empty w:instrText — which the
         // next parse turns into a protected passthrough, locking the whole
         // paragraph (genoffice#2099).
-        getAttrs: (el) => ({ instr: el.getAttribute('data-instr-field') ?? '' }),
+        // a code still being typed pastes as its text: it has no instruction to carry
+        getAttrs: (el) =>
+          el.classList.contains('doc-field-code-open')
+            ? false
+            : { instr: el.getAttribute('data-instr-field') ?? '' },
       },
     ]
   },
   renderHTML({ mark }) {
+    if (mark.attrs.codeEdit === true)
+      return ['span', { 'data-instr-field': '', class: 'doc-field-code doc-field-code-open' }, 0]
     const instruction = String(mark.attrs.instr)
     const zoteroClass = /^\s*(?:ADDIN\s+)?(?:ZOTERO_|CSL_)/i.test(instruction)
       ? ' zotero-ref-field'
@@ -553,6 +575,7 @@ const CLIPBOARD_TEXT_STYLE_TYPES: Record<string, 'string' | 'number' | 'boolean'
   glow: 'string',
   textShadow: 'string',
   textReflection: 'string',
+  textFill: 'string',
   fxOwn: 'string',
   positionHalfPoints: 'number',
   bdr: 'string',
@@ -568,6 +591,8 @@ const CLIPBOARD_TEXT_STYLE_TYPES: Record<string, 'string' | 'number' | 'boolean'
   caps: 'string',
   vanish: 'boolean',
   vanishOwn: 'boolean',
+  offGrid: 'boolean',
+  snapToGridOwn: 'boolean',
   bdrOwn: 'string',
   eaLang: 'string',
   styleId: 'string',
@@ -677,6 +702,8 @@ export const TextStyleMark = Mark.create({
       textShadow: { default: null as string | null },
       // w14:reflection as JSON {startAlpha,endPos,blurPt,distPt}
       textReflection: { default: null as string | null },
+      // w14:textFill as JSON (TextFill plus `over`, the text colour it came with)
+      textFill: { default: null as string | null },
       // the outline, shadow and glow set in the editor, as JSON (see TextFxOwn): what the save writes
       fxOwn: { default: null as string | null, rendered: false },
       // w:position baseline shift (half-points)
@@ -708,6 +735,10 @@ export const TextStyleMark = Mark.create({
       vanish: { default: null as boolean | null },
       // the run's own w:vanish (what saves; `vanish` may be inherited)
       vanishOwn: { default: null as boolean | null },
+      // off the character grid (w:snapToGrid off, style chain resolved at parse)
+      offGrid: { default: null as boolean | null },
+      // the run's own w:snapToGrid (what saves)
+      snapToGridOwn: { default: null as boolean | null },
       // w:lang w:eastAsia of the run / its character style: gates Word's East Asian line rules
       eaLang: { default: null as string | null },
       // rtl run (w:rtl, explicit or style-inherited): save-side decode selects the Cs twins.
@@ -805,6 +836,10 @@ export const TextStyleMark = Mark.create({
       if (outline) styles.push(textOutlineDecl(outline))
     }
     if (effect) styles.push(...textEffectDecls(effect))
+    const textFill = paperColorEffect(effect)
+      ? undefined
+      : liveTextFill(mark.attrs.textFill, mark.attrs.color)
+    if (textFill) styles.push(...textFillDecls(textFill, !!(mark.attrs.highlight || shading)))
     if (mark.attrs.dstrike) styles.push(doubleStrikeDecl())
     const glowAndShadow = glowAndShadowDecl(
       mark.attrs.glow ? parseGlowAttr(String(mark.attrs.glow)) : undefined,
@@ -853,6 +888,8 @@ export const TextStyleMark = Mark.create({
     }
     if (mark.attrs.styleId) attrs['data-style'] = String(mark.attrs.styleId)
     if (mark.attrs.noProof) attrs['spellcheck'] = 'false'
+    if (eaLayout?.combine && eaLayout.brackets) attrs['data-ea-brackets'] = eaLayout.brackets
+    if (eaLayout?.vert && !eaLayout.combine) attrs['data-ea-vert'] = '1'
     // rtl run: the .doc-cs gate in doc-style-css paints the Cs size of its style
     // chain; weight and style come resolved from the engine (includes the table
     // style layer the paragraph-style CSS cannot see)
@@ -860,6 +897,7 @@ export const TextStyleMark = Mark.create({
     if (mark.attrs.cs) cls.push('doc-cs')
     if (mark.attrs.csBold != null) cls.push(mark.attrs.csBold ? 'doc-cs-b' : 'doc-cs-nb')
     if (mark.attrs.csItalic != null) cls.push(mark.attrs.csItalic ? 'doc-cs-i' : 'doc-cs-ni')
+    if (mark.attrs.offGrid) cls.push('doc-off-grid')
     if (cls.length > 0) attrs['class'] = cls.join(' ')
     // cs-slot run: styles.css .doc-cs-mixed collapses its line box
     if (mark.attrs.csFont) attrs['data-cs'] = ''
@@ -963,4 +1001,20 @@ export const FormatOffClearExtension = Extension.create({
   },
 })
 
-// ---- textbox sub-editor schema ----
+/**
+ * The text a bookmark covers when it covers a range rather than a paragraph
+ * (what Paste link points at). Saved as the bookmark's start before the first
+ * marked piece and its end after the last. Not read from pasted HTML: a copy
+ * of the text is not the bookmark.
+ */
+export const RangeBookmarkMark = Mark.create({
+  name: 'docRangeBookmark',
+  inclusive: false,
+  excludes: '',
+  addAttributes() {
+    return { name: { default: '', rendered: false } }
+  },
+  renderHTML() {
+    return ['span', { class: 'doc-range-bookmark' }, 0]
+  },
+})

@@ -175,7 +175,7 @@ export const th = {
   ribbonBulletHangNarrow: 'แคบ',
   ribbonBulletHangNormal: 'ปกติ',
   ribbonBulletHangWide: 'กว้าง',
-  ribbonBulletHangCustomTip: 'การเยื้องหัวข้อย่อยแบบกำหนดเอง (px กด Enter เพื่อนำไปใช้)',
+  ribbonBulletHangCustomTip: 'การเยื้องหัวข้อย่อยแบบกำหนดเอง ({unit} กด Enter เพื่อนำไปใช้)',
   ribbonBulletSize: 'ขนาดหัวข้อย่อย',
   ribbonBulletColor: 'สีหัวข้อย่อย',
   ribbonNumberStyle: 'รูปแบบลำดับเลข',

@@ -321,6 +321,7 @@ function planEdits(
       }
     } else if (startIds.has(id) || matches(el, filter, 'move')) edits.push(remove(el))
   }
+  const goneCells = new Set<El>()
   for (const el of els) {
     if (RANGE_MARKERS.has(el.name)) continue
     const type = typeOf(el)
@@ -336,7 +337,14 @@ function planEdits(
         act(el, mode === 'accept')
         break
       case 'w:cellIns':
-      case 'w:cellDel':
+      case 'w:cellDel': {
+        // a cell whose insertion is rejected, or whose deletion is accepted, leaves its row
+        const gone = (el.name === 'w:cellIns') === (mode === 'reject')
+        const cell = gone ? ancestor(els, el, 'w:tc') : undefined
+        if (cell) goneCells.add(cell)
+        else edits.push(remove(el))
+        break
+      }
       case 'w:numberingChange':
       case 'w:cellMerge':
         edits.push(remove(el))
@@ -345,7 +353,129 @@ function planEdits(
         edits.push(...(mode === 'accept' ? [remove(el)] : revertPropChange(els, xml, el)))
     }
   }
+  // a row left without a cell goes whole: a w:tr holds at least one w:tc
+  const emptied = new Set<El>()
+  for (const cell of goneCells) {
+    const row = parentOf(els, cell)
+    const cells = row ? children(els, row).filter((c) => c.name === 'w:tc') : []
+    if (row?.name === 'w:tr' && cells.every((c) => goneCells.has(c))) emptied.add(row)
+    else edits.push(remove(cell))
+  }
+  for (const row of emptied) edits.push(remove(row))
   return { edits, applied }
+}
+
+const UNEVEN_CELL = /<w:(?:gridSpan|vMerge|hMerge)\b/
+const UNEVEN_ROW = /<w:(?:gridBefore|gridAfter)\b/
+
+/**
+ * Which way inserted cells pushed the others is not in the file, but Shift
+ * cells down leaves a shape of its own in a plain grid: rows added at the
+ * bottom whose cells are all inserted except in the columns that moved, and
+ * as many inserted cells higher up in exactly those columns, all one author's
+ * at one time. The edits that move those columns back up and drop the added
+ * rows, or null when the table is not that or `filter` leaves one of its
+ * inserted cells pending.
+ */
+function downShiftEdits(
+  els: El[],
+  xml: string,
+  at: number,
+  filter: RevisionXmlFilter | undefined,
+): { edits: Edit[]; applied: number } | null {
+  const table = els[at]!
+  if (!xml.slice(table.start, table.end).includes('<w:cellIns')) return null
+  const kids = new Map<number, El[]>()
+  for (let i = at + 1; i < els.length && els[i]!.start < table.end; i++) {
+    const list = kids.get(els[i]!.parent)
+    if (list) list.push(els[i]!)
+    else kids.set(els[i]!.parent, [els[i]!])
+  }
+  const under = (el: El) => kids.get(els.indexOf(el, at)) ?? []
+  const own = under(table)
+  if (own.some((c) => c.name !== 'w:tr' && c.name !== 'w:tblPr' && c.name !== 'w:tblGrid'))
+    return null
+  const rows = own.filter((c) => c.name === 'w:tr')
+  const grid: El[][] = []
+  const records: Array<Array<El | undefined>> = []
+  for (const row of rows) {
+    const cells: El[] = []
+    const marks: Array<El | undefined> = []
+    for (const child of under(row)) {
+      if (child.name === 'w:trPr') {
+        if (UNEVEN_ROW.test(xml.slice(child.start, child.end))) return null
+      } else if (child.name === 'w:tc') {
+        const tcPr = under(child).find((c) => c.name === 'w:tcPr')
+        if (tcPr && UNEVEN_CELL.test(xml.slice(tcPr.start, tcPr.end))) return null
+        cells.push(child)
+        marks.push(tcPr ? under(tcPr).find((c) => c.name === 'w:cellIns') : undefined)
+      } else if (child.name !== 'w:tblPrEx') return null
+    }
+    grid.push(cells)
+    records.push(marks)
+  }
+  const width = grid[0]?.length ?? 0
+  if (grid.length < 2 || width < 2 || grid.some((row) => row.length !== width)) return null
+  const pending = records.flat().filter((mark): mark is El => !!mark)
+  const first = pending[0]
+  if (!first) return null
+  const by = (el: El) => `${attrOf(el, 'w:author') ?? ''}\n${attrOf(el, 'w:date') ?? ''}`
+  if (pending.some((mark) => by(mark) !== by(first) || !matches(mark, filter, 'insertion')))
+    return null
+  const bottom = grid.length - 1
+  const moved = records[bottom]!.flatMap((mark, col) => (mark ? [] : [col]))
+  if (moved.length === 0 || moved.length === width) return null
+  if (moved.some((col, i) => i > 0 && col !== moved[i - 1]! + 1)) return null
+  const left = moved[0]!
+  const right = left + moved.length
+  const added = (row: number) =>
+    records[row]!.every((mark, col) => (col >= left && col < right ? !mark : !!mark))
+  let height = 0
+  while (height < bottom && added(bottom - height)) height++
+  if (height === 0) return null
+  const kept = bottom - height
+  let top = -1
+  for (let col = 0; col < width; col++) {
+    const own: number[] = []
+    for (let row = 0; row <= kept; row++) if (records[row]![col]) own.push(row)
+    if (col < left || col >= right) {
+      if (own.length > 0) return null
+      continue
+    }
+    if (own.length !== height || own.some((row, i) => row !== own[0]! + i)) return null
+    if (top !== -1 && top !== own[0]) return null
+    top = own[0]!
+  }
+  const edits: Edit[] = []
+  for (let row = top; row <= kept; row++)
+    for (let col = left; col < right; col++) {
+      const from = grid[row + height]![col]!
+      const to = grid[row]![col]!
+      edits.push({ start: to.start, end: to.end, text: xml.slice(from.start, from.end) })
+    }
+  for (let row = kept + 1; row <= bottom; row++) edits.push(remove(rows[row]!))
+  return { edits, applied: pending.length }
+}
+
+/** rejecting cells that came in with Shift cells down: one table at a time, each on the text the last left */
+function undoDownShifts(
+  xml: string,
+  filter: RevisionXmlFilter | undefined,
+): { xml: string; applied: number } {
+  let out = xml
+  let applied = 0
+  let els = scan(out)
+  for (let i = 0; i < els.length; i++) {
+    if (els[i]!.name !== 'w:tbl') continue
+    const shift = downShiftEdits(els, out, i, filter)
+    if (!shift) continue
+    const from = els[i]!.start
+    out = applyEdits(out, shift.edits)
+    applied += shift.applied
+    els = scan(out)
+    i = els.findIndex((el) => el.start === from)
+  }
+  return { xml: out, applied }
 }
 
 function applyEdits(xml: string, edits: Edit[]): string {
@@ -392,12 +522,21 @@ export function applyTrackedChangesXml(
     const cleaned = cleanMoveRangeMarkers(xml)
     return { xml: cleaned.xml, applied: 0, remaining: 0 }
   }
-  const els = scan(xml)
-  const { edits, applied } = planEdits(els, xml, mode, filter)
+  const shifted =
+    mode === 'reject' && xml.includes('<w:cellIns') ? undoDownShifts(xml, filter) : null
+  const source = shifted?.xml ?? xml
+  const els = scan(source)
+  const { edits, applied } = planEdits(els, source, mode, filter)
   // a property holder emptied by independent edits (markers and record both resolved) goes
-  const out = edits.length ? applyEdits(xml, edits).replace(/<w:(rPr|trPr)><\/w:\1>/g, '') : xml
+  const out = edits.length
+    ? applyEdits(source, edits).replace(/<w:(rPr|trPr)><\/w:\1>/g, '')
+    : source
   const cleaned = cleanMoveRangeMarkers(out)
-  return { xml: cleaned.xml, applied, remaining: countTrackedChangesXml(cleaned.xml) }
+  return {
+    xml: cleaned.xml,
+    applied: applied + (shifted?.applied ?? 0),
+    remaining: countTrackedChangesXml(cleaned.xml),
+  }
 }
 
 /** the editor's accept / reject decisions replayed on the part's original bytes */

@@ -14,7 +14,7 @@ freely redistributable with the app. Licenses: Carlito and Liberation are
 | Liberation Sans      | OFL 1.1    | Arial                                     |
 | Liberation Mono      | OFL 1.1    | Courier New                               |
 | Aptos GO             | OFL 1.1    | Aptos (Carlito, advance-matched)          |
-| Aptos Display GO     | OFL 1.1    | Aptos Display (Carlito, adjusted)         |
+| Aptos Display GO     | OFL 1.1    | Aptos Display (Carlito, advance-matched)  |
 | Aptos Narrow GO      | OFL 1.1    | Aptos Narrow (Carlito, adv.-matched)      |
 | Bookman Old Style GO | Apache-2.0 | Bookman Old Style (Caladea, adv.-matched) |
 | Century Gothic GO    | OFL 1.1    | Century Gothic (Liberation Sans, adv.-m.) |
@@ -34,8 +34,9 @@ pagination model (`tests/helpers/lo-fonts.ts` measures the same set of files).
 
 Registration lives in `fonts.css`; family-name mapping in `cssFontFamily()` of `line-metrics.ts`.
 
-"Aptos GO", "Aptos Narrow GO", "Bookman Old Style GO" and "Century Gothic GO" are
-advance-matched derivatives built by `tools/build-metric-fonts.py` (`AptosGO-*.ttf`,
+"Aptos GO", "Aptos Display GO", "Aptos Narrow GO", "Bookman Old Style GO" and
+"Century Gothic GO" are advance-matched derivatives built by
+`tools/build-metric-fonts.py` (`AptosGO-*.ttf`, `AptosDisplayGO-*.ttf`,
 `AptosNarrowGO-*.ttf` from Carlito, `BookmanOldStyleGO-*.ttf` from Caladea,
 `CenturyGothicGO-*.ttf` from Liberation Sans;
 manifest `refit.method: advance-matched`). The Word faces are not a scale of
@@ -48,8 +49,9 @@ renderer does not kern unless w:kern is on), applies one uniform vertical
 factor (mean H/x ink ratio), and takes the general face's line box into
 hhea/OS2; GPOS/GSUB/kern and hinting are dropped. The rangeless Carlito /
 Caladea face stays as the non-Latin fallback. Carlito-based files are renamed
-per OFL 1.1 §2. "Aptos Display GO" still uses size-adjust buckets (its source
-lives only in Word's cloud-font cache). Pitch stays Calibri's 1.22 for Aptos
+per OFL 1.1 §2. The Aptos Display source lives only in Word's cloud-font cache
+(`cloud:` locator), so its cuts rebuild on a machine where Word has downloaded
+the face. Pitch stays Calibri's 1.22 for Aptos
 (`lineHeightFactor`), the hhea 1.1738 for Bookman and the probed 1.226 for Century
 Gothic.
 `tests/aptos-alias-metrics.test.ts` holds the Word-probed sentence widths
@@ -155,6 +157,25 @@ class (0.88/-0.12) the glyphs sit next to (`tools/build-meiryo-ui-kana-font.py`)
 Renamed per OFL ("Source" is a Reserved Font Name of the upstream and the
 outlines are modified).
 
+### GenOffice PMincho Kana JP
+
+| Font                                      | Role                                                 |
+| ----------------------------------------- | ---------------------------------------------------- |
+| GenOffice PMincho Kana JP (Regular woff2) | MS PMincho-advance kana/JP punctuation for the alias |
+
+Source: Noto Serif JP variable font from [notofonts/noto-cjk](https://github.com/notofonts/noto-cjk)
+(SIL OFL 1.1), instanced at wght 400. Word for Mac renders MS PMincho with its
+private copy whose kana are proportional glyph by glyph (0.50-0.98em,
+ideographic space and comma/period 0.664em, brackets 0.5em) at full glyph
+height; the Hiragino fallback keeps them at 1em. Subset to the kana and
+punctuation code points whose MS PMincho advance differs from 1em, each glyph
+given that exact advance (`tools/ms-pmincho-kana-advances.json`) with the
+outline centred in it and narrowed only when its ink would not fit; vertical
+metrics set to the Hiragino class (0.88/-0.12) the glyphs sit next to
+(`tools/build-pmincho-kana-font.py`). Word synthesizes the bold cut on the same
+advances, so the one instance serves both. Renamed per OFL ("Source" is a
+Reserved Font Name of the upstream and the outlines are modified).
+
 ## Poppins (M365 cloud font)
 
 | Font                             | Role                                 |
@@ -191,6 +212,24 @@ Extended + punctuation/currency, advances and vertical metrics **unmodified**
 `GenOfficeDMSans-{Regular,Bold}-subset.woff2`. Renamed (no Reserved Font Name
 of its own upstream) so a locally installed DM Sans wins by chain order.
 Italic synthesizes oblique from these faces.
+
+## Barlow (M365 cloud font)
+
+| Font                            | Role                                |
+| ------------------------------- | ----------------------------------- |
+| GenOffice Barlow (subset woff2) | real face for Barlow-declaring docs |
+
+Source: Barlow 1.408 Regular/Bold statics from [google/fonts](https://github.com/google/fonts/tree/main/ofl/barlow)
+(SIL OFL 1.1). Barlow is an M365 cloud font: Word downloads the real face
+(corpus 2026-11-19: the PDF embeds Barlow-Bold, a 36 pt heading paces 43.2 pt =
+hhea 1000/-200/0; the cloud copy's hmtx equals the upstream statics glyph for
+glyph), while Helvetica Bold runs ~10% wider. Subset to Latin + Latin Extended
+
+- punctuation/currency, advances and vertical metrics **unmodified**
+  (`tools/build-barlow-font.py`), checked in as
+  `GenOfficeBarlow-{Regular,Bold}-subset.woff2`. Renamed (no Reserved Font Name
+  upstream) so a locally installed Barlow wins by chain order. Barlow Condensed
+  keeps its size-adjusted alias.
 
 ## Tamil fallback
 
@@ -232,6 +271,13 @@ size-adjusted to the Word face's Latin advances (family manifests
 `genoffice-cordia.json` / `genoffice-sarabun.json`). Renamed per OFL 1.1 ("Noto"
 is a Reserved Font Name). `tests/thai-font-metrics.test.ts` holds the advance
 and ink contract; the line factors (1.147 / 1.31) live in `line-factors.json`.
+
+Legacy Windows Thai fonts keep pre-positioned consonant, vowel and tone-mark
+forms at U+F700-F71A and older documents store those code points; Word draws
+them from its Thai face. The build maps them to the matching Noto variants
+(`LEGACY_PUA`: `.narrow` left-shifted, `.small` raised or lowered, `.less`
+without the lower part), and the Latin faces' range leaves U+F700-F71A to the
+Thai face; before, they fell to Liberation Sans' .notdef box.
 
 ## Bengali fallback
 

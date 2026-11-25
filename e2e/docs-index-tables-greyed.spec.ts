@@ -357,6 +357,7 @@ test('Index: AutoMark from a concordance file, a format with letter headings, he
     await page.keyboard.press('End')
     dialog = await openDialog(app, page, 'Index')
     await dialog.locator('[data-it="formats"]').selectOption('classic')
+    await dialog.locator('[data-it="columns"]').fill('1')
     await dialog.locator('button.primary').click()
     await expect(dialog).toBeHidden()
     // the accented letter is filed under its base letter

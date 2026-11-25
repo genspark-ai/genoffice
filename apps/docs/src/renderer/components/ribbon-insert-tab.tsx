@@ -19,17 +19,21 @@ import { isPlanned, type ActionCommandId } from '../../shared/commands'
 import { NONE } from '../commands/menu-commands'
 import { RbCommand, useCommandGreyed, useRibbonCommand, useRunCommand } from './ribbon-command'
 import { useModalKeys } from './modal-keys'
+import { RbGroupMenu } from './ribbon-group-menu'
 export { LinkInsertModal } from './LinkDialog'
 import {
+  IconBlankPage,
   IconBook,
   IconCaret,
   IconComment,
+  IconCoverPage,
   IconDoc,
   IconEquation,
   IconFooter,
   IconHeader,
   IconLink,
   IconPageBreak,
+  IconPageBreakSmall,
   IconPageNumber,
   IconChart,
   IconPicture,
@@ -450,7 +454,10 @@ export function InsertTab({
   return (
     <>
       {/* Word: Pages (cover page / blank page / page break) sits leftmost */}
-      <div className="ribbon-group">
+      <div className="ribbon-group" data-menu="4">
+        <RbGroupMenu name={t('ribbonGroupPages')}>
+          <IconPageBreak size={BIG} />
+        </RbGroupMenu>
         <div className="ribbon-group-items">
           <div className="rb-col" data-wide="2">
             <div className="rb-split-wrap">
@@ -460,7 +467,7 @@ export function InsertTab({
                 data-tip={t('ribbonCoverPageTip')}
                 onClick={() => toggleDropdown(setDropdown, 'cover')}
               >
-                <IconDoc size={14} />
+                <IconCoverPage size={14} />
                 <span className="rb-small-label">{t('ribbonCoverPage')}</span>
                 <IconCaret />
               </button>
@@ -488,10 +495,10 @@ export function InsertTab({
               )}
             </div>
             <RbCommand cmd="insert-blank-page" look="small">
-              <IconDoc size={14} />
+              <IconBlankPage size={14} />
             </RbCommand>
             <RbCommand cmd="insert-page-break" look="small">
-              <IconPageBreak size={14} />
+              <IconPageBreakSmall size={14} />
             </RbCommand>
           </div>
         </div>
@@ -620,7 +627,10 @@ export function InsertTab({
       <div className="ribbon-sep" />
 
       {/* Word: Link/Bookmark/Cross-reference are small vertical buttons */}
-      <div className="ribbon-group">
+      <div className="ribbon-group" data-menu="3">
+        <RbGroupMenu name={t('ribbonGroupLinks')}>
+          <IconLink size={BIG} />
+        </RbGroupMenu>
         <div className="ribbon-group-items">
           <div className="rb-col" data-wide="1">
             <RbCommand cmd="insert-link" look="small">
@@ -662,7 +672,10 @@ export function InsertTab({
 
       <div className="ribbon-sep" />
 
-      <div className="ribbon-group">
+      <div className="ribbon-group" data-menu="5">
+        <RbGroupMenu name={t('ribbonGroupHeaderFooter')}>
+          <IconHeader size={BIG} />
+        </RbGroupMenu>
         <div className="ribbon-group-items">
           <div className="rb-split-wrap">
             <button
@@ -753,7 +766,10 @@ export function InsertTab({
       <div className="ribbon-sep" />
 
       {/* Text group: text box + WordArt + drop cap */}
-      <div className="ribbon-group">
+      <div className="ribbon-group" data-menu="4">
+        <RbGroupMenu name={t('ribbonGroupText')}>
+          <IconTextBox size={BIG} />
+        </RbGroupMenu>
         <div className="ribbon-group-items">
           <div className="rb-split-wrap">
             <button
@@ -928,7 +944,10 @@ export function InsertTab({
 
       <div className="ribbon-sep" />
 
-      <div className="ribbon-group">
+      <div className="ribbon-group" data-menu="6">
+        <RbGroupMenu name={t('ribbonGroupSymbols')}>
+          <IconSymbol size={BIG} />
+        </RbGroupMenu>
         <div className="ribbon-group-items">
           <div className="rb-split-wrap">
             <button

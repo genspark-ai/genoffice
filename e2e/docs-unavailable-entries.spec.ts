@@ -147,9 +147,9 @@ test('the menu bar and the ribbon list no entry that is not built', async () => 
       .toBe(true)
     const bar = await menuBar(app)
     const docs = ['File', 'Edit', 'View', 'Insert', 'Format', 'Tools', 'Table']
-    expect(itemAt(bar, ['Edit', 'Links…'])).toBeUndefined()
+    // listed like Word's, and greyed while the document has nothing linked
+    expect(itemAt(bar, ['Edit', 'Links…'])?.enabled).toBe(false)
     expect(itemAt(bar, ['Insert', 'Object…'])).toBeUndefined()
-    expect(itemAt(bar, ['Tools', 'Spelling and Grammar', 'Hide Grammar Errors'])).toBeUndefined()
 
     // where an item left, its neighbours close up: no separator first, last or doubled
     const untidy: string[] = []
@@ -172,6 +172,8 @@ test('the menu bar and the ribbon list no entry that is not built', async () => 
     expect(edit.slice(edit.indexOf('Find'))).toEqual([
       'Find',
       '---',
+      'Links…',
+      '---',
       'Select Data…',
       '---',
       'Toggle Drawing',
@@ -180,14 +182,15 @@ test('the menu bar and the ribbon list no entry that is not built', async () => 
     expect(
       insert.slice(insert.indexOf('Date and Time…'), insert.indexOf('Date and Time…') + 3),
     ).toEqual(['Date and Time…', 'File…', 'Field…'])
-    expect(labels(['Tools', 'Spelling and Grammar']).slice(-4)).toEqual([
+    expect(labels(['Tools', 'Spelling and Grammar']).slice(-5)).toEqual([
       '---',
       'Hide Spelling Errors',
+      'Hide Grammar Errors',
       '---',
       'Reset Ignored Words and Grammar',
     ])
 
-    // the neighbour of the hidden grammar item still switches the squiggles
+    // Hide Spelling Errors switches the squiggles
     const hideSpelling = ['Tools', 'Spelling and Grammar', 'Hide Spelling Errors']
     const hidden = async () => itemAt(await menuBar(app), hideSpelling)?.checked
     const before = await hidden()
@@ -237,20 +240,21 @@ test('the dialogs list no control that is not built, and the controls next to th
     const paragraph = (text: string) => page.locator('.doc-page p', { hasText: text }).first()
     const shot = (name: string) => page.screenshot({ path: test.info().outputPath(`${name}.png`) })
 
-    // Paragraph: the right-indent box is gone, Snap to grid next to it is live
+    // Paragraph: the right-indent box shows the paragraph's own off, Snap to grid next to it is live
     await caretIn(paragraph('apple'))
     await clickMenu(app, ['Format', 'Paragraph…'])
     const paragraphDialog = page.locator('.modal', { hasText: 'Paragraph' })
     await expect(paragraphDialog.locator('input[name="snapToGrid"]')).toBeChecked()
-    await expect(paragraphDialog.locator('input[name="adjustRightInd"]')).toHaveCount(0)
+    await expect(paragraphDialog.locator('input[name="adjustRightInd"]')).not.toBeChecked()
     await shot('paragraph')
     await paragraphDialog.locator('input[name="snapToGrid"]').uncheck()
-    // Typography, behind the Asian Typography tab: only the levels the page draws
+    // Typography, behind the Asian Typography tab: every level and spacing control is live
     await paragraphDialog.getByRole('tab', { name: 'Asian Typography' }).click()
     await paragraphDialog.getByRole('button', { name: 'Options…' }).click()
     const typography = page.getByRole('dialog', { name: 'Typography' })
-    await expect(typography.getByRole('radio')).toHaveCount(4)
-    await absent(typography, ['Custom', 'Compress punctuation and Japanese kana'])
+    await expect(typography.getByRole('radio')).toHaveCount(6)
+    await expect(typography.getByLabel('Compress punctuation and Japanese kana')).toBeEnabled()
+    await expect(typography.getByLabel('Custom')).toBeEnabled()
     await noneDisabled(typography)
     await typography.getByLabel('Strict').check()
     await shot('typography')
@@ -263,7 +267,7 @@ test('the dialogs list no control that is not built, and the controls next to th
     await clickMenu(app, ['Format', 'Font…'])
     const font = page.locator('.font-dialog')
     await font.getByRole('tab', { name: 'Advanced' }).click()
-    await absent(font, ['Snap to grid when document grid is defined'])
+    await expect(font.getByLabel('Snap to grid when document grid is defined')).toBeChecked()
     await font.getByRole('checkbox', { name: 'Kerning for fonts' }).check()
     await expect(font.getByRole('spinbutton', { name: 'Kerning for fonts' })).toBeEnabled()
     await close(page, font)
@@ -272,7 +276,7 @@ test('the dialogs list no control that is not built, and the controls next to th
     await clickMenu(app, ['Format', 'Document…'])
     const documentDialog = page.locator('.doc-dialog')
     await documentDialog.getByRole('tab', { name: 'Document Grid' }).click()
-    await expect(documentDialog.getByRole('button', { name: 'Drawing Grid…' })).toHaveCount(0)
+    await expect(documentDialog.getByRole('button', { name: 'Drawing Grid…' })).toBeEnabled()
     await expect(documentDialog.getByRole('button', { name: 'Set Font…' })).toBeEnabled()
     await shot('document-grid')
     await close(page, documentDialog)
@@ -283,9 +287,11 @@ test('the dialogs list no control that is not built, and the controls next to th
     await expect(bullets.getByRole('button', { name: 'Customize…' })).toBeEnabled()
     await bullets.getByRole('tab', { name: 'List Styles' }).click()
     await expect(bullets.locator('.bn-styles-list [role=option]').first()).toBeVisible()
-    await expect(bullets.getByRole('button', { name: 'Modify…' })).toHaveCount(0)
     await expect(bullets.getByRole('button', { name: 'Add' })).toBeEnabled()
-    // Remove waits for a list style of the document's own to be picked
+    // Modify waits for a list style to be picked, Remove for one of the document's own
+    await expect(bullets.locator('button[name="list-style-modify"]')).toBeDisabled()
+    await bullets.locator('.bn-styles-list [role=option]', { hasText: '1 / a / i' }).click()
+    await expect(bullets.locator('button[name="list-style-modify"]')).toBeEnabled()
     await noneDisabled(bullets, '[aria-label="Remove"]')
     await shot('list-styles')
     await close(page, bullets)
@@ -298,10 +304,14 @@ test('the dialogs list no control that is not built, and the controls next to th
     const refTypes = await crossRef
       .locator('select[name="ref-type"] option')
       .evaluateAll((options) => options.map((option) => (option as HTMLOptionElement).value))
-    expect(refTypes.slice(0, 4)).toEqual(['heading', 'bookmark', 'footnote', 'endnote'])
-    expect(refTypes.slice(4).every((value) => value.startsWith('caption:'))).toBe(true)
-    await expect(crossRef.locator('input[name="ref-separator"]')).toHaveCount(0)
-    await absent(crossRef, ['Separate numbers with'])
+    expect(refTypes.slice(0, 5)).toEqual(['numbered', 'heading', 'bookmark', 'footnote', 'endnote'])
+    expect(refTypes.slice(5).every((value) => value.startsWith('caption:'))).toBe(true)
+    // the separator waits for a paragraph number in full context
+    await expect(crossRef.locator('input[name="ref-separator"]')).toBeDisabled()
+    await crossRef.locator('select[name="ref-type"]').selectOption('numbered')
+    await expect(crossRef.locator('select[name="ref-content"]')).toHaveValue('paraNumber')
+    await crossRef.locator('select[name="ref-content"]').selectOption('paraNumberFullContext')
+    await expect(crossRef.locator('input[name="ref-separator"]')).toBeEnabled()
     await crossRef.locator('select[name="ref-type"]').selectOption('bookmark')
     await crossRef.locator('input[name="ref-hyperlink"]').uncheck()
     await shot('cross-reference')
@@ -311,11 +321,17 @@ test('the dialogs list no control that is not built, and the controls next to th
     await caretIn(paragraph('banana'))
     await clickMenu(app, ['Insert', 'Footnote…'])
     const footnote = page.locator('.footnote-dialog')
-    await expect(footnote.locator('select[name="note-columns"]')).toHaveCount(0)
-    await absent(footnote, ['Footnote layout', 'Columns'])
+    await expect(footnote.locator('select[name="note-columns"] option')).toHaveText([
+      'Match section layout',
+      '1',
+      '2',
+      '3',
+      '4',
+    ])
     await expect(footnote.locator('select[name="note-restart"] option')).toHaveText([
       'Continuous',
       'Restart Each Section',
+      'Restart Each Page',
     ])
     await expect(footnote.locator('select[name="note-apply-to"] option')).toHaveText([
       'Whole document',
@@ -336,13 +352,16 @@ test('the dialogs list no control that is not built, and the controls next to th
     await shot('index')
     await close(page, indexTables)
 
-    // AutoCorrect: three rules and the AutoText template list
+    // AutoCorrect: two rules and the AutoText template list
     await clickMenu(app, ['Tools', 'AutoCorrect Options…'])
     const autoCorrect = page.locator('.autocorrect-dialog').first()
-    await absent(autoCorrect, ['Automatically use suggestions from the spelling checker'])
+    await expect(
+      autoCorrect.getByLabel('Automatically use suggestions from the spelling checker'),
+    ).toBeEnabled()
     await expect(autoCorrect.getByLabel('Replace text as you type')).toBeEnabled()
     await autoCorrect.getByRole('tab', { name: 'AutoFormat As You Type' }).click()
-    await absent(autoCorrect, ['Date style', 'Define styles based on your formatting'])
+    await expect(autoCorrect.getByLabel('Date style')).toBeEnabled()
+    await expect(autoCorrect.getByLabel('Define styles based on your formatting')).toBeEnabled()
     const borderLines = autoCorrect.getByLabel('Border lines')
     const was = await borderLines.isChecked()
     await borderLines.setChecked(!was, { force: true })
@@ -351,28 +370,31 @@ test('the dialogs list no control that is not built, and the controls next to th
     await noneDisabled(autoCorrect)
     await shot('autocorrect')
     await autoCorrect.getByRole('tab', { name: 'AutoText' }).click()
-    await absent(autoCorrect, ['Look in:'])
-    await expect(autoCorrect.locator('select')).toHaveCount(0)
+    await expect(autoCorrect.locator('.ac-look-in select')).toBeEnabled()
+    await expect(autoCorrect.locator('.ac-look-in select option')).toHaveText([
+      'All active templates',
+      'Normal',
+    ])
     await close(page, autoCorrect)
 
     // Protect Document
     await clickMenu(app, ['Tools', 'Protect Document…'])
     const protect = page.locator('.protect-dialog')
-    await expect(protect.getByRole('button', { name: 'Sections…' })).toHaveCount(0)
     // the native inputs sit under their drawn boxes: click the label
     await protect.locator('label.protect-check', { hasText: 'Restrict editing' }).click()
     await expect(protect.getByRole('radio').first()).toBeEnabled()
-    await noneDisabled(protect)
+    // Sections… waits for the Forms mode
+    await noneDisabled(protect, '.protect-sections')
     await shot('protect')
     await protect.getByRole('button', { name: 'Cancel' }).click()
     await expect(protect).toBeHidden()
 
-    // Compare Documents: one label box, on the revised side
+    // Compare Documents: a label box on each side, the original's grey as in Word
     await clickMenu(app, ['Tools', 'Track Changes', 'Compare Documents…'])
     const compare = page.locator('.cmp-dialog')
-    await expect(compare.locator('input[name="compare-label-original"]')).toHaveCount(0)
+    await expect(compare.locator('input[name="compare-label-original"]')).toBeDisabled()
     await expect(compare.locator('.cmp-reason')).toHaveCount(0)
-    await expect(compare.getByText('Label changes with')).toHaveCount(1)
+    await expect(compare.getByText('Label changes with')).toHaveCount(2)
     await expect(compare.locator('input[name="compare-label-revised"]')).toHaveCount(1)
     await shot('compare')
     await close(page, compare)
@@ -415,16 +437,17 @@ test('the dialogs list no control that is not built, and the controls next to th
     // the formats are listed once the clipboard has been read; OK waits for one
     const pasteAs = paste.locator('.paste-special-as select')
     await expect(pasteAs).toHaveValue('html')
-    await expect(paste.getByRole('radio')).toHaveCount(0)
-    await absent(paste, ['Paste link', 'Display as icon'])
-    await noneDisabled(paste)
+    // Paste link waits for a clipboard copied from a saved document; Display as icon is not offered
+    await expect(paste.getByRole('radio')).toHaveCount(2)
+    await absent(paste, ['Display as icon'])
+    await noneDisabled(paste, 'input[name="paste-special-mode"]')
     await pasteAs.selectOption('text')
     await shot('paste-special')
     await paste.locator('button.primary').click()
     await expect(paste).toBeHidden()
     await expect(paragraph('tail')).toContainText('pasted words')
 
-    // saved: the paragraph keeps the value of the box that is no longer shown, next to the change
+    // saved: the paragraph keeps the value of the box that was left alone, next to the change
     await saveFromMenu(app)
     await expect
       .poll(async () => (await part(docPath, 'word/document.xml')).includes('pasted words'), {
@@ -436,30 +459,6 @@ test('the dialogs list no control that is not built, and the controls next to th
     expect(apple).toMatch(/<w:adjustRightInd w:val="0"\/>/)
     expect(apple).toMatch(/<w:snapToGrid w:val="0"\/>/)
     expect(xml).toMatch(/SUM\(ABOVE\)/)
-  } finally {
-    await closeAndSaveVideo(launched, VIDEO_DIR)
-    rmSync(dir, { recursive: true, force: true })
-  }
-})
-
-test('a footnote restart the file carries is still listed, though it cannot be chosen', async () => {
-  test.setTimeout(180_000)
-  const dir = realpathSync(mkdtempSync(join(tmpdir(), 'genoffice-e2e-unavailable-')))
-  const docPath = join(dir, 'each-page.docx')
-  const body = BODY.replace(
-    '<w:cols w:space="720"/>',
-    '<w:cols w:space="720"/><w:footnotePr><w:numRestart w:val="eachPage"/></w:footnotePr>',
-  )
-  writeFileSync(docPath, await docxWith(body))
-  const { launched, app, page } = await open(docPath)
-  try {
-    await caretIn(page.locator('.doc-page p', { hasText: 'banana' }).first())
-    await clickMenu(app, ['Insert', 'Footnote…'])
-    const footnote = page.locator('.footnote-dialog')
-    const restart = footnote.locator('select[name="note-restart"]')
-    await expect(restart).toHaveValue('eachPage')
-    await expect(restart.locator('option[value="eachPage"]')).toHaveAttribute('disabled', '')
-    await page.screenshot({ path: test.info().outputPath('footnote-each-page.png') })
   } finally {
     await closeAndSaveVideo(launched, VIDEO_DIR)
     rmSync(dir, { recursive: true, force: true })

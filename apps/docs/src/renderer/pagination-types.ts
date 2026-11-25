@@ -6,6 +6,7 @@ import type {
   TextFlowDirection,
   TextOutline,
 } from '@genoffice/docx-engine'
+import type { NoteColumns } from './note-columns'
 
 /** one placeable line of a block; `lead` marks ink-less space a float pushed the
  *  sole line past: the page bottom swallows it without a fit check */
@@ -184,7 +185,7 @@ export interface BlockBox {
   /** per-reference reservations at their marker offsets (same in-block space
    *  as lineBoxes): a split paragraph charges each note on the page holding
    *  its reference line. Absent = the whole reservation rides the last line. */
-  noteBands?: Array<{ offset: number; height: number }>
+  noteBands?: NoteBand[]
   /** break-only paragraph (page-break field, no other content): single line's height, drives absorb-vs-blank-page placement */
   breakOnlyLineH?: number
   /** ink height of the block's sole line when it exceeds the column capacity
@@ -521,6 +522,25 @@ export interface SliceOutputs {
   lineRequests?: Set<BlockBox>
   /** the slicing before parity blanks were inserted (what a resumed pass builds on) */
   preParity?: PageSlice[]
+  /**
+   * input: height a column gives up to its page's footnote area beyond the notes
+   * charged in the column itself, by page start and column (noteReserveKey). Set
+   * on pages of text columns under a footnote area in columns (pagination-note-columns).
+   */
+  noteReserve?: Map<number, number>
+  /**
+   * input: called as a page opens at `y` of the flow, in front of `block` (the
+   * block being placed; `first`: the run's first page). Footnote areas in columns
+   * charge the notes after it as continuing this page. `shiftPx`: what the notes the
+   * page opens with cost beyond what their lines already carry; `withNotes`: it
+   * opens with notes, so it has a separator whatever their lines carry.
+   */
+  notePage?: (
+    block: BlockBox | undefined,
+    y: number,
+    section: number,
+    first: boolean,
+  ) => { shiftPx: number; withNotes: boolean }
 }
 
 export interface ColWrapTable {
@@ -596,6 +616,8 @@ export interface ColumnBlockPlacement {
   charSpaceSbPt?: number
   /** owning section's character-cell pitch (pt, snapToChars) */
   charCellPt?: number
+  /** owning section's w:adjustRightInd share (pt, sectionRightIndentPt) */
+  rightIndentPt?: number
   dx: number
   dy: number
   /** the part of dx owed to w:mirrorIndents: the export sheets, which place pages themselves, apply it alone */
@@ -633,6 +655,10 @@ export interface VerticalBlockSpec {
   marginBottomPx: number
   /** page-leading block keeps its space-before (it sets the flow start like a horizontal page) */
   firstOnPage: boolean
+  /** an upright table: its measured height, which it gives back to the flow */
+  table?: { heightPx: number }
+  /** the block starts beside an upright table: its lines begin this far in */
+  insetPx?: number
 }
 
 export interface MeasuredContent {
@@ -662,6 +688,18 @@ export interface FloatBox {
   noSpill?: boolean
 }
 
+/** one footnote reference's reservation inside its block */
+export interface NoteBand {
+  offset: number
+  /** px charged with the reference's line: the note's own height, or what it adds
+   *  to a footnote area laid out in columns (pagination-note-columns) */
+  height: number
+  /** the note's line boxes, on pages whose footnote area can have columns */
+  lines?: readonly number[]
+  /** table blocks: the row holding the reference */
+  row?: number
+}
+
 /** Page-bottom footnote entry (number/text/estimated height): shared by canvas page gaps and the pagination preview */
 /** class of an endnote row drawn in the flow at a section's end (editor/section-endnotes.ts) */
 export const SECT_NOTE_CLASS = 'page-sect-note'
@@ -675,6 +713,8 @@ export interface PageNoteItem {
   /** note body has no self-reference mark run: Word draws the entry without a numeral */
   noRefMark?: true
   height: number
+  /** the columns the note's section lays a footnote area out in; a page takes its first note's */
+  cols?: NoteColumns
   /** resolved note-style line height (px): the renderers set it inline so the entry's line boxes match the reservation model */
   lineHeightPx?: number
   /** resolved note-style base font size (pt) */
@@ -740,7 +780,7 @@ export interface BlockMeta {
   footnoteExtraPx?: number
   /** per-reference reservation heights in run order (matched to the block's
    *  marker elements so a split paragraph charges each note at its line) */
-  footnoteBands?: Array<{ heightPx: number }>
+  footnoteBands?: Array<{ heightPx: number; lines?: readonly number[] }>
 }
 
 export type BlockMetaOf = (docxIndex: number) => BlockMeta | undefined

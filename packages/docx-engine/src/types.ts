@@ -2,6 +2,7 @@ import type { RevisionResolution } from './revision-xml'
 import type { DocumentProperties } from './doc-properties'
 import type { EffectivePPr, EffectiveRPr } from './resolve-props'
 import type { MathPr } from './math-pr'
+import type { DrawingRelSize } from './relative-size'
 
 /** Picture watermark found in a header part (VML picture frame behind the body). */
 export interface PictureWatermarkInfo {
@@ -83,6 +84,28 @@ export interface TextReflection {
   distPt: number
 }
 
+/** a stop of a gradient text fill: where it sits (0..1), hex without '#', opacity 0..1 when below 1 */
+export interface TextFillStop {
+  pos: number
+  color: string
+  alpha?: number
+}
+
+/**
+ * w14:textFill, what the glyphs are filled with. `angleDeg` of a linear
+ * gradient is clockwise from pointing right; a `path` gradient spreads from
+ * the centre instead.
+ */
+export type TextFill =
+  | { kind: 'none' }
+  | { kind: 'solid'; color: string; alpha?: number }
+  | {
+      kind: 'gradient'
+      stops: TextFillStop[]
+      angleDeg: number
+      path?: 'circle' | 'rect' | 'shape'
+    }
+
 /**
  * The text effects a run sets itself, as the editor changed them: a key that
  * is present was set (or cleared, with null) there; an absent one is left as
@@ -95,6 +118,8 @@ export interface TextFxOwn {
   reflection?: TextReflection | null
   /** a solid w14:textFill: written in the run's colour, which Word keeps beside it as w:color */
   fill?: string | null
+  /** a fill a colour alone cannot say (a gradient, a transparent colour); null hands the fill back to `fill` */
+  textFill?: TextFill | null
 }
 
 export type TextboxVert =
@@ -120,6 +145,10 @@ export interface EqLayout {
   style?: EncloseStyle
   xml?: string
 }
+
+/** w:eastAsianLayout w:combineBrackets: what encloses two lines in one */
+export const COMBINE_BRACKETS = ['round', 'square', 'angle', 'curly'] as const
+export type CombineBrackets = (typeof COMBINE_BRACKETS)[number]
 
 /** Word 2010 OpenType features of a run (Font > Advanced > Advanced Typography) */
 export interface RunOpenType {
@@ -197,6 +226,10 @@ export interface Run {
   vanish?: boolean
   /** the run's own w:vanish (tri-state); this is what saves, `vanish` may be inherited */
   vanishOwn?: boolean
+  /** the run is off the character grid (w:snapToGrid off, resolved through the style chain). Display only */
+  offGrid?: boolean
+  /** the run's own w:snapToGrid (tri-state); this is what saves */
+  snapToGridOwn?: boolean
   /** Horizontal character scale percent (w:w); displayed as approximated spacing */
   charScalePct?: number
   /** OOXML named highlight color (w:highlight), e.g. "yellow" */
@@ -217,6 +250,8 @@ export interface Run {
   textShadow?: TextShadow
   /** w14:reflection. Display only; saving is kept faithful by rawRPr */
   textReflection?: TextReflection
+  /** w14:textFill where it says more than the run's colour does. Display only */
+  textFill?: TextFill
   /** the outline, shadow and glow set in the editor: what the save writes on the run itself */
   fxOwn?: TextFxOwn
   /** w:position baseline shift in half-points (positive = raised) */
@@ -231,9 +266,16 @@ export interface Run {
    *  undefined leaves the file's own element as it is */
   fitTextTwips?: number
   /** the run's own w:eastAsianLayout: two lines in one (combine, with the id that groups the
-   *  runs of one such region) and horizontal in vertical (vert). An object with neither is
-   *  "none"; undefined leaves the file's own element as it is */
-  eaLayout?: { combine?: true; vert?: true; id?: number }
+   *  runs of one such region, in brackets or not) and horizontal in vertical (vert, fitted
+   *  into the line or not). An object with neither is "none"; undefined leaves the file's
+   *  own element as it is */
+  eaLayout?: {
+    combine?: true
+    brackets?: CombineBrackets
+    vert?: true
+    vertCompress?: true
+    id?: number
+  }
   /** the run's own w:lang, by slot (proofing language); undefined = not touched, {} = none */
   lang?: { val?: string; eastAsia?: string; bidi?: string }
   /** the run's own w:noProof (not spell or grammar checked); undefined = not touched */
@@ -254,7 +296,16 @@ export interface Run {
   otf?: RunOpenType
   /** hyperlink info; rId references an existing relationship in the original docx.
    *  plain: unstyled run of a bookmark link (Word shows it in the paragraph's ink) */
-  link?: { href: string; rId?: string; tooltip?: string; plain?: boolean }
+  link?: {
+    href: string
+    rId?: string
+    anchor?: string
+    history?: string
+    targetFrame?: string
+    docLocation?: string
+    tooltip?: string
+    plain?: boolean
+  }
   /**
    * ids of comments whose range covers this run. Only set when the whole
    * commentRangeStart..End pair lives inside the same paragraph, so an edited
@@ -299,6 +350,22 @@ export interface Run {
   /** A table of contents entry (TC) field after this run's text, carried as a citation is: `"Entry" \f F \l 2` */
   tcInstr?: string
   /**
+   * Where a link field (INCLUDETEXT, INCLUDEPICTURE, LINK) opens: its instruction. The
+   * field's result is the ordinary content up to the run with `linkEnd`, in this paragraph
+   * or a later one. Carried in the index entry's slot (an empty `xeTerm`); `fldLock` applies.
+   */
+  linkBegin?: string
+  /** where the link field opened by the nearest unclosed `linkBegin` before it closes */
+  linkEnd?: true
+  /**
+   * One end of a bookmark that covers a range of text rather than a paragraph: its start,
+   * or with `end` where it closes, in this paragraph or a later one. Read only for the bookmarks
+   * Paste link makes (LINK_SOURCE_PREFIX); carried in the index entry's slot (an empty `xeTerm`).
+   * The save pairs the two ends under one id. `live`: the end as the editor holds it, which
+   * is always written anew, so the two ends of a range never come from different saves.
+   */
+  rangeMark?: { name: string; end?: true; live?: true }
+  /**
    * The run is a cross-reference (REF field) to the named bookmark; `text`
    * holds the cached display result. Regenerates as a full REF field.
    */
@@ -316,6 +383,13 @@ export interface Run {
   fldBeginXml?: string
   /** the field's begin fldChar carries w:dirty="true" (it came so, or its result is not computed here): Word asks to update fields on open */
   fldDirty?: true
+  /** the field's begin fldChar carries w:fldLock: its result is never recomputed */
+  fldLock?: true
+  /**
+   * A SET or ASK field Word has run: the text it gave its bookmark. The field
+   * shows nothing; the text is written back as its result, under the bookmark.
+   */
+  fldBookmarkText?: string
   /** w:sdtPr of a content-control checkbox (w14:checkbox) wrapping this run; the run text is the
    * box glyph, and write-back sets w14:checked from it */
   sdtCheckboxXml?: string
@@ -344,6 +418,7 @@ export interface Run {
       caps?: 'all' | 'small' | 'none'
       dstrike?: boolean
       vanishOwn?: boolean
+      snapToGridOwn?: boolean
       kernHalfPoints?: number
       positionHalfPoints?: number
       shading?: string
@@ -354,13 +429,22 @@ export interface Run {
   /**
    * The run is an atomic inline formula. `text` holds the flat OMML token
    * strip (previews / word count); `omml` is the exact <m:oMath> fragment,
-   * emitted verbatim when the paragraph regenerates.
+   * emitted verbatim when the paragraph regenerates. When decoded from a
+   * MathType OLE embed, `oleXml` / `oleRawRPr` carry the original <w:object>
+   * and <w:rPr> so untouched saves round-trip the OLE embed verbatim until the
+   * user explicitly converts/edits it into native OMML.
    */
   math?: {
     omml: string
     display?: boolean
     /** the fragment ends in a <w:br/> run: Word starts the next m:oMath on a new line */
     breakAfter?: boolean
+    /** original <w:object> fragment for a MathType OLE equation decoded to OMML */
+    oleXml?: string
+    /** original <w:rPr> XML of the OLE run, re-emitted verbatim with oleXml */
+    oleRawRPr?: string
+    /** original o:OLEObject ProgID (e.g. "Equation.DSMT4") */
+    oleProgId?: string
   }
   /**
    * The run is a single symbol-font glyph (w:sym). `text` holds the display
@@ -393,6 +477,8 @@ export interface Run {
     dataUrl: string
     /** the same picture as the SVG its blip names (svgBlip): drawn instead of the bitmap */
     vectorUrl?: string
+    /** the outside file the picture is linked to (the target of its blip's `r:link`), as written */
+    linkTarget?: string
     widthPx?: number
     heightPx?: number
     xml: string
@@ -422,9 +508,23 @@ export interface Run {
     rotDeg?: number
     flipH?: boolean
     flipV?: boolean
+    /** stacking rank of a floating picture (wp:anchor relativeHeight above Word's base); absent is the base */
+    zOrder?: number
+    /** the rank was compressed from a wild relativeHeight the xml still carries */
+    zOrderNormalized?: boolean
     /** pictures of a picture-only wpg group stacked bottom first, each placed in
      *  fractions of the image box; dataUrl is the first of them (display-only) */
-    layers?: { dataUrl: string; x: number; y: number; w: number; h: number }[]
+    layers?: {
+      dataUrl: string
+      x: number
+      y: number
+      w: number
+      h: number
+      /** a:srcRect of this picture, fractions of its bitmap */
+      crop?: { l: number; t: number; r: number; b: number }
+      /** width over height of the placed picture */
+      aspect?: number
+    }[]
     /** VML horizontal rule (v:rect o:hr), alone or sharing the paragraph with text:
      *  drawn as a rule on a line of its own like Word (dataUrl is empty). The line is
      *  as tall as the rule run's own font (sizeHalfPoints = the run's w:sz), not the
@@ -725,12 +825,14 @@ export interface ParaFormat {
   widowControl?: boolean
   /** snap lines to the section docGrid (w:snapToGrid; default on) — false only when explicitly off */
   snapToGrid?: boolean
-  /** w:adjustRightInd explicitly off (display only: the tag itself stays in the raw pPr) */
+  /** w:adjustRightInd on the pPr itself (tri-state; Word default on) */
   adjustRightInd?: boolean
   /** opt out of the document's automatic hyphenation (w:suppressAutoHyphens) */
   suppressAutoHyphens?: boolean
   /** left/right indents are inside/outside: they swap on even pages (w:mirrorIndents) */
   mirrorIndents?: boolean
+  /** the heading opens with its body folded away (w15:collapsed, "Collapsed by default") */
+  collapsed?: boolean
   /** CJK auto spacing after merging the style chain (w:autoSpaceDE/DN; Word default both on) */
   autoSpace?: AutoSpace
   /** w:autoSpaceDE as written on the paragraph (CJK/Latin letters) */
@@ -816,6 +918,10 @@ export interface ParaFormat {
   emptyRunFontFamily?: string
   /** w:sz (half-points) of the paragraph-mark rPr: Word sizes a list number or bullet from the mark, not from the first run */
   markSizeHalfPoints?: number
+  /** w:color the paragraph-mark rPr declares (hex, or 'auto'): it beats the style colour on a list marker (display only) */
+  markColor?: string
+  /** w:highlight of the paragraph-mark rPr: Word highlights the list marker with it (display only) */
+  markHighlight?: string
   /** the paragraph resolved through its whole chain (display only; the direct fields above are what saves) */
   effective?: EffectivePPr
 }
@@ -952,10 +1058,20 @@ export interface SectionSettings {
   textDirection?: string
   /** w:noEndnote: with endnotes at the end of each section, this section hands its own to the next one */
   noEndnote?: boolean
+  /**
+   * w:formProt: false when the sectPr switches it off, so the section stays
+   * editable in a document protected for forms; a section that says nothing is protected.
+   */
+  formProt?: false
   /** this sectPr's own w:footnotePr (only the fields it declares) */
   footnotePr?: NoteProps
   /** this sectPr's own w:endnotePr (only the fields it declares) */
   endnotePr?: NoteProps
+  /**
+   * w15:footnoteColumns: columns the page's footnote area is laid out in (1-4).
+   * Absent = as many as the section has text columns (Word's "Match section layout").
+   */
+  footnoteColumns?: number
 }
 
 /** One section: settings + start type + block ownership + header/footer refs (read-only enumeration; editing still goes through sectPr XML) */
@@ -964,6 +1080,15 @@ export interface PageNumberChapter {
   style: number
   /** hyphen | period | colon | emDash | enDash */
   sep: string
+}
+
+/** what stands between a chapter number and the number behind it, by `w:chapSep` name */
+export const CHAPTER_SEPARATORS: Record<string, string> = {
+  hyphen: '-',
+  period: '.',
+  colon: ':',
+  emDash: '\u2014',
+  enDash: '\u2013',
 }
 
 export interface SectionInfo {
@@ -992,6 +1117,10 @@ export interface SectionInfo {
 
 /** one rich paragraph of a header / footer part */
 export interface HfParagraph extends ParaFormat {
+  /** w:pStyle (a style the document defines): written back on save, so Word keeps
+   *  the paragraph in its Header / Footer style. Its properties are already
+   *  resolved into this format; the reference only names the style. */
+  styleId?: string
   /** w:framePr w:xAlign — text frame floated at the margin edge; the line
    *  overlays the following paragraph's flow line instead of stacking (Word) */
   frameXAlign?: 'left' | 'center' | 'right'
@@ -1237,7 +1366,9 @@ export interface HeaderFooter {
   newPictures?: Record<string, { base64: string; mime: NewImage['mime']; svgBase64?: string }>
   /** floating pictures moved or resized in the strip, keyed by HfImage.drawing */
   pictureEdits?: Record<number, HfPictureEdit>
-  /** only pictureEdits changed: the part's text paragraphs keep their bytes */
+  /** what Edit > Links did to the part's linked pictures, keyed by HfLinkedPicture.drawing */
+  pictureLinks?: Record<number, HfPictureLink>
+  /** only pictureEdits / pictureLinks changed: the part's text paragraphs keep their bytes */
   pictureOnly?: boolean
   /** tracked changes the editor accepted / rejected in the part: replayed on the
    *  original bytes before the paragraphs regenerate */
@@ -1245,6 +1376,9 @@ export interface HeaderFooter {
   /** editor-side: `paras` only mirror the resolutions; the part keeps its
    *  original bytes with the resolutions applied instead of regenerating */
   keepContent?: true
+  /** what the part's PAGE and SECTIONPAGES fields store: the first page the layout shows
+   *  it on (Word stores the number of one page the part printed on); absent = "1" */
+  fieldResults?: { page: string; sectionPages: number }
 }
 
 /** a floating header/footer picture's new box: its top-left corner page-relative
@@ -1255,6 +1389,25 @@ export interface HfPictureEdit {
   posYPx?: number
   widthPx: number
   heightPx: number
+}
+
+/** a picture of a header/footer part that names an outside file (its blip's `r:link`) */
+export interface HfLinkedPicture {
+  /** ordinal of its <w:drawing> in the part XML */
+  drawing: number
+  /** the file it is linked to, as the relationship is written */
+  target: string
+  /** its wp:docPr id when no other drawing of the part has it: finds the picture again on a run */
+  docPr?: string
+}
+
+/** a linked picture of a header/footer part after Change Source, Update Now or Break Link */
+export interface HfPictureLink {
+  /** the file it names from now on; null: the link is gone, the picture keeps its bytes */
+  target: string | null
+  /** the bytes read from the file by Update Now, embedded in place of the old ones */
+  bytes?: { base64: string; mime: NewImage['mime'] }
+  docPr?: string
 }
 
 /** Placeholder for NUMPAGES (total pages) fields in headers/footers; the renderer substitutes the total page count and saving writes the field back (PAGE uses PAGE_MARK the same way) */
@@ -1317,6 +1470,8 @@ export interface HfImage {
   drawing?: number
   /** wp:anchor distL/distR/distT/distB (px): text clearance of a wrapped drawing */
   wrapDistPx?: { l: number; r: number; t: number; b: number }
+  /** HfLinkedPicture.drawing of the picture, when it is linked to a file */
+  linkDrawing?: number
 }
 
 /** Parsed content of one header/footer part (any w:type variant). */
@@ -1327,6 +1482,8 @@ export interface HfPartInfo {
   paras: HfParagraph[]
   /** images in the part (display-only; text edits do not affect their bytes) */
   images?: HfImage[]
+  /** the part's pictures linked to files, for Edit > Links */
+  linkedPictures?: HfLinkedPicture[]
 }
 
 /** One display run of footnote/endnote body text (for page-bottom rendering; editing still uses plain text) */
@@ -1363,6 +1520,8 @@ export interface NoteInfo {
   richParas?: NoteRun[][]
   /** no w:footnoteRef/w:endnoteRef run in the note body: Word renders the entry without a number mark */
   noRefMark?: true
+  /** the bookmarks that open inside the note, as the file has them (a note edited since is rewritten without them) */
+  bookmarks?: string[]
   /** a new note inserted with a custom mark: `text` opens with it, and the entry writes it as the superscript mark run */
   customMark?: string
   /** made in this session: the file holds no bytes for it, whatever entry once had its id */
@@ -1524,6 +1683,8 @@ export interface FormulaDisplay {
   indentRightTwips?: number
   indentFirstLineTwips?: number
   additiveSpacing?: boolean
+  /** true when decoded from a MathType OLE embed (originalXml is <w:object>, not <m:oMath>) */
+  oleMathType?: boolean
 }
 
 /** One axis of an embedded chart (c:catAx / c:valAx / c:dateAx) */
@@ -1684,6 +1845,8 @@ export interface NewChart {
 /** Editable interchange model of one table cell (type === 'table' blocks). */
 export interface TableParagraph extends ParaFormat {
   runs: Run[]
+  /** the paragraph's tracked property change (w:pPrChange) as the editor holds it: JSON of Block.pPrChangeInfo; absent = none */
+  pPrChange?: string
   /** w:pStyle of the cell paragraph (style CSS: fonts/spacing reach cell content) */
   styleId?: string
   /** bookmark names whose w:bookmarkStart/End sit in the cell paragraph (REF/TOC anchors) */
@@ -1745,6 +1908,12 @@ export interface TableCell {
   anchoredBoxes?: TextboxDisplay[]
   /** per anchored box: index of its anchor paragraph (positionV "paragraph" origin); absent = cell top */
   anchoredBoxAnchors?: number[]
+  /**
+   * per anchored box: a paragraph holding only the drawings of its anchor
+   * paragraph, which that paragraph's boxes can be saved from outside the
+   * table; null where the boxes are not the paragraph's anchored drawings one for one
+   */
+  anchoredBoxXml?: (string | null)[]
   /** per nested table: how many cell paragraphs precede it (reading-order anchor); absent = after all paragraphs */
   nestedTableAnchors?: number[]
   colSpan?: number
@@ -1965,6 +2134,8 @@ export interface NewImage {
   svgBase64?: string
   /** reuse this media part of the document being saved instead of landing base64 */
   sourcePart?: string
+  /** Word's Link to File: the outside file the picture also names (`r:link`, an external relationship) */
+  linkTarget?: string
   widthPx: number
   heightPx: number
   /** paragraph alignment for the image (w:jc) */
@@ -2185,6 +2356,8 @@ export interface Block {
   imageFlipV?: boolean
   /** alternative text of the picture (wp:docPr descr) */
   imageAlt?: string
+  /** the outside file the picture is linked to (the target of its blip's `r:link`), as written */
+  imageLink?: string
   /** picture outline (pic:spPr a:ln solid fill; display-only, like crop) */
   imageBorder?: { color: string; widthPt: number }
   /** editable structure (type === 'table'); untouched original XML still saves byte-identically */
@@ -2386,6 +2559,18 @@ export interface TextboxDisplay {
    */
   shapeId?: string
   /**
+   * Ordinal of the top-level w:drawing an ungrouped shape was read from. The
+   * save path addresses the drawing by it: a shape without text is not among
+   * the drawings counted for text boxes.
+   */
+  drawingIndex?: number
+  /**
+   * Sides sized as a share of the page (wp14:sizeRelH / sizeRelV). The file's
+   * cached extent is what is drawn; the share is applied when it is edited or
+   * the page setup changes.
+   */
+  sizeRel?: DrawingRelSize
+  /**
    * Content holds tables / content controls flattened into display lines, so
    * paras do not map 1:1 onto the w:txbxContent w:p children the patch-save
    * path rewrites. The editor must not offer text editing for this box or a
@@ -2478,6 +2663,9 @@ export interface TextboxDisplay {
   /** straight connector with a real vertical extent: drawn corner-to-corner
    *  instead of as a level rule (flips pick the diagonal) */
   lineDiag?: boolean
+  /** straight connector with a zero-width extent: a vertical stroke down the
+   *  middle of a grab band, which is centred on the authored x */
+  lineVert?: boolean
   /** a:xfrm flipH/flipV (connector direction) */
   flipH?: boolean
   flipV?: boolean
@@ -2572,6 +2760,8 @@ export interface StyleDisplay {
   shading?: string
   /** style rPr w14:textOutline inherited by runs without their own */
   textOutline?: TextOutline
+  /** style rPr w14:textFill where it says more than the style's colour does */
+  textFill?: TextFill
   /** multiple of single line spacing (w:spacing w:line, lineRule auto) */
   lineSpacing?: number
   /** F1: lineRule for accurate height calculation */
@@ -2603,6 +2793,8 @@ export interface StyleDisplay {
   widowControl?: boolean
   /** w:suppressAutoHyphens from style definition (tri-state: explicit off overrides the chain) */
   suppressAutoHyphens?: boolean
+  /** w:adjustRightInd from style definition (tri-state) */
+  adjustRightInd?: boolean
   /** F1: contextualSpacing from style definition */
   contextualSpacing?: boolean
   /** paragraph alignment from the style (w:pPr w:jc) */
@@ -2624,8 +2816,12 @@ export interface StyleDisplay {
   overflowPunct?: boolean
   /** style rPr w:lang w:eastAsia (BCP-47) */
   eastAsiaLang?: string
+  /** style rPr w:lang w:val (BCP-47) */
+  lang?: string
   /** style-level w:vanish (hidden text, e.g. z-TopofForm/z-BottomofForm HTML form markers) */
   vanish?: boolean
+  /** style rPr w:snapToGrid: false takes the style's runs off the character grid */
+  snapToGrid?: boolean
 }
 
 /** display-only formatting a table style contributes (fills applied per tblLook flags) */
@@ -2703,6 +2899,8 @@ export interface StyleInfo {
   headingLevelInherited?: true
   /** own w:outlineLvl 9: body text even when a basedOn ancestor is a heading */
   headingOutlineOff?: true
+  /** w15:collapsed of the style or the nearest basedOn ancestor declaring it */
+  collapsed?: boolean
   /** w:basedOn (the parent's own id, unresolved) */
   basedOn?: string
   /** w:semiHidden — Word itself hides it from the style gallery (e.g. DefaultParagraphFont) */
@@ -2784,8 +2982,43 @@ export interface DocDefaults {
   eastAsiaLang?: string
   /** pPrDefault w:suppressAutoHyphens — every paragraph opts out of w:autoHyphenation */
   suppressAutoHyphens?: boolean
+  /** pPrDefault w:adjustRightInd off */
+  adjustRightInd?: boolean
   /** pPrDefault w:pBdr: the root of every paragraph style's border chain (display-only) */
   borderSides?: ParaBorderSides
+}
+
+/**
+ * The custom kinsoku lists of settings.xml. They replace the standard lists
+ * for text of `lang` only; text of another language keeps its own.
+ */
+export interface KinsokuCustom {
+  lang: string
+  /** characters that may not start a line (w:noLineBreaksBefore) */
+  before: string
+  /** characters that may not end a line (w:noLineBreaksAfter) */
+  after: string
+}
+
+/**
+ * The drawing grid of settings.xml, in twips. A field is absent when the file
+ * has no element for it.
+ */
+export interface DrawingGrid {
+  /** w:drawingGridHorizontalSpacing */
+  horizontalSpacing?: number
+  /** w:drawingGridVerticalSpacing */
+  verticalSpacing?: number
+  /** w:displayHorizontalDrawingGridEvery: a vertical gridline every n horizontal units, 0 for none */
+  displayHorizontalEvery?: number
+  /** w:displayVerticalDrawingGridEvery: a horizontal gridline every n vertical units, 0 for none */
+  displayVerticalEvery?: number
+  /** w:doNotUseMarginsForDrawingGridOrigin: the origin is measured from the page edge */
+  ownOrigin?: boolean
+  /** w:drawingGridHorizontalOrigin */
+  horizontalOrigin?: number
+  /** w:drawingGridVerticalOrigin */
+  verticalOrigin?: number
 }
 
 /** word/settings.xml w:documentProtection (only the editing restriction subset). */
@@ -2838,6 +3071,8 @@ export interface SourceInfo {
 
 /** Font pair from word/theme/theme1.xml (latin typefaces + east-asian). */
 export interface ThemeFonts {
+  /** a:fontScheme name; written when given, not read back */
+  name?: string
   /** a:majorFont a:latin typeface (headings) */
   major: string
   /** a:minorFont a:latin typeface (body) */
@@ -2923,6 +3158,8 @@ export interface ParsedDoc {
   blocks: Block[]
   /** Zotero document preferences stored in Word custom properties */
   zoteroDocumentData: string
+  /** the Customizations part (keyboard assignments the document carries), as written */
+  keyCustomizations?: string
   /** the docProps parts of the package: core, extended (app) and custom properties */
   properties: DocumentProperties
   /** comments from word/comments.xml, in file order */
@@ -2934,6 +3171,8 @@ export interface ParsedDoc {
   /** separator paragraphs of the notes parts (absent when a part has none) */
   footnoteSeparator?: NoteSeparator
   endnoteSeparator?: NoteSeparator
+  /** the package has a glossary part: building blocks such as AutoText entries */
+  hasGlossary?: true
   /** effective document-wide footnote properties (settings.xml overlaid by the final sectPr) */
   footnoteProps?: NoteProps
   /** effective document-wide endnote properties (settings.xml overlaid by the final sectPr) */
@@ -2989,12 +3228,16 @@ export interface ParsedDoc {
   evenAndOddHeaders?: boolean
   /** settings.xml w:mirrorMargins: left/right margins are inside/outside on facing pages */
   mirrorMargins?: boolean
+  /** settings.xml w:hideGrammaticalErrors: Hide Grammar Errors was on when the document was saved */
+  hideGrammaticalErrors?: boolean
   /** settings.xml w:trackRevisions: the document was saved with Track Changes on */
   trackRevisions?: boolean
   /** settings.xml w:doNotTrackMoves: a tracked cut and paste is a deletion and an insertion, not a move */
   doNotTrackMoves?: boolean
   /** settings.xml w:gutterAtTop: section gutters widen the top margin, not the left */
   gutterAtTop?: boolean
+  /** settings.xml w:mailMerge w:mainDocumentType: the kind of mail-merge main document this is */
+  mailMergeMainType?: MailMergeMainType
   /** settings.xml compatSetting compatibilityMode (0 when absent; >=15 = Word 2013+ layout) */
   compatibilityMode?: number
   /** settings.xml <w:autoHyphenation/> — Word breaks words at line ends automatically */
@@ -3011,8 +3254,14 @@ export interface ParsedDoc {
   useFELayout?: boolean
   /** settings.xml w:characterSpacingControl compressPunctuation* — justified CJK lines compress trailing-blank punctuation */
   compressPunctuation?: boolean
+  /** w:characterSpacingControl compressPunctuationAndJapaneseKana: those lines compress kana as well */
+  compressKana?: boolean
   /** settings.xml w:strictFirstAndLastChars: Word's Strict kinsoku level (changes Japanese text only) */
   strictFirstAndLastChars?: boolean
+  /** settings.xml w:noLineBreaksBefore / w:noLineBreaksAfter: Word's Custom kinsoku level */
+  kinsokuCustom?: KinsokuCustom
+  /** settings.xml w:drawingGrid* / w:display*DrawingGridEvery: the grid shapes and pictures snap to */
+  drawingGrid?: DrawingGrid
   /** settings.xml w:compat <w:adjustLineHeightInTable/> — table-cell lines snap to the typed docGrid like body lines */
   adjustLineHeightInTable?: boolean
   /** settings.xml w:compat <w:doNotUseIndentAsNumberingTabStop/> — the tab after a list marker runs to the next tab stop, never to the hanging indent */
@@ -3060,3 +3309,7 @@ export interface ParsedDoc {
     bodyContentEnd: number
   }
 }
+
+/** ST_MailMergeDocType: what a mail-merge main document produces */
+export type MailMergeMainType =
+  'catalog' | 'envelopes' | 'mailingLabels' | 'formLetters' | 'email' | 'fax'

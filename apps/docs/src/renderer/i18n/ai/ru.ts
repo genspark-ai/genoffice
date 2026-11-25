@@ -156,6 +156,7 @@ export const ru = {
     'Получено {blocks} блоков, после чего написание прервалось. Оставить эту часть или отменить?',
   aiPartialAdopt: 'Оставить',
   aiPartialDiscard: 'Отменить',
+  aiSumProtectedBlocked: 'Не применено: документ защищён за пределами редактируемых областей',
   aiSumInsertedBlocks: 'Вставлено блоков: {count}',
   aiSumCreateDocument: 'Создание нового документа',
   aiSumCreatedDocument: 'Создан {name}',

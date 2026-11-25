@@ -337,6 +337,11 @@ const FONTS = [
     'Source: Noto Sans JP from https://github.com/notofonts/noto-cjk. Copyright 2014-2021 Adobe\n(http://www.adobe.com/), with Reserved Font Name "Source". This bundle ships Regular and Bold\ninstances subset to U+3000-30FF, with modified advances and horizontally condensed outlines to\nmatch Meiryo UI metrics and vertical metrics set to the Hiragino class. Renamed to GenOffice UI\nKana JP per OFL 1.1; the upstream Reserved Font Name is not used.',
   ],
   [
+    'GenOffice PMincho Kana JP (Noto Serif JP derivative)',
+    'SIL OFL 1.1',
+    'Source: Noto Serif JP from https://github.com/notofonts/noto-cjk. Copyright 2017-2022 Adobe\n(http://www.adobe.com/), with Reserved Font Name "Source". This bundle ships a Regular instance\nsubset to kana and Japanese punctuation, with modified advances and re-centred (where needed\nhorizontally narrowed) outlines to match MS PMincho metrics and vertical metrics set to the\nHiragino class. Renamed to GenOffice PMincho Kana JP per OFL 1.1; the upstream Reserved Font\nName is not used.',
+  ],
+  [
     'GenOffice Sans KR (Noto Sans CJK KR derivative)',
     'SIL OFL 1.1',
     'Copyright 2014-2021 Adobe (http://www.adobe.com/), Google LLC, Reserved Font Name "Source".\nSubset with modified advance widths and horizontally transformed Noto CJK outlines to match measured\nKorean Office-family metrics; renamed per OFL 1.1. No Microsoft font outlines are included.',
@@ -370,6 +375,11 @@ const FONTS = [
     'GenOffice DM Sans (DM Sans derivative)',
     'SIL OFL 1.1',
     'Copyright 2014-2017 Indian Type Foundry (info@indiantypefoundry.com). Copyright 2019 Google LLC.\nLatin subset with unmodified metrics and advances; renamed.',
+  ],
+  [
+    'GenOffice Barlow (Barlow derivative)',
+    'SIL OFL 1.1',
+    'Copyright 2017 The Barlow Project Authors (https://github.com/jpt/barlow).\nLatin subset with unmodified metrics and advances; renamed.',
   ],
   [
     'GenOffice Tamil (Noto Sans Tamil derivative)',

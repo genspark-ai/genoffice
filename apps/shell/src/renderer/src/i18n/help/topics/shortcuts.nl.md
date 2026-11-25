@@ -35,123 +35,235 @@ Word heeft een volledige menubalk, dus de onderstaande bestands- en opmaakcombin
 
 ### Bestand
 
-| Actie             | macOS | Windows / Linux |
-| ----------------- | ----- | --------------- |
-| Nieuw             | ⌘N    | Ctrl+N          |
-| Nieuw venster     | ⇧⌘N   | Ctrl+Shift+N    |
-| Openen…           | ⌘O    | Ctrl+O          |
-| Opslaan           | ⌘S    | Ctrl+S          |
-| Opslaan als…      | ⇧⌘S   | Ctrl+Shift+S    |
-| Afdrukken         | ⌘P    | Ctrl+P          |
-| Sluiten (tabblad) | ⌘W    | Ctrl+W          |
+| Actie                       | macOS   | Windows / Linux |
+| --------------------------- | ------- | --------------- |
+| Nieuw                       | ⌘N / ⌃N | Ctrl+N          |
+| Nieuw venster               | —       | Ctrl+Shift+N    |
+| Openen…                     | ⌘O      | Ctrl+O          |
+| Opslaan                     | ⌘S / ⌃S | Ctrl+S          |
+| Opslaan als…                | ⇧⌘S     | Ctrl+Shift+S    |
+| Afdrukken                   | ⌘P / ⌃P | Ctrl+P          |
+| Sluiten (tabblad)           | ⌘W      | Ctrl+W          |
+| Nieuw op basis van sjabloon | ⇧⌘P     | —               |
 
 ⌘P is niet de afdruk van de browser. Word maakt eerst een afdrukvoorbeeld, zodat één afgedrukt vel precies één schermpagina is, en opent daarna zijn eigen afdrukdialoogvenster.
 
 ### Bewerken
 
-| Actie                    | macOS | Windows / Linux |
-| ------------------------ | ----- | --------------- |
-| Ongedaan maken           | ⌘Z    | Ctrl+Z          |
-| Opnieuw uitvoeren        | ⇧⌘Z   | Ctrl+Shift+Z    |
-| Knippen                  | ⌘X    | Ctrl+X          |
-| Kopiëren                 | ⌘C    | Ctrl+C          |
-| Plakken                  | ⌘V    | Ctrl+V          |
-| Plakken als platte tekst | ⌥⇧⌘V  | Ctrl+Shift+V    |
-| Alles selecteren         | ⌘A    | Ctrl+A          |
-| Zoeken                   | ⌘F    | Ctrl+F          |
-| Vervangen                | ⌃H    | Ctrl+H          |
-| Ga naar                  | ⌥⌘G   | Ctrl+G          |
-| Sneltoetsen              | ⌘/    | Ctrl+/          |
+| Actie                     | macOS           | Windows / Linux |
+| ------------------------- | --------------- | --------------- |
+| Ongedaan maken            | ⌘Z / ⌃Z         | Ctrl+Z          |
+| Opnieuw uitvoeren         | ⇧⌘Z             | Ctrl+Shift+Z    |
+| Knippen                   | ⌘X / ⌃X / F2    | Ctrl+X          |
+| Kopiëren                  | ⌘C / ⌃C / F3    | Ctrl+C          |
+| Plakken                   | ⌘V / ⌃V / F4    | Ctrl+V          |
+| Plakken als platte tekst  | ⌥⇧⌘V            | Ctrl+Shift+V    |
+| Alles selecteren          | ⌘A / ⌃A         | Ctrl+A          |
+| Zoeken                    | ⌘F / ⌃F         | Ctrl+F          |
+| Vervangen                 | ⇧⌘H / ⌃H        | Ctrl+H          |
+| Ga naar                   | ⌥⌘G / F5        | Ctrl+G          |
+| Sneltoetsen               | ⌘/              | Ctrl+/          |
+| Opnieuw of herhalen       | ⌘Y / ⌃Y / ⌥⏎    | Ctrl+Y          |
+| Alleen tekst behouden     | ⇧⌘V             | —               |
+| Plakken speciaal          | ⌃⌘V             | —               |
+| Volgende zoeken           | ⌘G / ⇧F4 / ⇧⌘F4 | —               |
+| Vorige zoeken             | ⇧⌘G             | —               |
+| Tekenen in-/uitschakelen  | ⌃⌘Z             | —               |
+| Rij verwijderen           | ⌃⌘X             | —               |
+| Hierboven invoegen        | ⌃⌘I             | —               |
+| Vorig woord verwijderen   | ⌥⌫ / ⌘⌫         | —               |
+| Volgend woord verwijderen | ⌥⌦ / ⌘⌦         | —               |
+| Knippen naar Spike        | ⌘F3             | —               |
+| Inhoud van Spike invoegen | ⇧⌘F3            | —               |
+| Inhoud wissen             | Clear           | —               |
+| Tekst kopiëren            | ⇧F2             | —               |
 
-Vervangen is op beide platformen Ctrl+H omdat ⌘H op macOS het venster verbergt en Word nooit bereikt. Ga naar volgt de eigen splitsing van Word: ⌥⌘G op de Mac, zodat ⇧⌘G vrij blijft voor Woordentelling.
+Vervangen is op beide platformen Ctrl+H omdat ⌘H op macOS het venster verbergt en Word nooit bereikt. Ga naar volgt de eigen splitsing van Word: ⌥⌘G op de Mac, waar ⌘G en ⇧⌘G Volgende zoeken en Vorige zoeken zijn.
+
+### Navigatie en selectie
+
+| Actie                                              | macOS                  | Windows / Linux |
+| -------------------------------------------------- | ---------------------- | --------------- |
+| Begin van de regel                                 | ⌘← / Home / ⌃↑         | —               |
+| Einde van de regel                                 | ⌘→ / End / ⌃↓          | —               |
+| Vorige alinea                                      | ⌘↑ / ⌥↑                | —               |
+| Volgende alinea                                    | ⌘↓ / ⌥↓                | —               |
+| Begin van het document                             | ⌘Home / ⌥Home          | —               |
+| Einde van het document                             | ⌘End / ⌥End            | —               |
+| Selecteren tot begin van de regel                  | ⇧⌘← / ⇧Home            | —               |
+| Selecteren tot einde van de regel                  | ⇧⌘→ / ⇧End             | —               |
+| Selecteren tot vorige alinea                       | ⇧⌘↑ / ⌥⇧↑              | —               |
+| Selecteren tot volgende alinea                     | ⇧⌘↓ / ⌥⇧↓              | —               |
+| Selecteren tot begin van het document              | ⇧⌘Home                 | —               |
+| Selecteren tot einde van het document              | ⇧⌘End                  | —               |
+| Eén scherm omhoog                                  | PageUp                 | —               |
+| Eén scherm omlaag                                  | PageDown               | —               |
+| Eén scherm omhoog selecteren                       | ⇧PageUp                | —               |
+| Eén scherm omlaag selecteren                       | ⇧PageDown              | —               |
+| Bovenkant van het venster                          | ⌥⌘PageUp               | —               |
+| Onderkant van het venster                          | ⌥⌘PageDown             | —               |
+| Selecteren tot bovenkant van het venster           | ⌥⇧⌘PageUp              | —               |
+| Selecteren tot onderkant van het venster           | ⌥⇧⌘PageDown            | —               |
+| Naar vorige bladeren (pagina, Zoeken of Ga naar)   | ⌘PageUp                | —               |
+| Naar volgende bladeren (pagina, Zoeken of Ga naar) | ⌘PageDown              | —               |
+| Vorige sectie                                      | ⌥PageUp                | —               |
+| Volgende sectie                                    | ⌥PageDown              | —               |
+| Selectie uitbreiden                                | F8                     | —               |
+| Selectie verkleinen                                | ⇧F8                    | —               |
+| Terug naar vorige bewerking                        | ⇧F5 / ⌥⌘Z              | —               |
+| Eerste cel in rij                                  | ⌃Home / ⌥⇧Home         | —               |
+| Laatste cel in rij                                 | ⌃End / ⌥⇧End           | —               |
+| Eerste cel in kolom                                | ⌃PageUp / ⌥⇧PageUp     | —               |
+| Laatste cel in kolom                               | ⌃PageDown / ⌥⇧PageDown | —               |
+| Tabel selecteren                                   | ⌥Clear                 | —               |
 
 ### Tekstopmaak
 
-| Actie                                    | macOS    | Windows / Linux       |
-| ---------------------------------------- | -------- | --------------------- |
-| Vet                                      | ⌘B       | Ctrl+B                |
-| Cursief                                  | ⌘I       | Ctrl+I                |
-| Onderstrepen                             | ⌘U       | Ctrl+U                |
-| Lettertype… (dialoogvenster)             | ⌘D       | Ctrl+D                |
-| Tekengrootte vergroten                   | ⇧⌘.      | Ctrl+Shift+.          |
-| Tekengrootte verkleinen                  | ⇧⌘,      | Ctrl+Shift+,          |
-| Tekengrootte 1 pt vergroten              | ⌘]       | Ctrl+]                |
-| Tekengrootte 1 pt verkleinen             | ⌘[       | Ctrl+[                |
-| Superscript                              | ⇧⌘= / ⌘. | Ctrl+Shift+= / Ctrl+. |
-| Subscript                                | ⌘,       | Ctrl+,                |
-| Hoofdletters veranderen                  | ⇧F3      | Shift+F3              |
-| Opmaak kopiëren (met tekst geselecteerd) | ⇧⌘C      | Ctrl+Shift+C          |
-| Opmaak plakken (na Opmaak kopiëren)      | ⇧⌘V      | Ctrl+Alt+Shift+V      |
-| Alle opmaak wissen                       | ⌃␣       | Ctrl+Space            |
+| Actie                                    | macOS               | Windows / Linux       |
+| ---------------------------------------- | ------------------- | --------------------- |
+| Vet                                      | ⌘B / ⇧⌘B / ⌃B / ⌃⇧B | Ctrl+B                |
+| Cursief                                  | ⌘I / ⇧⌘I / ⌃I / ⌃⇧I | Ctrl+I                |
+| Onderstrepen                             | ⌘U / ⇧⌘U / ⌃U / ⌃⇧U | Ctrl+U                |
+| Lettertype… (dialoogvenster)             | ⌘D                  | Ctrl+D                |
+| Tekengrootte vergroten                   | ⇧⌘.                 | Ctrl+Shift+.          |
+| Tekengrootte verkleinen                  | ⇧⌘,                 | Ctrl+Shift+,          |
+| Tekengrootte 1 pt vergroten              | ⌘]                  | Ctrl+]                |
+| Tekengrootte 1 pt verkleinen             | ⌘[                  | Ctrl+[                |
+| Superscript                              | ⇧⌘=                 | Ctrl+Shift+= / Ctrl+. |
+| Subscript                                | ⇧⌘-                 | Ctrl+,                |
+| Hoofdletters veranderen                  | ⇧F3                 | Shift+F3              |
+| Opmaak kopiëren (met tekst geselecteerd) | ⌥⌘C / ⇧⌘C           | Ctrl+Shift+C          |
+| Opmaak plakken (na Opmaak kopiëren)      | ⌥⌘V                 | Ctrl+Alt+Shift+V      |
+| Alle opmaak wissen                       | ⌃␣                  | Ctrl+Space            |
+| Dubbel onderstrepen                      | ⇧⌘D                 | —                     |
+| Alleen woorden onderstrepen              | ⇧⌘W                 | —                     |
+| Doorhalen                                | ⇧⌘X                 | —                     |
+| Hoofdletters                             | ⇧⌘A                 | —                     |
+| Kleinkapitalen                           | ⇧⌘K                 | —                     |
+| Verborgen                                | ⌃⇧H                 | —                     |
 
-De twee knoppen van de opmaakpainter zijn de enige plek waar de Windows-toets geen gewone naamsverandering is: Opmaak plakken bevat Alt omdat Ctrl+Shift+V daar al plakt en de stijl overneemt.
+Opmaak kopiëren en plakken volgen op elk platform Word: ⌥⌘C / ⌥⌘V op de Mac, waar ⇧⌘V alleen de tekst plakt; op Windows en Linux draagt Opmaak plakken Alt, omdat Ctrl+Shift+V daar al plakt en de stijl aanpast.
 
 ### Alineaopmaak
 
-| Actie                                           | macOS | Windows / Linux |
-| ----------------------------------------------- | ----- | --------------- |
-| Links uitlijnen                                 | ⌘L    | Ctrl+L          |
-| Centreren                                       | ⌘E    | Ctrl+E          |
-| Rechts uitlijnen                                | ⌘R    | Ctrl+R          |
-| Uitvullen                                       | ⌘J    | Ctrl+J          |
-| Regelafstand 1,0                                | ⌘1    | Ctrl+1          |
-| Regelafstand 1,5                                | ⌘5    | Ctrl+5          |
-| Regelafstand 2,0                                | ⌘2    | Ctrl+2          |
-| Inspringen vergroten                            | ⌃M    | Ctrl+M          |
-| Inspringen verkleinen                           | ⌃⇧M   | Ctrl+Shift+M    |
-| Hangende inspringing                            | ⌘T    | Ctrl+T          |
-| Hangende inspringing verwijderen                | ⇧⌘T   | Ctrl+Shift+T    |
-| Alineaopmaak wissen                             | ⌃Q    | Ctrl+Q          |
-| Standaard (stijl)                               | ⌥⌘0   | Ctrl+Alt+0      |
-| Kop 1 (stijl)                                   | ⌥⌘1   | Ctrl+Alt+1      |
-| Kop 2 (stijl)                                   | ⌥⌘2   | Ctrl+Alt+2      |
-| Kop 3 (stijl)                                   | ⌥⌘3   | Ctrl+Alt+3      |
-| Alinea… (dialoogvenster)                        | ⌥⌘M   | Ctrl+Alt+M      |
-| Alinea omhoog verplaatsen                       | ⌥⇧↑   | Alt+Shift+↑     |
-| Alinea omlaag verplaatsen                       | ⌥⇧↓   | Alt+Shift+↓     |
-| Lijstitem verlagen (aan het begin van een item) | Tab   | Tab             |
-| Lijstitem verhogen (aan het begin van een item) | ⇧Tab  | Shift+Tab       |
+| Actie                                           | macOS               | Windows / Linux |
+| ----------------------------------------------- | ------------------- | --------------- |
+| Links uitlijnen                                 | ⌘L                  | Ctrl+L          |
+| Centreren                                       | ⌘E                  | Ctrl+E          |
+| Rechts uitlijnen                                | ⌘R                  | Ctrl+R          |
+| Uitvullen                                       | ⌘J                  | Ctrl+J          |
+| Regelafstand 1,0                                | ⌘1                  | Ctrl+1          |
+| Regelafstand 1,5                                | ⌘5                  | Ctrl+5          |
+| Regelafstand 2,0                                | ⌘2                  | Ctrl+2          |
+| Inspringen vergroten                            | ⌃⇧M / ⌃M            | Ctrl+M          |
+| Inspringen verkleinen                           | ⇧⌘M                 | Ctrl+Shift+M    |
+| Hangende inspringing                            | ⌘T                  | Ctrl+T          |
+| Hangende inspringing verwijderen                | ⇧⌘T                 | Ctrl+Shift+T    |
+| Alineaopmaak wissen                             | ⌥⌘Q / ⌃Q            | Ctrl+Q          |
+| Standaard (stijl)                               | ⇧⌘N / ⌥⌘0 / ⌥⇧Clear | Ctrl+Alt+0      |
+| Kop 1 (stijl)                                   | ⌥⌘1                 | Ctrl+Alt+1      |
+| Kop 2 (stijl)                                   | ⌥⌘2                 | Ctrl+Alt+2      |
+| Kop 3 (stijl)                                   | ⌥⌘3                 | Ctrl+Alt+3      |
+| Alinea… (dialoogvenster)                        | ⌥⌘M                 | Ctrl+Alt+M      |
+| Alinea omhoog verplaatsen                       | ⌃⇧↑                 | Alt+Shift+↑     |
+| Alinea omlaag verplaatsen                       | ⌃⇧↓                 | Alt+Shift+↓     |
+| Kop hoger niveau                                | ⌃⇧←                 | —               |
+| Kop lager niveau                                | ⌃⇧→                 | —               |
+| Kop uitvouwen (overzichtsweergave)              | ⌃⇧= / ⌃⇧Num+        | —               |
+| Kop samenvouwen (overzichtsweergave)            | ⌃⇧- / ⌃⇧Num-        | —               |
+| Overzicht weergeven tot niveau 1                | ⌃⇧1                 | —               |
+| Overzicht weergeven tot niveau 2                | ⌃⇧2                 | —               |
+| Overzicht weergeven tot niveau 3                | ⌃⇧3                 | —               |
+| Overzicht weergeven tot niveau 4                | ⌃⇧4                 | —               |
+| Overzicht weergeven tot niveau 5                | ⌃⇧5                 | —               |
+| Overzicht weergeven tot niveau 6                | ⌃⇧6                 | —               |
+| Overzicht weergeven tot niveau 7                | ⌃⇧7                 | —               |
+| Overzicht weergeven tot niveau 8                | ⌃⇧8                 | —               |
+| Overzicht weergeven tot niveau 9                | ⌃⇧9                 | —               |
+| Alle koppen weergeven (overzichtsweergave)      | ⌃⇧A                 | —               |
+| Lijstitem verlagen (aan het begin van een item) | Tab                 | Tab             |
+| Lijstitem verhogen (aan het begin van een item) | ⇧Tab                | Shift+Tab       |
+| Opsommingstekens                                | ⇧⌘L                 | —               |
 
-Inspringen, hangende inspringing en Alineaopmaak wissen werken op beide platformen alleen met Ctrl: ⌘M minimaliseert het venster en ⌘Q sluit af, dus een Command-combinatie zou een stille bewerking zijn op weg naar het einde. Tab verandert alleen een lijstniveau wanneer de caret aan het begin van een item staat of meerdere items omspant; in de tekst voegt het een tabteken in, en ⇧Tab verhoogt altijd.
+Inspringing vergroten en verkleinen volgen op elk platform Word: ⌃⇧M / ⇧⌘M op de Mac, Ctrl+M / Ctrl+Shift+M op Windows en Linux; ⌘M alleen minimaliseert het venster en ⌘Q sluit af. Tab verandert alleen een lijstniveau wanneer de caret aan het begin van een item staat of meerdere items omspant; in de tekst voegt het een tabteken in, en ⇧Tab verhoogt altijd.
 
 ### Invoegen
 
-| Actie                      | macOS | Windows / Linux  |
-| -------------------------- | ----- | ---------------- |
-| Pagina-einde               | ⌘⏎    | Ctrl+Enter       |
-| Kolomeinde                 | ⇧⌘⏎   | Ctrl+Shift+Enter |
-| Regeleinde                 | ⇧⏎    | Shift+Enter      |
-| Koppeling…                 | ⌘K    | Ctrl+K           |
-| Nieuwe reactie             | ⌥⌘A   | Ctrl+Alt+A       |
-| Voetnoot invoegen          | ⌥⌘F   | Ctrl+Alt+F       |
-| Eindnoot invoegen          | ⌥⌘E   | Ctrl+Alt+D       |
-| Datum (veld)               | ⌥⇧D   | Alt+Shift+D      |
-| Tijd (veld)                | ⌥⇧T   | Alt+Shift+T      |
-| Niet-afbrekende spatie     | ⇧⌘␣   | Ctrl+Shift+Space |
-| Niet-afbrekend koppelteken | ⇧⌘-   | Ctrl+Shift+-     |
+| Actie                            | macOS       | Windows / Linux  |
+| -------------------------------- | ----------- | ---------------- |
+| Pagina-einde                     | ⌘⏎          | Ctrl+Enter       |
+| Kolomeinde                       | ⇧⌘⏎         | Ctrl+Shift+Enter |
+| Regeleinde                       | ⇧⏎          | Shift+Enter      |
+| Koppeling…                       | ⌘K          | Ctrl+K           |
+| Nieuwe reactie                   | ⌥⌘A         | Ctrl+Alt+A       |
+| Voetnoot invoegen                | ⌥⌘F         | Ctrl+Alt+F       |
+| Eindnoot invoegen                | ⌥⌘E         | Ctrl+Alt+D       |
+| Datum (veld)                     | ⌃⇧D / ⌥⇧D   | Alt+Shift+D      |
+| Tijd (veld)                      | ⌃⇧T / ⌥⇧T   | Alt+Shift+T      |
+| Niet-afbrekende spatie           | ⌃⇧␣ / ⇧⌘␣   | Ctrl+Shift+Space |
+| Niet-afbrekend koppelteken       | ⌥⇧⌘-        | Ctrl+Shift+-     |
+| Paginanummer (huidige pagina)    | ⌃⇧P         | —                |
+| Veldaccolades invoegen           | ⌘F9         | —                |
+| Koppelen aan vorige              | ⌃⇧R         | —                |
+| Mergeveld invoegen               | ⌃⇧F         | —                |
+| Item voor inhoudsopgave markeren | ⌥⇧⌘O        | —                |
+| Sectie-einde (volgende pagina)   | ⌘⌤          | —                |
+| En-streepje                      | ⌘Num-       | —                |
+| Em-streepje                      | ⌥⌘Num-      | —                |
+| Vergelijking                     | ⌃=          | —                |
+| Bladwijzer                       | ⇧⌘F5        | —                |
+| Nieuwe AutoTekst maken           | ⌥F3         | —                |
+| Indexvermelding markeren         | ⌥⇧⌘X        | —                |
+| Citaat markeren                  | ⌥⇧⌘I        | —                |
+| Tijdelijk afbreekstreepje        | ⌥⌘-         | —                |
+| Tabteken in een tabelcel         | ⌃Tab / ⌥Tab | —                |
 
 Eindnoot invoegen is een echte platformsplitsing, geen naamsverandering: Word gebruikt ⌥⌘E op de Mac omdat ⌥⌘D daar bij de Dock hoort.
 
 ### Controleren en hulpmiddelen
 
-| Actie                     | macOS | Windows / Linux |
-| ------------------------- | ----- | --------------- |
-| Wijzigingen bijhouden     | ⇧⌘E   | Ctrl+Shift+E    |
-| Woordentelling            | ⇧⌘G   | Ctrl+Shift+G    |
-| Nakijken                  | F7    | F7              |
-| Veld bijwerken            | F9    | F9              |
-| Veldcodes tonen/verbergen | ⌥F9   | Alt+F9          |
+| Actie                                                   | macOS      | Windows / Linux |
+| ------------------------------------------------------- | ---------- | --------------- |
+| Wijzigingen bijhouden                                   | ⇧⌘E        | Ctrl+Shift+E    |
+| Woordentelling                                          | —          | Ctrl+Shift+G    |
+| Nakijken                                                | —          | F7              |
+| Veld bijwerken                                          | F9 / ⌥⇧⌘U  | F9              |
+| Veldcodes tonen/verbergen                               | ⌥F9        | Alt+F9          |
+| Synoniemenlijst                                         | ⌃⌥⌘R / ⇧F7 | —               |
+| Spelling en grammatica                                  | ⌥⌘L / F7   | Ctrl+Alt+L      |
+| Volgende spelfout                                       | ⌥F7        | —               |
+| Vertalen                                                | ⌃⌥⌘T       | —               |
+| Veldcode van het geselecteerde veld in- of uitschakelen | ⇧F9        | —               |
+| Velden vergrendelen                                     | ⌘F11 / ⌘3  | —               |
+| Velden ontgrendelen                                     | ⇧⌘F11 / ⌘4 | —               |
+| Velden ontkoppelen                                      | ⇧⌘F9 / ⌘6  | —               |
+| Volgend veld                                            | F11        | —               |
+| Vorig veld                                              | ⇧F11       | —               |
+| Lijst met geadresseerden bewerken                       | ⌃⇧E        | —               |
+| Voltooien en samenvoegen                                | ⌃⇧N        | —               |
 
-F7 start de AI-nakijkbeurt en F9 werkt velden bij; beide vereisen een geladen document. Zodra een bewerkingsbeperking Wijzigingen bijhouden aanzet, kan het niet meer uit.
+F7 opent op de Mac, net als in Word, Spelling en grammatica en start op Windows en Linux de AI-nakijkbeurt; F9 werkt velden bij. Zodra een bewerkingsbeperking Wijzigingen bijhouden aanzet, kan het niet meer uit.
 
 ### Weergave
 
-| Actie                        | macOS | Windows / Linux |
-| ---------------------------- | ----- | --------------- |
-| Inzoomen                     | ⌘=    | Ctrl+=          |
-| Uitzoomen                    | ⌘-    | Ctrl+-          |
-| Zoomen naar 100%             | ⌘0    | Ctrl+0          |
-| Opmaaktekens tonen/verbergen | ⌘8    | Ctrl+Shift+8    |
+| Actie                        | macOS       | Windows / Linux |
+| ---------------------------- | ----------- | --------------- |
+| Inzoomen                     | ⌘=          | Ctrl+=          |
+| Uitzoomen                    | ⌘-          | Ctrl+-          |
+| Zoomen naar 100%             | ⌘0          | Ctrl+0          |
+| Opmaaktekens tonen/verbergen | ⌘8          | Ctrl+Shift+8    |
+| Afdrukweergave               | ⌥⌘P         | —               |
+| Overzicht                    | ⌥⌘O         | —               |
+| Concept                      | ⌥⌘N         | —               |
+| Splitsen                     | ⌥⌘S         | —               |
+| Splitsing opheffen           | ⌃⇧C         | —               |
+| Volgend venster              | ⌘F6 / ⌥F6   | —               |
+| Vorig venster                | ⇧⌘F6 / ⌥⇧F6 | —               |
+| Deelvenster Stijlen          | ⌥⇧⌘S        | —               |
+| Focus                        | ⌃⇧⌘F        | —               |
+| Lint                         | ⌥⌘R         | —               |
+| Object opmaken               | ⇧⌘1         | —               |
+| Selectiedeelvenster          | ⌥⌘U         | —               |
 
 De toets voor opmaaktekens volgt de eigen splitsing van Word, ⌘8 tegenover Ctrl+Shift+8. Word regelt zoomen alleen via de drie menutoetsen hierboven — ⌘+ doet hier niets.
 

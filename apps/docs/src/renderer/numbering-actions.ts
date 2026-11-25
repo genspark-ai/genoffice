@@ -16,7 +16,7 @@ import {
 } from '@genoffice/docx-engine'
 import type { DocState, PendingNumbering } from './doc-state'
 import { t } from './i18n/locale'
-import { newListStyleId, type ListStyleEntry } from './list-styles'
+import { newListStyleId, nineListLevels, type ListStyleEntry } from './list-styles'
 
 /** The App state the numbering actions need; built fresh per call. */
 export interface NumberingContext {
@@ -28,6 +28,8 @@ export interface NumberingContext {
   setStatus: (status: string) => void
   /** a level linked to a paragraph style also puts w:numPr on that style (Word writes both) */
   linkStyle?: (styleId: string, numId: string, ilvl: number) => void
+  /** gives a style of the document another name */
+  renameStyle?: (styleId: string, name: string) => void
 }
 
 export function nextNumId(ctx: NumberingContext): string {
@@ -223,6 +225,95 @@ export function deleteListStyle(ctx: NumberingContext, style: ListStyleEntry): v
         : p.removedStyles,
   }))
   if (tr.docChanged) editor.view.dispatch(tr)
+}
+
+/**
+ * Modify Style on a list style: its levels are rewritten where the style is defined, so
+ * every list that follows it changes. A definition the document holds takes one level
+ * edit per changed level; one that is not saved yet is replaced in the pending state.
+ */
+export function modifyListStyle(
+  ctx: NumberingContext,
+  style: ListStyleEntry,
+  name: string,
+  levels: CustomNumberingLevel[],
+): boolean {
+  const { editor, doc } = ctx
+  if (!editor || !doc || levels.length === 0 || style.numberless) return false
+  const { styleId } = style
+  const wanted = style.custom ? name.trim() || style.name : style.name
+  const own = style.inDocument
+    ? doc.parsed.listStyles?.find((s) => s.styleId === styleId)
+    : undefined
+  const abstractNumId =
+    own?.numId === undefined ? undefined : doc.parsed.numbering.get(own.numId)?.abstractNumId
+  if (style.inDocument && abstractNumId === undefined) return false
+  const before = nineListLevels(style.levels)
+  const changed = levels
+    .map((level, ilvl) => ({ ilvl, level }))
+    .filter(({ ilvl, level }) => {
+      // a level the style does not define is not written for the legal box alone, which covers all nine
+      const own = ilvl < style.levels.length ? level : { ...level, isLgl: undefined }
+      return JSON.stringify(own) !== JSON.stringify(before[ilvl])
+    })
+  if (changed.length === 0 && wanted === style.name) return true
+  if (abstractNumId !== undefined) {
+    ctx.setPendingNumbering((p) => ({
+      ...p,
+      levelEdits: [
+        ...p.levelEdits.filter(
+          (e) => e.abstractNumId !== abstractNumId || !changed.some((c) => c.ilvl === e.ilvl),
+        ),
+        ...changed.map((c) => ({ abstractNumId, ...c })),
+      ],
+    }))
+    if (wanted !== style.name) ctx.renameStyle?.(styleId, wanted)
+  } else {
+    const numId = nextNumId(ctx)
+    ctx.setPendingNumbering((p) => {
+      const defining = p.styleNums.some((l) => l.styleId === styleId && l.define)
+      const made = p.styleDefs.some((s) => s.styleId === styleId)
+      return {
+        ...p,
+        styleNums: p.styleNums.map((l) =>
+          l.styleId === styleId && l.define
+            ? { ...l, define: { ...l.define, name: wanted, levels } }
+            : l,
+        ),
+        styleDefs: made
+          ? p.styleDefs.map((s) => (s.styleId === styleId ? { ...s, name: wanted, levels } : s))
+          : defining
+            ? p.styleDefs
+            : [
+                ...p.styleDefs,
+                {
+                  styleId,
+                  name: wanted,
+                  numId,
+                  levels,
+                  ...(style.custom ? {} : { builtIn: true as const }),
+                },
+              ],
+      }
+    })
+  }
+  const store = editor.storage.listNumbering as { defs: Map<string, NumberingDef> }
+  const overlay = Object.fromEntries(
+    changed.map((c) => [
+      c.ilvl,
+      numberingLevelFromCustom(c.level, picBulletSrc(ctx, c.level.picBulletId)),
+    ]),
+  )
+  const next = new Map(store.defs)
+  for (const [id, def] of next)
+    if (
+      def.listStyleId === styleId ||
+      (abstractNumId !== undefined && def.abstractNumId === abstractNumId)
+    )
+      next.set(id, { ...def, levels: { ...def.levels, ...overlay } })
+  store.defs = next
+  editor.view.dispatch(editor.state.tr)
+  return true
 }
 
 /** ids of the list styles the body's list items follow, and the one at the caret */

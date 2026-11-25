@@ -175,7 +175,7 @@ export const hu = {
   ribbonBulletHangNarrow: 'Keskeny',
   ribbonBulletHangNormal: 'Normál',
   ribbonBulletHangWide: 'Széles',
-  ribbonBulletHangCustomTip: 'Egyéni felsorolásjel-behúzás (px, az Enter alkalmazza)',
+  ribbonBulletHangCustomTip: 'Egyéni felsorolásjel-behúzás ({unit}, az Enter alkalmazza)',
   ribbonBulletSize: 'Felsorolásjel mérete',
   ribbonBulletColor: 'Felsorolásjel színe',
   ribbonNumberStyle: 'Számozási stílus',

@@ -28,8 +28,9 @@ export function AutoTextDialog({
   const { t } = useI18n()
   const keys = useModalKeys(onClose)
   const [name, setName] = useState(suggestedName)
-  const [picked, setPicked] = useState(entries[0]?.name ?? '')
-  const entry = entries.find((e) => e.name === picked) ?? entries[0]
+  // by place in the list: the document may hold an entry under a name this computer has too
+  const [picked, setPicked] = useState(0)
+  const entry = entries[picked] ?? entries[0]
   const ready = mode === 'new' ? name.trim() !== '' : entry !== undefined
   return (
     <div
@@ -72,12 +73,12 @@ export function AutoTextDialog({
               size={8}
               autoFocus
               aria-label={t('ribbonAutoText')}
-              value={entry?.name ?? ''}
-              onChange={(e) => setPicked(e.target.value)}
+              value={entry ? entries.indexOf(entry) : 0}
+              onChange={(e) => setPicked(Number(e.target.value))}
               onDoubleClick={(e) => e.currentTarget.form?.requestSubmit()}
             >
-              {entries.map((e) => (
-                <option key={e.name} value={e.name}>
+              {entries.map((e, i) => (
+                <option key={i} value={i}>
                   {e.name}
                 </option>
               ))}
@@ -87,7 +88,11 @@ export function AutoTextDialog({
         )}
         <div className="modal-actions">
           {mode === 'insert' && entry ? (
-            <button type="button" onClick={() => onDelete(entry.name)}>
+            <button
+              type="button"
+              disabled={entry.from === 'document'}
+              onClick={() => onDelete(entry.name)}
+            >
               {t('ribbonGroupDelete')}
             </button>
           ) : (

@@ -1,10 +1,13 @@
 import type {
   TextEffect,
+  TextFill,
   TextFxOwn,
   TextGlow,
   TextReflection,
   TextShadow,
 } from '@genoffice/docx-engine'
+import { textHasCjk } from '../line-metrics'
+import { darkPageBorderCss, darkPageColor, dkBackgroundImage } from './dark-page'
 
 const TEXT_EFFECTS: ReadonlySet<string> = new Set(['outline', 'emboss', 'imprint', 'shadow'])
 
@@ -35,6 +38,134 @@ function cssColor(hex: string, alpha: number | undefined): string {
   return alpha !== undefined && alpha < 1
     ? `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${alpha})`
     : `#${hex}`
+}
+
+/** a gradient fill as a CSS image; OOXML turns clockwise from pointing right, CSS from pointing up */
+export function textFillGradientCss(fill: Extract<TextFill, { kind: 'gradient' }>): string {
+  const stops = fill.stops
+    .map((stop) => `${cssColor(stop.color, stop.alpha)} ${Math.round(stop.pos * 1000) / 10}%`)
+    .join(',')
+  // one stop is one colour: CSS wants two to draw anything
+  const list = fill.stops.length === 1 ? `${stops},${stops}` : stops
+  return fill.path
+    ? `radial-gradient(${fill.path === 'circle' ? 'circle' : 'ellipse'},${list})`
+    : `linear-gradient(${Math.round((fill.angleDeg + 90) * 100) / 100}deg,${list})`
+}
+
+/**
+ * w14:textFill on the glyphs. The colours are the document's; each gets a
+ * `--dk-*` twin for the dark page. A gradient is clipped to the glyphs, so a
+ * span that also paints a background (`onBackground`) keeps its plain colour.
+ */
+export function textFillDecls(fill: TextFill, onBackground = false): string[] {
+  if (fill.kind === 'none') return ['-webkit-text-fill-color:transparent']
+  if (fill.kind === 'solid') {
+    const css = cssColor(fill.color, fill.alpha)
+    return [`-webkit-text-fill-color:${css}`, `--dk-tf:${darkPageColor(css)}`]
+  }
+  if (onBackground) return []
+  const image = textFillGradientCss(fill)
+  return [
+    `background-image:${image}`,
+    '-webkit-background-clip:text',
+    'background-clip:text',
+    '-webkit-text-fill-color:transparent',
+    dkBackgroundImage(image),
+  ]
+}
+
+/** CSS declarations ("name:value") as a style object; custom properties keep their names */
+export function declStyle(decls: string[]): Record<string, string> {
+  const style: Record<string, string> = {}
+  for (const decl of decls) {
+    const at = decl.indexOf(':')
+    const name = decl.slice(0, at)
+    const key = name.startsWith('--')
+      ? name
+      : name.replace(/^-webkit-/, 'Webkit-').replace(/-([a-z])/g, (_, c: string) => c.toUpperCase())
+    style[key] = decl.slice(at + 1)
+  }
+  return style
+}
+
+/** w14:textFill of a style: the rule's declarations and their dark-page twins */
+export function styleTextFillDecls(
+  fill: TextFill,
+  opts: { outlined: boolean; character: boolean },
+): { decls: string[]; darkDecls: string[] } {
+  // glyphs with neither fill nor outline would vanish
+  if (fill.kind === 'none')
+    return { decls: opts.outlined ? ['-webkit-text-fill-color:transparent'] : [], darkDecls: [] }
+  if (fill.kind === 'solid') {
+    const css = cssColor(fill.color, fill.alpha)
+    return {
+      decls: [`-webkit-text-fill-color:${css}`],
+      darkDecls: [`-webkit-text-fill-color:${darkPageColor(css)}`],
+    }
+  }
+  // clipped to the glyphs it would take a paragraph's own shading with it
+  if (!opts.character) return { decls: [], darkDecls: [] }
+  const image = textFillGradientCss(fill)
+  return {
+    decls: [
+      `background-image:${image}`,
+      '-webkit-background-clip:text',
+      'background-clip:text',
+      '-webkit-text-fill-color:transparent',
+    ],
+    darkDecls: [`background-image:${darkPageBorderCss(image)}`],
+  }
+}
+
+const validStop = (stop: unknown): boolean => {
+  const s = stop as { pos?: unknown; color?: unknown } | null
+  return !!s && typeof s.pos === 'number' && typeof s.color === 'string'
+}
+
+/** a TextFill as it was stored in an attribute; undefined when it is not one */
+export function textFillOfJson(value: unknown): TextFill | undefined {
+  const fill = value as Partial<TextFill> | null
+  if (!fill || typeof fill !== 'object') return undefined
+  if (fill.kind === 'none') return { kind: 'none' }
+  if (fill.kind === 'solid' && typeof fill.color === 'string')
+    return {
+      kind: 'solid',
+      color: fill.color,
+      ...(typeof fill.alpha === 'number' ? { alpha: fill.alpha } : {}),
+    }
+  if (
+    fill.kind === 'gradient' &&
+    Array.isArray(fill.stops) &&
+    fill.stops.length > 0 &&
+    fill.stops.every(validStop)
+  )
+    return {
+      kind: 'gradient',
+      stops: fill.stops,
+      angleDeg: typeof fill.angleDeg === 'number' ? fill.angleDeg : 0,
+      ...(fill.path ? { path: fill.path } : {}),
+    }
+  return undefined
+}
+
+/**
+ * The mark's `textFill` attr: the fill with the text colour it came with
+ * (`over`, hex or null). A colour picked later replaces the fill, as in Word,
+ * so the fill counts only while the colour is still that one.
+ */
+export function textFillAttr(fill: TextFill, color: string | null | undefined): string {
+  return JSON.stringify({ ...fill, over: color ?? null })
+}
+
+export function liveTextFill(raw: unknown, color: unknown): TextFill | undefined {
+  if (typeof raw !== 'string' || !raw) return undefined
+  try {
+    const stored = JSON.parse(raw) as { over?: string | null }
+    const same = (stored.over ?? '').toUpperCase() === String(color ?? '').toUpperCase()
+    return same ? textFillOfJson(stored) : undefined
+  } catch {
+    return undefined
+  }
 }
 
 /** two blur layers: one Gaussian alone fades far below Word's dense halo */
@@ -154,6 +285,15 @@ export function positionDecl(halfPoints: number): string {
 export interface CharScaleX {
   s: number
   gapEm: number
+}
+
+/** East Asian text breaks between any two glyphs; one box that long overflows the line or strands the run */
+const SCALE_X_MAX_BREAKABLE_CHARS = 8
+
+/** the inline-block cannot wrap: only a run short of break opportunities takes it */
+export function charScaleXFits(text: string): boolean {
+  if (/\s/.test(text)) return false
+  return [...text].length <= SCALE_X_MAX_BREAKABLE_CHARS || !textHasCjk(text)
 }
 
 export function charScaleXAttr(text: string, scalePct: number, perCharEm: number): string {

@@ -853,8 +853,11 @@ const config = {
   // Same "@genoffice/shell" naming problem as deb: spell the artifact name
   // out (${arch} expands to the rpm arch string, x86_64) and pin the rpm
   // Package name so dnf/zypper treat successive releases as upgrades of the
-  // same package. Like deb, rpm installs run no in-app updater — users
-  // upgrade with `dnf install ./<new>.rpm`. Packaging needs rpmbuild on the
+  // same package. Unlike deb, rpm installs run no in-app updater — users
+  // upgrade with `dnf install ./<new>.rpm` (the rpm is a GitHub-Release-only
+  // artifact; the self-updating electron-updater feed carries AppImage + deb,
+  // so the rpm bake carries no publish config or package-type).
+  // Packaging needs rpmbuild on the
   // build host (the `rpm` apt package on Ubuntu; CI installs it).
   //
   // publish: null (explicit) keeps the rpm out of the electron-updater feed

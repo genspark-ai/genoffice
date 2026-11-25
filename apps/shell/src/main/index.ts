@@ -63,6 +63,10 @@ import {
   readExcludedFolders,
   DEFAULT_SAVE_DIR_KEY,
   DROP_OPEN_CHANNEL,
+  USER_FILE_PATHS_SEEN_CHANNEL,
+  seenFilePaths,
+  isBesideDocument,
+  sharedPathGrants,
   GITHUB_REPO_URL,
   appMenuLabels,
   appMenuTemplate,
@@ -323,6 +327,12 @@ import {
   sameAiPanelPrefs,
   type AiPanelPrefs,
 } from '@genoffice/ui/ai-panel-prefs'
+import {
+  MEASUREMENT_UNIT_CHANNELS,
+  defaultMeasurementUnit,
+  isMeasurementUnit,
+  type MeasurementUnitState,
+} from '@genoffice/ui/measurement'
 import type { TabKind } from '../shared/tabs-api'
 import { TABS_CHANNELS } from '../shared/tabs-api'
 import { showErrorDialog } from './error-dialog'
@@ -406,6 +416,7 @@ import {
   detachedWebContentsFor,
   detachedSetTitleFor,
   detachedWindowForWebContents,
+  detachedTabsOf,
   detachedWindowsOf,
   holdDocking,
   dockBandFor,
@@ -3871,7 +3882,7 @@ let tabManager: TabManager | null = null
  * created, and the tab's first save moves the fresh file there.
  * key: 'doc' | 'sheet' | 'slide' | 'markdown' | 'html' | 'pdf'
  */
-/** folders the user excluded from recents, search and session restore (#2844) */
+/** folders the user excluded from recents, search and session restore (genoffice#2844) */
 function excludedFolderPaths(): string[] {
   return readExcludedFolders(readAppSettings(APP_SETTINGS_PATH()))
 }
@@ -3897,6 +3908,18 @@ function isRevealablePath(path: string): boolean {
   if (insideAnyRoot(path)) return true
   const key = resolve(path)
   return [...readRecentFiles(), ...readStarredFiles()].some((p) => resolve(p) === key)
+}
+
+/** Wiki links resolve beside the document that holds them, and a wiki note
+ *  commonly opens a sibling — or a note in a subfolder ([[sub/Note]]) — the
+ *  user never opened alone. A directory the user has a document open in,
+ *  including its subdirectories, therefore counts as revealed for the open
+ *  channel: still the user's own active workspace, not the disk. A document
+ *  in a detached window counts the same. */
+function isBesideOpenDocument(path: string): boolean {
+  const resolved = resolve(path)
+  const openPaths = [...(tabManager?.openFilePaths() ?? []), ...detachedFilePaths()]
+  return openPaths.some((open) => isBesideDocument(open, resolved))
 }
 
 function isAnyRoot(path: string): boolean {
@@ -4262,6 +4285,15 @@ let currentUiScale = 1
  * window. Each gets it on `did-finish-load`, because a stylesheet inserted
  * before the document exists is thrown away.
  */
+/** Grants die with the view: a webContents id is never reused, and a closed
+ *  view's ledger entries would otherwise keep paths readable for the whole
+ *  process life (the ledger comment promises this wiring; here it is). */
+function installGrantRelease(): void {
+  app.on('web-contents-created', (_event, contents) => {
+    contents.once('destroyed', () => sharedPathGrants().release(contents.id))
+  })
+}
+
 function installUiScale(): void {
   currentUiScale = readUiScale(APP_SETTINGS_PATH())
   app.on('web-contents-created', (_event, contents) => {
@@ -4433,14 +4465,35 @@ function createShellWindow(): void {
     openAiDocTab: (content) =>
       ensureTabManager().openDocsTab(undefined, { newBlank: true, aiContent: content }),
     openResultDocTab: (doc) => ensureTabManager().openDocsTab(undefined, { resultDoc: doc }),
-    listTabs: () =>
-      (tabManager?.list() ?? [])
-        .filter((t) => t.kind === 'docs')
-        .map((t) => ({ id: t.id, title: t.title, focused: t.active })),
-    focusTab: (id) => tabManager?.activateTab(id),
+    // the strip's documents, then the windows dragged out of it; a focused
+    // window of its own is where switching starts, not the strip's active tab
+    listTabs: () => {
+      const windows = detachedTabsOf('docs')
+      const away = windows.some((w) => w.focused)
+      return [
+        ...(tabManager?.list() ?? [])
+          .filter((t) => t.kind === 'docs')
+          .map((t) => ({ id: t.id, title: t.title, focused: t.active && !away })),
+        ...windows,
+      ]
+    },
+    focusTab: (id) => {
+      if (activateDetached(id)) return
+      tabManager?.activateTab(id)
+      if (shellWindow && !shellWindow.isDestroyed()) {
+        if (shellWindow.isMinimized()) shellWindow.restore()
+        shellWindow.focus()
+      }
+    },
     arrangeAll: arrangeDocsWindows,
     gatherWindows: gatherDocsWindows,
     detachedWindowCount: () => detachedWindowsOf('docs').length,
+    docsWindows: () => [
+      ...(shellWindow && tabManager?.list().some((t) => t.active && t.kind === 'docs')
+        ? [shellWindow]
+        : []),
+      ...detachedWindowsOf('docs'),
+    ],
     // ⌘W in a detached docs window closes that window (its own close guard runs)
     closeActiveTab: () => {
       const focused = BrowserWindow.getFocusedWindow()
@@ -4637,9 +4690,18 @@ const droppedFilesDeps = () => ({
 })
 
 function registerDroppedFilesIpc(): void {
-  ipcMain.on(DROP_OPEN_CHANNEL, (_event, raw: unknown) =>
-    handleDroppedFiles(raw, droppedFilesDeps()),
-  )
+  ipcMain.on(DROP_OPEN_CHANNEL, (event, raw: unknown) => {
+    // the drop itself is the user action: grant the paths for this view so
+    // editor reads of what was just dropped verify against the ledger
+    sharedPathGrants().grant(event.sender.id, seenFilePaths(raw))
+    handleDroppedFiles(raw, droppedFilesDeps())
+  })
+  // the grant-ledger feed for page-handled drops (AI attachment panels,
+  // image inserts) and clipboard file pastes: the preload bridge records
+  // every OS file drop/paste it resolves, claimed or not
+  ipcMain.on(USER_FILE_PATHS_SEEN_CHANNEL, (event, raw: unknown) => {
+    sharedPathGrants().grant(event.sender.id, seenFilePaths(raw))
+  })
 }
 
 /** the single router: extension decides which module owns the file; false = nothing opened */
@@ -5120,6 +5182,13 @@ function registerHomeIpc(): void {
     return readKnowledgeFilePage(path, offset)
   })
 
+  // an @ mention attaches a corpus file: the attachment reads need it in the ledger
+  ipcMain.handle('kb:grant-mention', (event, path: unknown): boolean => {
+    if (typeof path !== 'string' || !readStarredFiles().includes(path)) return false
+    sharedPathGrants().grant(event.sender.id, [path])
+    return true
+  })
+
   ipcMain.handle('kb:create-document', async (_event, raw: unknown): Promise<unknown> => {
     const req = parseKbCreateRequest(raw)
     return createKnowledgeDocument(
@@ -5243,8 +5312,26 @@ function registerHomeIpc(): void {
     if (typeof path === 'string') toggleStarredFile(path)
   })
 
-  ipcMain.handle(HOME_CHANNELS.openPath, (_event, path: unknown) => {
+  ipcMain.handle(HOME_CHANNELS.openPath, (event, path: unknown) => {
     if (typeof path !== 'string' || !path || path.length > 4096) return
+    // Renderer-facing open channel: the path must be one the home UI can
+    // legitimately show (folder tree, recents, starred, save folder), one
+    // beside a document the view has open (wiki links resolve there), or
+    // one this view's user physically handed over (OS drop / clipboard
+    // file — the drop bridge records those in the shared grant ledger).
+    // Without the check the channel is an open-any-file primitive for a
+    // compromised renderer; e2e drives it with fixture paths and skips
+    // the check.
+    if (
+      process.env.GENOFFICE_E2E !== '1' &&
+      !isRevealablePath(path) &&
+      !isBesideOpenDocument(path) &&
+      !sharedPathGrants().has(event.sender.id, path)
+    )
+      return
+    // no grant here: opening is its own authority, and a grant to the calling
+    // view would let any view read anything beside a folder root or a recent
+    // through files:read without ever opening it
     openDocumentPath(path)
     fileIndexer?.refresh()
   })
@@ -5268,7 +5355,13 @@ function registerHomeIpc(): void {
       ],
       properties: ['openFile', 'multiSelections'],
     })
-    if (!result.canceled) for (const path of result.filePaths) openDocumentPath(path)
+    if (!result.canceled) {
+      if (result.filePaths.length > 0) {
+        // user picked them through the dialog: grant for this view's reads
+        sharedPathGrants().grant(event.sender.id, result.filePaths)
+        for (const path of result.filePaths) openDocumentPath(path)
+      }
+    }
   })
 
   ipcMain.handle(HOME_CHANNELS.newDoc, (_event, opts?: NewFileOpts) => {
@@ -5396,7 +5489,10 @@ function registerHomeIpc(): void {
     buildHomeMenu()
     installDockMenu()
     installBackToHomeItems()
-    for (const wc of webContents.getAllWebContents()) wc.send('app:language-changed', lang)
+    for (const wc of webContents.getAllWebContents()) {
+      wc.send('app:language-changed', lang)
+      wc.send(MEASUREMENT_UNIT_CHANNELS.changed, measurementUnitState())
+    }
   })
 
   ipcMain.handle(HOME_CHANNELS.getUpdateChannel, (): UpdateChannel => currentUpdateChannel())
@@ -5455,6 +5551,25 @@ function registerHomeIpc(): void {
   ipcMain.handle(HOME_CHANNELS.getDocumentTheme, (): DocTheme => currentDocTheme())
   // editor tabs ask via the app-wide channel (symmetric with app:get-theme)
   ipcMain.handle('app:get-document-theme', (): DocTheme => currentDocTheme())
+
+  // measurement units (Settings ▸ General): one preference for every editor's
+  // rulers and length fields; unset follows the UI language as it did before
+  // the setting existed (inches for English, centimeters elsewhere)
+  const measurementUnitState = (): MeasurementUnitState => {
+    const saved = readAppSettings(APP_SETTINGS_PATH()).measurementUnit
+    if (isMeasurementUnit(saved)) return { unit: saved, explicit: true }
+    return { unit: defaultMeasurementUnit(currentLang()), explicit: false }
+  }
+  ipcMain.handle(MEASUREMENT_UNIT_CHANNELS.get, (): MeasurementUnitState => measurementUnitState())
+  ipcMain.handle(MEASUREMENT_UNIT_CHANNELS.set, (_event, unit: unknown): MeasurementUnitState => {
+    if (unit !== null && !isMeasurementUnit(unit)) return measurementUnitState()
+    writeAppSetting(APP_SETTINGS_PATH(), 'measurementUnit', unit)
+    const state = measurementUnitState()
+    for (const wc of webContents.getAllWebContents()) {
+      if (!wc.isDestroyed()) wc.send(MEASUREMENT_UNIT_CHANNELS.changed, state)
+    }
+    return state
+  })
 
   ipcMain.handle(HOME_CHANNELS.setDocumentTheme, (_event, theme: unknown) => {
     if (theme !== 'light' && theme !== 'dark' && theme !== 'follow') return
@@ -5555,10 +5670,11 @@ function registerHomeIpc(): void {
         ? { [EXCLUDED_FOLDERS_KEY]: next }
         : { [EXCLUDED_FOLDERS_KEY]: undefined }),
     })
-    // the surfaces re-read the list on their next pass; the watchers and the
-    // search index re-decide now
+    // the surfaces re-read the list on their next pass; the watchers, the
+    // search index and File > Open Recent re-decide now
     ensureFolderWatchers()
     fileIndexer?.refresh()
+    buildDocsMenu()
     return next
   })
   ipcMain.handle(HOME_CHANNELS.pickExcludedFolder, async (event) => {
@@ -7171,7 +7287,10 @@ function installBackToHomeItems(): void {
     accelerator: 'Shift+CmdOrCtrl+H',
     click: () => tabManager?.openHomeTab(),
   }
-  setDocsExtraFileMenuItems([backToHomeItem])
+  // in Docs on the Mac ⇧⌘H is Replace, as in Word
+  const inDocs =
+    process.platform === 'darwin' ? { ...backToHomeItem, accelerator: undefined } : backToHomeItem
+  setDocsExtraFileMenuItems([inDocs])
   setSheetsExtraFileMenuItems([backToHomeItem])
   setSlidesExtraFileMenuItems([backToHomeItem])
 }
@@ -7597,6 +7716,7 @@ app.whenReady().then(async () => {
   void startMcpFromSettings(currentMcpSettings()).catch((error) => {
     console.error('[mcp] failed to start on boot:', error)
   })
+  installGrantRelease()
   installUiScale()
   createShellWindow()
   // deferred to ready: labels need currentLang(), which reads app.getLocale()

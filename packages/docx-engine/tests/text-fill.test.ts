@@ -74,7 +74,7 @@ describe('w14:textFill (solid)', () => {
     expect(cleared.xml).not.toContain('w:color')
   })
 
-  it('replaces a gradient only when a fill is set in the editor', async () => {
+  it('replaces a gradient when a colour is picked over it or a fill is set in the editor', async () => {
     const gradient =
       '<w14:textFill><w14:gradFill><w14:gsLst>' +
       '<w14:gs w14:pos="0"><w14:srgbClr w14:val="FF0000"/></w14:gs>' +
@@ -82,8 +82,11 @@ describe('w14:textFill (solid)', () => {
       '</w14:gsLst><w14:lin w14:ang="5400000" w14:scaled="0"/></w14:gradFill></w14:textFill>'
     const rPr = `<w:color w:val="FF0000"/>${gradient}`
     const run = await firstRun(rPr)
+    const untouched = await saved([{ ...run, text: 'kept still' }], fileRun(rPr))
+    expect(untouched.xml).toContain(gradient)
     const recoloured = await saved([{ ...run, color: '0070C0' }], fileRun(rPr))
-    expect(recoloured.xml).toContain(gradient)
+    expect(recoloured.xml).not.toContain('w14:gradFill')
+    expect(recoloured.xml).toContain(srgb('0070C0'))
     const filled = await saved(
       [{ ...run, color: '0070C0', fxOwn: { fill: '0070C0' } }],
       fileRun(rPr),
@@ -98,5 +101,94 @@ describe('w14:textFill (solid)', () => {
     const { xml } = await saved([{ ...run, fxOwn: { fill: null } }], fileRun(rPr))
     expect(xml).not.toContain('w14:textFill')
     expect(xml).toContain('<w:color w:val="C00000"/>')
+  })
+})
+
+const gradFill = (stops: string, spread = '<w14:lin w14:ang="5400000" w14:scaled="0"/>') =>
+  `<w14:textFill><w14:gradFill><w14:gsLst>${stops}</w14:gsLst>${spread}</w14:gradFill></w14:textFill>`
+const gs = (pos: number, hex: string, inner = '') =>
+  `<w14:gs w14:pos="${pos}"><w14:srgbClr w14:val="${hex}"${inner ? `>${inner}</w14:srgbClr>` : '/>'}</w14:gs>`
+
+describe('w14:textFill (what the page draws)', () => {
+  it('reads a gradient with its stops, its angle and the transparency of a stop', async () => {
+    const run = await firstRun(
+      '<w:color w:val="4472C4"/>' +
+        gradFill(gs(100000, '4472C4') + gs(0, 'FFFFFF', '<w14:alpha w14:val="25000"/>')),
+    )
+    expect(run.color).toBe('4472C4')
+    expect(run.textFill).toEqual({
+      kind: 'gradient',
+      stops: [
+        { pos: 0, color: 'FFFFFF', alpha: 0.75 },
+        { pos: 1, color: '4472C4' },
+      ],
+      angleDeg: 90,
+    })
+  })
+
+  it('reads a path gradient, an empty fill and a transparent colour', async () => {
+    const path = '<w14:path w14:path="circle"><w14:fillToRect w14:l="50000"/></w14:path>'
+    expect(
+      (await firstRun(gradFill(gs(0, 'FF0000') + gs(100000, '0000FF'), path))).textFill,
+    ).toMatchObject({ kind: 'gradient', path: 'circle' })
+    expect((await firstRun('<w14:textFill><w14:noFill/></w14:textFill>')).textFill).toEqual({
+      kind: 'none',
+    })
+    const faint = fill('<w14:srgbClr w14:val="C00000"><w14:alpha w14:val="60000"/></w14:srgbClr>')
+    expect((await firstRun(`<w:color w:val="C00000"/>${faint}`)).textFill).toEqual({
+      kind: 'solid',
+      color: 'C00000',
+      alpha: 0.4,
+    })
+  })
+
+  it('says nothing beside a colour that already says it, and speaks up when the two differ', async () => {
+    expect((await firstRun(`<w:color w:val="C00000"/>${srgb('C00000')}`)).textFill).toBeUndefined()
+    expect((await firstRun(srgb('C00000'))).textFill).toBeUndefined()
+    expect((await firstRun(`<w:color w:val="000000"/>${srgb('C00000')}`)).textFill).toEqual({
+      kind: 'solid',
+      color: 'C00000',
+    })
+  })
+
+  it('writes a gradient set in the editor and reads the same one back', async () => {
+    const gradient = {
+      kind: 'gradient' as const,
+      stops: [
+        { pos: 0, color: 'B4C7E7' },
+        { pos: 1, color: '4472C4' },
+      ],
+      angleDeg: 45,
+    }
+    const { xml, runs } = await saved([
+      { text: 'g', color: '4472C4', fxOwn: { fill: '4472C4', textFill: gradient } },
+    ])
+    expect(xml).toContain('<w:color w:val="4472C4"/>')
+    expect(xml).toContain(
+      gradFill(
+        gs(0, 'B4C7E7') + gs(100000, '4472C4'),
+        '<w14:lin w14:ang="2700000" w14:scaled="0"/>',
+      ),
+    )
+    expect(runs[0].textFill).toEqual(gradient)
+  })
+
+  it('keeps a gradient of the file byte for byte, and gives it up for a colour picked over it', async () => {
+    const rPr = `<w:color w:val="4472C4"/>${gradFill(gs(0, 'FFFFFF') + gs(100000, '4472C4'))}`
+    const run = await firstRun(rPr)
+    const kept = await saved([{ ...run, text: 'kept still' }], fileRun(rPr))
+    expect(kept.xml).toContain(`<w:rPr>${rPr}</w:rPr>`)
+    const { textFill: _gone, ...plain } = run
+    const recoloured = await saved([{ ...plain, color: 'C00000' }], fileRun(rPr))
+    expect(recoloured.xml).not.toContain('w14:gradFill')
+    expect(recoloured.xml).toContain(`<w:color w:val="C00000"/>${srgb('C00000')}`)
+  })
+
+  it('hands the fill back to the colour when a gradient set in the editor is taken off', async () => {
+    const { xml } = await saved([
+      { text: 'g', color: '4472C4', fxOwn: { fill: '4472C4', textFill: null } },
+    ])
+    expect(xml).toContain(srgb('4472C4'))
+    expect(xml).not.toContain('w14:gradFill')
   })
 })

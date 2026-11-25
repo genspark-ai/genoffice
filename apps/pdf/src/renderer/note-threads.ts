@@ -1,16 +1,26 @@
-import type { DrawingInput } from '../shared/ipc'
+import type { DrawingInput, MarkupType } from '../shared/ipc'
 
 /** pdf.js AnnotationType.TEXT (sticky-note comments) */
 export const PDFJS_ANNOT_TEXT = 1
 
+/** pdf.js text-markup subtypes whose Contents can carry a comment. */
+export const PDFJS_MARKUP_TYPE_BY_ANNOT: Record<number, MarkupType> = {
+  9: 'highlight',
+  10: 'underline',
+  11: 'squiggly',
+  12: 'strikeout',
+}
+
 export type NoteInput = Extract<DrawingInput, { kind: 'note' }>
 
-/** A note (Text) annotation already saved in the file (read via pdf.js getAnnotations) */
+/** A Text or commented text-markup annotation already saved in the file (read via pdf.js getAnnotations) */
 export interface SavedNoteAnnot {
   pageIndex: number
   /** PDF object number (pdf.js id "123R" → 123) */
   objNum: number
-  type: 'note'
+  type: 'note' | MarkupType
+  /** Stable markup geometry; pdf.js may expand a synthesized appearance's rect. */
+  quadPoints?: number[]
   rect: [number, number, number, number]
   /** rgb 0-1; null when the annotation has no /C */
   color: [number, number, number] | null
@@ -91,6 +101,7 @@ export function parsePdfDate(s: string | null | undefined): number | null {
 export interface PdfJsAnnotData {
   id: string
   annotationType: number
+  quadPoints?: ArrayLike<number> | null
   rect: number[]
   color?: { [i: number]: number; length: number } | null
   titleObj?: { str: string } | null
@@ -103,12 +114,15 @@ export interface PdfJsAnnotData {
 }
 
 /**
- * pdf.js annotation → SavedNoteAnnot. Null for non-Text annots, hidden ones, annots
+ * pdf.js annotation → SavedNoteAnnot. Null for unsupported/empty markup comments, hidden annots, annots
  * not backed by an object ref (unaddressable for delete/reply), and /RT Group members
  * (grouping, not a reply — pdf.js already mirrors the parent's contents onto them).
  */
 export function toSavedNote(a: PdfJsAnnotData, pageIndex: number): SavedNoteAnnot | null {
-  if (a.annotationType !== PDFJS_ANNOT_TEXT || a.hidden) return null
+  if (a.hidden) return null
+  const markupType = PDFJS_MARKUP_TYPE_BY_ANNOT[a.annotationType]
+  const contents = a.contentsObj?.str ?? ''
+  if (a.annotationType !== PDFJS_ANNOT_TEXT && (!markupType || !contents.trim())) return null
   if (a.replyType === 'Group') return null
   const objNum = /^(\d+)R$/.exec(a.id)
   if (!objNum || !Array.isArray(a.rect) || a.rect.length !== 4) return null
@@ -120,11 +134,12 @@ export function toSavedNote(a: PdfJsAnnotData, pageIndex: number): SavedNoteAnno
   return {
     pageIndex,
     objNum: Number(objNum[1]),
-    type: 'note',
+    type: markupType ?? 'note',
+    ...(markupType && a.quadPoints?.length ? { quadPoints: Array.from(a.quadPoints) } : {}),
     rect: [a.rect[0]!, a.rect[1]!, a.rect[2]!, a.rect[3]!],
     color,
     author: a.titleObj?.str ?? '',
-    contents: a.contentsObj?.str ?? '',
+    contents,
     timeMs: parsePdfDate(a.creationDate) ?? parsePdfDate(a.modificationDate),
     inReplyTo: parent ? Number(parent[1]) : null,
   }

@@ -79,6 +79,13 @@ export const IconInk = () => (
     <path d="M14.15 6.85 L17.15 9.85" />
   </Icon>
 )
+export const IconEraser = () => (
+  <Icon>
+    <path d="M13.6 5.2 L18.8 10.4 L11.2 18 H7.8 L5.2 15.4 a1.4 1.4 0 0 1 0 -2 Z" />
+    <path d="M9.4 9.4 L14.6 14.6" />
+    <path d="M11.2 18 H19" />
+  </Icon>
+)
 export const IconRect = () => (
   <Icon>
     <rect x="4.5" y="6.64" width="15" height="10.71" rx="1.07" />
@@ -289,6 +296,18 @@ export const IconEditImage = () => (
     <circle cx="8.3" cy="9.4" r="1.1" />
     <path d="M4.8 14 L8.3 11.4 L11.5 13.7 L13.8 12" />
     <path d="M14.2 18.9 L19.7 13.4 A1.06 1.06 0 0 0 18.2 11.9 L12.7 17.4 L12.2 19.4 Z" />
+  </Icon>
+)
+export const IconHand = () => (
+  <Icon>
+    <path d="M8.5 12.5 V6.2 a1.3 1.3 0 0 1 2.6 0 V11 M11.1 10.5 V5 a1.3 1.3 0 0 1 2.6 0 V11 M13.7 10.8 V6.2 a1.3 1.3 0 0 1 2.6 0 V12 M16.3 11.5 V8.6 a1.3 1.3 0 0 1 2.6 0 V14.5 a5.5 5.5 0 0 1-5.5 5.5 h-1.2 a5 5 0 0 1-4.1-2.1 L5.4 14 a1.3 1.3 0 0 1 2.1-1.5 l1 1.3" />
+  </Icon>
+)
+export const IconLineWidth = () => (
+  <Icon>
+    <path d="M5 6.5 H19" strokeWidth="1" />
+    <path d="M5 11 H19" strokeWidth="2" />
+    <path d="M5 16.75 H19" strokeWidth="3.5" />
   </Icon>
 )
 export const IconNight = () => (

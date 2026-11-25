@@ -1,8 +1,8 @@
 /**
  * The Shape Format tab's rotation commands and outline-weight picker.
  *
- * Word puts two quarter-turn buttons in the Arrange group and the weight
- * gallery beside Shape Outline. Both write the selected box's display model
+ * Word puts the quarter turns in Arrange > Rotate and the weight gallery
+ * beside Shape Outline. Both write the selected box's display model
  * (rotDeg / borderWidthPx); the save pipeline and the renderer are covered by
  * their own tests, so this mounts the real ribbon and checks the attributes.
  */
@@ -68,6 +68,13 @@ function pickDropdown(container: HTMLElement, dd: HTMLButtonElement, value: stri
   act(() => item.click())
 }
 
+/** Arrange > Rotate, then the item with this caption */
+function rotate(container: HTMLElement, item: Parameters<typeof t>[0]): void {
+  act(() => tipped(container, 'ribbonArrangeRotate').click())
+  const items = [...container.querySelectorAll<HTMLButtonElement>('[data-rb-panel] button')]
+  act(() => items.find((el) => el.textContent?.trim() === t(item))!.click())
+}
+
 const boxesOf = (editor: Editor, pos: number): TextboxDisplay[] =>
   editor.state.doc.nodeAt(pos)!.attrs.textboxes as TextboxDisplay[]
 const boxOf = (editor: Editor, pos: number): TextboxDisplay => boxesOf(editor, pos)[0]
@@ -81,25 +88,25 @@ describe('the Shape Format rotate commands', () => {
     // a fresh shape is unrotated: no attribute to carry into the saved file
     expect('rotDeg' in boxOf(editor, pos)).toBe(false)
 
-    act(() => tipped(container, 'ribbonRotateRight').click())
+    rotate(container, 'ribbonRotateRight')
     expect(boxOf(editor, pos).rotDeg).toBe(90)
 
-    act(() => tipped(container, 'ribbonRotateRight').click())
+    rotate(container, 'ribbonRotateRight')
     expect(boxOf(editor, pos).rotDeg).toBe(180)
 
-    act(() => tipped(container, 'ribbonRotateLeft').click())
+    rotate(container, 'ribbonRotateLeft')
     expect(boxOf(editor, pos).rotDeg).toBe(90)
 
     // 90 - 90 wraps to 0, and 0 is stored as the absence of the attribute
-    act(() => tipped(container, 'ribbonRotateLeft').click())
+    rotate(container, 'ribbonRotateLeft')
     expect('rotDeg' in boxOf(editor, pos)).toBe(false)
 
     // below zero normalizes back into 0..359 (a left turn from 0 is 270)
-    act(() => tipped(container, 'ribbonRotateLeft').click())
+    rotate(container, 'ribbonRotateLeft')
     expect(boxOf(editor, pos).rotDeg).toBe(270)
 
     // 270 + 90 is a full turn: clean shape again
-    act(() => tipped(container, 'ribbonRotateRight').click())
+    rotate(container, 'ribbonRotateRight')
     expect(boxOf(editor, pos).rotDeg).toBeUndefined()
     expect('rotDeg' in boxOf(editor, pos)).toBe(false)
 
@@ -123,7 +130,7 @@ describe('the Shape Format rotate commands', () => {
     )
     const { container, root } = mountRibbon(editor)
 
-    act(() => tipped(container, 'ribbonRotateRight').click())
+    rotate(container, 'ribbonRotateRight')
     expect(boxesOf(editor, pos)[0].rotDeg).toBe(90)
     expect(boxesOf(editor, pos)[1].rotDeg).toBeUndefined()
 
@@ -138,8 +145,7 @@ describe('the Shape Format rotate commands', () => {
     editor.setEditable(false)
     const { container, root } = mountRibbon(editor)
 
-    expect(tipped(container, 'ribbonRotateRight').disabled).toBe(true)
-    expect(tipped(container, 'ribbonRotateLeft').disabled).toBe(true)
+    expect(tipped(container, 'ribbonArrangeRotate').disabled).toBe(true)
     expect(tipped(container, 'ribbonShapeOutlineWeight').disabled).toBe(true)
 
     act(() => root.unmount())

@@ -66,6 +66,26 @@ describe('blankRowBreaks', () => {
     editor.destroy()
   })
 
+  it('sizes blank rows by the inherited size when the strut took the runs declared size', () => {
+    const sized = (t: string) => ({
+      type: 'text',
+      text: t,
+      marks: [{ type: 'docTextStyle', attrs: { sizeHalfPoints: 32 } }],
+    })
+    const editor = new Editor({
+      element: document.createElement('div'),
+      extensions: editorExtensions,
+      content: {
+        type: 'doc',
+        content: [{ type: 'docParagraph', content: [br, br, br, sized('abc')] }],
+      } as never,
+    })
+    const para = editor.view.dom.querySelector('p')!
+    expect(para.style.getPropertyValue('--doc-strut')).toBe('16pt')
+    expect(editor.view.dom.querySelectorAll('.doc-br-line.doc-br-inherit').length).toBe(3)
+    editor.destroy()
+  })
+
   it('keeps mid-paragraph rows inline when the first line is indented', () => {
     const editor = new Editor({
       element: document.createElement('div'),

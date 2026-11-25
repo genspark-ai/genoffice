@@ -928,8 +928,9 @@ export function ReduceFileSizeDialog({
 }
 
 /**
- * Insert > File for a document that has bookmarks: the whole of it, or only
- * what one bookmark covers (the Range of Word's dialog).
+ * Insert > File, once the file is picked: the whole of it or only what one of
+ * its bookmarks covers (the Range of Word's dialog), and whether what goes in
+ * stays linked to the file (Link to File).
  */
 export function InsertFileRangeDialog({
   fileName,
@@ -938,16 +939,17 @@ export function InsertFileRangeDialog({
 }: {
   fileName: string
   bookmarks: string[]
-  /** a bookmark's name, null for the whole document, undefined to give up */
-  onAnswer: (range: string | null | undefined) => void
+  /** the range (a bookmark's name, null for the whole document) and the link; undefined to give up */
+  onAnswer: (options: { range: string | null; link: boolean } | undefined) => void
 }) {
   const { t } = useI18n()
   const [range, setRange] = useState('')
+  const [link, setLink] = useState(false)
   return (
     <FormDialog
       title={t('ribbonInsertFileRangeTitle')}
       name="insert-file-range-dialog"
-      onSubmit={() => onAnswer(range === '' ? null : range)}
+      onSubmit={() => onAnswer({ range: range === '' ? null : range, link })}
       onClose={() => onAnswer(undefined)}
     >
       <p className="insert-file-name">{fileName}</p>
@@ -961,6 +963,47 @@ export function InsertFileRangeDialog({
             </option>
           ))}
         </select>
+      </label>
+      <label className="tco-check insert-file-link">
+        <input
+          type="checkbox"
+          name="link"
+          checked={link}
+          onChange={(e) => setLink(e.target.checked)}
+        />
+        {t('ribbonInsertFileLink')}
+      </label>
+    </FormDialog>
+  )
+}
+
+/** Insert > Pictures > Picture from File, once the file is picked: the Options of Word's picture panel */
+export function InsertPictureOptionsDialog({
+  fileName,
+  onAnswer,
+}: {
+  fileName: string
+  /** undefined to give up */
+  onAnswer: (options: { link: boolean } | undefined) => void
+}) {
+  const { t } = useI18n()
+  const [link, setLink] = useState(false)
+  return (
+    <FormDialog
+      title={t('ribbonInsertPictureTitle')}
+      name="insert-file-range-dialog insert-picture-options-dialog"
+      onSubmit={() => onAnswer({ link })}
+      onClose={() => onAnswer(undefined)}
+    >
+      <p className="insert-file-name">{fileName}</p>
+      <label className="tco-check insert-file-link">
+        <input
+          type="checkbox"
+          name="link"
+          checked={link}
+          onChange={(e) => setLink(e.target.checked)}
+        />
+        {t('ribbonInsertFileLink')}
       </label>
     </FormDialog>
   )
@@ -1220,6 +1263,41 @@ export function ParagraphSpacingDialog({
         {field('before', `${t('ribbonSpaceBefore')} (pt)`, before, setBefore)}
         {field('after', `${t('ribbonSpaceAfter')} (pt)`, after, setAfter)}
         {field('line', t('appLineSpacingLabel'), line, setLine)}
+      </div>
+    </FormDialog>
+  )
+}
+
+/** Word's Save as a New Style Set: the name the document's styles are kept under on this computer */
+export function SaveStyleSetDialog({
+  onSave,
+  onClose,
+}: {
+  onSave: (name: string) => void
+  onClose: () => void
+}) {
+  const { t } = useI18n()
+  const [name, setName] = useState('')
+  return (
+    <FormDialog
+      title={asTitle(t('ribbonStyleSetSave'))}
+      name="save-style-set-dialog"
+      okDisabled={!name.trim()}
+      onClose={onClose}
+      onSubmit={() => {
+        onClose()
+        onSave(name.trim())
+      }}
+    >
+      <div className="tco-grid">
+        <span>{t('ribbonStyleDialogName')}</span>
+        <input
+          name="name"
+          autoFocus
+          aria-label={t('ribbonStyleDialogName')}
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+        />
       </div>
     </FormDialog>
   )

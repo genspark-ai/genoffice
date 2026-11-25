@@ -180,6 +180,40 @@ describe('inserting a file', () => {
     editor.destroy()
   })
 
+  it('brings a section break along with its page setup when asked to, and leaves it behind otherwise', async () => {
+    const BREAK =
+      '<w:p><w:pPr><w:sectPr><w:headerReference w:type="default" r:id="rId7"/>' +
+      '<w:pgSz w:w="16838" w:h="11906" w:orient="landscape"/>' +
+      '<w:pgMar w:top="720" w:right="720" w:bottom="720" w:left="720" w:header="708" w:footer="708" w:gutter="0"/>' +
+      '<w:cols w:num="2" w:space="720"/></w:sectPr></w:pPr></w:p>'
+    const bytes = await buildDocx({ bodyXml: para(run('Wide part')) + BREAK + para(run('Tail')) })
+    const other = await sourceOf(bytes)
+
+    const without = open()
+    expect(fileBodyPayload(without, other).leftOut).toBe(1)
+    without.destroy()
+
+    const editor = open()
+    const sections = { count: 0 }
+    expect(insertFileBody(editor, { ...other, sections })).toBe(0)
+    expect(sections.count).toBe(1)
+    const breaks: string[] = []
+    editor.state.doc.descendants((node) => {
+      if (node.type.name === 'docProtected') breaks.push(String(node.attrs.genXml))
+    })
+    expect(breaks).toHaveLength(1)
+    expect(breaks[0]).toContain('<w:pgSz w:w="16838" w:h="11906" w:orient="landscape"/>')
+    expect(breaks[0]).toContain('<w:cols w:num="2" w:space="720"/>')
+    expect(breaks[0]).not.toContain('headerReference')
+    const plan = pmDocToSavePlan(editor.getJSON() as never, [])
+    expect(plan.saveBlocks.some((b) => b.kind === 'xml' && b.xml === breaks[0])).toBe(true)
+    // text only: the page setup stays behind
+    const plain = { count: 0 }
+    expect(insertFileBody(open(), { ...other, plain: true, sections: plain })).toBe(1)
+    expect(plain.count).toBe(0)
+    editor.destroy()
+  })
+
   it('gives the footnotes of the other document ids of this one', async () => {
     const other = await sourceOf(
       await buildDocx({

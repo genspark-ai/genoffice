@@ -41,8 +41,12 @@ describe('pdf ribbon compact density', () => {
   it('every rb-big label is span-wrapped, the shape the compact selector needs', () => {
     // a bare {t('…')} text child would escape the visually-hidden rule and
     // paint over the icon row; the shape to match is icon span → label span
-    const bare = /<span className="rb-big-icon[^"]*">[\s\S]*?<\/span>\s*\{t\(/
+    // stays inside one button: a later menu row's "</span>{t(" is not a ribbon label
+    const bare = /<span className="rb-big-icon[^"]*">(?:(?!<button)[\s\S])*?<\/span>\s*\{t\(/
     expect(bare.test(appSrc)).toBe(false)
+    expect(
+      bare.test('<button><span className="rb-big-icon"><Icon /></span>{t(\'pen\')}</button>'),
+    ).toBe(true)
   })
 
   it('stacked columns go side by side so nothing taller than the band remains', () => {

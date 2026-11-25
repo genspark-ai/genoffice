@@ -227,7 +227,7 @@ describe('table structure ops', () => {
       top: { style: 'single', szEighths: 12, color: 'FF0000' },
       left: { style: 'single', szEighths: 12, color: 'FF0000' },
       right: { style: 'single', szEighths: 12, color: 'FF0000' },
-      bottom: { style: 'none' },
+      bottom: { style: 'nil' },
     })
     expect(tableNode(editor).child(2).child(0).attrs.fill).toBeNull()
     tableNode(editor).forEach((row) => expect(row.child(1).attrs.colwidth).toEqual([96]))
@@ -242,13 +242,26 @@ describe('table structure ops', () => {
         expect(c.attrs.fill).toBeNull()
         expect(c.attrs.vAlign).toBeNull()
         expect(c.attrs.borders).toEqual({
-          top: { style: 'none' },
-          left: { style: 'none' },
-          bottom: { style: 'none' },
-          right: { style: 'none' },
+          top: { style: 'nil' },
+          left: { style: 'nil' },
+          bottom: { style: 'nil' },
+          right: { style: 'nil' },
         })
       }),
     )
+    // a side asked for as "none" is the same request as null
+    const off = executeOps(editor, [
+      {
+        op: 'setTableCellFormat',
+        target,
+        range: { row: 0, col: 0 },
+        borders: { top: { style: 'none' }, left: { style: 'double' } },
+      },
+    ])
+    expect(off.ok, off.error).toBe(true)
+    const corner = tableNode(editor).child(0).child(0).attrs.borders
+    expect(corner.top).toEqual({ style: 'nil' })
+    expect(corner.left.style).toBe('double')
     expect(parseTableLength('2.5cm')).toBe(1417.5)
     expect(parseTableLength(720)).toBe(720)
     expect(parseTableLength('12em')).toBeUndefined()

@@ -11,7 +11,7 @@
  *    node scripts/roundtrip-accuracy.mjs out.md    # write both scorecards
  *
  *  The benches are apps/sheets-adjacent gated tests, like the pdf2docx
- *  accuracy bench (#2756): gated behind env vars so CI never pays for them.
+ *  accuracy bench (genoffice#2756): gated behind env vars so CI never pays for them.
  */
 import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'

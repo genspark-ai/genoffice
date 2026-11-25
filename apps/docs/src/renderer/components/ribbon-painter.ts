@@ -30,6 +30,7 @@ export const PAINTER_PARA_KEYS = [
   'snapToGrid',
   'suppressAutoHyphens',
   'mirrorIndents',
+  'adjustRightInd',
   'indentLeft',
   'indentRight',
   'indentFirstLine',

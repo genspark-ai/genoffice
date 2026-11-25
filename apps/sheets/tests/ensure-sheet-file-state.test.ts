@@ -56,8 +56,11 @@ describe('ensureSheetFileState', () => {
     expect(state.sheetProtections.get('sheet-2')).toMatchObject({ protected: true })
   })
 
-  it('skips sheets whose state is already known or that the session added', async () => {
-    const readWorkbookRange = vi.fn()
+  it('still loads page state when protection was delivered at open', async () => {
+    const readWorkbookRange = vi.fn().mockResolvedValue({
+      ...rangeResult(true),
+      rowBreaks: [1],
+    })
     vi.stubGlobal('window', { desktopApi: { readWorkbookRange } })
     const state = makeState()
     state.sheetProtections.set('sheet-2', {
@@ -66,6 +69,16 @@ describe('ensureSheetFileState', () => {
       allow: {} as never,
       password: null,
     })
+    expect(await ensureSheetFileState(state, 'sheet-2', { current: state })).toBe(true)
+    expect(state.sheetPageBreaks.get('sheet-2')?.rowBreaks).toEqual([1])
+    expect(state.sheetProtections.get('sheet-2')?.protected).toBe(false)
+  })
+
+  it('skips sheets whose state is already known or that the session added', async () => {
+    const readWorkbookRange = vi.fn()
+    vi.stubGlobal('window', { desktopApi: { readWorkbookRange } })
+    const state = makeState()
+    state.sheetPageBreaks.set('sheet-2', { rowBreaks: [], colBreaks: [] })
     expect(await ensureSheetFileState(state, 'sheet-2', { current: state })).toBe(true)
     state.editJournal.sheets.added.set('sheet-9', { name: 'Scratch' })
     expect(await ensureSheetFileState(state, 'sheet-9', { current: state })).toBe(true)

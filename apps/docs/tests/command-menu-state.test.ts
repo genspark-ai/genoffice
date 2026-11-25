@@ -20,6 +20,7 @@ const BODY: MenuStateInput = {
   inTable: false,
   inTextBox: false,
   spellcheck: true,
+  grammarHidden: false,
   readOnlyRecommended: false,
   onDisk: true,
   view: {
@@ -27,6 +28,7 @@ const BODY: MenuStateInput = {
     readMode: false,
     ruler: false,
     grid: false,
+    split: false,
     navigation: false,
     thumbnails: false,
     markup: false,
@@ -46,6 +48,7 @@ const BODY: MenuStateInput = {
   hasTableOfFigures: true,
   hasIndex: true,
   hasTableOfAuthorities: true,
+  hasLinks: true,
   hasMergeSource: true,
   windowsDetached: true,
   labelSheet: true,
@@ -106,6 +109,17 @@ describe('menu command state', () => {
   it('Hide Spelling Errors is ticked while spell checking is off', () => {
     expect(state({}).checked).not.toContain('tools-hide-spelling')
     expect(state({ spellcheck: false }).checked).toContain('tools-hide-spelling')
+  })
+
+  it('Hide Grammar Errors is a live toggle, ticked while the grammar marks are hidden', () => {
+    expect(PLANNED.has('tools-hide-grammar')).toBe(false)
+    expect(state({}).disabled).not.toContain('tools-hide-grammar')
+    expect(state({}).checked).not.toContain('tools-hide-grammar')
+    expect(state({ grammarHidden: true }).checked).toContain('tools-hide-grammar')
+    expect(state({ hasDoc: false }).disabled).toContain('tools-hide-grammar')
+    // a suggestion edits the document; ignoring one and opening the dialog do not
+    expect(state({ editable: false }).disabled).toContain('grammar-replace')
+    expect(state({ editable: false }).disabled).not.toContain('grammar-ignore')
   })
 
   it('a command that only holds its place in the menu is always greyed out', () => {
@@ -388,6 +402,7 @@ describe('menu command state', () => {
       hasIndex: ['update-index'],
       hasTableOfFigures: ['update-table-of-figures'],
       hasTableOfAuthorities: ['toa-update'],
+      hasLinks: ['edit-links'],
       hasComments: ['show-comments'],
       windowsDetached: ['view-merge-windows'],
     } as const

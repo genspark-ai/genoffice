@@ -1002,7 +1002,7 @@ export function createHtmlSkillCore(access: HtmlDocAccess): {
               label: String(q.label ?? '').trim(),
               description: q.description ? String(q.description) : undefined,
               options: Array.isArray(q.options)
-                ? q.options.map((o: unknown) => String(o)).slice(0, 5)
+                ? q.options.map(clarifyOptionText).filter(Boolean).slice(0, 5)
                 : [],
               multi: !!q.multi,
             }))
@@ -1163,4 +1163,27 @@ export function createHtmlSkill(
     buildContext: () => core.buildContext(),
     executeTool: (call, signal) => core.executeTool(call, signal),
   }
+}
+
+/**
+ * The text of one ask_clarification option. Some models send options as objects
+ * ({label}, {text}, {value}…) despite the string schema; String(o) would show "[object Object]".
+ */
+export function clarifyOptionText(o: unknown): string {
+  if (typeof o === 'string') return o.trim()
+  if (o && typeof o === 'object') {
+    const rec = o as Record<string, unknown>
+    for (const key of ['label', 'text', 'value', 'title', 'name']) {
+      const v = rec[key]
+      if (typeof v === 'string' && v.trim()) return v.trim()
+      if (typeof v === 'number') return String(v)
+    }
+    // Unknown keys ({key, desc}…): the longest string value is the readable one.
+    let best = ''
+    for (const v of Object.values(rec)) {
+      if (typeof v === 'string' && v.trim().length > best.length) best = v.trim()
+    }
+    return best
+  }
+  return o == null ? '' : String(o).trim()
 }

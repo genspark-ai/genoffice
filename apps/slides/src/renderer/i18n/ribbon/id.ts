@@ -177,7 +177,7 @@ export const id = {
   ribbonBulletHangNarrow: 'Sempit',
   ribbonBulletHangNormal: 'Normal',
   ribbonBulletHangWide: 'Lebar',
-  ribbonBulletHangCustomTip: 'Indentasi butir kustom (px, Enter untuk menerapkan)',
+  ribbonBulletHangCustomTip: 'Indentasi butir kustom ({unit}, Enter untuk menerapkan)',
   ribbonBulletSize: 'Ukuran butir',
   ribbonBulletColor: 'Warna butir',
   ribbonNumberStyle: 'Gaya penomoran',

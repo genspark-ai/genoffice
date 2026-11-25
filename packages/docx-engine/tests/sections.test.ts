@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   applySectionSettings,
   applySectionStartType,
+  defaultSectPrXml,
   PAGE_MARK,
   parseDocx,
   readSections,
@@ -262,6 +263,35 @@ describe('readSections enumerates all sections', () => {
     expect(
       applySectionSettings(paired, { ...sectionSettingsFromXml(paired), noEndnote: false }),
     ).toBe(sectPr)
+  })
+
+  it('w:formProt off is read per section, written after cols and removed to protect', async () => {
+    const { sectionSettingsFromXml } = await import('../src/index')
+    const sectPr =
+      '<w:sectPr><w:pgSz w:w="11906" w:h="16838"/>' +
+      '<w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="708" w:footer="708" w:gutter="0"/>' +
+      '<w:cols w:space="720"/><w:vAlign w:val="center"/><w:docGrid w:linePitch="360"/></w:sectPr>'
+    const settings = sectionSettingsFromXml(sectPr)
+    expect(settings.formProt).toBeUndefined()
+    const open = applySectionSettings(sectPr, { ...settings, formProt: false })
+    expect(open).toContain(
+      '<w:cols w:space="720"/><w:formProt w:val="0"/><w:vAlign w:val="center"/>',
+    )
+    const read = sectionSettingsFromXml(open)
+    expect(read.formProt).toBe(false)
+    expect(applySectionSettings(open, read)).toBe(open)
+    expect(applySectionSettings(open, { ...read, formProt: undefined })).toBe(sectPr)
+    // the spellings Word and other producers write for an open section stay as the file has them
+    for (const val of ['false', 'off']) {
+      const spelled = sectPr.replace('<w:vAlign', `<w:formProt w:val="${val}"/><w:vAlign`)
+      expect(sectionSettingsFromXml(spelled).formProt).toBe(false)
+      expect(applySectionSettings(spelled, sectionSettingsFromXml(spelled))).toBe(spelled)
+    }
+    // an element that is on, or absent, protects the section
+    const on = sectPr.replace('<w:vAlign', '<w:formProt w:val="true"/><w:vAlign')
+    expect(sectionSettingsFromXml(on).formProt).toBeUndefined()
+    expect(applySectionSettings(on, sectionSettingsFromXml(on))).toBe(on)
+    expect(applySectionSettings(on, { ...sectionSettingsFromXml(on), formProt: false })).toBe(open)
   })
 
   it('line numbering is written in schema order, replaced and removed', async () => {
@@ -607,6 +637,35 @@ describe('readSections enumerates all sections', () => {
     expect(reparsed[0].lastBlockIndex).toBe(1)
     expect(reparsed[1].startType).toBe('continuous')
     expect(reparsed[1].firstBlockIndex).toBe(2)
+  })
+
+  it('a body without a w:sectPr gets one when the last section is edited', async () => {
+    const bytes = await buildDocx({ bodyXml: P('a') + P('b'), sectPrXml: '' })
+    const parsed = await parseDocx(bytes)
+    const [only] = readSections(parsed)
+    expect(only.sectPrXml).toBe('')
+    const visible = parsed.blocks.filter((b) => !b.hidden)
+    const asIs: SaveBlock[] = visible.map((b) => ({ kind: 'original', docxIndex: b.docxIndex! }))
+    expect(await saveDocx(parsed, asIs)).toBe(bytes)
+
+    const twoColumns = applySectionSettings(defaultSectPrXml(only.settings), {
+      ...only.settings,
+      columns: 2,
+    })
+    const broken: SaveBlock[] = [
+      asIs[0],
+      { kind: 'xml', xml: `<w:p><w:pPr>${twoColumns}</w:pPr></w:p>` },
+      asIs[1],
+    ]
+    const saved = await saveDocx(parsed, broken, { sectionStartType: 'continuous' })
+    const reparsed = readSections(await parseDocx(saved))
+    expect(reparsed.length).toBe(2)
+    expect(reparsed[0].settings.columns).toBe(2)
+    expect(reparsed[1].startType).toBe('continuous')
+    expect(reparsed[1].settings).toEqual(only.settings)
+
+    const edited = await saveDocx(parsed, asIs, { section: { ...only.settings, marginLeft: 999 } })
+    expect(readSections(await parseDocx(edited))[0].settings.marginLeft).toBe(999)
   })
 
   it('unedited multi-section document saves byte-identical', async () => {

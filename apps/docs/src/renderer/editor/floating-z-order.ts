@@ -155,8 +155,19 @@ export function setFloatingWrap(editor: Editor, wrap: string | null): void {
     .run()
 }
 
-/** Rank of the selection: the shape's box rank, or imageZOrder for an image anchor. */
+/** the selected floating picture among text, which keeps its rank on its own node */
+function selectedRunPicture(
+  editor: Editor,
+): { pos: number; attrs: Record<string, unknown> } | null {
+  const sel = editor.state.selection
+  if (!(sel instanceof NodeSelection) || sel.node.type.name !== 'docInlineImage') return null
+  return sel.node.attrs.wrap ? { pos: sel.from, attrs: sel.node.attrs } : null
+}
+
+/** Rank of the selection: the shape's box rank, a run picture's zOrder, or imageZOrder for an image anchor. */
 function currentZOrder(editor: Editor): number {
+  const run = selectedRunPicture(editor)
+  if (run) return Number(run.attrs.zOrder ?? 0)
   const box = selectedShapeBox(editor)
   if (box) return Number(box.z ?? 0)
   return Number(editor.getAttributes('docProtected').imageZOrder ?? 0)
@@ -166,6 +177,7 @@ function currentZOrder(editor: Editor): number {
 function documentZOrders(editor: Editor, rank: number): number[] {
   const zs: number[] = [rank]
   editor.state.doc.descendants((n) => {
+    if (n.type.name === 'docInlineImage' && n.attrs.wrap) zs.push(Number(n.attrs.zOrder ?? 0))
     if (n.type.name !== 'docProtected') return
     const boxes = n.attrs.textboxes as TextboxDisplay[] | undefined
     if (Array.isArray(boxes) && boxes.length > 0) {
@@ -180,6 +192,15 @@ function documentZOrders(editor: Editor, rank: number): number[] {
 }
 
 function setZOrder(editor: Editor, z: number): void {
+  const run = selectedRunPicture(editor)
+  if (run) {
+    // the wrap stays, as in Word: a rank paints once the picture is in front of or behind text
+    const { state, view } = editor
+    const tr = state.tr.setNodeMarkup(run.pos, undefined, { ...run.attrs, zOrder: z })
+    view.dispatch(tr.setSelection(NodeSelection.create(tr.doc, run.pos)))
+    view.focus()
+    return
+  }
   const box = selectedShapeBox(editor)
   if (box) {
     const next = boxWithZ(box, z)
@@ -196,12 +217,25 @@ export function bringToFront(editor: Editor): void {
   setZOrder(editor, Math.max(...documentZOrders(editor, currentZOrder(editor))) + 1)
 }
 
+/**
+ * One step for a floating picture among text: past the nearest rank on that
+ * side. Word spaces the ranks it writes far apart, so a step of one rank
+ * would cross nothing in a file Word wrote.
+ */
+function stepPast(editor: Editor, dir: 1 | -1): number {
+  const rank = currentZOrder(editor)
+  if (!selectedRunPicture(editor)) return rank + dir
+  const beyond = documentZOrders(editor, rank).filter((z) => (z - rank) * dir > 0)
+  if (beyond.length === 0) return rank + dir
+  return (dir > 0 ? Math.min(...beyond) : Math.max(...beyond)) + dir
+}
+
 export function bringForward(editor: Editor): void {
-  setZOrder(editor, currentZOrder(editor) + 1)
+  setZOrder(editor, stepPast(editor, 1))
 }
 
 export function sendBackward(editor: Editor): void {
-  setZOrder(editor, currentZOrder(editor) - 1)
+  setZOrder(editor, stepPast(editor, -1))
 }
 
 export function sendToBack(editor: Editor): void {

@@ -174,7 +174,7 @@ export const cs = {
   ribbonBulletHangNarrow: 'Úzké',
   ribbonBulletHangNormal: 'Normální',
   ribbonBulletHangWide: 'Široké',
-  ribbonBulletHangCustomTip: 'Vlastní odsazení odrážky (px, potvrďte klávesou Enter)',
+  ribbonBulletHangCustomTip: 'Vlastní odsazení odrážky ({unit}, potvrďte klávesou Enter)',
   ribbonBulletSize: 'Velikost odrážky',
   ribbonBulletColor: 'Barva odrážky',
   ribbonNumberStyle: 'Styl číslování',

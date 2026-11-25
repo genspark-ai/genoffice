@@ -343,7 +343,7 @@ describe('updateFields', () => {
       { op: 'findReplace', target: at(0), find: 'Intro.', replace: 'Introduction.' },
     ])
     expect(outcome.ok, outcome.error).toBe(true)
-    // NUMPAGES was inserted without a computed result: it waits for Word
+    // NUMPAGES was inserted without a computed result: it waits for the save, or for Word
     const numPages = fieldsOf(editor).find((f) => f.instr === 'NUMPAGES')
     expect(numPages?.dirty).toBe(true)
     outcome = executeOps(editor, [{ op: 'updateFields' }])
@@ -515,7 +515,7 @@ describe('field ops through the docx save path', () => {
       { op: 'insertField', target: at(3), type: 'PAGEREF', args: 'Summary \\h' },
     ])
     expect(outcome.ok, outcome.error).toBe(true)
-    // the save numbers the caption; the PAGEREF's page is Word's to compute
+    // the save numbers the caption; with no pages laid out here the PAGEREF waits for Word
     settleFieldResults(editor, parsed.blocks)
     allowDirtyFields()
     const plan = pmDocToSavePlan(editor.getJSON() as PmNode, parsed.blocks)

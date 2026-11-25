@@ -151,9 +151,10 @@ describe('pastePayload', () => {
     editor.destroy()
   })
 
-  it('Paste Special choices: picture needs a bitmap, text needs text', () => {
+  it('Paste Special choices: picture needs something to show, text needs text', () => {
     const { editor, pasteText } = makeEditor()
-    expect(pastePayload(editor, { html: '', text: 'plain', image: null }, 'picture')).toBe(false)
+    // copied text is drawn as a picture now (paste-as-picture.test.ts); an empty clipboard is not
+    expect(pastePayload(editor, { html: '', text: '  ', image: null }, 'picture')).toBe(false)
     expect(pastePayload(editor, { html: '', text: '', image: null }, 'text')).toBe(false)
     const image = new Blob(['x'], { type: 'image/png' })
     expect(pastePayload(editor, { html: '', text: 'alt', image }, 'text')).toBe(true)

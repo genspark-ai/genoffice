@@ -6,6 +6,7 @@ import type { DrawingInput } from '../shared/ipc'
 
 export type DrawTool =
   | 'ink'
+  | 'eraser'
   | 'rect'
   | 'ellipse'
   | 'line'
@@ -248,6 +249,7 @@ export function DrawLayer({
   selectTitle,
   noteOpenTitle,
   onCommit,
+  onErase,
   onNoteAt,
   onNoteOpen,
   onSelect,
@@ -270,6 +272,8 @@ export function DrawLayer({
   selectTitle: string
   noteOpenTitle: string
   onCommit: (input: DrawingInput) => void
+  /** Eraser pressed at / dragged over a PDF-space point; `start` opens a new gesture */
+  onErase?: (at: [number, number], start: boolean) => void
   onNoteAt: (at: [number, number]) => void
   /** Open the comment-thread popover for a pin ('S<objNum>' saved / 'P<id>' pending) */
   onNoteOpen: (key: string, x: number, y: number) => void
@@ -283,6 +287,7 @@ export function DrawLayer({
   const [live, setLive] = useState<DrawingInput | null>(null)
   const startRef = useRef<[number, number] | null>(null)
   const inkRef = useRef<number[]>([])
+  const erasingRef = useRef(false)
   // In-progress polygon: placed vertices plus the rubber end following the cursor
   const [poly, setPoly] = useState<{
     vertices: [number, number][]
@@ -338,6 +343,12 @@ export function DrawLayer({
     if (!tool || e.button !== 0) return
     e.preventDefault()
     const at = toPdf(e)
+    if (tool === 'eraser') {
+      e.currentTarget.setPointerCapture(e.pointerId)
+      erasingRef.current = true
+      onErase?.(at, true)
+      return
+    }
     if (tool === 'note') {
       onNoteAt(at)
       return
@@ -373,6 +384,10 @@ export function DrawLayer({
 
   const onPointerMove = (e: ReactPointerEvent) => {
     if (!tool) return
+    if (tool === 'eraser') {
+      if (erasingRef.current) onErase?.(toPdf(e), false)
+      return
+    }
     if (tool === 'polygon') {
       if (polyRef.current) setPoly({ ...polyRef.current, cursor: toPdf(e) })
       return
@@ -414,6 +429,7 @@ export function DrawLayer({
 
   const onPointerUp = () => {
     const pending = live
+    erasingRef.current = false
     startRef.current = null
     inkRef.current = []
     setLive(null)

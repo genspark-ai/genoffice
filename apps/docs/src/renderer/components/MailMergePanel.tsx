@@ -3,7 +3,7 @@ import type { Editor } from '@tiptap/core'
 import { mergeFieldInstruction } from '@genoffice/docx-engine'
 import type { MergeDataSource, MergeOutputMode } from '../../shared/ipc'
 import type { PmNode } from '../editor/convert'
-import { documentText, substituteMergeFields } from '../mail-merge/template'
+import { documentText, previewDocument } from '../mail-merge/template'
 import type { MailMergeRequest, MailMergeResponse } from '../mail-merge/output'
 import { firstRecordInRange, recordsInRange, type MergeRange } from '../mail-merge/range'
 import {
@@ -41,6 +41,8 @@ export interface MailMergePanelProps {
   /** the record the preview shows */
   recordIndex: number
   onRecordIndex: (index: number) => void
+  /** what Preview Results was answered by the Ask and Fill-in fields, while it is on */
+  previewAnswers?: ReadonlyMap<string, string>
   /** the records the merge takes, of those the preview steps through */
   range: MergeRange
   /** the kind of output the panel opens on */
@@ -60,6 +62,7 @@ export function MailMergePanel({
   onMerge,
   recordIndex,
   onRecordIndex,
+  previewAnswers,
   range,
   initialMode = 'perRecord',
   pick,
@@ -101,13 +104,14 @@ export function MailMergePanel({
   )
 
   const records = source?.records ?? []
-  const record = records[recordIndex]
   const merged = recordsInRange(records, range, recordIndex)
   // the template with this record's values in it, as the user reads it
   const preview = useMemo(() => {
-    if (!record) return ''
-    return documentText(substituteMergeFields(editor.getJSON() as PmNode, record))
-  }, [editor, record])
+    if (!source?.records[recordIndex]) return ''
+    return documentText(
+      previewDocument(editor.getJSON() as PmNode, source.records, recordIndex, previewAnswers),
+    )
+  }, [editor, source, recordIndex, previewAnswers])
 
   const insertField = (name: string) => {
     onInsertField(mergeFieldInstruction(name))

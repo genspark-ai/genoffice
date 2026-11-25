@@ -18,6 +18,7 @@ export const STAND_IN_ALIAS_CHAINS: Readonly<Record<string, [string[], 'serif' |
   'ms gothic': [['MS Gothic GO', ...JA_SANS], 'sans-serif'],
   'ms mincho': [['MS Mincho GO', ...JA_SERIF], 'serif'],
   'ms pgothic': [['MS PGothic GO', 'MS PGothic JA GO', ...JA_SANS], 'sans-serif'],
+  'ms pmincho': [['MS PMincho GO', 'MS PMincho JA GO', ...JA_SERIF], 'serif'],
   'ms ui gothic': [['MS UI Gothic GO', 'MS UI Gothic JA GO', ...JA_SANS], 'sans-serif'],
   'roboto': [['Roboto GO', CJK_SANS], 'sans-serif'],
   'shonar bangla': [['Shonar Bangla GO', BOX, CJK_SERIF], 'serif'],

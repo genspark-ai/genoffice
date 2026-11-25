@@ -39,3 +39,9 @@ export function decodeXmlText(input: string): string {
     },
   )
 }
+
+/** Excel writes a boolean cell as 1/0; other producers spell it true/false. */
+export function isTrueBooleanCell(rawValue: string): boolean {
+  const raw = rawValue.trim().toLowerCase()
+  return raw === '1' || raw === 'true'
+}

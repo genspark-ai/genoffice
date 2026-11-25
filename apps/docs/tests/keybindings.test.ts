@@ -52,12 +52,15 @@ describe('chords', () => {
   it('reads every chord of the shortcut list on both platforms', () => {
     for (const isMac of [true, false]) {
       for (const def of SHORTCUTS) {
-        const expected = (isMac ? def.keys : (def.win ?? def.keys)).split(' / ').length
+        const expected = (isMac ? def.keys : (def.win ?? def.keys))
+          .split(' / ')
+          .filter(Boolean).length
         expect(shortcutChords(def, isMac).length, def.id).toBe(expected)
       }
     }
     const byId = new Map(SHORTCUTS.map((def) => [def.id, def]))
-    expect(shortcutChords(byId.get('superscript')!, true)).toEqual(['Shift+Cmd+=', 'Cmd+.'])
+    expect(shortcutChords(byId.get('superscript')!, true)).toEqual(['Shift+Cmd+='])
+    expect(shortcutChords(byId.get('superscript')!, false)).toEqual(['Ctrl+Shift+=', 'Ctrl+.'])
     expect(shortcutChords(byId.get('page-break')!, false)).toEqual(['Ctrl+Enter'])
     expect(shortcutChords(byId.get('endnote')!, false)).toEqual(['Ctrl+Alt+D'])
   })
@@ -116,7 +119,10 @@ describe('built-in bindings', () => {
   it('leave a chord the command table gives to another command with that command', () => {
     for (const isMac of [true, false]) {
       const mod = isMac ? 'Cmd' : 'Ctrl'
-      expect(defaultChords('repeat', isMac)).toEqual([`${mod}+Y`])
+      // Word for Mac repeats on Control+Y and Option+Return as well
+      expect(defaultChords('repeat', isMac)).toEqual(
+        isMac ? ['Cmd+Y', 'Ctrl+Y', 'Alt+Enter'] : ['Ctrl+Y'],
+      )
       expect(defaultChords('redo', isMac)).not.toContain(`${mod}+Y`)
       expect(defaultChords('redo', isMac).length).toBe(1)
     }
@@ -156,7 +162,10 @@ describe('assignments', () => {
   it('move a chord from the command that had it', () => {
     expect(chordOwner({}, 'Cmd+B', true)).toEqual({ kind: 'binding', id: 'bold' })
     const next = assignChord({}, 'strikethrough', 'Cmd+B', true)!
-    expect(next).toEqual({ bold: [], strikethrough: ['Cmd+B'] })
+    expect(next).toEqual({
+      bold: ['Shift+Cmd+B', 'Ctrl+B', 'Ctrl+Shift+B'],
+      strikethrough: ['Shift+Cmd+X', 'Cmd+B'],
+    })
     expect(chordOwner(next, 'Cmd+B', true)).toEqual({ kind: 'binding', id: 'strikethrough' })
     expect(keyVerdict(buildKeyTable(next, true), 'Cmd+B', true)).toEqual({
       run: { cmd: 'strikethrough' },

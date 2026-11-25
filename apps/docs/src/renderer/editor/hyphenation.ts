@@ -39,9 +39,9 @@ const PATTERNS: Record<string, () => Promise<PatternModule>> = {
 
 const BRITISH = new Set(['gb', 'au', 'nz', 'ie', 'za', 'in'])
 
-/** the pattern set for a w:lang value; a document that names no language is read as US English */
+/** the pattern set for a w:lang value; text that names no language is not hyphenated, as in Word */
 export function hyphenationDictFor(lang: string | null | undefined): string | null {
-  if (!lang) return 'en-us'
+  if (!lang) return null
   const [primary, region] = lang.toLowerCase().split(/[-_]/)
   if (primary === 'en') return region && BRITISH.has(region) ? 'en-gb' : 'en-us'
   return primary in PATTERNS ? primary : null
@@ -52,6 +52,10 @@ const hyphenators = new Map<string, (text: string) => string>()
 const loading = new Map<string, Promise<boolean>>()
 const pointCache = new Map<string, Map<string, readonly number[]>>()
 const loadListeners = new Set<() => void>()
+let pendingLoads = 0
+
+/** a pattern set asked for is still on its way: the break points on the page are not final */
+export const hyphenationLoading = (): boolean => pendingLoads > 0
 
 export function hyphenationReady(dict: string): boolean {
   return hyphenators.has(dict)
@@ -63,14 +67,19 @@ export function loadHyphenation(dict: string): Promise<boolean> {
   if (!loader) return Promise.resolve(false)
   let pending = loading.get(dict)
   if (!pending) {
+    pendingLoads++
     pending = loader().then(
       (mod) => {
+        pendingLoads--
         hyphenators.set(dict, createHyphenator(mod.default, { minWordLength: MIN_WORD }))
         for (const fn of loadListeners) fn()
         if (docConfig.dict === dict) for (const fn of configListeners) fn()
         return true
       },
-      () => false,
+      () => {
+        pendingLoads--
+        return false
+      },
     )
     loading.set(dict, pending)
   }
@@ -133,8 +142,12 @@ export function hyphenWords(text: string, dict: string, caps: boolean): HyphenWo
 }
 
 export interface HyphenationConfig {
-  /** pattern set the document hyphenates with; null = our hyphenation is off */
+  /** the document hyphenates; text is cut by the language it names (run, character style, paragraph style) */
+  on: boolean
+  /** pattern set of text that names no language; null = such text stays whole */
   dict: string | null
+  /** pattern set by style id: every paragraph style, and the character styles that name a language */
+  styleDicts: StyleDicts
   /** Hyphenate words in CAPS */
   caps: boolean
   /** lines in a row that may end in a hyphen; 0 = no limit */
@@ -143,10 +156,22 @@ export interface HyphenationConfig {
   zonePx: number
 }
 
+export type StyleDicts = ReadonlyMap<string, string | null>
+const NO_STYLE_DICTS: StyleDicts = new Map()
+
 export type HyphenationStorage = HyphenationConfig
 
+const offConfig = (): HyphenationConfig => ({
+  on: false,
+  dict: null,
+  styleDicts: NO_STYLE_DICTS,
+  caps: true,
+  limit: 0,
+  zonePx: 0,
+})
+
 /** the open document's rules for text outside the body editor (text boxes, strips, notes) */
-const docConfig: HyphenationConfig = { dict: null, caps: true, limit: 0, zonePx: 0 }
+const docConfig: HyphenationConfig = offConfig()
 const followers = new Set<EditorView>()
 const configListeners = new Set<() => void>()
 
@@ -192,28 +217,38 @@ type HyphenationMeta = { reset?: true; skip?: readonly number[]; relayout?: true
 
 export const hyphenationPluginKey = new PluginKey<HyphenationState>('hyphenation')
 
-const runDict = (node: ProseMirrorNode, docDict: string): string | null => {
+/** Word's order: the run's own language, its character style's, the paragraph's */
+const runDict = (
+  node: ProseMirrorNode,
+  blockDict: string | null,
+  styles: StyleDicts,
+): string | null => {
+  let styled: string | null | undefined
   for (const mark of node.marks) {
+    const id = mark.attrs.styleId as string | null | undefined
+    if (id && styles.has(id)) styled = styles.get(id)
     const raw = mark.attrs.lang as string | null | undefined
     if (!raw) continue
     try {
       const val = (JSON.parse(raw) as { val?: string }).val
       if (val) return hyphenationDictFor(val)
     } catch {
-      return docDict
+      continue
     }
   }
-  return docDict
+  return styled === undefined ? blockDict : styled
 }
 
 /** words with break points inside one textblock; offsets are relative to its content */
 export function blockHyphenWords(block: ProseMirrorNode, config: HyphenationConfig): HyphenWord[] {
-  const docDict = config.dict
-  if (!docDict) return []
+  if (!config.on) return []
+  const { styleDicts } = config
+  const styleId = block.attrs.styleId as string | null | undefined
+  const blockDict = styleId && styleDicts.has(styleId) ? styleDicts.get(styleId)! : config.dict
   const out: HyphenWord[] = []
   let start = 0
   let text = ''
-  let dict: string | null = docDict
+  let dict: string | null = blockDict
   const flush = () => {
     if (text && dict) {
       if (hyphenationReady(dict)) {
@@ -224,7 +259,7 @@ export function blockHyphenWords(block: ProseMirrorNode, config: HyphenationConf
     text = ''
   }
   block.forEach((child, offset) => {
-    const childDict = child.isText ? runDict(child, docDict) : null
+    const childDict = child.isText ? runDict(child, blockDict, styleDicts) : null
     if (!child.isText || !child.text || (text && childDict !== dict)) flush()
     if (!child.isText || !child.text) return
     if (!text) {
@@ -266,7 +301,7 @@ function buildAll(
   config: HyphenationConfig,
   skip: readonly number[],
 ): DecorationSet {
-  if (!config.dict) return DecorationSet.empty
+  if (!config.on) return DecorationSet.empty
   const decos: Decoration[] = []
   doc.descendants((node, pos) => {
     if (!node.isTextblock) return true
@@ -431,7 +466,7 @@ class HyphenationView {
     const { view, storage } = this
     if (storage === docConfig) {
       // a pass that cannot run yet must not count as this box's check
-      if (!storage.dict || !view.dom.isConnected || isPhasedContentPending()) return
+      if (!storage.on || !view.dom.isConnected || isPhasedContentPending()) return
       const box = `${view.dom.offsetWidth}:${view.dom.offsetHeight}`
       if (box === this.lastBox) return
       this.lastBox = box
@@ -440,7 +475,7 @@ class HyphenationView {
   }
   private onLoaded = () => {
     const { view } = this
-    if (!this.storage.dict || view.isDestroyed) return
+    if (!this.storage.on || view.isDestroyed) return
     view.dispatch(
       view.state.tr
         .setMeta(hyphenationPluginKey, { reset: true, relayout: true } satisfies HyphenationMeta)
@@ -501,7 +536,7 @@ class HyphenationView {
    */
   private pass(scope: 'new' | 'recent' | 'all') {
     const { view, storage } = this
-    if (!storage.dict || !view.dom.isConnected || isPhasedContentPending()) return
+    if (!storage.on || !view.dom.isConnected || isPhasedContentPending()) return
     // PDF export parks the editor subtree: a layout read would re-lay it out per print chunk
     if (view.dom.closest('.app.pv-exporting')) return
     const active = storage.limit > 0 || storage.zonePx > 0
@@ -545,7 +580,7 @@ export const HyphenationExtension = Extension.create<{ followDocument: boolean }
     return { followDocument: false }
   },
   addStorage(): HyphenationStorage {
-    return { dict: null, caps: true, limit: 0, zonePx: 0 }
+    return offConfig()
   },
   addProseMirrorPlugins() {
     // the editor of a text box or a strip reads the document's rules, not its own
@@ -561,7 +596,7 @@ export const HyphenationExtension = Extension.create<{ followDocument: boolean }
               meta?.skip ?? (tr.docChanged ? old.skip.map((p) => tr.mapping.map(p)) : old.skip)
             if (meta?.reset || meta?.skip) return { decos: buildAll(tr.doc, storage, skip), skip }
             if (!tr.docChanged) return old
-            if (!storage.dict) return { decos: DecorationSet.empty, skip }
+            if (!storage.on) return { decos: DecorationSet.empty, skip }
             return { decos: rebuildChanged(old.decos, tr, storage, skip), skip }
           },
         },
@@ -581,8 +616,16 @@ export function hyphenationRelayout(tr: Transaction): boolean {
   return (tr.getMeta(hyphenationPluginKey) as HyphenationMeta | undefined)?.relayout === true
 }
 
+const sameStyleDicts = (a: StyleDicts, b: StyleDicts) =>
+  a === b || (a.size === b.size && [...a].every(([id, dict]) => b.has(id) && b.get(id) === dict))
+
 const sameConfig = (a: HyphenationConfig, b: HyphenationConfig) =>
-  a.dict === b.dict && a.caps === b.caps && a.limit === b.limit && a.zonePx === b.zonePx
+  a.on === b.on &&
+  a.dict === b.dict &&
+  a.caps === b.caps &&
+  a.limit === b.limit &&
+  a.zonePx === b.zonePx &&
+  sameStyleDicts(a.styleDicts, b.styleDicts)
 
 export function setDocHyphenation(config: HyphenationConfig): void {
   if (sameConfig(docConfig, config)) return
@@ -689,6 +732,55 @@ interface HyphenationDocFacts {
   hyphenationZoneTwips?: number
   compatibilityMode?: number
   docDefaults?: { lang?: string }
+  styles?: ReadonlyMap<string, { isDefault?: boolean; type?: string; display?: { lang?: string } }>
+}
+
+/** pattern sets by style: a paragraph style without a language of its own falls back to the document defaults */
+export function hyphenationStyleDicts(parsed: HyphenationDocFacts | null | undefined): StyleDicts {
+  const out = new Map<string, string | null>()
+  const fallback = parsed?.docDefaults?.lang
+  for (const [id, style] of parsed?.styles ?? []) {
+    const lang = style.display?.lang
+    if (style.type === 'paragraph') out.set(id, hyphenationDictFor(lang ?? fallback))
+    else if (style.type === 'character' && lang) out.set(id, hyphenationDictFor(lang))
+  }
+  return out
+}
+
+/** the document holds text Word would hyphenate: by its default language, a style's or a run's own */
+export function hyphenatesSomeText(
+  doc: ProseMirrorNode | null | undefined,
+  parsed: HyphenationDocFacts | null | undefined,
+): boolean {
+  if (hyphenationDictFor(hyphenationLangOf(parsed)) !== null) return true
+  if (!doc) return false
+  const config: HyphenationConfig = {
+    ...offConfig(),
+    on: true,
+    styleDicts: hyphenationStyleDicts(parsed),
+  }
+  let found = false
+  doc.descendants((node) => {
+    if (found) return false
+    if (!node.isTextblock) return true
+    const styleId = node.attrs.styleId as string | null | undefined
+    const blockDict = (styleId && config.styleDicts.get(styleId)) || null
+    node.forEach((child) => {
+      if (child.isText && runDict(child, blockDict, config.styleDicts)) found = true
+    })
+    return false
+  })
+  return found
+}
+
+/** the language of text that names none itself: the default paragraph style's, else the document defaults' */
+export function hyphenationLangOf(
+  parsed: HyphenationDocFacts | null | undefined,
+): string | undefined {
+  for (const style of parsed?.styles?.values() ?? [])
+    if (style.isDefault && style.type === 'paragraph' && style.display?.lang)
+      return style.display.lang
+  return parsed?.docDefaults?.lang
 }
 
 export const DEFAULT_HYPHENATION_ZONE_TWIPS = 360
@@ -714,7 +806,9 @@ export function hyphenationConfigOf(
   settings: HyphenationSettings = hyphenationSettingsOf(parsed),
 ): HyphenationConfig {
   return {
-    dict: on ? hyphenationDictFor(parsed.docDefaults?.lang) : null,
+    on,
+    dict: on ? hyphenationDictFor(hyphenationLangOf(parsed)) : null,
+    styleDicts: on ? hyphenationStyleDicts(parsed) : NO_STYLE_DICTS,
     caps: settings.caps,
     limit: settings.limit,
     zonePx: hyphenationZoneApplies(parsed) ? settings.zoneTwips / 15 : 0,

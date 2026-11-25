@@ -26,7 +26,7 @@ export const SCAN_MAX_FILES = 200_000
 export function scanFiles(
   root: string,
   limits: { maxDepth?: number; maxFiles?: number } = {},
-  /** folders the user excluded: the walk prunes them and skips their files (#2844) */
+  /** folders the user excluded: the walk prunes them and skips their files (genoffice#2844) */
   excludedFolders: readonly string[] = [],
 ): ScanResult {
   const maxDepth = limits.maxDepth ?? SCAN_MAX_DEPTH

@@ -97,6 +97,30 @@ export function takeTextReroute(): boolean {
   return flag
 }
 
+// ── paste and match style ──────────────────────────────────────────────────
+// ⌥⇧⌘V (Ctrl+Shift+V elsewhere) must paste the clipboard's text literally,
+// like Word's Keep Text Only — never through the Markdown paste lane, which
+// would turn "# heading" into a heading (genoffice#2856). The main process arms this
+// flag right before it runs webContents.pasteAndMatchStyle(), whose paste
+// event carries the plain-text flavor only, and the editor consumes it once.
+// The short TTL keeps a paste that never arrives from turning a later Cmd+V
+// of genuine Markdown text into a literal paste.
+
+const PLAIN_PASTE_TTL_MS = 500
+let plainPasteArmedAt = 0
+
+/** armed by the main process just before the paste-and-match-style paste runs */
+export function armPlainPaste(): void {
+  plainPasteArmedAt = Date.now()
+}
+
+/** handlePaste: is this paste event the match-style paste, consuming the flag */
+export function takePlainPaste(): boolean {
+  const armed = plainPasteArmedAt > 0 && Date.now() - plainPasteArmedAt <= PLAIN_PASTE_TTL_MS
+  plainPasteArmedAt = 0
+  return armed
+}
+
 // ── caret context ──────────────────────────────────────────────────────────
 
 /** The insertion point's docTextStyle mark — the exact style typing there

@@ -1,11 +1,13 @@
 import {
   applyImageWrap,
+  applyImageZOrder,
+  patchImageParagraphXml,
   resizeAnchoredPictureXml,
   resizeInlinePictureXml,
   setDrawingAltText,
   swapAnchorWrap,
 } from './generate'
-import { HF_DRAWING_RE, hfMovablePictureFrag, runPictureAnchorOf } from './parse'
+import { HF_DRAWING_RE, hfMovablePictureFrag, picTransformOf, runPictureAnchorOf } from './parse'
 import { decodeEntities } from './parse-xml-text'
 import type { HfPictureEdit, ImageWrap } from './types'
 
@@ -69,6 +71,12 @@ export interface RunPictureGeometry {
   relH?: 'page' | 'margin' | null
   relV?: 'page' | 'margin' | 'line' | null
   lineCenterV?: boolean | null
+  /** degrees clockwise and mirror flips of the picture's own a:xfrm; undefined keeps the file's */
+  rotDeg?: number | null
+  flipH?: boolean | null
+  flipV?: boolean | null
+  /** stacking rank above Word's base relativeHeight; undefined keeps the file's */
+  zOrder?: number
 }
 
 /**
@@ -76,7 +84,8 @@ export interface RunPictureGeometry {
  * fragment. Only what differs from the fragment's own geometry is rewritten,
  * so a picture nobody touched keeps its bytes: a wrap change swaps the wrap
  * element (or converts in-line <-> floating), a move writes numeric
- * posOffsets on the bases the editor positioned it from, a resize the extents.
+ * posOffsets on the bases the editor positioned it from, a resize the extents,
+ * a turn or flip the picture's a:xfrm.
  * VML pictures (no wp:inline / wp:anchor) come back unchanged.
  */
 export function patchRunPictureXml(xml: string, next: RunPictureGeometry): string {
@@ -85,7 +94,8 @@ export function patchRunPictureXml(xml: string, next: RunPictureGeometry): strin
   const wrap = next.wrap ?? null
   const x = next.offsetXEmu ?? null
   const y = next.offsetYEmu ?? null
-  let out = xml
+  let out = turn(xml, next)
+  if (next.zOrder !== undefined) out = applyImageZOrder(out, next.zOrder)
   const curWrap = cur.wrap ?? null
   if (wrap !== curWrap) {
     if (!wrap || !/<wp:anchor[\s>]/.test(out)) {
@@ -130,6 +140,36 @@ export function patchRunPictureXml(xml: string, next: RunPictureGeometry): strin
   return resize(out, next)
 }
 
+/** the turn and flips, where they differ from the drawing's own; the effect extent follows a new turn */
+function turn(xml: string, next: RunPictureGeometry): string {
+  const cur = picTransformOf(xml)
+  const patch: { rotDeg?: number; flipH?: boolean; flipV?: boolean } = {}
+  const rot =
+    next.rotDeg === undefined ? undefined : ((Math.round(next.rotDeg ?? 0) % 360) + 360) % 360
+  if (rot !== undefined && rot !== (cur.rotDeg ?? 0)) patch.rotDeg = rot
+  if (next.flipH !== undefined && !!next.flipH !== !!cur.flipH) patch.flipH = !!next.flipH
+  if (next.flipV !== undefined && !!next.flipV !== !!cur.flipV) patch.flipV = !!next.flipV
+  if (Object.keys(patch).length === 0) return xml
+  const holder = withPictureXfrm(xml)
+  return PICTURE_XFRM.test(holder) ? patchImageParagraphXml(holder, patch) : xml
+}
+
+const PICTURE_XFRM = /<pic:spPr\b[^>]*>[\s\S]*?<a:xfrm\b/
+
+/** a picture whose pic:spPr has no a:xfrm gets one of its extent, for the turn to be written on */
+function withPictureXfrm(xml: string): string {
+  if (PICTURE_XFRM.test(xml)) return xml
+  const extent = /<wp:extent\b[^>]*?\bcx="(\d+)"[^>]*?\bcy="(\d+)"/.exec(xml)
+  if (!extent) return xml
+  const xfrm = `<a:xfrm><a:off x="0" y="0"/><a:ext cx="${extent[1]}" cy="${extent[2]}"/></a:xfrm>`
+  if (/<pic:spPr\b/.test(xml)) {
+    return xml.replace(/<pic:spPr\b([^>]*?)(\/?)>/, (_tag, attrs: string, empty: string) =>
+      empty ? `<pic:spPr${attrs}>${xfrm}</pic:spPr>` : `<pic:spPr${attrs}>${xfrm}`,
+    )
+  }
+  return xml.replace('</pic:blipFill>', `</pic:blipFill><pic:spPr>${xfrm}</pic:spPr>`)
+}
+
 const wrapKind = (wrap: ImageWrap | null): string | null =>
   wrap ? wrap.replace(/-(?:left|right)$/, '') : null
 
@@ -140,9 +180,12 @@ function resize(xml: string, next: RunPictureGeometry): string {
   const w = Number(next.widthPx)
   const h = Number(next.heightPx)
   if (!(w > 0) || !(h > 0)) return xml
-  return /<wp:anchor[\s>]/.test(xml)
+  const out = /<wp:anchor[\s>]/.test(xml)
     ? resizeAnchoredPictureXml(xml, w, h)
     : resizeInlinePictureXml(xml, w, h)
+  // the room a turn takes is that of the new size
+  const { rotDeg } = picTransformOf(out)
+  return out === xml || !rotDeg ? out : patchImageParagraphXml(out, { rotDeg })
 }
 
 /** The alternative text of a run-level picture; null when its fragment has nowhere to hold one (VML). */

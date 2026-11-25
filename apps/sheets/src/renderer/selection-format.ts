@@ -24,6 +24,7 @@ export interface SelectionFormat {
   readonly bold: boolean
   readonly italic: boolean
   readonly underline: boolean
+  readonly doubleUnderline: boolean
   readonly strike: boolean
   readonly vertAlign: 'superscript' | 'subscript' | null
   readonly wrap: boolean
@@ -89,6 +90,7 @@ export function toSelectionFormat(
     bold: style.bl === BooleanNumber.TRUE,
     italic: style.it === BooleanNumber.TRUE,
     underline: style.ul?.s === BooleanNumber.TRUE,
+    doubleUnderline: style.ul?.s === BooleanNumber.TRUE && style.ul.t === 10,
     strike: style.st?.s === BooleanNumber.TRUE,
     vertAlign:
       style.va === BaselineOffset.SUPERSCRIPT
@@ -119,6 +121,7 @@ export function selectionFormatEquals(
     a.bold === b.bold &&
     a.italic === b.italic &&
     a.underline === b.underline &&
+    a.doubleUnderline === b.doubleUnderline &&
     a.strike === b.strike &&
     a.vertAlign === b.vertAlign &&
     a.wrap === b.wrap &&

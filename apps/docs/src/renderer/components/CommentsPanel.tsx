@@ -109,7 +109,7 @@ export const CommentsPanel = memo(function CommentsPanel({
   onClose: () => void
   /** thread to highlight and scroll to (Review > Previous / Next, body anchor click); nonce re-fires
    * for the same id; reply additionally focuses that thread's Reply box */
-  focus?: { id: string; nonce: number; reply?: boolean } | null
+  focus?: { id: string; nonce: number; reply?: boolean; edit?: boolean } | null
 }) {
   const { t } = useI18n()
   const paneRef = useRef<HTMLElement>(null)
@@ -194,6 +194,11 @@ export const CommentsPanel = memo(function CommentsPanel({
     if (!focus) return
     setActiveId(focus.id)
     if (comments.some((c) => c.id === focus.id && c.done)) setShowResolved(true)
+    const editing = focus.edit ? comments.find((c) => c.id === focus.id) : undefined
+    if (editing) {
+      setEditingId(editing.id)
+      setEditDraft(editing.text)
+    }
     requestAnimationFrame(() => {
       const thread = paneRef.current?.querySelector<HTMLElement>(
         `[data-comment-id="${CSS.escape(focus.id)}"]`,

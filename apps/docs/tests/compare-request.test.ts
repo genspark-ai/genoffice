@@ -37,9 +37,10 @@ describe('Compare Documents dialog: which settings a target honours', () => {
     expect(effectiveSettings(ALL_COMPARE_SETTINGS, 'new')).toEqual(ALL_COMPARE_SETTINGS)
   })
 
-  it('written into the open document, only the text settings stay', () => {
+  it('written into the open document, the text, formatting and table settings stay', () => {
     for (const target of ['original', 'revised'] as const) {
       expect(COMPARE_SETTING_KEYS.filter((key) => settingAvailable(key, target))).toEqual([
+        'formatting',
         'caseChanges',
         'whiteSpace',
         'tables',
@@ -47,7 +48,7 @@ describe('Compare Documents dialog: which settings a target honours', () => {
       expect(effectiveSettings({ ...ALL_COMPARE_SETTINGS, whiteSpace: false }, target)).toEqual({
         moves: false,
         comments: false,
-        formatting: false,
+        formatting: true,
         caseChanges: true,
         whiteSpace: false,
         tables: true,

@@ -287,7 +287,10 @@ test('Word Count adds footnotes on request, Paste Special names its source and r
     await clickMenu(app, ['Edit', 'Paste Special…'])
     const paste = page.locator('.paste-special-dialog')
     await expect(paste.locator('.paste-special-source span')).toHaveText('Sample Writer 3')
-    await expect(paste.getByRole('radio')).toHaveCount(0)
+    // a clipboard that was not copied from a saved document cannot be linked: Paste link is grey
+    await expect(paste.getByRole('radio')).toHaveCount(2)
+    await expect(paste.getByRole('radio').nth(0)).toBeChecked()
+    await expect(paste.getByRole('radio').nth(1)).toBeDisabled()
     await expect(paste.getByLabel('Display as icon')).toHaveCount(0)
     const as = paste.locator('.paste-special-as select')
     await expect(as).toHaveValue('html')
@@ -304,10 +307,10 @@ test('Word Count adds footnotes on request, Paste Special names its source and r
     await expect(tail).toHaveText('tailpasted words')
     await expect(tail.locator('strong, b')).toHaveCount(0)
 
-    // Protect Document: Sections is not offered, the password waits for the checkbox
+    // Protect Document: Sections waits for the Forms mode, the password for the checkbox
     await clickMenu(app, ['Tools', 'Protect Document…'])
     const protect = page.locator('.protect-dialog')
-    await expect(protect.getByRole('button', { name: 'Sections…' })).toHaveCount(0)
+    await expect(protect.getByRole('button', { name: 'Sections…' })).toBeDisabled()
     const password = protect
       .locator('label.fld', { hasText: 'Protection password' })
       .locator('input')

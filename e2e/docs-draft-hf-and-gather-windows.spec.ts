@@ -34,7 +34,7 @@ const visibleWindows = (app: ElectronApplication) =>
       .map((w) => w.getBounds()),
   )
 
-test('a header or footer command in Draft and Web Layout opens the strip in Print Layout', async () => {
+test('a header or footer command in Draft and Web Layout opens the strip in Print Layout, and Draft comes back after it', async () => {
   test.setTimeout(240_000)
   const dir = realpathSync(mkdtempSync(join(tmpdir(), 'genoffice-e2e-draft-hf-')))
   const docPath = join(dir, 'report.docx')
@@ -69,8 +69,8 @@ test('a header or footer command in Draft and Web Layout opens the strip in Prin
     await expect(page.locator('.page-wrap > .page-hf-header')).toContainText(
       `${DRAFT_HEADER} from draft`,
     )
-    // the view stays where the command took it
-    await expect(canvas).toHaveClass(/\bview-print\b/)
+    // Draft comes back once the header is done
+    await expect(canvas).toHaveClass(/\bview-draft\b/)
 
     // Insert > Footer > Edit Footer on the ribbon, from Web Layout
     await clickMenu(app, ['View', 'Web Layout'])
@@ -86,6 +86,8 @@ test('a header or footer command in Draft and Web Layout opens the strip in Prin
     await page.keyboard.type(' from web')
     await page.keyboard.press('Escape')
     await expect(strip).toHaveCount(0)
+    // from the other views the window stays where the command took it
+    await expect(canvas).toHaveClass(/\bview-print\b/)
 
     await saveFromMenu(app)
     await expect

@@ -27,6 +27,9 @@ export default defineConfig({
       '@genoffice/electron-utils/safe-external-url': local(
         '../../packages/electron-utils/src/safe-external-url.ts',
       ),
+      '@genoffice/electron-utils/program-files': local(
+        '../../packages/electron-utils/src/program-files.ts',
+      ),
       '@genoffice/electron-utils/print-cups': local(
         '../../packages/electron-utils/src/print-cups.ts',
       ),
@@ -53,6 +56,7 @@ export default defineConfig({
       '@genoffice/ai-provider/browser': local('../../packages/ai-provider/src/browser.ts'),
       '@genoffice/ai-provider': local('../../packages/ai-provider/src/index.ts'),
       '@genoffice/i18n': local('../../packages/i18n/src/index.ts'),
+      '@genoffice/ui/measurement': local('../../packages/ui/src/measurement.ts'),
       '@genoffice/ui': local('../../packages/ui/src/index.ts'),
     },
   },
@@ -63,6 +67,7 @@ export default defineConfig({
       local('../../packages/docx-engine/tests/setup-equality.ts'),
       // every package a test saves must read back as strict XML
       local('../../packages/docx-engine/tests/setup-strict-xml.ts'),
+      local('./tests/setup-dom.ts'),
     ],
     environment: 'jsdom',
     testTimeout: 20000,

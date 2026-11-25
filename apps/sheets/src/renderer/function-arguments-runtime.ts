@@ -8,6 +8,7 @@ import { IEditorService } from '@univerjs/docs-ui'
 import { IFormulaEditorManagerService } from '@univerjs/sheets-ui'
 
 import { columnLabel, pickedRangeRef, type PreviewValue } from './function-arguments'
+import { formulaToCanonical, getNumberSeparators } from './number-separators'
 import type { UniverRuntime } from './univer-state'
 
 export interface FunctionTarget {
@@ -20,7 +21,7 @@ export interface FunctionTarget {
   /// Formula text the dialog edits (`=` included); '' for a cell without one.
   readonly formula: string
   readonly caret: number
-  /// The cell editor was open with this text; Cancel reopens it.
+  /// The cell editor was open with this text, as typed; Cancel reopens it.
   readonly editorText: string | null
 }
 
@@ -51,17 +52,21 @@ export interface FunctionArgumentsHost {
   cancel(target: FunctionTarget): void
 }
 
-function editorTextAndCaret(runtime: UniverRuntime): { text: string; caret: number } | null {
+function editorTextAndCaret(
+  runtime: UniverRuntime,
+): { typed: string; text: string; caret: number } | null {
   const editorService = runtime.univer.__getInjector().get(IEditorService)
   const editor = editorService.getEditor(DOCS_NORMAL_EDITOR_UNIT_ID_KEY)
   if (!editor) return null
-  const text = (editor.getDocumentData().body?.dataStream ?? '').replace(/\r?\n$/, '')
+  const typed = (editor.getDocumentData().body?.dataStream ?? '').replace(/\r?\n$/, '')
+  // the dialog splits and rebuilds canonical formulas; the rewrite keeps every offset
+  const text = formulaToCanonical(typed, getNumberSeparators())
   const ranges =
     editor.getSelectionRanges().length > 0
       ? editor.getSelectionRanges()
       : (editorService.getEditor(DOCS_FORMULA_BAR_EDITOR_UNIT_ID_KEY)?.getSelectionRanges() ?? [])
   const caret = Math.min(text.length, ranges[0]?.startOffset ?? text.length)
-  return { text, caret }
+  return { typed, text, caret }
 }
 
 let evaluationQueue: Promise<void> = Promise.resolve()
@@ -114,15 +119,17 @@ export function createFunctionArgumentsHost(
       const row = range.getRow()
       const col = range.getColumn()
       let editorText: string | null = null
+      let editedFormula: string | null = null
       let caret = 0
       if (workbook.isCellEditing()) {
         const editing = editorTextAndCaret(runtime)
-        editorText = editing?.text ?? ''
+        editorText = editing?.typed ?? ''
+        editedFormula = editing?.text ?? ''
         caret = editing?.caret ?? 0
         await workbook.endEditingAsync(false)
       }
       const cellFormula = worksheet.getRange(row, col, 1, 1).getFormula()
-      const formula = editorText ?? cellFormula
+      const formula = editedFormula ?? cellFormula
       const isFormula = formula.startsWith('=')
       return {
         unitId: workbook.getId(),

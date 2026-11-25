@@ -23,7 +23,6 @@ const GLYPH_MODIFIERS: Record<string, 'Cmd' | 'Ctrl' | 'Alt' | 'Shift'> = {
   '⌥': 'Alt',
   '⇧': 'Shift',
 }
-const GLYPH_KEYS: Record<string, string> = { '⏎': 'Enter', '␣': 'Space', '↑': 'Up', '↓': 'Down' }
 const KEY_GLYPHS: Record<string, string> = {
   Enter: '⏎',
   Space: '␣',
@@ -31,7 +30,15 @@ const KEY_GLYPHS: Record<string, string> = {
   Down: '↓',
   Left: '←',
   Right: '→',
+  Backspace: '⌫',
+  Delete: '⌦',
+  NumEnter: '⌤',
+  NumPlus: 'Num+',
+  NumMinus: 'Num-',
 }
+const GLYPH_KEYS = Object.fromEntries(
+  Object.entries(KEY_GLYPHS).map(([key, glyph]) => [glyph, key]),
+)
 
 /** one chord of the shortcut list, which writes Mac glyphs ('⇧⌘S') or 'Ctrl+Shift+S' */
 function chordFromNotation(text: string, isMac: boolean): string | null {
@@ -46,9 +53,11 @@ function chordFromNotation(text: string, isMac: boolean): string | null {
   return toChord(makeChord(held, GLYPH_KEYS[rest] ?? rest), isMac)
 }
 
+const chordsOf = (text: string, isMac: boolean): string[] =>
+  text.split(' / ').flatMap((part) => chordFromNotation(part, isMac) ?? [])
+
 export function shortcutChords(def: ShortcutDef, isMac: boolean): string[] {
-  const text = isMac ? def.keys : (def.win ?? def.keys)
-  return text.split(' / ').flatMap((part) => chordFromNotation(part, isMac) ?? [])
+  return chordsOf(isMac ? def.keys : (def.win ?? def.keys), isMac)
 }
 
 /** the chord as the user reads it: glyphs on the Mac, Ctrl+Alt+Shift+key elsewhere */
@@ -92,6 +101,9 @@ const CODE_KEYS: Record<string, string> = {
   PageDown: 'PageDown',
   Delete: 'Delete',
   Backspace: 'Backspace',
+  NumpadEnter: 'NumEnter',
+  NumpadAdd: 'NumPlus',
+  NumpadSubtract: 'NumMinus',
 }
 
 export type ChordEvent = Pick<
@@ -99,16 +111,18 @@ export type ChordEvent = Pick<
   'key' | 'code' | 'ctrlKey' | 'altKey' | 'shiftKey' | 'metaKey'
 >
 
-/** the chord a key press spells, or null for a key no chord is made of (a bare modifier, the keypad) */
+/** the chord a key press spells, or null for a key no chord is made of (a bare modifier, a keypad digit) */
 export function chordFromEvent(event: ChordEvent, isMac = IS_MAC): string | null {
   // a Latin letter is the layout's own answer (Dvorak); anything else falls back to the key's position
   const key = /^[a-z]$/i.test(event.key)
     ? event.key.toUpperCase()
     : /^F\d{1,2}$/.test(event.key)
       ? event.key
-      : (/^Key([A-Z])$/.exec(event.code)?.[1] ??
-        /^Digit(\d)$/.exec(event.code)?.[1] ??
-        CODE_KEYS[event.code])
+      : event.key === 'Clear'
+        ? 'Clear'
+        : (/^Key([A-Z])$/.exec(event.code)?.[1] ??
+          /^Digit(\d)$/.exec(event.code)?.[1] ??
+          CODE_KEYS[event.code])
   if (!key) return null
   const held: ('Cmd' | 'Ctrl' | 'Alt' | 'Shift')[] = []
   if (event.ctrlKey) held.push('Ctrl')
@@ -157,7 +171,7 @@ function buildDefaults(isMac: boolean): Defaults {
       typeof def.accelerator === 'string'
         ? def.accelerator
         : def.accelerator[isMac ? 'mac' : 'other']
-    add(id, toChord(accelerator, isMac))
+    if (accelerator) add(id, toChord(accelerator, isMac))
   }
   const fixed = new Map<string, ShortcutDef | null>()
   const taken = new Set([...chords.values()].flat())
@@ -185,6 +199,77 @@ function defaults(isMac: boolean): Defaults {
 
 export function defaultChords(id: string, isMac = IS_MAC): readonly string[] {
   return defaults(isMac).chords.get(id) ?? []
+}
+
+/**
+ * Commands whose built-in chord the window answers as well as the menu bar:
+ * the menu takes the key first where it can, and a key press that never
+ * reaches the menu still runs the command.
+ */
+const WINDOW_KEY_COMMANDS: readonly ActionCommandId[] = [
+  'file-new-from-template',
+  'edit-paste-special',
+  'edit-find-next',
+  'edit-find-previous',
+  'edit-toggle-drawing',
+  'view-focus',
+  'view-ribbon',
+  'insert-equation',
+  'format-object',
+  'format-selection-pane',
+  'tools-thesaurus',
+  'table-delete-rows',
+  'replace',
+]
+
+const windowKeysByPlatform = new Map<boolean, Map<string, ActionCommandId>>()
+
+export function windowKeyCommand(
+  overrides: KeyOverrides,
+  chord: string,
+  isMac = IS_MAC,
+): ActionCommandId | null {
+  let keys = windowKeysByPlatform.get(isMac)
+  if (!keys) {
+    keys = new Map()
+    for (const id of WINDOW_KEY_COMMANDS)
+      for (const built of defaultChords(id, isMac)) keys.set(built, id)
+    windowKeysByPlatform.set(isMac, keys)
+  }
+  const id = keys.get(chord)
+  // a customized command is the key layer's to run, on the chords the user left it
+  return id && !Object.hasOwn(overrides, id) ? id : null
+}
+
+export interface KeyRun {
+  cmd: ActionCommandId
+  payload?: string
+}
+
+let documentKeys: Map<string, KeyRun & { id: string }> | null = null
+
+/**
+ * The command a chord of Word for Mac runs while the document has the keys.
+ * It is decided ahead of the editor keymaps and Chromium's own editing keys,
+ * which give several of these chords another meaning.
+ */
+export function documentKeyCommand(
+  overrides: KeyOverrides,
+  chord: string,
+  isMac = IS_MAC,
+): KeyRun | null {
+  if (!isMac) return null
+  if (!documentKeys) {
+    documentKeys = new Map()
+    for (const def of SHORTCUTS) {
+      if (!def.cmd || !def.docKeys) continue
+      const run = { id: bindingId(def.cmd, def.payload), cmd: def.cmd, payload: def.payload }
+      for (const built of chordsOf(def.docKeys, true)) documentKeys.set(built, run)
+    }
+  }
+  const run = documentKeys.get(chord)
+  if (!run || Object.hasOwn(overrides, run.id)) return null
+  return { cmd: run.cmd, ...(run.payload ? { payload: run.payload } : {}) }
 }
 
 export function effectiveChords(

@@ -219,7 +219,7 @@ describe('EditorContextMenu — the withholding item', () => {
     select(editor, 1, 5)
     const { container, unmount } = render(createElement(EditorContextMenu, menuProps(editor)))
     const names = [...container.querySelectorAll('.ctx-label')].map((el) => el.textContent)
-    const at = names.indexOf('Translate')
+    const at = names.indexOf('Translate…')
     expect(names[at + 1]).toBe(LABEL)
     unmount()
     editor.destroy()

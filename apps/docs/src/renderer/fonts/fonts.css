@@ -416,6 +416,26 @@
   font-display: block;
 }
 
+/* Barlow is an M365 cloud font Word downloads and renders real (corpus
+ * 2026-11-19: PDF embeds Barlow-Bold, 36pt heading pitch 43.2 = hhea 1.2).
+ * Helvetica Bold runs ~10% wider, so the real Latin subset is bundled
+ * (tools/build-barlow-font.py). A locally installed Barlow still precedes
+ * this face in the chain. */
+@font-face {
+  font-family: 'GenOffice Barlow';
+  src: url('./GenOfficeBarlow-Regular-subset.woff2') format('woff2');
+  font-weight: normal;
+  font-style: normal;
+  font-display: block;
+}
+@font-face {
+  font-family: 'GenOffice Barlow';
+  src: url('./GenOfficeBarlow-Bold-subset.woff2') format('woff2');
+  font-weight: bold;
+  font-style: normal;
+  font-display: block;
+}
+
 /* Latin-range backstops closing dual-slot / eastAsia-only chains: Word
  * substitutes a missing w:ascii face with a Latin font and never draws Latin
  * glyphs from the eastAsia slot (probe 2026-08-23). The range covers letters,

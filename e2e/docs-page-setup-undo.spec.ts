@@ -317,6 +317,62 @@ test('one OK in the Document dialog is one undo step', async () => {
   }
 })
 
+test('a page setup change made before an earlier render has settled is still its own undo step', async () => {
+  test.setTimeout(120_000)
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), 'genoffice-e2e-page-setup-undo-')))
+  const docPath = join(dir, 'pending.docx')
+  writeFileSync(docPath, await docxWith(['apple', 'banana'].map(para).join('') + SECT_PR))
+  const { launched, app, page, paragraph } = await openDoc(docPath)
+  try {
+    await page.locator('.ribbon-tab', { hasText: /^Layout$/ }).click()
+    await page
+      .locator('[data-ribbon-body] button:is(.rb-big, .rb-small)', { hasText: 'Orientation' })
+      .first()
+      .click()
+    const landscape = page.locator('[data-rb-panel] button', { hasText: 'Landscape' }).first()
+    await expect(landscape).toBeVisible()
+    // An edit redraws the status bar outside any click. The pick lands as soon as
+    // that redraw is on screen, before React has run the redraw's effects.
+    await landscape.evaluate(
+      (item) =>
+        new Promise<void>((resolve) => {
+          const { editor } = (
+            window as never as {
+              __aidocs: {
+                editor: {
+                  state: { doc: { content: { size: number } } }
+                  commands: { insertContentAt(at: number, text: string): boolean }
+                }
+              }
+            }
+          ).__aidocs
+          const redraw = new MutationObserver(() => {
+            redraw.disconnect()
+            ;(item as HTMLElement).click()
+            resolve()
+          })
+          redraw.observe(document.querySelector('.status-bar')!, {
+            subtree: true,
+            childList: true,
+            characterData: true,
+          })
+          editor.commands.insertContentAt(editor.state.doc.content.size - 1, ' cherry date')
+        }),
+    )
+    await expect.poll(async () => (await pageBox(page)).landscape).toBe(true)
+    await expect(paragraph('banana cherry date')).toBeVisible()
+
+    await clickMenu(app, ['Edit', 'Undo'])
+    await expect.poll(async () => (await pageBox(page)).landscape).toBe(false)
+    await expect(paragraph('banana cherry date')).toBeVisible()
+    await clickMenu(app, ['Edit', 'Undo'])
+    await expect(paragraph('banana cherry date')).toHaveCount(0)
+  } finally {
+    await closeAndSaveVideo(launched, VIDEO_DIR)
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
 test('page setup of one section and of the whole document undoes where it was made', async () => {
   test.setTimeout(240_000)
   const dir = realpathSync(mkdtempSync(join(tmpdir(), 'genoffice-e2e-page-setup-undo-')))

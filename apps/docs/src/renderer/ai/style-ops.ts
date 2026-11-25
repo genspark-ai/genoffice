@@ -231,7 +231,9 @@ function paraProps(input: Record<string, unknown>): Result<StyleParaProps> {
   }
   if (input.lineSpacing !== undefined) {
     const exact = parseExactLineTwips(input.lineSpacing)
-    if (exact !== undefined) out.lineFixed = { rule: 'exact', twips: exact }
+    // pending upserts merge field by field: name both so the other rule never outlives this one
+    out.lineFixed = exact === undefined ? undefined : { rule: 'exact', twips: exact }
+    if (exact !== undefined) out.lineSpacing = undefined
     else if (
       input.lineSpacing !== null &&
       !(typeof input.lineSpacing === 'number' && input.lineSpacing > 0)

@@ -54,13 +54,26 @@ test('picture context menu lists only Word picture items', async () => {
       'Size and Position…',
       'Format Picture…',
       'View Image',
-      'New Comment',
     ])
-    for (const gone of ['Paste as Plain Text', 'Font…', 'Paragraph…', 'Synonyms', 'Translate']) {
+    for (const gone of [
+      'Paste as Plain Text',
+      'Font…',
+      'Paragraph…',
+      'Synonyms',
+      'Translate',
+      'New Comment',
+    ]) {
       expect(labels).not.toContain(gone)
     }
     // the picture items run the commands the Picture Format tab runs
     await expect(menu.locator('.ctx-item', { hasText: 'Change Picture' })).toBeEnabled()
+    // a submenu as in Word, with the sources there are: a file, the icons, the clipboard
+    await menu.locator('.ctx-item', { hasText: 'Change Picture' }).hover()
+    await expect(menu.locator('.ctx-submenu .ctx-label')).toHaveText([
+      'From a File…',
+      'From Icons…',
+      'From Clipboard…',
+    ])
     await menu.locator('.ctx-item', { hasText: /^Crop$/ }).click()
     await expect(page.locator('.crop-modal')).toBeVisible()
     const before = await img.getAttribute('src')

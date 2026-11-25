@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { IStatusBarService } from '@univerjs/sheets-ui'
+import { RANGE_TYPE } from '@univerjs/core'
+import { IStatusBarService, StatusBarController } from '@univerjs/sheets-ui'
 import { SheetsSelectionsService } from '@univerjs/sheets'
 
 import { installStatusBarFileStats, visibleRowBands } from '../src/renderer/statusbar-file-stats'
@@ -29,7 +30,9 @@ type Publish = (
   state: { values: Array<{ func: string; value: number }>; pattern: string | null } | null,
 ) => void
 
-function harness(opts: { hiddenRows?: Set<number>; selections?: unknown[] } = {}) {
+function harness(
+  opts: { hiddenRows?: Set<number>; selections?: unknown[]; rowCount?: number } = {},
+) {
   let publish: Publish = () => {}
   const setState = vi.fn()
   const statusBar = {
@@ -45,10 +48,12 @@ function harness(opts: { hiddenRows?: Set<number>; selections?: unknown[] } = {}
     { range: { startRow: 0, endRow: 9, startColumn: 0, endColumn: 0, rangeType: 0 } },
   ]
   const selectionsService = { getCurrentSelections: () => selections }
+  const calculateSelection = vi.fn()
+  const controller = { _calculateSelection: calculateSelection }
   const sheet = { getRowVisible: (row: number) => !(opts.hiddenRows ?? new Set()).has(row) }
   const worksheet = {
     getSheetId: () => 's1',
-    getMaxRows: () => 10,
+    getMaxRows: () => opts.rowCount ?? 10,
     getMaxColumns: () => 1,
     getSheet: () => sheet,
   }
@@ -58,6 +63,7 @@ function harness(opts: { hiddenRows?: Set<number>; selections?: unknown[] } = {}
       __getInjector: () => ({
         get: (token: unknown) => {
           if (token === IStatusBarService) return statusBar
+          if (token === StatusBarController) return controller
           if (token === SheetsSelectionsService) return selectionsService
           throw new Error('unexpected token')
         },
@@ -66,6 +72,8 @@ function harness(opts: { hiddenRows?: Set<number>; selections?: unknown[] } = {}
   }
   const state = {
     formulaMode: false,
+    flags: { preloadComplete: false },
+    loadedRanges: new Map([['s1', bounds]]),
     file: { sheets: [{ id: 's1', rowCount: 10, columnCount: 1 }] },
     editJournal: { structuralOps: new Map() },
   }
@@ -84,7 +92,14 @@ function harness(opts: { hiddenRows?: Set<number>; selections?: unknown[] } = {}
     lazyWorkbookRef: { current: state as never },
     aggregate: aggregate as never,
   })
-  return { publish: (s: Parameters<Publish>[0]) => publish(s), setState, aggregate, installed }
+  return {
+    publish: (s: Parameters<Publish>[0]) => publish(s),
+    setState,
+    aggregate,
+    installed,
+    calculateSelection,
+    controller,
+  }
 }
 
 const upstream = { values: [{ func: 'COUNTA', value: 3 }], pattern: null }
@@ -92,6 +107,12 @@ const upstream = { values: [{ func: 'COUNTA', value: 3 }], pattern: null }
 describe('installStatusBarFileStats', () => {
   beforeEach(() => vi.useFakeTimers())
   afterEach(() => vi.useRealTimers())
+
+  it('gives Univer only the resident part of a million-row column selection', () => {
+    const h = harness({ rowCount: 1_000_001 })
+    h.controller._calculateSelection([{ ...bounds, rangeType: RANGE_TYPE.COLUMN }], null)
+    expect(h.calculateSelection).toHaveBeenCalledWith([bounds], null)
+  })
 
   it('aggregates only the visible row bands of a filtered selection', async () => {
     const h = harness({ hiddenRows: new Set([2, 3, 7]) })

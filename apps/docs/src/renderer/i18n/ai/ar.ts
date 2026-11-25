@@ -152,6 +152,7 @@ export const ar = {
   aiPartialBody: 'وصلت {blocks} كتلة قبل توقف الكتابة. هل تريد الاحتفاظ بهذا الجزء أو تجاهله؟',
   aiPartialAdopt: 'احتفاظ',
   aiPartialDiscard: 'تجاهل',
+  aiSumProtectedBlocked: 'لم يُطبَّق: المستند محمي خارج المناطق القابلة للتحرير',
   aiSumInsertedBlocks: 'تم إدراج {count} كتلة',
   aiSumCreateDocument: 'إنشاء مستند جديد',
   aiSumCreatedDocument: 'تم إنشاء {name}',

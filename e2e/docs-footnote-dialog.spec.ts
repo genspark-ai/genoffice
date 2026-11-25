@@ -124,9 +124,10 @@ test('number format, start number and per-section restart renumber the notes, sa
     // what Word offers and the page cannot do is not listed
     const first = await openDialog(app, page)
     await expect(first.locator('h2')).toHaveText('Footnote and Endnote')
-    await expect(first.locator('select[name="note-columns"]')).toHaveCount(0)
+    // a package without a compatibility mode is laid out as Word 2010 or older: one column of notes
+    await expect(first.locator('select[name="note-columns"]')).toBeDisabled()
     await expect(first.locator('option[value="sectEnd"]')).toBeEnabled()
-    await expect(first.locator('option[value="eachPage"]')).toHaveCount(0)
+    await expect(first.locator('option[value="eachPage"]')).toBeEnabled()
     await expect(first.locator('option[value="section"]')).not.toHaveAttribute('disabled', '')
     await expect(first.locator('button[name="convert"]')).toBeDisabled()
     await expect(first.locator('button[name="apply"]')).toBeDisabled()

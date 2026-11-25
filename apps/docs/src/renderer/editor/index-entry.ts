@@ -109,3 +109,24 @@ export function markIndexEntries(
       positions.map((at) => ({ at, attrs: { term, switches } })),
     )
 }
+
+/** what Word's Mark Table of Contents Entry dialog takes */
+export interface TocEntry {
+  text: string
+  /** the table the entry belongs to: a letter, C being the table of contents itself */
+  id: string
+  level: number
+}
+
+/** the text and switches of the entry's TC field; an entry of the default table names no table */
+export function tocEntryInstruction(entry: TocEntry): string {
+  const id = /^[A-Za-z]$/.test(entry.id) ? entry.id.toUpperCase() : 'C'
+  const level = Math.min(9, Math.max(1, Math.round(entry.level) || 1))
+  return `"${literal(entry.text)}"${id === 'C' ? '' : ` \\f ${id}`} \\l ${level}`
+}
+
+/** puts a table of contents entry (TC field) at the position */
+export function markTocEntry(editor: Editor, at: number, entry: TocEntry): void {
+  if (literal(entry.text))
+    insertFieldMarks(editor, [{ at, attrs: { tc: tocEntryInstruction(entry) } }])
+}

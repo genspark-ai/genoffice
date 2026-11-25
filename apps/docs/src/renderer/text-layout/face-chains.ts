@@ -209,6 +209,13 @@ export const FACE_CHAIN_RULES: ChainRule[] = [
     when: (f) => f.includes('dm sans'),
     chain: () => [['GenOffice DM Sans', CJK_SANS], 'sans-serif'],
   },
+  // Barlow is an M365 cloud font Word renders real; the bundled Latin subset carries its true advances (corpus 2026-11-19).
+  // Barlow Condensed keeps its own stand-in
+  {
+    id: 'barlow',
+    when: (f) => f === 'barlow',
+    chain: () => [['GenOffice Barlow', CJK_SANS], 'sans-serif'],
+  },
   // Montserrat is an M365 cloud font Word renders real, ignoring its fontTable altName; only the
   // cloud family names qualify: a PostScript-style "Montserrat-Bold" is unknown to Word and keeps the altName
   {
@@ -384,11 +391,14 @@ export const FACE_CHAIN_RULES: ChainRule[] = [
       }
       // MS Gothic family renders real in Word (half-width mono Latin / proportional kana); the
       // range-limited aliases reproduce those advances. MS Mincho (Word probe 2026-09-17: real
-      // MS-Mincho, digits 0.5em, fullwidth colon 1em) shares the fixed-pitch Latin alias
+      // MS-Mincho, digits 0.5em, fullwidth colon 1em) shares the fixed-pitch Latin alias;
+      // MS PMincho has its own proportional Latin and kana
       const msGothic = /^ms (ui )?(p)?(gothic|\u30b4\u30b7\u30c3\u30af)$/i.exec(nfkc.trim())
-      const msMincho = /^ms (mincho|\u660e\u671d)$/i.test(nfkc.trim())
+      const msMincho = /^ms (p)?(mincho|\u660e\u671d)$/i.exec(nfkc.trim())
       const msAlias = msMincho
-        ? ['MS Mincho GO']
+        ? msMincho[1]
+          ? ['MS PMincho GO', 'MS PMincho JA GO']
+          : ['MS Mincho GO']
         : !msGothic
           ? []
           : msGothic[1]

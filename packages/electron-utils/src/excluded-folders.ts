@@ -1,4 +1,4 @@
-/// Folders the user excluded from GenOffice's memory surfaces (#2844): the
+/// Folders the user excluded from GenOffice's memory surfaces (genoffice#2844): the
 /// recents list, the search index and the session restore stop recording and
 /// listing files under them. An explicit star keeps working — that is the
 /// user's own intent, not the app remembering something they did not ask it

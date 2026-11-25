@@ -62,6 +62,20 @@ describe('single-quoted note attributes', () => {
   })
 })
 
+describe('bookmarks inside notes', () => {
+  it('names the bookmarks that open in a note, and none on a note without one', () => {
+    const xml =
+      XML_DECL +
+      '<w:footnotes xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">' +
+      '<w:footnote w:id="2"><w:p><w:r><w:footnoteRef/></w:r><w:bookmarkStart w:id="4" w:name="Noted"/><w:r><w:t>first</w:t></w:r><w:bookmarkEnd w:id="4"/></w:p>' +
+      "<w:p><w:bookmarkStart w:name='A&amp;B' w:id='5'/><w:bookmarkEnd w:id='5'/></w:p></w:footnote>" +
+      '<w:footnote w:id="3"><w:p><w:r><w:footnoteRef/></w:r><w:r><w:t>second</w:t></w:r></w:p></w:footnote>' +
+      '</w:footnotes>'
+    const notes = parseNotesXml(xml, 'footnote', standaloneNoteParagraphReader())
+    expect(notes.map((n) => n.bookmarks)).toEqual([['Noted', 'A&B'], undefined])
+  })
+})
+
 describe('self-closing note entries', () => {
   it('does not swallow the next entry when an empty note is written as <w:footnote w:id="1"/>', () => {
     const xml =

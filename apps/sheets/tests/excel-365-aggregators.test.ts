@@ -118,6 +118,8 @@ describe('GROUPBY and PIVOTBY', () => {
     expect(await calc('=INDEX(GROUPBY(B2:B3,C2:C3,SUM,0,1,-1),2,1)')).toBe('Total')
     // the filter array drops Banana before grouping: 10 + 30
     expect(await calc('=SUM(GROUPBY(B1:B4,C1:C4,SUM,3,0,0,{TRUE;TRUE;FALSE;TRUE}))')).toBe(40)
+    // a filter shorter than the data is an error, not a quiet drop of the unmatched rows
+    expect(await calc('=SUM(GROUPBY(B1:B4,C1:C4,SUM,3,0,0,{TRUE;TRUE}))')).toBe('#VALUE!')
     // PIVOTBY: the column keys always ride the first row (they are the pivot's
     // column axis, not a header), blank corner without field names, and the
     // grand total column and row Excel shows by default

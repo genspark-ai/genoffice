@@ -1,7 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { handOffBytes } from './byte-handoff'
 import {
-  appendFileSync,
   existsSync,
   mkdirSync,
   readdirSync,
@@ -25,6 +24,7 @@ import {
 import { tmpdir } from 'node:os'
 import { basename, dirname, extname, isAbsolute, join } from 'node:path'
 import { moveFile, renamedDocPath } from './doc-move'
+import { linkSourcePath } from './link-source'
 import { pathToFileURL } from 'node:url'
 import {
   BrowserWindow,
@@ -64,8 +64,8 @@ import {
   aboutMenuItem,
   checkUpdatesMenuItem,
   toggleDevToolsItem,
+  hasSettingsInvoker,
   settingsMenuItem,
-  windowMenuTemplate,
   type HeadlessExportFormat,
   type HeadlessExportTarget,
   installRendererProtocol,
@@ -75,11 +75,14 @@ import {
   readBodyCapped,
   writeJsonAtomic,
   restrictFileToOwner,
+  isBesideDocument,
+  sharedPathGrants,
   recoveryCopyDiskNewer,
   readLegacyImportSkip,
   writeLegacyImportSkip,
   tileWindows,
 } from '@genoffice/electron-utils'
+import { isOpenableLinkSource } from '@genoffice/electron-utils/program-files'
 import {
   configureMetricsCache,
   familyAliases,
@@ -163,8 +166,14 @@ import type {
   MergeOutputRequest,
   OpenDocxResult,
   OrganizerFileResult,
+  LinkSourceClaim,
+  LinkSourceResult,
   PickDocxResult,
+  PickLinkFileResult,
   SpellLanguages,
+  PickThemeResult,
+  SavedThemeEntry,
+  SaveThemeResult,
   TemplateEntry,
   TemplatePreviewRect,
 } from '../shared/ipc'
@@ -195,7 +204,12 @@ import {
   isOpenableDocPath,
 } from '../shared/open-file'
 import { atomicWriteFile, looksLikeZip } from './atomic-write'
-import { templateThumbnail, withTemplateThumbnail } from '@genoffice/docx-engine'
+import {
+  buildThmx,
+  readThemeFileXml,
+  templateThumbnail,
+  withTemplateThumbnail,
+} from '@genoffice/docx-engine'
 import { uniquePathIn } from './file-name'
 import { mapBounded } from './map-bounded'
 // the shell imports it from here
@@ -229,6 +243,7 @@ import {
   setDocPassword,
   snapshotDocPassword,
 } from './docx-encryption'
+import { ipcBytes } from './ipc-bytes'
 import { isExternallyModified, type DiskFileState } from './external-change'
 import { copyImageDisplaySize, validCopyImageDataUrl } from './copy-image-guard'
 import {
@@ -267,6 +282,7 @@ const tMain = createI18n({
   zh: {
     dlgOpenDoc: '打开文档',
     filterWord: 'Word 文档',
+    filterTheme: 'Office 主题',
     odtImportMsg: '转换 .{ext} 文档？',
     odtImportDetail:
       'GenOffice 只编辑 .docx，不编辑 ODF。正文、标题、列表、表格和图片会转换过来；脚注、批注和文本框不会完整保留。原文件不会被修改，转换出的 .docx 是一份独立副本，之后的保存都写入它。', // public-hygiene: allow
@@ -308,7 +324,6 @@ const tMain = createI18n({
     errUnsupportedExt: '暂不支持 .{ext} 类型',
     errNotFile: '不是文件',
     errTooLarge: '超过 {mb}MB 上限',
-    errTemplateProtected: '此模板受密码保护，请通过“文件 > 打开”打开',
     errImageTooLarge: '图片超过 5MB 上限',
     errUnreadable: '无法读取',
     errFileTooLarge: '文件超过大小上限',
@@ -486,6 +501,11 @@ const tMain = createI18n({
     menuEquationOptions: '公式选项…',
     menuSelectionPane: '选择窗格…',
     menuTools: '工具',
+    menuArrangeAll: '全部重排',
+    menuMinimizeAll: '全部最小化',
+    menuZoomAll: '全部缩放',
+    menuMergeAllWindows: '合并所有窗口',
+    menuSplit: '拆分',
     menuTable: '表格',
     menuTableInsert: '插入',
     menuTableInsertTable: '表格…',
@@ -552,6 +572,7 @@ const tMain = createI18n({
   en: {
     dlgOpenDoc: 'Open Document',
     filterWord: 'Word Documents',
+    filterTheme: 'Office Themes',
     odtImportMsg: 'Convert this .{ext} document?',
     odtImportDetail:
       'GenOffice edits .docx, not ODF. Body text, headings, lists, tables and images carry over; footnotes, comments and text boxes are not fully preserved. The original file is never changed; the converted .docx is a separate copy that later saves write to.',
@@ -595,7 +616,6 @@ const tMain = createI18n({
     errUnsupportedExt: '.{ext} files are not supported',
     errNotFile: 'not a file',
     errTooLarge: 'exceeds the {mb}MB limit',
-    errTemplateProtected: 'this template is password protected; open it with File > Open',
     errImageTooLarge: 'image exceeds the 5MB limit',
     errUnreadable: 'cannot be read',
     errFileTooLarge: 'File exceeds the size limit',
@@ -775,6 +795,11 @@ const tMain = createI18n({
     menuEquationOptions: 'Equation Options…',
     menuSelectionPane: 'Selection Pane…',
     menuTools: 'Tools',
+    menuArrangeAll: 'Arrange All',
+    menuMinimizeAll: 'Minimize All',
+    menuZoomAll: 'Zoom All',
+    menuMergeAllWindows: 'Merge All Windows',
+    menuSplit: 'Split',
     menuTable: 'Table',
     menuTableInsert: 'Insert',
     menuTableInsertTable: 'Table…',
@@ -841,6 +866,7 @@ const tMain = createI18n({
   vi: {
     dlgOpenDoc: 'Mở tài liệu',
     filterWord: 'Tài liệu Word',
+    filterTheme: 'Chủ đề Office',
     odtImportMsg: 'Chuyển đổi tài liệu .{ext} này?',
     odtImportDetail:
       'GenOffice chỉnh sửa .docx chứ không chỉnh sửa ODF. Nội dung, tiêu đề, danh sách, bảng và hình ảnh được chuyển đổi; chú thích cuối trang, bình luận và hộp văn bản không được giữ đầy đủ. Tệp gốc không bao giờ bị sửa; bản .docx sau chuyển đổi là một bản sao độc lập để tiếp tục chỉnh sửa và lưu.',
@@ -884,7 +910,6 @@ const tMain = createI18n({
     errUnsupportedExt: 'Tệp .{ext} không được hỗ trợ',
     errNotFile: 'không phải là tệp',
     errTooLarge: 'vượt quá giới hạn {mb}MB',
-    errTemplateProtected: 'mẫu này được bảo vệ bằng mật khẩu; hãy mở bằng Tệp > Mở',
     errImageTooLarge: 'hình ảnh vượt quá giới hạn 5MB',
     errUnreadable: 'không thể đọc được',
     errFileTooLarge: 'Tệp vượt quá giới hạn kích thước',
@@ -1065,6 +1090,11 @@ const tMain = createI18n({
     menuEquationOptions: 'Tùy chọn Phương trình…',
     menuSelectionPane: 'Ngăn Chọn…',
     menuTools: 'Công cụ',
+    menuArrangeAll: 'Sắp xếp Tất cả',
+    menuMinimizeAll: 'Thu nhỏ Tất cả',
+    menuZoomAll: 'Thu phóng Tất cả',
+    menuMergeAllWindows: 'Gộp Tất cả Cửa sổ',
+    menuSplit: 'Tách',
     menuTable: 'Bảng',
     menuTableInsert: 'Chèn',
     menuTableInsertTable: 'Bảng…',
@@ -1131,6 +1161,7 @@ const tMain = createI18n({
   tr: {
     dlgOpenDoc: 'Belge Aç',
     filterWord: 'Word Belgeleri',
+    filterTheme: 'Office Temaları',
     odtImportMsg: 'Bu .{ext} belgesi dönüştürülsün mü?',
     odtImportDetail:
       'GenOffice ODF değil .docx düzenler. Gövde metni, başlıklar, listeler, tablolar ve resimler aktarılır; dipnotlar, açıklamalar ve metin kutuları tam olarak korunmaz. Özgün dosya hiçbir zaman değiştirilmez; dönüştürülen .docx, sonraki kaydetmelerin yazıldığı ayrı bir kopyadır.',
@@ -1174,7 +1205,6 @@ const tMain = createI18n({
     errUnsupportedExt: '.{ext} dosyaları desteklenmiyor',
     errNotFile: 'bir dosya değil',
     errTooLarge: '{mb}MB sınırını aşıyor',
-    errTemplateProtected: 'bu şablon parola korumalı; Dosya > Aç ile açın',
     errImageTooLarge: 'resim 5MB sınırını aşıyor',
     errUnreadable: 'okunamıyor',
     errFileTooLarge: 'Dosya boyut sınırını aşıyor',
@@ -1354,6 +1384,11 @@ const tMain = createI18n({
     menuEquationOptions: 'Denklem Seçenekleri…',
     menuSelectionPane: 'Seçim Bölmesi…',
     menuTools: 'Araçlar',
+    menuArrangeAll: 'Tümünü Yerleştir',
+    menuMinimizeAll: 'Tümünü Küçült',
+    menuZoomAll: 'Tümünü Büyüt',
+    menuMergeAllWindows: 'Tüm Pencereleri Birleştir',
+    menuSplit: 'Böl',
     menuTable: 'Tablo',
     menuTableInsert: 'Ekle',
     menuTableInsertTable: 'Tablo…',
@@ -1420,6 +1455,7 @@ const tMain = createI18n({
   hu: {
     dlgOpenDoc: 'Dokumentum megnyitása',
     filterWord: 'Word-dokumentumok',
+    filterTheme: 'Office-témák',
     odtImportMsg: 'Átalakítsuk ezt a(z) .{ext} dokumentumot?',
     odtImportDetail:
       'A GenOffice .docx fájlokat szerkeszt, ODF-et nem. A szövegtörzs, a címsorok, a listák, a táblázatok és a képek átmennek; a lábjegyzetek, a megjegyzések és a szövegdobozok nem maradnak meg teljesen. Az eredeti fájl sosem változik; az átalakított .docx egy külön példány, amelybe a későbbi mentések kerülnek.',
@@ -1464,7 +1500,6 @@ const tMain = createI18n({
     errUnsupportedExt: 'A .{ext} fájlok nem támogatottak',
     errNotFile: 'nem fájl',
     errTooLarge: 'túllépi a(z) {mb}MB-os korlátot',
-    errTemplateProtected: 'ez a sablon jelszóval védett; nyissa meg a Fájl > Megnyitás paranccsal',
     errImageTooLarge: 'a kép túllépi az 5MB-os korlátot',
     errUnreadable: 'nem olvasható',
     errFileTooLarge: 'A fájl túllépi a méretkorlátot',
@@ -1537,6 +1572,11 @@ const tMain = createI18n({
     menuFont: 'Betűtípus…',
     menuParagraph: 'Bekezdés…',
     menuTools: 'Eszközök',
+    menuArrangeAll: 'Mozaik',
+    menuMinimizeAll: 'Összes kicsinyítése',
+    menuZoomAll: 'Összes nagyítása',
+    menuMergeAllWindows: 'Összes ablak egyesítése',
+    menuSplit: 'Felosztás',
     menuTable: 'Táblázat',
     menuTableInsert: 'Beszúrás',
     menuTableInsertTable: 'Táblázat…',
@@ -1711,6 +1751,7 @@ const tMain = createI18n({
   ja: {
     dlgOpenDoc: '文書を開く',
     filterWord: 'Word 文書',
+    filterTheme: 'Office テーマ',
     odtImportMsg: 'この .{ext} 文書を変換しますか？',
     odtImportDetail:
       'GenOffice は ODF ではなく .docx を編集します。本文・見出し・リスト・表・画像は変換されますが、脚注・コメント・テキストボックスは完全には保持されません。元のファイルは変更されず、変換後の .docx は独立したコピーとして以後の保存先になります。',
@@ -1753,8 +1794,6 @@ const tMain = createI18n({
     errUnsupportedExt: '.{ext} 形式には対応していません',
     errNotFile: 'ファイルではありません',
     errTooLarge: '{mb}MB の上限を超えています',
-    errTemplateProtected:
-      'このテンプレートはパスワードで保護されています。[ファイル] > [開く] で開いてください',
     errImageTooLarge: '画像が 5MB の上限を超えています',
     errUnreadable: '読み取れません',
     errFileTooLarge: 'ファイルがサイズ上限を超えています',
@@ -1935,6 +1974,11 @@ const tMain = createI18n({
     menuEquationOptions: '数式オプション…',
     menuSelectionPane: '選択ウィンドウ…',
     menuTools: 'ツール',
+    menuArrangeAll: '並べて表示',
+    menuMinimizeAll: 'すべてをしまう',
+    menuZoomAll: 'すべてを拡大／縮小',
+    menuMergeAllWindows: 'すべてのウインドウを結合',
+    menuSplit: '分割',
     menuTable: '表',
     menuTableInsert: '挿入',
     menuTableInsertTable: '表…',
@@ -2001,6 +2045,7 @@ const tMain = createI18n({
   ko: {
     dlgOpenDoc: '문서 열기',
     filterWord: 'Word 문서',
+    filterTheme: 'Office 테마',
     odtImportMsg: '이 .{ext} 문서를 변환할까요?',
     odtImportDetail:
       'GenOffice은 ODF가 아니라 .docx를 편집합니다. 본문, 제목, 목록, 표, 이미지는 변환되지만 각주, 메모, 텍스트 상자는 완전히 유지되지 않습니다. 원본 파일은 변경되지 않으며, 변환된 .docx는 이후 저장이 기록되는 독립적인 사본입니다.',
@@ -2044,7 +2089,6 @@ const tMain = createI18n({
     errUnsupportedExt: '.{ext} 형식은 지원되지 않습니다',
     errNotFile: '파일이 아닙니다',
     errTooLarge: '{mb}MB 제한을 초과했습니다',
-    errTemplateProtected: '이 서식 파일은 암호로 보호되어 있습니다. 파일 > 열기로 여세요',
     errImageTooLarge: '이미지가 5MB 제한을 초과했습니다',
     errUnreadable: '읽을 수 없습니다',
     errFileTooLarge: '파일이 크기 제한을 초과했습니다',
@@ -2225,6 +2269,11 @@ const tMain = createI18n({
     menuEquationOptions: '수식 옵션…',
     menuSelectionPane: '선택 창…',
     menuTools: '도구',
+    menuArrangeAll: '모두 정렬',
+    menuMinimizeAll: '모두 최소화',
+    menuZoomAll: '모두 확대/축소',
+    menuMergeAllWindows: '모든 윈도우 병합',
+    menuSplit: '분할',
     menuTable: '표',
     menuTableInsert: '삽입',
     menuTableInsertTable: '표…',
@@ -2291,6 +2340,7 @@ const tMain = createI18n({
   fr: {
     dlgOpenDoc: 'Ouvrir un document',
     filterWord: 'Documents Word',
+    filterTheme: 'Thèmes Office',
     odtImportMsg: 'Convertir ce document .{ext} ?',
     odtImportDetail:
       'GenOffice modifie des .docx, pas de l’ODF. Le texte, les titres, les listes, les tableaux et les images sont convertis ; les notes de bas de page, les commentaires et les zones de texte ne sont pas entièrement conservés. Le fichier d’origine n’est jamais modifié ; le .docx converti est une copie distincte où s’effectuent les enregistrements suivants.',
@@ -2335,8 +2385,6 @@ const tMain = createI18n({
     errUnsupportedExt: 'les fichiers .{ext} ne sont pas pris en charge',
     errNotFile: "n'est pas un fichier",
     errTooLarge: 'dépasse la limite de {mb} Mo',
-    errTemplateProtected:
-      'ce modèle est protégé par mot de passe ; ouvrez-le avec Fichier > Ouvrir',
     errImageTooLarge: "l'image dépasse la limite de 5 Mo",
     errUnreadable: 'lecture impossible',
     errFileTooLarge: 'Le fichier dépasse la taille maximale',
@@ -2517,6 +2565,11 @@ const tMain = createI18n({
     menuEquationOptions: 'Options d’équation…',
     menuSelectionPane: 'Volet Sélection…',
     menuTools: 'Outils',
+    menuArrangeAll: 'Réorganiser tout',
+    menuMinimizeAll: 'Tout placer dans le Dock',
+    menuZoomAll: 'Tout réduire/agrandir',
+    menuMergeAllWindows: 'Fusionner toutes les fenêtres',
+    menuSplit: 'Fractionner',
     menuTable: 'Tableau',
     menuTableInsert: 'Insérer',
     menuTableInsertTable: 'Tableau…',
@@ -2583,6 +2636,7 @@ const tMain = createI18n({
   de: {
     dlgOpenDoc: 'Dokument öffnen',
     filterWord: 'Word-Dokumente',
+    filterTheme: 'Office-Designs',
     odtImportMsg: 'Dieses .{ext}-Dokument konvertieren?',
     odtImportDetail:
       'GenOffice bearbeitet .docx, nicht ODF. Text, Überschriften, Listen, Tabellen und Bilder werden übernommen; Fußnoten, Kommentare und Textfelder werden nicht vollständig bewahrt. Die Originaldatei bleibt unverändert; die konvertierte .docx-Kopie ist eigenständig, und spätere Speicherungen landen in ihr.',
@@ -2627,7 +2681,6 @@ const tMain = createI18n({
     errUnsupportedExt: '.{ext}-Dateien werden nicht unterstützt',
     errNotFile: 'keine Datei',
     errTooLarge: 'überschreitet das Limit von {mb} MB',
-    errTemplateProtected: 'Diese Vorlage ist kennwortgeschützt; öffnen Sie sie über Datei > Öffnen',
     errImageTooLarge: 'Bild überschreitet das Limit von 5 MB',
     errUnreadable: 'kann nicht gelesen werden',
     errFileTooLarge: 'Datei überschreitet die maximale Größe',
@@ -2808,6 +2861,11 @@ const tMain = createI18n({
     menuEquationOptions: 'Formeloptionen…',
     menuSelectionPane: 'Auswahlbereich…',
     menuTools: 'Extras',
+    menuArrangeAll: 'Alle anordnen',
+    menuMinimizeAll: 'Alle im Dock ablegen',
+    menuZoomAll: 'Alle zoomen',
+    menuMergeAllWindows: 'Alle Fenster zusammenführen',
+    menuSplit: 'Teilen',
     menuTable: 'Tabelle',
     menuTableInsert: 'Einfügen',
     menuTableInsertTable: 'Tabelle…',
@@ -2874,6 +2932,7 @@ const tMain = createI18n({
   es: {
     dlgOpenDoc: 'Abrir documento',
     filterWord: 'Documentos de Word',
+    filterTheme: 'Temas de Office',
     odtImportMsg: '¿Convertir este documento .{ext}?',
     odtImportDetail:
       'GenOffice edita .docx, no ODF. El texto, los títulos, las listas, las tablas y las imágenes se convierten; las notas al pie, los comentarios y los cuadros de texto no se conservan por completo. El archivo original nunca se modifica; el .docx convertido es una copia independiente en la que se guardan los cambios posteriores.',
@@ -2917,8 +2976,6 @@ const tMain = createI18n({
     errUnsupportedExt: 'los archivos .{ext} no son compatibles',
     errNotFile: 'no es un archivo',
     errTooLarge: 'supera el límite de {mb} MB',
-    errTemplateProtected:
-      'esta plantilla está protegida con contraseña; ábrala con Archivo > Abrir',
     errImageTooLarge: 'la imagen supera el límite de 5 MB',
     errUnreadable: 'no se puede leer',
     errFileTooLarge: 'El archivo supera el tamaño máximo',
@@ -3100,6 +3157,11 @@ const tMain = createI18n({
     menuEquationOptions: 'Opciones de ecuación…',
     menuSelectionPane: 'Panel de selección…',
     menuTools: 'Herramientas',
+    menuArrangeAll: 'Organizar todo',
+    menuMinimizeAll: 'Minimizar todo',
+    menuZoomAll: 'Aplicar zoom a todo',
+    menuMergeAllWindows: 'Fusionar todas las ventanas',
+    menuSplit: 'Dividir',
     menuTable: 'Tabla',
     menuTableInsert: 'Insertar',
     menuTableInsertTable: 'Tabla…',
@@ -3166,6 +3228,7 @@ const tMain = createI18n({
   th: {
     dlgOpenDoc: 'เปิดเอกสาร',
     filterWord: 'เอกสาร Word',
+    filterTheme: 'ธีม Office',
     odtImportMsg: 'แปลงเอกสาร .{ext} นี้ไหม?',
     odtImportDetail:
       'GenOffice แก้ไข .docx ไม่ใช่ ODF ข้อความ หัวข้อ รายการ ตาราง และรูปภาพจะถูกแปลง ส่วนเชิงอรรถ ความคิดเห็น และกล่องข้อความจะไม่ถูกเก็บไว้ทั้งหมด ไฟล์ต้นทางจะไม่ถูกแก้ไข และไฟล์ .docx ที่แปลงแล้วเป็นสำเนาแยกต่างหากที่การบันทึกครั้งต่อไปจะเขียนลง',
@@ -3208,7 +3271,6 @@ const tMain = createI18n({
     errUnsupportedExt: 'ไม่รองรับไฟล์ .{ext}',
     errNotFile: 'ไม่ใช่ไฟล์',
     errTooLarge: 'เกินขีดจำกัด {mb}MB',
-    errTemplateProtected: 'เทมเพลตนี้มีรหัสผ่านป้องกัน โปรดเปิดด้วย ไฟล์ > เปิด',
     errImageTooLarge: 'รูปภาพเกินขีดจำกัด 5MB',
     errUnreadable: 'ไม่สามารถอ่านได้',
     errFileTooLarge: 'ไฟล์เกินขนาดสูงสุด',
@@ -3389,6 +3451,11 @@ const tMain = createI18n({
     menuEquationOptions: 'ตัวเลือกสมการ…',
     menuSelectionPane: 'บานหน้าต่างส่วนที่เลือก…',
     menuTools: 'เครื่องมือ',
+    menuArrangeAll: 'จัดเรียงทั้งหมด',
+    menuMinimizeAll: 'ย่อทั้งหมด',
+    menuZoomAll: 'ซูมทั้งหมด',
+    menuMergeAllWindows: 'รวมหน้าต่างทั้งหมด',
+    menuSplit: 'แยกหน้าต่าง',
     menuTable: 'ตาราง',
     menuTableInsert: 'แทรก',
     menuTableInsertTable: 'ตาราง…',
@@ -3455,6 +3522,7 @@ const tMain = createI18n({
   id: {
     dlgOpenDoc: 'Buka Dokumen',
     filterWord: 'Dokumen Word',
+    filterTheme: 'Tema Office',
     odtImportMsg: 'Konversi dokumen .{ext} ini?',
     odtImportDetail:
       'GenOffice mengedit .docx, bukan ODF. Teks isi, judul, daftar, tabel, dan gambar ikut dikonversi; catatan kaki, komentar, dan kotak teks tidak sepenuhnya dipertahankan. File asli tidak pernah diubah; salinan .docx hasil konversi berdiri sendiri dan penyimpanan berikutnya ditulis ke sana.',
@@ -3498,7 +3566,6 @@ const tMain = createI18n({
     errUnsupportedExt: 'file .{ext} tidak didukung',
     errNotFile: 'bukan file',
     errTooLarge: 'melebihi batas {mb}MB',
-    errTemplateProtected: 'templat ini dilindungi kata sandi; buka melalui File > Buka',
     errImageTooLarge: 'gambar melebihi batas 5MB',
     errUnreadable: 'tidak dapat dibaca',
     errFileTooLarge: 'File melebihi batas ukuran',
@@ -3678,6 +3745,11 @@ const tMain = createI18n({
     menuEquationOptions: 'Opsi Persamaan…',
     menuSelectionPane: 'Panel Pilihan…',
     menuTools: 'Alat',
+    menuArrangeAll: 'Atur Semua',
+    menuMinimizeAll: 'Minimalkan Semua',
+    menuZoomAll: 'Zoom Semua',
+    menuMergeAllWindows: 'Gabungkan Semua Jendela',
+    menuSplit: 'Pisahkan',
     menuTable: 'Tabel',
     menuTableInsert: 'Sisipkan',
     menuTableInsertTable: 'Tabel…',
@@ -3744,6 +3816,7 @@ const tMain = createI18n({
   ru: {
     dlgOpenDoc: 'Открыть документ',
     filterWord: 'Документы Word',
+    filterTheme: 'Темы Office',
     odtImportMsg: 'Преобразовать этот документ .{ext}?',
     odtImportDetail:
       'GenOffice редактирует .docx, а не ODF. Текст, заголовки, списки, таблицы и изображения переносятся; сноски, примечания и надписи сохраняются не полностью. Исходный файл никогда не изменяется; преобразованный .docx — отдельная копия, в которую записывается дальнейшее сохранение.',
@@ -3787,7 +3860,6 @@ const tMain = createI18n({
     errUnsupportedExt: 'файлы .{ext} не поддерживаются',
     errNotFile: 'не является файлом',
     errTooLarge: 'превышает лимит {mb} МБ',
-    errTemplateProtected: 'этот шаблон защищён паролем; откройте его через «Файл > Открыть»',
     errImageTooLarge: 'изображение превышает лимит 5 МБ',
     errUnreadable: 'не удается прочитать',
     errFileTooLarge: 'Файл превышает максимальный размер',
@@ -3968,6 +4040,11 @@ const tMain = createI18n({
     menuEquationOptions: 'Параметры уравнения…',
     menuSelectionPane: 'Область выделения…',
     menuTools: 'Сервис',
+    menuArrangeAll: 'Упорядочить все',
+    menuMinimizeAll: 'Свернуть все',
+    menuZoomAll: 'Изменить масштаб всех',
+    menuMergeAllWindows: 'Объединить все окна',
+    menuSplit: 'Разделить',
     menuTable: 'Таблица',
     menuTableInsert: 'Вставить',
     menuTableInsertTable: 'Таблица…',
@@ -4034,6 +4111,7 @@ const tMain = createI18n({
   ar: {
     dlgOpenDoc: 'فتح مستند',
     filterWord: 'مستندات Word',
+    filterTheme: 'نُسق Office',
     odtImportMsg: 'تحويل مستند .{ext} هذا؟',
     odtImportDetail:
       'يحرّر GenOffice ملفات ‎.docx ولا يحرّر ODF. يُحوَّل النص والعناوين والقوائم والجداول والصور؛ أما الحواشي السفلية والتعليقات ومربعات النص فلا تُحفظ بالكامل. لا يتغيّر الملف الأصلي أبدًا؛ والملف ‎.docx المحوَّل نسخة مستقلة تُكتب فيها عمليات الحفظ اللاحقة.',
@@ -4077,7 +4155,6 @@ const tMain = createI18n({
     errUnsupportedExt: 'ملفات .{ext} غير مدعومة',
     errNotFile: 'ليس ملفًا',
     errTooLarge: 'يتجاوز الحد {mb}MB',
-    errTemplateProtected: 'هذا القالب محمي بكلمة مرور؛ افتحه من ملف > فتح',
     errImageTooLarge: 'الصورة تتجاوز حد 5MB',
     errUnreadable: 'تعذرت القراءة',
     errFileTooLarge: 'الملف يتجاوز الحد الأقصى للحجم',
@@ -4258,6 +4335,11 @@ const tMain = createI18n({
     menuEquationOptions: 'خيارات المعادلة…',
     menuSelectionPane: 'جزء التحديد…',
     menuTools: 'أدوات',
+    menuArrangeAll: 'ترتيب الكل',
+    menuMinimizeAll: 'تصغير الكل',
+    menuZoomAll: 'تكبير/تصغير الكل',
+    menuMergeAllWindows: 'دمج كل النوافذ',
+    menuSplit: 'انقسام',
     menuTable: 'جدول',
     menuTableInsert: 'إدراج',
     menuTableInsertTable: 'جدول…',
@@ -4324,6 +4406,7 @@ const tMain = createI18n({
   pt: {
     dlgOpenDoc: 'Abrir Documento',
     filterWord: 'Documentos do Word',
+    filterTheme: 'Temas do Office',
     odtImportMsg: 'Converter este documento .{ext}?',
     odtImportDetail:
       'O GenOffice edita .docx, não ODF. Texto, títulos, listas, tabelas e imagens são convertidos; notas de rodapé, comentários e caixas de texto não são preservados por completo. O arquivo original nunca é alterado; o .docx convertido é uma cópia independente em que os salvamentos seguintes são gravados.',
@@ -4367,7 +4450,6 @@ const tMain = createI18n({
     errUnsupportedExt: 'arquivos .{ext} não são suportados',
     errNotFile: 'não é um arquivo',
     errTooLarge: 'excede o limite de {mb}MB',
-    errTemplateProtected: 'este modelo está protegido por senha; abra-o com Arquivo > Abrir',
     errImageTooLarge: 'a imagem excede o limite de 5MB',
     errUnreadable: 'não é possível ler',
     errFileTooLarge: 'O arquivo excede o limite de tamanho',
@@ -4548,6 +4630,11 @@ const tMain = createI18n({
     menuEquationOptions: 'Opções de Equação…',
     menuSelectionPane: 'Painel de Seleção…',
     menuTools: 'Ferramentas',
+    menuArrangeAll: 'Organizar Tudo',
+    menuMinimizeAll: 'Minimizar Tudo',
+    menuZoomAll: 'Ampliar/Reduzir Tudo',
+    menuMergeAllWindows: 'Mesclar Todas as Janelas',
+    menuSplit: 'Dividir',
     menuTable: 'Tabela',
     menuTableInsert: 'Inserir',
     menuTableInsertTable: 'Tabela…',
@@ -4614,6 +4701,7 @@ const tMain = createI18n({
   it: {
     dlgOpenDoc: 'Apri documento',
     filterWord: 'Documenti Word',
+    filterTheme: 'Temi di Office',
     odtImportMsg: 'Convertire questo documento .{ext}?',
     odtImportDetail:
       'GenOffice modifica .docx, non ODF. Testo, titoli, elenchi, tabelle e immagini vengono convertiti; note a piè di pagina, commenti e caselle di testo non sono conservati completamente. Il file originale non viene mai modificato; il .docx convertito è una copia indipendente su cui vengono salvate le modifiche successive.',
@@ -4657,7 +4745,6 @@ const tMain = createI18n({
     errUnsupportedExt: 'i file .{ext} non sono supportati',
     errNotFile: 'non è un file',
     errTooLarge: 'supera il limite di {mb} MB',
-    errTemplateProtected: 'questo modello è protetto da password; aprirlo con File > Apri',
     errImageTooLarge: "l'immagine supera il limite di 5 MB",
     errUnreadable: 'impossibile leggere',
     errFileTooLarge: 'Il file supera il limite di dimensione',
@@ -4838,6 +4925,11 @@ const tMain = createI18n({
     menuEquationOptions: 'Opzioni equazione…',
     menuSelectionPane: 'Riquadro di selezione…',
     menuTools: 'Strumenti',
+    menuArrangeAll: 'Disponi tutto',
+    menuMinimizeAll: 'Riduci tutto a icona',
+    menuZoomAll: 'Ridimensiona tutto',
+    menuMergeAllWindows: 'Unisci tutte le finestre',
+    menuSplit: 'Dividi',
     menuTable: 'Tabella',
     menuTableInsert: 'Inserisci',
     menuTableInsertTable: 'Tabella…',
@@ -4904,6 +4996,7 @@ const tMain = createI18n({
   pl: {
     dlgOpenDoc: 'Otwórz dokument',
     filterWord: 'Dokumenty programu Word',
+    filterTheme: 'Motywy pakietu Office',
     odtImportMsg: 'Skonwertować ten dokument .{ext}?',
     odtImportDetail:
       'GenOffice edytuje .docx, a nie ODF. Tekst, nagłówki, listy, tabele i obrazy są konwertowane; przypisy, komentarze i pola tekstowe nie są zachowywane w całości. Plik oryginalny nigdy nie jest zmieniany; skonwertowany .docx to niezależna kopia, do której trafiają kolejne zapisy.',
@@ -4947,7 +5040,6 @@ const tMain = createI18n({
     errUnsupportedExt: 'pliki .{ext} nie są obsługiwane',
     errNotFile: 'to nie jest plik',
     errTooLarge: 'przekracza limit {mb} MB',
-    errTemplateProtected: 'ten szablon jest chroniony hasłem; otwórz go przez Plik > Otwórz',
     errImageTooLarge: 'obraz przekracza limit 5 MB',
     errUnreadable: 'nie można odczytać',
     errFileTooLarge: 'Plik przekracza limit rozmiaru',
@@ -5128,6 +5220,11 @@ const tMain = createI18n({
     menuEquationOptions: 'Opcje równań…',
     menuSelectionPane: 'Okienko zaznaczenia…',
     menuTools: 'Narzędzia',
+    menuArrangeAll: 'Rozmieść wszystko',
+    menuMinimizeAll: 'Zminimalizuj wszystkie',
+    menuZoomAll: 'Powiększ wszystkie',
+    menuMergeAllWindows: 'Scal wszystkie okna',
+    menuSplit: 'Podziel',
     menuTable: 'Tabela',
     menuTableInsert: 'Wstaw',
     menuTableInsertTable: 'Tabela…',
@@ -5194,6 +5291,7 @@ const tMain = createI18n({
   cs: {
     dlgOpenDoc: 'Otevřít dokument',
     filterWord: 'Dokumenty Wordu',
+    filterTheme: 'Motivy Office',
     odtImportMsg: 'Převést tento dokument .{ext}?',
     odtImportDetail:
       'GenOffice upravuje .docx, nikoli ODF. Text, nadpisy, seznamy, tabulky a obrázky se převedou; poznámky pod čarou, komentáře a textová pole se nepřevezmou úplně. Původní soubor se nikdy nemění; převedený .docx je samostatná kopie, do níž se dalším ukládáním zapisuje.',
@@ -5237,7 +5335,6 @@ const tMain = createI18n({
     errUnsupportedExt: 'soubory .{ext} nejsou podporovány',
     errNotFile: 'není soubor',
     errTooLarge: 'překračuje limit {mb} MB',
-    errTemplateProtected: 'tato šablona je chráněna heslem; otevřete ji přes Soubor > Otevřít',
     errImageTooLarge: 'obrázek překračuje limit 5 MB',
     errUnreadable: 'nelze přečíst',
     errFileTooLarge: 'Soubor překračuje limit velikosti',
@@ -5418,6 +5515,11 @@ const tMain = createI18n({
     menuEquationOptions: 'Možnosti rovnice…',
     menuSelectionPane: 'Podokno výběru…',
     menuTools: 'Nástroje',
+    menuArrangeAll: 'Uspořádat vše',
+    menuMinimizeAll: 'Minimalizovat vše',
+    menuZoomAll: 'Zvětšit vše',
+    menuMergeAllWindows: 'Sloučit všechna okna',
+    menuSplit: 'Rozdělit',
     menuTable: 'Tabulka',
     menuTableInsert: 'Vložit',
     menuTableInsertTable: 'Tabulka…',
@@ -5484,6 +5586,7 @@ const tMain = createI18n({
   nl: {
     dlgOpenDoc: 'Document openen',
     filterWord: 'Word-documenten',
+    filterTheme: "Office-thema's",
     odtImportMsg: 'Dit .{ext}-document converteren?',
     odtImportDetail:
       'GenOffice bewerkt .docx, niet ODF. Tekst, koppen, lijsten, tabellen en afbeeldingen worden omgezet; voetnoten, opmerkingen en tekstvakken niet volledig. Het oorspronkelijke bestand wordt nooit gewijzigd; de omgezette .docx is een zelfstandige kopie waarin volgende opslaan-acties terechtkomen.',
@@ -5527,8 +5630,6 @@ const tMain = createI18n({
     errUnsupportedExt: '.{ext}-bestanden worden niet ondersteund',
     errNotFile: 'geen bestand',
     errTooLarge: 'overschrijdt de limiet van {mb} MB',
-    errTemplateProtected:
-      'deze sjabloon is beveiligd met een wachtwoord; open deze via Bestand > Openen',
     errImageTooLarge: 'afbeelding overschrijdt de limiet van 5 MB',
     errUnreadable: 'kan niet worden gelezen',
     errFileTooLarge: 'Bestand overschrijdt de maximale grootte',
@@ -5709,6 +5810,11 @@ const tMain = createI18n({
     menuEquationOptions: 'Vergelijkingsopties…',
     menuSelectionPane: 'Selectievenster…',
     menuTools: 'Extra',
+    menuArrangeAll: 'Alle vensters',
+    menuMinimizeAll: 'Minimaliseer alle',
+    menuZoomAll: 'Zoom alle',
+    menuMergeAllWindows: 'Alle vensters samenvoegen',
+    menuSplit: 'Splitsen',
     menuTable: 'Tabel',
     menuTableInsert: 'Invoegen',
     menuTableInsertTable: 'Tabel…',
@@ -5775,6 +5881,7 @@ const tMain = createI18n({
   ms: {
     dlgOpenDoc: 'Buka Dokumen',
     filterWord: 'Dokumen Word',
+    filterTheme: 'Tema Office',
     odtImportMsg: 'Tukar dokumen .{ext} ini?',
     odtImportDetail:
       'GenOffice menyunting .docx, bukan ODF. Teks kandungan, tajuk, senarai, jadual dan imej ditukar; nota kaki, komen dan kotak teks tidak dikekalkan sepenuhnya. Fail asal tidak pernah diubah; salinan .docx yang ditukar ialah salinan berasingan tempat simpanan seterusnya ditulis.',
@@ -5818,7 +5925,6 @@ const tMain = createI18n({
     errUnsupportedExt: 'fail .{ext} tidak disokong',
     errNotFile: 'bukan fail',
     errTooLarge: 'melebihi had {mb}MB',
-    errTemplateProtected: 'templat ini dilindungi kata laluan; buka melalui Fail > Buka',
     errImageTooLarge: 'imej melebihi had 5MB',
     errUnreadable: 'tidak dapat dibaca',
     errFileTooLarge: 'Fail melebihi had saiz',
@@ -5999,6 +6105,11 @@ const tMain = createI18n({
     menuEquationOptions: 'Pilihan Persamaan…',
     menuSelectionPane: 'Anak Tetingkap Pilihan…',
     menuTools: 'Alat',
+    menuArrangeAll: 'Susun Semua',
+    menuMinimizeAll: 'Minimumkan Semua',
+    menuZoomAll: 'Zum Semua',
+    menuMergeAllWindows: 'Gabungkan Semua Tetingkap',
+    menuSplit: 'Pisah',
     menuTable: 'Jadual',
     menuTableInsert: 'Sisipkan',
     menuTableInsertTable: 'Jadual…',
@@ -6065,6 +6176,7 @@ const tMain = createI18n({
   he: {
     dlgOpenDoc: 'פתיחת מסמך',
     filterWord: 'מסמכי Word',
+    filterTheme: 'ערכות נושא של Office',
     odtImportMsg: 'להמיר את מסמך ה‑.{ext} הזה?',
     odtImportDetail:
       'GenOffice עורך קבצי ‎.docx ולא ODF. טקסט, כותרות, רשימות, טבלאות ותמונות מומרים; הערות שוליים, תגובות ותיבות טקסט לא נשמרים במלואם. קובץ המקור לעולם אינו משתנה; קובץ ה‑.docx שהומר הוא עותק נפרד שאליו נכתבות השמירות הבאות.',
@@ -6107,7 +6219,6 @@ const tMain = createI18n({
     errUnsupportedExt: 'קובצי .{ext} אינם נתמכים',
     errNotFile: 'אינו קובץ',
     errTooLarge: 'חורג מהמגבלה של {mb}MB',
-    errTemplateProtected: 'תבנית זו מוגנת בסיסמה; פתח אותה דרך קובץ > פתח',
     errImageTooLarge: 'התמונה חורגת מהמגבלה של 5MB',
     errUnreadable: 'לא ניתן לקרוא',
     errFileTooLarge: 'הקובץ חורג ממגבלת הגודל',
@@ -6286,6 +6397,11 @@ const tMain = createI18n({
     menuEquationOptions: 'אפשרויות משוואה…',
     menuSelectionPane: 'חלונית בחירה…',
     menuTools: 'כלים',
+    menuArrangeAll: 'סדר הכל',
+    menuMinimizeAll: 'מזער הכל',
+    menuZoomAll: 'זום הכל',
+    menuMergeAllWindows: 'מזג את כל החלונות',
+    menuSplit: 'פצל',
     menuTable: 'טבלה',
     menuTableInsert: 'הוסף',
     menuTableInsertTable: 'טבלה…',
@@ -6352,6 +6468,7 @@ const tMain = createI18n({
   hi: {
     dlgOpenDoc: 'दस्तावेज़ खोलें',
     filterWord: 'Word दस्तावेज़',
+    filterTheme: 'Office थीम',
     odtImportMsg: 'इस .{ext} दस्तावेज़ को बदलें?',
     odtImportDetail:
       'GenOffice .docx संपादित करता है, ODF नहीं। मुख्य पाठ, शीर्षक, सूचियाँ, तालिकाएँ और चित्र बदल दिए जाते हैं; फुटनोट, टिप्पणियाँ और टेक्स्ट बॉक्स पूरी तरह नहीं रखे जाते। मूल फ़ाइल कभी नहीं बदलती; बदली हुई .docx एक स्वतंत्र प्रति है जिसमें आगे के सेव लिखे जाते हैं।',
@@ -6395,7 +6512,6 @@ const tMain = createI18n({
     errUnsupportedExt: '.{ext} फ़ाइलें समर्थित नहीं हैं',
     errNotFile: 'फ़ाइल नहीं है',
     errTooLarge: '{mb}MB की सीमा से अधिक है',
-    errTemplateProtected: 'यह टेम्पलेट पासवर्ड से सुरक्षित है; इसे फ़ाइल > खोलें से खोलें',
     errImageTooLarge: 'छवि 5MB की सीमा से अधिक है',
     errUnreadable: 'पढ़ा नहीं जा सकता',
     errFileTooLarge: 'फ़ाइल आकार सीमा से अधिक है',
@@ -6576,6 +6692,11 @@ const tMain = createI18n({
     menuEquationOptions: 'समीकरण विकल्प…',
     menuSelectionPane: 'चयन फलक…',
     menuTools: 'उपकरण',
+    menuArrangeAll: 'सभी व्यवस्थित करें',
+    menuMinimizeAll: 'सभी छोटा करें',
+    menuZoomAll: 'सभी ज़ूम करें',
+    menuMergeAllWindows: 'सभी विंडो मर्ज करें',
+    menuSplit: 'विभाजित करें',
     menuTable: 'तालिका',
     menuTableInsert: 'सम्मिलित करें',
     menuTableInsertTable: 'तालिका…',
@@ -6642,6 +6763,7 @@ const tMain = createI18n({
   'zh-TW': {
     dlgOpenDoc: '開啟文件',
     filterWord: 'Word 文件',
+    filterTheme: 'Office 佈景主題',
     odtImportMsg: '轉換這個 .{ext} 文件？',
     odtImportDetail:
       'GenOffice 只編輯 .docx，不編輯 ODF。內文、標題、清單、表格與圖片會轉換過來；註腳、註解與文字方塊不會完整保留。原始檔案不會被修改，轉換後的 .docx 是獨立副本，之後的儲存都寫入它。', // public-hygiene: allow
@@ -6683,7 +6805,6 @@ const tMain = createI18n({
     errUnsupportedExt: '暫不支援 .{ext} 類型',
     errNotFile: '不是檔案',
     errTooLarge: '超過 {mb}MB 上限',
-    errTemplateProtected: '此範本受密碼保護，請透過「檔案 > 開啟」開啟',
     errImageTooLarge: '圖片超過 5MB 上限',
     errUnreadable: '無法讀取',
     errFileTooLarge: '檔案超過大小上限',
@@ -6861,6 +6982,11 @@ const tMain = createI18n({
     menuEquationOptions: '方程式選項…',
     menuSelectionPane: '選取範圍窗格…',
     menuTools: '工具',
+    menuArrangeAll: '並排顯示',
+    menuMinimizeAll: '全部縮到最小',
+    menuZoomAll: '全部縮放',
+    menuMergeAllWindows: '合併所有視窗',
+    menuSplit: '分割',
     menuTable: '表格',
     menuTableInsert: '插入',
     menuTableInsertTable: '表格…',
@@ -6983,6 +7109,7 @@ export interface ResultDoc {
   bytes: Buffer
 }
 const pendingResultDocs = new Map<number, ResultDoc>()
+const protectedTemplates = new Map<number, string>()
 
 /** queue a made document for a fresh docs tab, which opens it untitled (called by the shell right after creating the view) */
 export function queueDocsResultDoc(wcId: number, doc: ResultDoc): void {
@@ -7114,7 +7241,7 @@ const APP_SETTINGS_PATH = () => join(app.getPath('userData'), 'app-settings.json
 const RECENT_LIMIT = 100
 
 function pushRecent(filePath: string): void {
-  // a file under an excluded folder never enters the recents list (#2844)
+  // a file under an excluded folder never enters the recents list (genoffice#2844)
   if (isUnderExcludedFolder(filePath, excludedFolderPaths())) return
   const recent = readJson<string[]>(RECENT_PATH(), [])
   // Every save lands here (autosave = every 30s): skip the write and the menu
@@ -7140,7 +7267,7 @@ export function readRecentFiles(): string[] {
   return excluded.length === 0 ? recent : recent.filter((p) => !isUnderExcludedFolder(p, excluded))
 }
 
-/** folders excluded from recents, search and session restore (#2844); the
+/** folders excluded from recents, search and session restore (genoffice#2844); the
  *  settings file is the shell's, read here with the same JSON helpers */
 function excludedFolderPaths(): string[] {
   try {
@@ -7296,6 +7423,21 @@ const tornDownWcIds = new Set<number>()
 // per renderer, kept current on open/save/save-as/rename; only the local-media allowlist reads it
 const openDocByWc = new Map<number, string>()
 
+// the encrypted document a password prompt is open for, per renderer: the
+// decrypt retry's path must be the one main itself flagged as needing a
+// password, not any path the renderer names
+const pendingDecryptByWc = new Map<number, string>()
+
+/** Attachment reads verify against what this view's user put in front of the
+ *  app: dialog picks, OS drops and clipboard file pastes land in the shared
+ *  grant ledger (shell records them), and files sitting beside the open
+ *  document are its own neighbors. Everything else is refused — without this
+ *  the extension whitelist was the only bar between a compromised renderer
+ *  and arbitrary file reads. */
+function canReadAttachment(wcId: number, filePath: string): boolean {
+  return sharedPathGrants().has(wcId, filePath) || isBesideDocument(openDocByWc.get(wcId), filePath)
+}
+
 function rememberOpenDoc(wcId: number, filePath: string): void {
   openDocByWc.set(wcId, filePath)
 }
@@ -7369,6 +7511,7 @@ function releaseSpellIgnores(wcId: number): void {
 function dropDocWriter(wcId: number): void {
   releaseSpellIgnores(wcId)
   docWritablePaths.delete(wcId)
+  pendingDecryptByWc.delete(wcId)
   organizerPaths.delete(wcId)
   pdfWritablePaths.delete(wcId)
   openDocByWc.delete(wcId)
@@ -7529,6 +7672,31 @@ async function capturePreview(
   }
 }
 
+/** The renderer's own picture of the first page, when it is a JPEG of thumbnail size. */
+function printedThumbnail(data: unknown): Uint8Array | null {
+  const bytes = ipcBytes(data)
+  if (!bytes || bytes.byteLength === 0 || bytes.byteLength > 1024 * 1024) return null
+  const image = nativeImage.createFromBuffer(bytes)
+  if (image.isEmpty() || image.getSize().width > THUMBNAIL_WIDTH_PX * 2) return null
+  return image.toJPEG(82)
+}
+
+/** the windows showing a Docs document: inside the suite the other apps' windows are not among them */
+const docsWindows = (): BrowserWindow[] =>
+  (shellHooks?.docsWindows?.() ?? BrowserWindow.getAllWindows()).filter(
+    (w) => !w.isDestroyed() && w.isVisible(),
+  )
+
+/** Window > Zoom All: every Docs window to its zoomed size, or all back when they already are */
+function zoomAllWindows(): void {
+  const windows = docsWindows().filter((w) => !w.isMinimized() && w.isMaximizable())
+  const grow = windows.some((w) => !w.isMaximized())
+  for (const w of windows) {
+    if (grow) w.maximize()
+    else w.unmaximize()
+  }
+}
+
 async function showOpenError(wcId: number, detail: string): Promise<void> {
   const parent = hostWindowFor(webContents.fromId(wcId)) ?? mainWindow
   const options = { type: 'error' as const, message: tm('dlgOpenDoc'), detail }
@@ -7661,12 +7829,17 @@ async function loadDocx(
   const encrypted = isEncryptedDocx(original)
   if (encrypted) {
     const pwd = password ?? docPasswordFor(wcId, filePath)
-    if (!pwd) return { needsPassword: true, path: filePath, name: basename(filePath) }
+    if (!pwd) {
+      pendingDecryptByWc.set(wcId, filePath)
+      return { needsPassword: true, path: filePath, name: basename(filePath) }
+    }
     plainBytes = await decryptDocx(original, pwd) // throws DocxDecryptError
     rememberDocPassword(wcId, filePath, pwd)
   } else {
     rememberDocPassword(wcId, filePath, null)
   }
+  // an open that got this far ends the view's pending password retry
+  pendingDecryptByWc.delete(wcId)
   // the archive keeps the on-disk original as-is (encrypted ones included: they
   // reopen with the user's password), so a bad save never loses the source file
   const hash = lazy?.hash ?? sha256Hex(original)
@@ -7828,12 +8001,7 @@ function prunePastedImages(dir: string): void {
 function savePastedImage(data: unknown, ext: unknown): string | null {
   const cleanExt = typeof ext === 'string' ? ext.toLowerCase() : ''
   if (!ATTACHMENT_IMAGE_EXTS.has(cleanExt)) return null
-  const bytes =
-    data instanceof ArrayBuffer
-      ? Buffer.from(data)
-      : ArrayBuffer.isView(data)
-        ? Buffer.from(data.buffer, data.byteOffset, data.byteLength)
-        : null
+  const bytes = ipcBytes(data)
   if (!bytes || bytes.byteLength === 0) return null
   const dir = join(app.getPath('temp'), 'genoffice-pasted')
   mkdirSync(dir, { recursive: true })
@@ -8499,6 +8667,15 @@ export function registerDocsIpc(): void {
   })
 
   ipcMain.handle('docs:open-path', async (event, filePath: string) => {
+    // renderer-facing open channel: the File > Open Recent menu echoes paths
+    // main itself handed out (recent.json), and the shared ledger carries
+    // anything this view's user picked or dropped. e2e drives fixture paths.
+    if (
+      process.env.GENOFFICE_E2E !== '1' &&
+      !readRecentFiles().includes(filePath) &&
+      !sharedPathGrants().has(event.sender.id, filePath)
+    )
+      return null
     const prepared = await prepareDocumentForOpen(filePath, dialogParent(event))
     if (!prepared) return null
     return loadDocx(prepared, event.sender.id)
@@ -8591,6 +8768,11 @@ export function registerDocsIpc(): void {
     async (event, filePath: string, password: string): Promise<DecryptOpenResult> => {
       if (typeof filePath !== 'string' || typeof password !== 'string' || password.length === 0) {
         return { ok: false, reason: 'error', error: 'invalid arguments' }
+      }
+      // the retry's path must be the one main itself flagged as needing a
+      // password for this view — not any path the renderer names
+      if (pendingDecryptByWc.get(event.sender.id) !== filePath) {
+        return { ok: false, reason: 'error', error: 'docs: path not pending decrypt' }
       }
       try {
         const result = await loadDocx(filePath, event.sender.id, password)
@@ -8782,32 +8964,6 @@ export function registerDocsIpc(): void {
     }
   })
 
-  // Blink only respells an editable as a consequence of real (trusted) typing
-  // of a word-committing character inside it: attribute flips, focus cycles,
-  // script selection moves, execCommand edits, fresh DOM nodes, synthetic
-  // clicks/arrow keys — and even a typed zero-width space — all leave existing
-  // typos unmarked (each verified pixel-by-pixel).
-  // Type one trusted space; the RENDERER removes it again by script (a
-  // trusted Backspace would work too, but its deletion re-suppresses the
-  // caret paragraph and that line stays unmarked) with ProseMirror's DOM
-  // observer paused, so the round trip never becomes a transaction.
-  // spell-diag trace (intermittent squiggle loss, platform-bound
-  // and unreproducible on demand) — a tiny always-on log support can ask for.
-  // Size-capped: over 256KB the file restarts from its last half.
-  ipcMain.on('docs:spell-diag', (_event, line: unknown) => {
-    if (typeof line !== 'string' || line.length > 500) return
-    try {
-      const path = userDataPath('spell-diag.log')
-      if (existsSync(path) && statSync(path).size > 256 * 1024) {
-        const tail = readFileSync(path, 'utf-8').slice(-128 * 1024)
-        writeFileSync(path, tail.slice(tail.indexOf('\n') + 1))
-      }
-      appendFileSync(path, `${new Date().toISOString()} ${line}\n`)
-    } catch {
-      // diagnostics must never break the app
-    }
-  })
-
   // The document body draws its own React context menu, but Chromium's
   // misspelling + suggestions for the clicked word only surface in the main
   // process `context-menu` event. The renderer claims each body right-click
@@ -8888,19 +9044,6 @@ export function registerDocsIpc(): void {
       : []
     if (next.length) session.setSpellCheckerLanguages(next)
     return { active: session.getSpellCheckerLanguages(), available: [...available] }
-  })
-
-  ipcMain.handle('docs:respell-kick', async (event) => {
-    const wc = event.sender
-    if (tornDownWcIds.has(wc.id) || wc.isDestroyed()) return
-    wc.focus()
-    // Blink only respells after a user activation, and only a keydown grants one
-    wc.sendInputEvent({ type: 'keyDown', keyCode: 'Space' })
-    wc.sendInputEvent({ type: 'char', keyCode: ' ' })
-    wc.sendInputEvent({ type: 'keyUp', keyCode: 'Space' })
-    // resolve only after the input pipeline has delivered the keystroke, so
-    // the caller can scrub the space it produced
-    await new Promise((r) => setTimeout(r, 120))
   })
 
   ipcMain.handle(
@@ -9081,7 +9224,7 @@ export function registerDocsIpc(): void {
     },
   )
 
-  ipcMain.handle('docs:recent', () => readJson<string[]>(RECENT_PATH(), []))
+  ipcMain.handle('docs:recent', () => readRecentFiles())
 
   ipcMain.handle('docs:pick-image', async (event) => {
     const result = await openDialog(event, {
@@ -9098,7 +9241,86 @@ export function registerDocsIpc(): void {
       base64: readFileSync(filePath).toString('base64'),
       mime,
       name: basename(filePath),
+      path: filePath,
+      url: pathToFileURL(filePath).href,
     }
+  })
+
+  // Edit > Links: the source a link names is read again, only when the user asks
+  // for the update, and under the limits a picked file is read under
+  ipcMain.handle(
+    'docs:read-link-source',
+    async (event, source: string, kind: 'document' | 'picture'): Promise<LinkSourceResult> => {
+      const filePath = linkSourcePath(String(source), openDocByWc.get(event.sender.id) ?? null)
+      if (!filePath) return { ok: false, reason: 'unsupported' }
+      try {
+        if (!existsSync(filePath)) return { ok: false, reason: 'missing' }
+        if ((await stat(filePath)).size > MAX_OPEN_BYTES) return { ok: false, reason: 'tooLarge' }
+        const name = basename(filePath)
+        if (kind === 'picture') {
+          const mime = IMAGE_MIME[filePath.split('.').pop()?.toLowerCase() ?? '']
+          if (!mime) return { ok: false, reason: 'unsupported' }
+          const base64 = (await readFile(filePath)).toString('base64')
+          return { ok: true, kind, name, base64, mime }
+        }
+        if (!/\.docx$/i.test(filePath)) return { ok: false, reason: 'unsupported' }
+        const bytes = await readFile(filePath)
+        if (isEncryptedDocx(bytes)) return { ok: false, reason: 'password' }
+        return { ok: true, kind, name, dataUrl: handOffBytes(bytes) }
+      } catch {
+        return { ok: false, reason: 'failed' }
+      }
+    },
+  )
+
+  ipcMain.handle('docs:open-link-source', async (event, source: string): Promise<boolean> => {
+    const filePath = linkSourcePath(String(source), openDocByWc.get(event.sender.id) ?? null)
+    if (!filePath || !existsSync(filePath)) return false
+    if (isOpenableLinkSource(filePath)) return (await shell.openPath(filePath)) === ''
+    shell.showItemInFolder(filePath)
+    return true
+  })
+
+  // Paste link: the last copy made in a document, offered by the renderer that made it. The
+  // clipboard carries only the token; the file and the range stay with the document.
+  let linkOffer: { token: string; wcId: number } | null = null
+  const linkMarks = new Map<string, (bookmark: string | null) => void>()
+  ipcMain.on('docs:link-source-offer', (event, token: string | null) => {
+    if (typeof token === 'string' && token) linkOffer = { token, wcId: event.sender.id }
+    else if (linkOffer?.wcId === event.sender.id) linkOffer = null
+  })
+  ipcMain.on('docs:link-source-marked', (event, token: string, bookmark: string | null) => {
+    if (linkOffer?.token !== token || linkOffer.wcId !== event.sender.id) return
+    linkMarks.get(token)?.(typeof bookmark === 'string' && bookmark ? bookmark : null)
+  })
+  ipcMain.handle(
+    'docs:link-source-claim',
+    async (_event, token: string, commit: boolean): Promise<LinkSourceClaim> => {
+      if (!linkOffer || linkOffer.token !== token) return null
+      const source = webContents.fromId(linkOffer.wcId)
+      const path = openDocByWc.get(linkOffer.wcId)
+      if (!source || source.isDestroyed() || tornDownWcIds.has(linkOffer.wcId)) return null
+      if (!path || !/\.docx$/i.test(path) || !existsSync(path)) return null
+      if (!commit) return { path }
+      const bookmark = await new Promise<string | null>((resolve) => {
+        const timer = setTimeout(() => resolve(null), 5000)
+        linkMarks.set(token, (name) => {
+          clearTimeout(timer)
+          resolve(name)
+        })
+        source.send('docs:link-source-mark', token)
+      })
+      linkMarks.delete(token)
+      return bookmark ? { path, bookmark } : null
+    },
+  )
+
+  // Insert Hyperlink > Select…: only the address of the picked file goes back, nothing is read
+  ipcMain.handle('docs:pick-link-file', async (event): Promise<PickLinkFileResult> => {
+    const result = await openDialog(event, { properties: ['openFile'] })
+    if (result.canceled || result.filePaths.length === 0) return null
+    const filePath = result.filePaths[0]
+    return { url: pathToFileURL(filePath).href, name: basename(filePath), path: filePath }
   })
 
   // Reads the picked file whole and leaves the tab's document, recents and
@@ -9119,7 +9341,7 @@ export function registerDocsIpc(): void {
     }
     const bytes = await readFile(filePath)
     if (isEncryptedDocx(bytes)) return { needsPassword: true }
-    return { name: basename(filePath), dataUrl: handOffBytes(bytes) }
+    return { name: basename(filePath), path: filePath, dataUrl: handOffBytes(bytes) }
   })
 
   // Styles Organizer: the other document or template, read whole and written
@@ -9292,19 +9514,28 @@ export function registerDocsIpc(): void {
       properties: ['openFile', 'multiSelections'],
     })
     if (result.canceled || result.filePaths.length === 0) return null
+    sharedPathGrants().grant(event.sender.id, result.filePaths)
     return collectAttachments(result.filePaths)
   })
 
-  ipcMain.handle('files:add', (_event, paths: string[]) => collectAttachments(paths))
+  ipcMain.handle('files:add', (_event, paths: string[]) => {
+    // panel drops and clipboard file pastes are recorded by the preload
+    // bridge before this runs, so the ledger already holds every path a
+    // real drop carried; minting a grant for renderer-named paths here
+    // would let a compromised renderer read whatever it names
+    return collectAttachments(paths)
+  })
 
   ipcMain.handle(
     'files:read',
     async (
-      _event,
+      event,
       filePath: string,
       offset: number,
       maxChars: number,
     ): Promise<AttachmentReadResult> => {
+      if (!canReadAttachment(event.sender.id, filePath))
+        return { ok: false, error: 'docs: path not granted to this view' }
       const name = basename(filePath)
       const ext = name.split('.').pop()?.toLowerCase() ?? ''
       if (!ATTACHMENT_EXTS.has(ext)) return { ok: false, error: tm('errUnsupportedExt', { ext }) }
@@ -9329,7 +9560,9 @@ export function registerDocsIpc(): void {
   )
 
   // image attachments read raw bytes → base64; AiPanel puts them into the user message's images for multimodal
-  ipcMain.handle('files:read-image', (_event, filePath: string): AttachmentImageResult => {
+  ipcMain.handle('files:read-image', (event, filePath: string): AttachmentImageResult => {
+    if (!canReadAttachment(event.sender.id, filePath))
+      return { ok: false, error: 'docs: path not granted to this view' }
     const name = basename(filePath)
     const ext = name.split('.').pop()?.toLowerCase() ?? ''
     const mime = ATTACHMENT_IMAGE_MIME[ext]
@@ -9348,8 +9581,9 @@ export function registerDocsIpc(): void {
   // clipboard-pasted images (screenshots and other bitmaps with no local path): saved to a temp file then use the regular attachment path
   ipcMain.handle(
     'files:add-pasted-image',
-    (_event, data: unknown, ext: unknown): AttachmentAddResult => {
+    (event, data: unknown, ext: unknown): AttachmentAddResult => {
       const filePath = savePastedImage(data, ext)
+      if (filePath) sharedPathGrants().grant(event.sender.id, [filePath])
       return filePath
         ? collectAttachments([filePath])
         : { accepted: [], rejected: [tm('errNotImage')] }
@@ -9602,9 +9836,15 @@ export function registerDocsIpc(): void {
   // picture the template gallery shows.
   ipcMain.handle(
     'docs:save-template',
-    async (event, defaultName: string, data: ArrayBuffer, preview?: TemplatePreviewRect) => {
+    async (
+      event,
+      defaultName: string,
+      data: ArrayBuffer,
+      preview?: TemplatePreviewRect,
+      printed?: ArrayBuffer,
+    ) => {
       if (tornDownWcIds.has(event.sender.id)) return { ok: false }
-      const thumbnail = await capturePreview(event.sender, preview)
+      const thumbnail = (await capturePreview(event.sender, preview)) ?? printedThumbnail(printed)
       const stem =
         basename(String(defaultName || '')).replace(/\.(docx?|dot[xm]?)$/i, '') || 'Template'
       const result = await saveDialog(event, {
@@ -9654,12 +9894,94 @@ export function registerDocsIpc(): void {
     })
   })
 
+  // Design > Themes: a saved theme is an Office theme file in the themes folder;
+  // the gallery lists that folder, as Word lists its own
+  const themesDir = async (): Promise<string> => {
+    const dir = join(app.getPath('userData'), 'Themes')
+    await mkdir(dir, { recursive: true })
+    return dir
+  }
+  const THEME_FILE = /\.thmx$/i
+  const themeXmlOfFile = async (filePath: string): Promise<string | null> => {
+    try {
+      if ((await stat(filePath)).size > MAX_OPEN_BYTES) return null
+      return await readThemeFileXml(await readFile(filePath))
+    } catch {
+      return null
+    }
+  }
+
+  ipcMain.handle('docs:list-themes', async (): Promise<SavedThemeEntry[]> => {
+    const dir = await themesDir()
+    const names = (await readdir(dir))
+      .filter((name) => THEME_FILE.test(name) && !name.startsWith('.') && !name.startsWith('~$'))
+      .sort((a, b) => a.localeCompare(b))
+      .slice(0, MAX_GALLERY_TEMPLATES)
+    const read = await mapBounded(names, GALLERY_READS_AT_ONCE, async (name) => ({
+      name,
+      xml: await themeXmlOfFile(join(dir, name)),
+    }))
+    return read.flatMap(({ name, xml }) => (xml === null ? [] : [{ name, xml }]))
+  })
+
+  ipcMain.handle(
+    'docs:save-theme',
+    async (event, defaultName: string, themeXml: string): Promise<SaveThemeResult> => {
+      const stem = basename(String(defaultName || '')).replace(THEME_FILE, '') || 'Theme'
+      const result = await saveDialog(event, {
+        title: tm('dlgSaveAs'),
+        defaultPath: join(await themesDir(), `${stem}.thmx`),
+        filters: [{ name: tm('filterTheme'), extensions: ['thmx'] }],
+      })
+      if (result.canceled || !result.filePath) return { ok: false }
+      const filePath = THEME_FILE.test(result.filePath)
+        ? result.filePath
+        : `${result.filePath}.thmx`
+      try {
+        // the theme goes by the name of its file, as a theme Word saves does
+        const name = basename(filePath).replace(THEME_FILE, '')
+        await atomicWriteFile(filePath, Buffer.from(await buildThmx(String(themeXml), name)))
+        return { ok: true, path: filePath }
+      } catch (err) {
+        return { ok: false, error: String(err), path: filePath }
+      }
+    },
+  )
+
+  ipcMain.handle('docs:delete-theme', async (_event, fileName: string): Promise<boolean> => {
+    const name = String(fileName)
+    if (name !== basename(name) || !THEME_FILE.test(name)) return false
+    try {
+      await unlink(join(await themesDir(), name))
+      return true
+    } catch {
+      return false
+    }
+  })
+
+  ipcMain.handle('docs:pick-theme', async (event): Promise<PickThemeResult> => {
+    const result = await openDialog(event, {
+      title: tm('dlgOpenDoc'),
+      defaultPath: await themesDir(),
+      filters: [
+        { name: tm('filterTheme'), extensions: ['thmx'] },
+        { name: tm('filterWord'), extensions: ['docx', 'dotx'] },
+      ],
+      properties: ['openFile'],
+    })
+    if (result.canceled || result.filePaths.length === 0) return null
+    const filePath = result.filePaths[0]
+    const known = /\.(thmx|docx|dotx)$/i.test(filePath)
+    return { name: basename(filePath), xml: known ? await themeXmlOfFile(filePath) : null }
+  })
+
   // a template opens as a document of its own with no path: no recents entry,
   // no write grant, so saving what is made from it never touches the template.
   // `fromGallery` names a file of the templates folder; without it the user picks one.
   ipcMain.handle(
     'docs:open-template',
     async (event, fromGallery?: string): Promise<OpenDocxResult> => {
+      protectedTemplates.delete(event.sender.id)
       let filePath: string
       if (fromGallery !== undefined) {
         const name = String(fromGallery)
@@ -9706,12 +10028,42 @@ export function registerDocsIpc(): void {
       const lazy = await openLazyDocx(filePath, event.sender.id)
       if ((lazy?.bytes.length ?? (await stat(filePath)).size) > MAX_OPEN_BYTES) return tooLarge()
       const bytes = lazy?.bytes ?? (await readFile(filePath))
-      // a protected file goes through File > Open, which asks for its password
       if (isEncryptedDocx(bytes)) {
-        await showOpenError(event.sender.id, `${basename(filePath)}: ${tm('errTemplateProtected')}`)
-        return null
+        protectedTemplates.set(event.sender.id, filePath)
+        return { needsPassword: true, path: filePath, name: basename(filePath), template: true }
       }
       return opened(bytes)
+    },
+  )
+
+  // the template is the one this window was just asked the password of, never a path of the renderer's
+  ipcMain.handle(
+    'docs:open-template-decrypt',
+    async (event, password: string): Promise<DecryptOpenResult> => {
+      const filePath = protectedTemplates.get(event.sender.id)
+      if (!filePath || typeof password !== 'string' || password.length === 0) {
+        return { ok: false, reason: 'error', error: 'invalid arguments' }
+      }
+      try {
+        const plain = await decryptDocx(await readFile(filePath), password)
+        if (plain.length > MAX_OPEN_BYTES) return { ok: false, reason: 'error', error: 'too large' }
+        // the entry stays: the renderer may be told not to replace its document, and ask again
+        return {
+          ok: true,
+          result: {
+            path: '',
+            name: basename(filePath),
+            dataUrl: handOffBytes(plain),
+            hash: '',
+            template: true,
+          },
+        }
+      } catch (err) {
+        if (err instanceof DocxDecryptError) {
+          return { ok: false, reason: err.reason, error: err.message }
+        }
+        return { ok: false, reason: 'error', error: String(err) }
+      }
     },
   )
 
@@ -9857,7 +10209,14 @@ export function registerDocsIpc(): void {
     },
   )
 
-  ipcMain.handle('win:new', (_event, openPath: string | null) => {
+  ipcMain.handle('win:new', (event, openPath: string | null) => {
+    // the only legitimate argument is this view's own open document
+    if (
+      openPath !== null &&
+      openPath !== undefined &&
+      openDocByWc.get(event.sender.id) !== openPath
+    )
+      return
     // A pathless new tab/window starts as a blank document, not the start screen
     const path = openPath ?? undefined
     if (shellHooks) shellHooks.openTab(path, path ? undefined : { newBlank: true })
@@ -9926,6 +10285,8 @@ interface DocsShellHooks {
   /** detached Docs windows become tabs of the shell window again */
   gatherWindows?(from: WebContents): void
   detachedWindowCount?(): number
+  /** the shell window while it shows a Docs tab, and the Docs windows dragged out of it */
+  docsWindows?(): BrowserWindow[]
   /** closes the calling tab instead of the whole shell window (Cmd+W / role:'close') */
   closeActiveTab(): void
   /** Shell router used to open exported PDFs in a new GenOffice tab. */
@@ -10074,6 +10435,15 @@ function userKeyOverrides(): KeyOverrides {
   return keyOverrides
 }
 
+/** the assignments of a window whose document carries keys of its own: the machine's with the document's laid over */
+const docKeyOverridesByWebContents = new Map<number, KeyOverrides>()
+
+/** what the menu bar shows: the keys in force in the window it acts on */
+function menuKeyOverrides(): KeyOverrides {
+  const id = activeDocsWebContents()?.id
+  return (id !== undefined ? docKeyOverridesByWebContents.get(id) : undefined) ?? userKeyOverrides()
+}
+
 /** commands with an item of their own in the menu bar, which is where their chord shows */
 const OWN_MENU_ITEM: ReadonlySet<string> = (() => {
   const ids = new Set<string>(['shortcuts'])
@@ -10164,6 +10534,17 @@ export function buildDocsMenu(): void {
       ...stateOf(id),
       label: tm(labelKey ?? (def.menuKey as MainKey)),
     }
+    // no role here: Electron ignores click on a role item, and the click has to
+    // arm the renderer's plain-paste flag before the paste (genoffice#2856)
+    if (id === 'paste-match-style') {
+      const builtIn = isMac ? 'CmdOrCtrl+Alt+Shift+V' : 'CmdOrCtrl+Shift+V'
+      const accelerator = menuAccelerator(menuKeyOverrides(), bindingId(id), builtIn)
+      return {
+        ...item,
+        ...(accelerator ? { accelerator } : {}),
+        click: () => armAndPastePlain(),
+      }
+    }
     // a role item is carried out natively by whatever text target has the focus
     if (def.role) return { ...item, role: def.role }
     if (id === 'repeat' && state.repeat)
@@ -10174,7 +10555,7 @@ export function buildDocsMenu(): void {
       typeof ownAccelerator === 'object' ? ownAccelerator[isMac ? 'mac' : 'other'] : ownAccelerator
     const showsChord = !labelKey || !!payload || !OWN_MENU_ITEM.has(id)
     const accelerator = showsChord
-      ? menuAccelerator(userKeyOverrides(), bindingId(id, payload), builtIn)
+      ? menuAccelerator(menuKeyOverrides(), bindingId(id, payload), builtIn)
       : undefined
     return {
       ...item,
@@ -10184,7 +10565,7 @@ export function buildDocsMenu(): void {
     }
   }
   // Opening a menu must not trigger an automount; validate when the user opens a file.
-  const recent = readJson<string[]>(RECENT_PATH(), []).slice(0, 10)
+  const recent = readRecentFiles().slice(0, 10)
 
   const recentSubmenu: MenuItemConstructorOptions[] =
     recent.length > 0
@@ -10197,15 +10578,25 @@ export function buildDocsMenu(): void {
       : [{ label: tm('menuNoRecent'), enabled: false }]
 
   const labels = appMenuLabels(getUiLang())
+  // ⌘, opens the Docs preferences as Word's does; the suite's Settings sit beside it
+  const preferenceItems: MenuItemConstructorOptions[] = [
+    {
+      label: tm('menuPreferences'),
+      accelerator: 'CmdOrCtrl+,',
+      click: () => sendCommand('preferences'),
+    },
+    ...(hasSettingsInvoker() ? [{ ...settingsMenuItem(labels), accelerator: undefined }] : []),
+  ]
   const appMenu = appMenuTemplate(process.platform, labels, {
     appLabel: app.name,
-    extra: [settingsMenuItem(labels, () => sendCommand('preferences'))],
+    extra: preferenceItems,
   })
   const slots: Record<MenuSlot, MenuItemConstructorOptions[]> = {
     'new-window': [
       {
         label: tm('menuNewWindow'),
-        accelerator: 'Shift+CmdOrCtrl+N',
+        // Word for Mac has no chord here: ⇧⌘N is its Normal style
+        ...(isMac ? {} : { accelerator: 'Shift+CmdOrCtrl+N' }),
         click: () => {
           if (shellHooks) shellHooks.openTab(undefined, { newBlank: true })
           else markDocsNewBlank(createDocsWindow().webContents.id)
@@ -10221,7 +10612,7 @@ export function buildDocsMenu(): void {
           {
             label: tm('menuRecentMore'),
             // Open's second chord, shown here while Open still has it
-            ...(keepsAccelerator(userKeyOverrides(), 'open', 'Shift+CmdOrCtrl+O', isMac)
+            ...(keepsAccelerator(menuKeyOverrides(), 'open', 'Shift+CmdOrCtrl+O', isMac)
               ? { accelerator: 'Shift+CmdOrCtrl+O' }
               : {}),
             click: () => sendCommand('open'),
@@ -10252,8 +10643,19 @@ export function buildDocsMenu(): void {
       label: `${pct}%`,
       click: () => sendCommand('zoom-set', String(pct)),
     })),
-    'settings-off-mac': isMac ? [] : [settingsMenuItem(labels, () => sendCommand('preferences'))],
+    'settings-off-mac': isMac ? [] : preferenceItems,
     'dev-tools': isDev ? [toggleDevToolsItem(appMenuLabels(getUiLang()))] : [],
+    // macOS keeps its own Minimize / Zoom / Bring All to Front; Windows has no Zoom or Front
+    'window-head': isMac
+      ? [{ role: 'minimize', label: labels.minimize }, { role: 'zoom' }]
+      : [{ label: labels.minimize, click: (_item, win) => win?.minimize() }],
+    'window-tail': isMac
+      ? [
+          { role: 'front' },
+          { label: tm('menuMinimizeAll'), click: () => docsWindows().forEach((w) => w.minimize()) },
+          { label: tm('menuZoomAll'), click: zoomAllWindows },
+        ]
+      : [{ label: labels.closeWindow, click: (_item, win) => win?.close() }],
   }
   const build = (nodes: readonly MenuNode<MainKey>[]): MenuItemConstructorOptions[] =>
     nodes.flatMap((node): MenuItemConstructorOptions[] => {
@@ -10267,8 +10669,11 @@ export function buildDocsMenu(): void {
   const layout: readonly MenuTop<MainKey>[] = DOCS_MENU
   const template: MenuItemConstructorOptions[] = [
     ...(appMenu ? [appMenu] : []),
-    ...layout.map((top) => ({ label: tm(top.label), submenu: build(top.items) })),
-    windowMenuTemplate(process.platform, appMenuLabels(getUiLang())),
+    ...layout.map((top): MenuItemConstructorOptions => ({
+      label: tm(top.label),
+      ...(top.role && isMac ? { role: top.role } : {}),
+      submenu: build(top.items),
+    })),
     {
       label: tm('menuHelp'),
       role: 'help',
@@ -10474,6 +10879,50 @@ ipcMain.handle('docs:set-key-overrides', (_event, value: unknown) => {
   }
   return keyOverrides
 })
+
+ipcMain.on('docs:doc-key-overrides', (event, value: unknown) => {
+  const id = event.sender.id
+  if (value == null) {
+    if (!docKeyOverridesByWebContents.delete(id)) return
+  } else {
+    if (!docKeyOverridesByWebContents.has(id))
+      event.sender.once('destroyed', () => docKeyOverridesByWebContents.delete(id))
+    docKeyOverridesByWebContents.set(id, sanitizeKeyOverrides(value, process.platform === 'darwin'))
+  }
+  if (id === activeDocsWebContents()?.id) buildDocsMenu()
+})
+
+// ── paste and match style (genoffice#2856) ──────────────────────────────────────────
+// ⌥⇧⌘V / Ctrl+Shift+V must paste the clipboard's text literally, but the
+// editor's Markdown paste lane turns plain text that looks like Markdown into
+// headings and lists. So the menu item arms a one-shot plain-paste flag in the
+// renderer before running the native paste: the renderer acks over IPC and
+// only then does webContents.pasteAndMatchStyle() fire its paste event, which
+// carries the plain-text flavor only. A renderer that never acks (no editor
+// mounted yet) still pastes after a short wait — the flag expires on its own
+// and pastes into plain text fields ignore it.
+
+const PLAIN_PASTE_ACK_TIMEOUT_MS = 250
+let plainPasteAckTimer: ReturnType<typeof setTimeout> | null = null
+
+ipcMain.on('docs:paste-plain-armed', (event) => {
+  if (event.sender.id !== activeDocsWebContents()?.id) return
+  if (plainPasteAckTimer === null) return
+  clearTimeout(plainPasteAckTimer)
+  plainPasteAckTimer = null
+  event.sender.pasteAndMatchStyle()
+})
+
+function armAndPastePlain(): void {
+  const wc = activeDocsWebContents()
+  if (!wc || wc.isDestroyed()) return
+  if (plainPasteAckTimer !== null) clearTimeout(plainPasteAckTimer)
+  plainPasteAckTimer = setTimeout(() => {
+    plainPasteAckTimer = null
+    if (!wc.isDestroyed()) wc.pasteAndMatchStyle()
+  }, PLAIN_PASTE_ACK_TIMEOUT_MS)
+  wc.send('docs:paste-plain')
+}
 
 ipcMain.on('docs:close-check-result', (event, state: unknown) => {
   const waiter = closeCheckWaiters.get(event.sender.id)

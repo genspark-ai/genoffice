@@ -8,7 +8,9 @@ import {
   numberingLevelFromCustom,
   type CustomNumberingLevel,
   type ListStyleInfo,
+  type NumberingDef,
 } from '@genoffice/docx-engine'
+import type { PendingNumbering } from './doc-state'
 import type { StringKey } from './i18n/locale'
 
 export const NO_LIST_STYLE_ID = 'NoList'
@@ -25,6 +27,8 @@ export interface ListStyleEntry {
   inDocument: boolean
   /** made by a user, in this document or this session: only these can be deleted */
   custom?: boolean
+  /** the document names the style without giving it levels: there is no definition to modify */
+  numberless?: boolean
 }
 
 const nine = (make: (i: number) => CustomNumberingLevel) =>
@@ -92,6 +96,35 @@ export interface PendingListStyle {
   styleId: string
   name: string
   levels: CustomNumberingLevel[]
+  /** one of Word's own list styles, given levels of its own before the document has it */
+  builtIn?: true
+}
+
+/** what this session changed on list styles and has not saved yet */
+export interface ListStyleEdits {
+  /** levels rewritten on a definition the document holds, by style and level */
+  levels: Map<string, Map<number, CustomNumberingLevel>>
+  /** whole definitions of styles the document does not have yet */
+  defined: Map<string, CustomNumberingLevel[]>
+  names: Map<string, string>
+}
+
+export function listStyleEdits(
+  parsed: { numbering: Map<string, NumberingDef>; listStyles?: ListStyleInfo[] },
+  pending: PendingNumbering,
+  names: Map<string, string> = new Map(),
+): ListStyleEdits {
+  const levels = new Map<string, Map<number, CustomNumberingLevel>>()
+  for (const style of parsed.listStyles ?? []) {
+    const abstractNumId =
+      style.numId === undefined ? undefined : parsed.numbering.get(style.numId)?.abstractNumId
+    const edits = pending.levelEdits.filter((e) => e.abstractNumId === abstractNumId)
+    if (edits.length > 0) levels.set(style.styleId, new Map(edits.map((e) => [e.ilvl, e.level])))
+  }
+  const defined = new Map<string, CustomNumberingLevel[]>()
+  for (const link of pending.styleNums)
+    if (link.define) defined.set(link.styleId, link.define.levels)
+  return { levels, defined, names }
 }
 
 /** The tab's list: the built-ins first (the document's own definition wins), then the document's other list styles by name */
@@ -99,33 +132,55 @@ export function listStyleEntries(
   documentStyles: ListStyleInfo[] = [],
   added: PendingListStyle[] = [],
   removed: string[] = [],
+  edits?: ListStyleEdits,
 ): ListStyleEntry[] {
   const byId = new Map(
     documentStyles.filter((s) => !removed.includes(s.styleId)).map((s) => [s.styleId, s]),
   )
-  const levelsOf = (s: ListStyleInfo) =>
-    Object.keys(s.levels)
+  const levelsOf = (s: ListStyleInfo) => {
+    const edited = edits?.levels.get(s.styleId)
+    return Object.keys(s.levels)
       .map(Number)
       .sort((a, b) => a - b)
-      .map((i) => customLevelFromNumberingLevel(s.levels[i]))
+      .map((i) => edited?.get(i) ?? customLevelFromNumberingLevel(s.levels[i]))
+  }
+  const nameOf = (s: ListStyleInfo) => edits?.names.get(s.styleId) ?? s.name
+  const redefined = new Map(added.filter((s) => s.builtIn).map((s) => [s.styleId, s.levels]))
   const builtins = BUILTIN_LIST_STYLES.map((b) => {
     const own = byId.get(b.styleId)
     byId.delete(b.styleId)
-    if (!own) return { ...b, inDocument: false }
-    return { ...b, name: own.name, inDocument: true, levels: own.numId ? levelsOf(own) : b.levels }
+    if (!own) {
+      const levels = edits?.defined.get(b.styleId) ?? redefined.get(b.styleId) ?? b.levels
+      return { ...b, levels, inDocument: false }
+    }
+    return {
+      ...b,
+      name: own.name,
+      inDocument: true,
+      levels: own.numId ? levelsOf(own) : b.levels,
+      ...(own.numId || b.levels.length === 0 ? {} : { numberless: true }),
+    }
   })
   const others = [...byId.values()]
     // a second numberless style would only be another "No List"
     .filter((s) => s.numId !== undefined)
     .map((s) => ({
       styleId: s.styleId,
-      name: s.name,
-      label: s.name,
+      name: nameOf(s),
+      label: nameOf(s),
       levels: levelsOf(s),
       inDocument: true,
       custom: true,
     }))
-  const pending = added.map((s) => ({ ...s, label: s.name, inDocument: false, custom: true }))
+  const pending = added
+    .filter((s) => !s.builtIn)
+    .map((s) => ({
+      ...s,
+      levels: edits?.defined.get(s.styleId) ?? s.levels,
+      label: s.name,
+      inDocument: false,
+      custom: true,
+    }))
   return [...builtins, ...[...others, ...pending].sort((a, b) => a.name.localeCompare(b.name))]
 }
 
@@ -149,4 +204,17 @@ export function listStylePreview(levels: CustomNumberingLevel[]): string[] {
     levels.map((_, ilvl) => ({ numId: def.numId, ilvl })),
     new Map([[def.numId, def]]),
   ).map((marker) => marker ?? '')
+}
+
+/** the nine levels a list definition has, the missing ones as Word's plain decimal levels */
+export function nineListLevels(levels: CustomNumberingLevel[]): CustomNumberingLevel[] {
+  const out = [...levels]
+  while (out.length < 9)
+    out.push({
+      numFmt: 'decimal',
+      lvlText: `%${out.length + 1}.`,
+      indentLeft: 720 * (out.length + 1),
+      hanging: 360,
+    })
+  return out.slice(0, 9)
 }

@@ -505,12 +505,7 @@ describe('headless export (outPath): every sheet, formulas settled', () => {
     const h = headlessContext()
     const state = h.ctx.lazyWorkbookRef.current!
     for (const id of ['sheet-1', 'sheet-2']) {
-      state.sheetProtections.set(id, {
-        protected: false,
-        hasPassword: false,
-        allow: {} as never,
-        password: null,
-      })
+      state.sheetPageBreaks.set(id, { rowBreaks: [], colBreaks: [] })
     }
     const readWorkbookRange = vi.fn()
     ;(window.desktopApi as unknown as Record<string, unknown>).readWorkbookRange = readWorkbookRange

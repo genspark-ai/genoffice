@@ -1,5 +1,5 @@
 import type { MenuItemConstructorOptions } from 'electron'
-import { extname } from 'node:path'
+import { isProgramFile } from '@genoffice/electron-utils/program-files'
 import type { TabSummary } from '../shared/tabs-api'
 
 export type TabMenuStringKey =
@@ -58,59 +58,7 @@ export interface TabMenuInput {
   actions: TabMenuActions
 }
 
-/** Executable, script, shortcut, and launcher extensions that should not be launched via default app */
-const PROGRAM_EXTENSIONS = new Set([
-  // Windows executables, scripts, shortcuts, and installers
-  '.exe',
-  '.com',
-  '.scr',
-  '.msi',
-  '.bat',
-  '.cmd',
-  '.ps1',
-  '.vbs',
-  '.vbe',
-  '.js',
-  '.jse',
-  '.wsf',
-  '.hta',
-  '.lnk',
-  '.url',
-  '.reg',
-  '.cpl',
-  '.pif',
-  '.gadget',
-  '.msc',
-  '.inf',
-  '.ins',
-  '.isp',
-  // macOS applications, scripts, workflows, and packages
-  '.app',
-  '.command',
-  '.action',
-  '.workflow',
-  '.scpt',
-  '.applescript',
-  '.terminal',
-  '.pkg',
-  '.mpkg',
-  // Linux launchers, binaries, and shell scripts
-  '.desktop',
-  '.sh',
-  '.bash',
-  '.zsh',
-  '.csh',
-  '.ksh',
-  '.bin',
-  '.run',
-  '.out',
-  // Java archives
-  '.jar',
-])
-
-export function isProgramFile(path: string): boolean {
-  return PROGRAM_EXTENSIONS.has(extname(path).toLowerCase())
-}
+export { isProgramFile }
 
 export const baseName = (path: string): string => path.split(/[\\/]/).pop() ?? path
 

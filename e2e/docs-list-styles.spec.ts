@@ -115,7 +115,8 @@ test('a built-in list style numbers the selection, is written as a style-linked 
     ])
     await expect(dialog.getByRole('button', { name: 'Add' })).toBeEnabled()
     await expect(dialog.getByRole('button', { name: 'Remove' })).toBeDisabled()
-    await expect(dialog.getByRole('button', { name: 'Modify…' })).toHaveCount(0)
+    // nothing is picked yet
+    await expect(dialog.getByRole('button', { name: 'Modify…' })).toBeDisabled()
     await expect(dialog.getByRole('button', { name: 'Customize…' })).toHaveCount(0)
     const preview = dialog.locator('.bn-styles-preview > span')
     await expect(preview).toHaveCount(0)

@@ -2,6 +2,7 @@ import { Editor } from '@tiptap/core'
 import { describe, expect, it } from 'vitest'
 import { editorExtensions } from '../src/renderer/editor/extensions'
 import { nextMisspelling, spellWords } from '../src/renderer/editor/spell-walk'
+import { ignoreSpellingOnce, spellingDismissed } from '../src/renderer/editor/spell-menu'
 
 const para = (...content: unknown[]) => ({ type: 'docParagraph', content })
 const text = (value: string, marks?: unknown[]) => ({ type: 'text', text: value, marks })
@@ -57,6 +58,18 @@ describe('the words a spelling check walks', () => {
     // a caret inside a word starts with that word, and the wrapped half stops short of it
     expect(nextMisspelling(doc, 2, doc.content.size, wrong)!.from).toBe(1)
     expect(nextMisspelling(doc, 0, 2, wrong)).toBeNull()
+    editor.destroy()
+  })
+
+  it('passes over an occurrence Ignore Once set aside, and stops at the next one', () => {
+    const editor = open(para(text('teh cat and teh dog')))
+    const { doc } = editor.state
+    const wrong = (word: string) => word === 'teh'
+    ignoreSpellingOnce(editor, { from: 1, to: 4 })
+    const next = nextMisspelling(doc, 0, doc.content.size, wrong, (w) =>
+      spellingDismissed(editor.state, w),
+    )!
+    expect(next.from).toBe(13)
     editor.destroy()
   })
 })

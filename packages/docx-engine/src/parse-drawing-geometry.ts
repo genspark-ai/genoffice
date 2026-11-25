@@ -8,6 +8,8 @@ import type {
   SectionSettings,
   TextGlow,
   TextOutline,
+  TextFill,
+  TextFillStop,
   TextReflection,
   TextShadow,
   TextboxDisplay,
@@ -35,6 +37,18 @@ export const LINE_PRSTS = new Set([
   'curvedConnector3',
   'curvedConnector4',
 ])
+
+/** a:xfrm flipH / flipV onto a display box */
+export function applyXfrmFlips(
+  box: { flipH?: boolean; flipV?: boolean },
+  xfrmAttrs: Record<string, string>,
+): void {
+  if (xfrmAttrs['flipH'] === '1' || xfrmAttrs['flipH'] === 'true') box.flipH = true
+  if (xfrmAttrs['flipV'] === '1' || xfrmAttrs['flipV'] === 'true') box.flipV = true
+}
+
+/** the box a level or vertical line takes across its stroke */
+export const LINE_BAND_PX = 12
 
 /** wps line shape → display-only line box (synthetic prst carries the arrow ends) */
 export function lineBoxOf(
@@ -77,12 +91,10 @@ export function lineBoxOf(
   const cy = ext ? parseInt(attrsOf(ext)['cy'] ?? '', 10) : NaN
   if (Number.isFinite(cx) && cx > 0) box.widthPx = Math.round((cx * (ctm?.sx ?? 1)) / EMU_PER_PX)
   const straight = box.prst === 'line' || box.prst === 'lineArrow' || box.prst === 'lineArrowDouble'
+  const vertical = straight && cx === 0 && Number.isFinite(cy) && cy > 0
   // flips apply at any height: Word's horizontal lines carry cy="0", and a
   // flipH there still reverses which tip holds the arrow
-  if (straight) {
-    if (xfrmAttrs['flipH'] === '1' || xfrmAttrs['flipH'] === 'true') box.flipH = true
-    if (xfrmAttrs['flipV'] === '1' || xfrmAttrs['flipV'] === 'true') box.flipV = true
-  }
+  applyXfrmFlips(box, xfrmAttrs)
   // a:xfrm rot (60000ths of a degree) and a:ln w (EMU) round-trip on lines the
   // same way they do on text-bearing shapes, so a rotated/resized connector
   // keeps its transform across save and reload
@@ -96,7 +108,10 @@ export function lineBoxOf(
     box.minHeightPx = box.heightPx
     // a real vertical extent means the connector runs corner to corner
     // (≤12 px stays level: our own inserted lines keep a 12 px grab band)
-    if (straight && (box.heightPx > 12 || box.flipH || box.flipV)) box.lineDiag = true
+    if (vertical) {
+      box.lineVert = true
+      box.widthPx = LINE_BAND_PX
+    } else if (straight && (box.heightPx > 12 || box.flipH || box.flipV)) box.lineDiag = true
   } else {
     // zero-height extent = Word's horizontal line; keep a 12 px grab band
     box.heightPx = 12
@@ -567,6 +582,67 @@ export function w14TextFillHex(rPr: XNode, theme?: ThemeColors | null): string |
     .filter((rgb): rgb is number[] => rgb !== null)
   if (stops.length === 0) return undefined
   return rgbHex([0, 1, 2].map((i) => stops.reduce((sum, rgb) => sum + rgb[i], 0) / stops.length))
+}
+
+/** w14:alpha is how transparent the colour is: the opacity it leaves, when below 1 */
+function w14OpacityOf(node: XNode): number | undefined {
+  const colorNode = findChild(node, 'w14:srgbClr') ?? findChild(node, 'w14:schemeClr')
+  const raw = parseInt(attrsOf(findChild(colorNode ?? {}, 'w14:alpha') ?? {})['w14:val'] ?? '', 10)
+  return raw > 0 && raw <= 100000 ? Math.round((1 - raw / 100000) * 1000) / 1000 : undefined
+}
+
+/** w14:textFill as it is: no fill, a colour with its transparency, or a gradient with its stops */
+export function w14TextFillOf(rPr: XNode, theme?: ThemeColors | null): TextFill | undefined {
+  const tf = findChild(rPr, 'w14:textFill')
+  if (!tf) return undefined
+  if (findChild(tf, 'w14:noFill')) return { kind: 'none' }
+  const solid = findChild(tf, 'w14:solidFill')
+  if (solid) {
+    const rgb = w14ColorRgb(solid, theme)
+    if (!rgb) return undefined
+    const alpha = w14OpacityOf(solid)
+    return { kind: 'solid', color: rgbHex(rgb), ...(alpha !== undefined ? { alpha } : {}) }
+  }
+  const grad = findChild(tf, 'w14:gradFill')
+  const gsLst = findChild(grad ?? {}, 'w14:gsLst')
+  if (!grad || !gsLst) return undefined
+  const stops: TextFillStop[] = []
+  for (const gs of childrenOf(gsLst)) {
+    if (nameOf(gs) !== 'w14:gs') continue
+    const rgb = w14ColorRgb(gs, theme)
+    const pos = parseInt(attrsOf(gs)['w14:pos'] ?? '', 10)
+    if (!rgb || !(pos >= 0)) continue
+    const alpha = w14OpacityOf(gs)
+    stops.push({
+      pos: Math.min(1, pos / 100000),
+      color: rgbHex(rgb),
+      ...(alpha !== undefined ? { alpha } : {}),
+    })
+  }
+  if (stops.length === 0) return undefined
+  stops.sort((a, b) => a.pos - b.pos)
+  const ang = parseInt(attrsOf(findChild(grad, 'w14:lin') ?? {})['w14:ang'] ?? '', 10)
+  const path = attrsOf(findChild(grad, 'w14:path') ?? {})['w14:path']
+  return {
+    kind: 'gradient',
+    stops,
+    angleDeg: Number.isFinite(ang) ? Math.round(ang / 600) / 100 : 0,
+    ...(path === 'circle' || path === 'rect' || path === 'shape' ? { path } : {}),
+  }
+}
+
+/** the fill where it shows something a text colour of `color` would not */
+export function textFillBeyondColor(
+  fill: TextFill | undefined,
+  color: string | undefined,
+): TextFill | undefined {
+  if (!fill) return undefined
+  if (fill.kind === 'solid' && fill.alpha === undefined) {
+    return color !== undefined && fill.color.toUpperCase() !== color.toUpperCase()
+      ? fill
+      : undefined
+  }
+  return fill
 }
 
 /** w14:textOutline stroke (solid fills only; gradient/noFill outlines are not drawn) */
