@@ -6,7 +6,9 @@ import {
   type TextboxParaPatch,
 } from '../src/generate'
 import { parseDocx } from '../src/parse'
+import { saveDocx } from '../src/patch'
 import { buildDocx } from './helpers/build-docx'
+import { packageXmlProblems } from './helpers/strict-xml'
 
 const TXBX_CONTENT =
   '<w:txbxContent>' +
@@ -463,6 +465,28 @@ describe('textbox patch addressing', () => {
     })
     expect(noBodyPr).toContain('</w:txbxContent></wps:txbx><wps:bodyPr anchor="ctr"/></wps:wsp>')
   })
+
+  describe.each([undefined, '<wps:bodyPr anchor="t"/>'])(
+    'literal first shape text with bodyPr %s',
+    (bodyPr) => {
+      it.each(['Budget $$', 'Budget $$$$', 'Budget $&', 'Budget $`', "Budget $'", 'Budget 10'])(
+        'preserves %s through injection and package reopen',
+        async (text) => {
+          const source = drawingParagraph([wspShape({ id: '5', bodyPr })])
+          const out = patchTextboxParas(source, {
+            inject: [{ shapeId: '5', paras: [{ runs: [{ text }] }] }],
+          })
+          expect(out).toContain(text.replaceAll('&', '&amp;'))
+          const doc = await parseDocx(await buildDocx({ bodyXml: out }))
+          expect(doc.blocks[0].textboxes?.[0].paras[0].runs[0].text).toBe(text)
+          const saved = await saveDocx(doc, [{ kind: 'original', docxIndex: 0 }])
+          expect(await packageXmlProblems(saved)).toEqual([])
+          const reopened = await parseDocx(saved)
+          expect(reopened.blocks[0].textboxes?.[0].paras[0].runs[0].text).toBe(text)
+        },
+      )
+    },
+  )
 
   it('inject onto a shape that already has a txbx rewrites its content instead', () => {
     const out = patchTextboxParas(drawingParagraph([wspShape({ id: '5', txbx: HELLO_TXBX })]), {

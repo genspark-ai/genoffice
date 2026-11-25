@@ -805,7 +805,7 @@ function replaceAbstractNumLevel(
   )
   let body = abs[0]
   const existing = lvlRe.exec(body)?.[0]
-  if (existing) body = body.replace(existing, mergeLevelXml(existing, level, ilvl))
+  if (existing) body = body.replace(existing, () => mergeLevelXml(existing, level, ilvl))
   else {
     const lvlXml = customLevelXml(level, ilvl)
     const later = new RegExp(`<w:lvl [^>]*w:ilvl="(\\d)"`, 'g')
@@ -818,7 +818,7 @@ function replaceAbstractNumLevel(
     }
     body = body.slice(0, insertAt) + lvlXml + body.slice(insertAt)
   }
-  return xml.replace(abs[0], body)
+  return xml.replace(abs[0], () => body)
 }
 
 /**
