@@ -1260,6 +1260,8 @@ function sameStyle(a: Run, b: Run): boolean {
     (a.link?.rId ?? '') === (b.link?.rId ?? '') &&
     a.link?.anchor === b.link?.anchor &&
     a.link?.history === b.link?.history &&
+    a.link?.targetFrame === b.link?.targetFrame &&
+    a.link?.docLocation === b.link?.docLocation &&
     (a.link?.plain ?? false) === (b.link?.plain ?? false) &&
     (a.commentIds ?? []).join(',') === (b.commentIds ?? []).join(',') &&
     sameRevision(a.ins, b.ins) &&

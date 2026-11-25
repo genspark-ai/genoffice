@@ -1825,6 +1825,8 @@ function runMarks(run: Run): PmMark[] {
         rId: run.link.rId ?? null,
         anchor: run.link.anchor ?? null,
         history: run.link.history ?? null,
+        targetFrame: run.link.targetFrame ?? null,
+        docLocation: run.link.docLocation ?? null,
         tooltip: run.link.tooltip ?? null,
         plain: run.link.plain === true,
       },
@@ -4493,6 +4495,12 @@ function runFromMarks(text: string, marks: PmMark[]): Run {
         rId: (mark.attrs?.rId as string) ?? undefined,
         ...(typeof mark.attrs?.anchor === 'string' ? { anchor: mark.attrs.anchor } : {}),
         ...(typeof mark.attrs?.history === 'string' ? { history: mark.attrs.history } : {}),
+        ...(typeof mark.attrs?.targetFrame === 'string'
+          ? { targetFrame: mark.attrs.targetFrame }
+          : {}),
+        ...(typeof mark.attrs?.docLocation === 'string'
+          ? { docLocation: mark.attrs.docLocation }
+          : {}),
         tooltip: (mark.attrs?.tooltip as string) ?? undefined,
         ...(mark.attrs?.plain ? { plain: true } : {}),
       }
@@ -4721,6 +4729,8 @@ function runStyleKey(run: Run): string {
     run.link?.rId ?? null,
     run.link?.anchor ?? null,
     run.link?.history ?? null,
+    run.link?.targetFrame ?? null,
+    run.link?.docLocation ?? null,
     run.commentIds?.join(' ') ?? null,
     revisionKey(run),
     run.noteRef
