@@ -302,6 +302,10 @@ export interface Run {
     anchor?: string
     history?: string
     tooltip?: string
+    /** w:tgtFrame: frame in which the target document opens */
+    tgtFrame?: string
+    /** w:docLocation: location inside the target document */
+    docLocation?: string
     plain?: boolean
   }
   /**

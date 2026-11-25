@@ -5382,6 +5382,8 @@ function extractRuns(
         const rId = attrs['r:id']
         const anchor = attrs['w:anchor']
         const tooltip = attrs['w:tooltip']
+        const tgtFrame = attrs['w:tgtFrame']
+        const docLocation = attrs['w:docLocation']
         const href = rId
           ? `${ctx.rels.get(rId)?.target ?? ''}${anchor ? `#${anchor}` : ''}`
           : anchor
@@ -5397,6 +5399,8 @@ function extractRuns(
             ...(rId && anchor !== undefined ? { anchor } : {}),
             ...(rId && history !== undefined ? { history } : {}),
             ...(tooltip ? { tooltip } : {}),
+            ...(tgtFrame !== undefined ? { tgtFrame } : {}),
+            ...(docLocation !== undefined ? { docLocation } : {}),
           },
           rev,
         )
