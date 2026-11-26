@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { parseDocx } from '../src/index'
-import { metafileToDataUrl } from '../src/metafile'
+import { MAX_METAFILE_RASTER_PX, metafileToDataUrl } from '../src/metafile'
 import { convertEmfToDataUrl, convertWmfToDataUrl } from '../src/vendor/emf-converter/index.mjs'
 import { buildDocx } from './helpers/build-docx'
 
@@ -68,6 +68,34 @@ describe('metafileToDataUrl routing', () => {
 })
 
 describe('parseDocx with emf media', () => {
+  it('maps maxSidePx to converter maxWidth/maxHeight', async () => {
+    await metafileToDataUrl(new Uint8Array([1, 2, 3]), 'image/emf', { maxSidePx: 1024 })
+    expect(convertEmfToDataUrl).toHaveBeenLastCalledWith(
+      expect.any(ArrayBuffer),
+      expect.objectContaining({ maxWidth: 1024, maxHeight: 1024 }),
+    )
+  })
+
+  it('caps metafile raster dimensions during parse (huge EMF is not decoded at full size)', async () => {
+    vi.mocked(convertEmfToDataUrl).mockClear()
+    await parseDocx(
+      await buildDocx({
+        bodyXml: `<w:p><w:r>${DRAWING_XML}</w:r></w:p>`,
+        extraRels: EMF_REL,
+        binaryParts: [EMF_BINARY_PART],
+      }),
+    )
+    expect(convertEmfToDataUrl).toHaveBeenCalledTimes(1)
+    expect(convertEmfToDataUrl).toHaveBeenCalledWith(
+      expect.any(ArrayBuffer),
+      expect.objectContaining({
+        dpiScale: 2,
+        maxWidth: MAX_METAFILE_RASTER_PX,
+        maxHeight: MAX_METAFILE_RASTER_PX,
+      }),
+    )
+  })
+
   it('converts an inline emf picture to an image block', async () => {
     const doc = await parseDocx(
       await buildDocx({
