@@ -219,6 +219,9 @@ export function* csvRows(
     field = ''
   }
   let quoted = false
+  // An explicitly quoted empty field is a cell, unlike a bare trailing newline
+  // (which is a blank row Excel drops). Track it per row so `""` still lands A1.
+  let rowHadQuote = false
   let nextReport = PROGRESS_INTERVAL
   for (let index = 0; index < text.length; index += 1) {
     if (index >= nextReport) {
@@ -245,6 +248,7 @@ export function* csvRows(
     }
     if (character === '"' && field === '') {
       quoted = true
+      rowHadQuote = true
     } else if (character === delimiter) {
       pushField()
     } else if (character === '\n' || character === '\r') {
@@ -253,8 +257,10 @@ export function* csvRows(
       rows += 1
       if (rows > MAX_CSV_ROWS) fail(`too many rows (cap ${MAX_CSV_ROWS})`)
       const finished = row
+      const hadQuote = rowHadQuote
       row = []
-      if (finished.every((cell) => cell === '')) {
+      rowHadQuote = false
+      if (finished.every((cell) => cell === '') && !hadQuote) {
         held.push(finished)
         continue
       }
@@ -265,13 +271,14 @@ export function* csvRows(
       field += character
     }
   }
-  if (field !== '' || row.length > 0) {
+  if (field !== '' || row.length > 0 || rowHadQuote) {
     pushField()
     rows += 1
     if (rows > MAX_CSV_ROWS) fail(`too many rows (cap ${MAX_CSV_ROWS})`)
     const finished = row
-    // trailing empty rows are dropped: the held ones and this one
-    if (!finished.every((cell) => cell === '')) {
+    // trailing empty rows are dropped: the held ones and this one — but not a
+    // row whose empty cell was explicitly quoted
+    if (!finished.every((cell) => cell === '') || rowHadQuote) {
       for (const pending of held) yield pending
       yield finished
     }
