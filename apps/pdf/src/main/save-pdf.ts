@@ -1098,7 +1098,9 @@ export function applyFormWidgetEdits(pdfDoc: PDFDocument, edits: FormWidgetEditI
 export async function extractPagesBytes(bytes: Uint8Array, pages: number[]): Promise<Uint8Array> {
   const src = await PDFDocument.load(bytes, { updateMetadata: false })
   const out = await PDFDocument.create()
-  const valid = pages.filter((p) => p >= 0 && p < src.getPageCount())
+  // A repeated index is one page, not two: replacePagesBytes already dedupes,
+  // and copying the same source page twice would duplicate its content stream.
+  const valid = [...new Set(pages.filter((p) => p >= 0 && p < src.getPageCount()))]
   const copied = await out.copyPages(src, valid)
   for (const p of copied) out.addPage(p)
   return out.save({ useObjectStreams: false })

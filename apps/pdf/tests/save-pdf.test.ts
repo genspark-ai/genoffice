@@ -87,6 +87,17 @@ describe('extractPagesBytes', () => {
     expect(out.getPage(1).getWidth()).toBe(100)
   })
 
+  it('copies a repeated page index only once', async () => {
+    const bytes = await makePdf([
+      [100, 100],
+      [200, 200],
+    ])
+    const out = await PDFDocument.load(await extractPagesBytes(bytes, [0, 0, 1]))
+    expect(out.getPageCount()).toBe(2)
+    expect(out.getPage(0).getWidth()).toBe(100)
+    expect(out.getPage(1).getWidth()).toBe(200)
+  })
+
   it('silently drops out-of-range page indices', async () => {
     const bytes = await makePdf([[100, 100]])
     const out = await PDFDocument.load(await extractPagesBytes(bytes, [-1, 0, 5]))
