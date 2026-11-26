@@ -100,4 +100,16 @@ describe('valueAxisScale with below-zero data', () => {
     expect(Number.isFinite(axis.min)).toBe(true)
     expect(Number.isFinite(axis.max)).toBe(true)
   })
+
+  it('treats a non-finite maximum as the non-negative default', () => {
+    // the no-values caller can hand over a bare -Infinity/NaN too; only dataMin
+    // used to be sanitized, so the axis still came back with infinite ticks
+    for (const bad of [-Infinity, NaN, Infinity]) {
+      const axis = valueAxisScale(bad)
+      expect(axis).toEqual(valueAxisScale(0))
+      expect(axis.min).toBe(0)
+      expect(Number.isFinite(axis.max)).toBe(true)
+      expect(axis.ticks.every((tick) => Number.isFinite(tick))).toBe(true)
+    }
+  })
 })
