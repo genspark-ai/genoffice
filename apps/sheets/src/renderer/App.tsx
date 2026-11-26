@@ -9,6 +9,7 @@ import {
   columnLetter,
   disposeVisuals,
   ensureLazyRangeLoaded,
+  formulaClosureStatus,
   journalRangeSnapshot,
   lazyWorkbookCellReader,
   loadSnapshotIntoUniver,
@@ -2761,7 +2762,13 @@ export function App({
         if (installingFileSkeleton.current) return
         syncProgressivePreview(activeSheet.getSheetId())
         setAiSelectionAskAnchor(null)
-        void loadVisibleRange(runtime, lazyWorkbookRef, activeSheet, setMessage)
+        const state = lazyWorkbookRef.current
+        const sheetId = activeSheet.getSheetId()
+        const viewport = loadVisibleRange(runtime, lazyWorkbookRef, activeSheet, setMessage)
+        if (state?.closure.bySheet) {
+          const afterViewport = () => loadProgressiveSheetIndexes(runtime, state, sheetId)
+          void viewport.then(afterViewport, afterViewport)
+        }
         // formula view is per-sheet (sheetView/@showFormulas)
         applyShowFormulasView(runtime, lazyWorkbookRef.current, activeSheet.getSheetId())
         // zoom is per-sheet state; echo the new sheet's level
@@ -3465,13 +3472,16 @@ export function App({
         if (
           !state.formulaMode &&
           contentEdited &&
-          state.closure.status === 'unavailable' &&
+          formulaClosureStatus(
+            state,
+            runtime.univerAPI.getActiveWorkbook()?.getActiveSheet()?.getSheetId(),
+          ) === 'unavailable' &&
           state.recalc.failures < RECALC_MAX_FAILURES
         ) {
           queueFormulaRecalc(runtime, lazyWorkbookRef, setMessage)
         } else if (
           !state.formulaMode &&
-          state.closure.status !== 'active' &&
+          formulaClosureStatus(state, params.subUnitId) !== 'active' &&
           recorded.some((entry) => entry.formula)
         ) {
           setMessage(t('appFormulaRecordedPartial'))
@@ -5193,6 +5203,26 @@ export function App({
     )
   }
 
+  function loadProgressiveSheetIndexes(
+    runtime: UniverRuntime,
+    state: LazyWorkbookState,
+    sheetId: string,
+  ): void {
+    const current = () =>
+      lazyWorkbookRef.current === state &&
+      runtime.univerAPI.getActiveWorkbook()?.getActiveSheet()?.getSheetId() === sheetId
+    if (!current()) return
+    void loadRowOutlines(state, lazyWorkbookRef, sheetId)
+    setTimeout(() => {
+      if (!current()) return
+      if (formulaClosureStatus(state, sheetId) === 'unavailable') {
+        queueFormulaRecalc(runtime, lazyWorkbookRef, setMessage)
+      } else {
+        void activateFormulaClosure(runtime, lazyWorkbookRef, setMessage)
+      }
+    }, 1500)
+  }
+
   async function openLazyWorkbook(
     opened: WorkbookFile,
     opts?: { continueChat?: boolean; onInitialRangeLoaded?: () => void },
@@ -5299,7 +5329,11 @@ export function App({
       formulaMode: !progressive && opensInFormulaMode(cellCounts),
       editJournal: createEditJournal(),
       flags: { preloadComplete: false, preloadRunning: false },
-      closure: { status: 'idle', pinned: new Map() },
+      closure: {
+        status: 'idle',
+        pinned: new Map(),
+        ...(progressive ? { bySheet: new Map() } : {}),
+      },
       formulaText: new Map(),
       formulaTextTruncated: new Set(),
       sharedFormulaGroups: new Map(),
@@ -5598,30 +5632,26 @@ export function App({
             : undefined,
           progressive,
         )
-        void initialRange.then(
-          () => {
-            opts?.onInitialRangeLoaded?.()
-            if (progressive && lazyWorkbookRef.current === state) {
-              void loadRowOutlines(state, lazyWorkbookRef)
-            }
-          },
-          (error: unknown) => {
-            setMessage(error instanceof Error ? error.message : t('appLoadRangeFailed'))
-            opts?.onInitialRangeLoaded?.()
-          },
-        )
+        const afterViewport = () => {
+          opts?.onInitialRangeLoaded?.()
+          if (progressive) {
+            loadProgressiveSheetIndexes(runtime, state, (restoredSheet ?? worksheet).getSheetId())
+          }
+        }
+        void initialRange.then(afterViewport, (error: unknown) => {
+          setMessage(error instanceof Error ? error.message : t('appLoadRangeFailed'))
+          afterViewport()
+        })
         if (state.formulaMode) {
           void startFullLoad(runtime, lazyWorkbookRef, setMessage)
         } else {
-          const scheduleClosure = () => {
+          if (!progressive) {
             setTimeout(() => {
               if (lazyWorkbookRef.current === state) {
                 void activateFormulaClosure(runtime, lazyWorkbookRef, setMessage)
               }
             }, 1500)
           }
-          if (progressive) void initialRange.then(scheduleClosure, scheduleClosure)
-          else scheduleClosure()
           // A streamed book within the Full Load budget scrolls badly: every
           // viewport past the ±80-row/±8-column buffer waits on a sidecar
           // round-trip before it paints. Print already makes such books

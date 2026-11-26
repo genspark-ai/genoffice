@@ -42,6 +42,20 @@ The sidecar reads ZIP metadata, workbook relationships, worksheet dimensions, an
 
 Univer starts with worksheet dimensions and empty sparse cell data. Scroll and active-sheet events request the visible range plus a buffer. Before another window is installed, the previous range and formats are cleared, so renderer memory does not grow with the total workbook size. Visual discovery reads only relationship, drawing, chart, style, and media metadata parts; it never builds a DOM for a large worksheet.
 
+### Worksheet indexing tiers
+
+| Tier | Worksheets                                                                              | Scheduling and cache policy                                                                                                                                          |
+| ---- | --------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1    | The active worksheet                                                                    | Highest priority. Full indexing without the prefetch cache cap.                                                                                                      |
+| 2    | The two nearest visible tabs and the active worksheet's transitive formula dependencies | Lower priority than Tier 1. Full indexing without the prefetch cache cap.                                                                                            |
+| 3    | All other worksheets                                                                    | Best-effort prefetch within available worker slots and a shared 256 MiB row-chunk cache budget. A worksheet can remain unstarted or stop at its share of the budget. |
+
+**A worksheet can remain partially indexed or unstarted for the entire user session.** The renderer requests full indexing only when the current operation needs that worksheet. A passive index read reports available data and completion without starting a worker or releasing its prefetch cap.
+
+Live formula activation for a progressive workbook starts at the active worksheet and follows its statically resolvable formula references transitively. The renderer installs a closure only after indexing the required sheets and reading their precedent cells within the renderer's separate cell budget. Unrelated sheets can be opened and analyzed later. A sheet whose closure cannot be resolved or exceeds the renderer budget keeps cached values and can use the existing recalculation fallback when eligible.
+
+The renderer loads row outlines for each grouped worksheet on its first visit, including the initial or restored tab. Each request follows that worksheet's index independently and can finish after the user switches tabs.
+
 ## Workbook state
 
 Each document eventually owns:

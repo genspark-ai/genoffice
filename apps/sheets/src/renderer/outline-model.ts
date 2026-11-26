@@ -39,6 +39,8 @@ export interface SheetOutlineState {
   /// File rows the sidecar index already delivered; a later poll must not
   /// re-seed a row the user has since cleared.
   readonly seededRows: Set<number>
+  /// Tracks the whole-sheet outline read independently of viewport rows.
+  rowIndex?: { readonly sessionId: string; complete: boolean }
 }
 
 export const MAX_OUTLINE_LEVEL = 7

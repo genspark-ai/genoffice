@@ -147,6 +147,8 @@ export interface LazyWorkbookState {
   /// viewport eviction) so the engine recalculates them live.
   readonly closure: {
     status: 'idle' | 'pending' | 'active' | 'unavailable'
+    /// Progressive workbooks settle each visited sheet and its precedents.
+    bySheet?: Map<string, 'pending' | 'active' | 'unavailable'>
     readonly pinned: Map<string, Map<string, PinnedClosureCell>>
   }
   /// Formula text per sheet ('row:col', file coordinates) harvested from
