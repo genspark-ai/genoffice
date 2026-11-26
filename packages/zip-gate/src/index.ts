@@ -147,10 +147,20 @@ function scanParts(bytes: Uint8Array): ScannedPart[] {
   if (end < 0) throw new Error('zip: end of central directory not found')
   let eocd = -1
   for (let i = end; i >= Math.max(0, end - 0xffff); i--) {
-    if (at(i, 4) === EOCD_SIG) {
-      eocd = i
-      break
-    }
+    if (at(i, 4) !== EOCD_SIG) continue
+    // The archive comment can contain the same signature. Only a record whose
+    // comment reaches the end of the file and whose central directory fits
+    // before it is the real EOCD; taking the last bare signature lets a comment
+    // smuggle in an empty directory that skips every part.
+    if (i + 22 + at(i + 20, 2) !== bytes.byteLength) continue
+    const count = at(i + 10, 2)
+    const cdSize = at(i + 12, 4)
+    const cdOffset = at(i + 16, 4)
+    if (cdOffset + cdSize > i) continue
+    if (count > 0 && (cdSize < 46 || at(cdOffset, 4) !== CENTRAL_SIG)) continue
+    if (count === 0 && (cdOffset !== i || cdSize !== 0)) continue
+    eocd = i
+    break
   }
   if (eocd < 0) throw new Error('zip: end of central directory not found')
   if (eocd >= 20 && at(eocd - 20, 4) === ZIP64_LOCATOR_SIG) {
