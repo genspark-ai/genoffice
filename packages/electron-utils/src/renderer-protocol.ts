@@ -5,6 +5,7 @@ import {
   SLIDE_MEDIA_SCHEME_PRIVILEGE,
   RENDERER_SCHEME,
   RENDERER_SCHEME_PRIVILEGE,
+  resolveGeneratedImageFile,
   resolveRendererFile,
 } from './renderer-scheme'
 
@@ -23,7 +24,10 @@ export function registerRendererScheme(): void {
 export function installRendererProtocol(roots: Record<string, string>): void {
   const table = new Map(Object.entries(roots))
   protocol.handle(RENDERER_SCHEME, (request) => {
-    const file = resolveRendererFile(table, request.url)
+    // AI-generated images arrive as file:// URLs from the local store; the
+    // renderer asks for them on its own origin instead.
+    const generated = resolveGeneratedImageFile(request.url)
+    const file = generated ?? resolveRendererFile(table, request.url)
     if (!file) return new Response(null, { status: 404 })
     return net
       .fetch(pathToFileURL(file).toString())
