@@ -175,8 +175,13 @@ import { cfRuleUnsaveableReason, iconSetSaveable } from '@genoffice/xlsx-gateway
 import type { SheetRedactionState } from '@genoffice/xlsx-gateway/gateway/xlsx-redaction'
 import { statesOnScreen } from './redact-marks-shift'
 import { installLazyFindBridge } from './lazy-find'
-import { startFullLoad } from './full-load'
-import { autoFullLoadsAtOpen, opensInFormulaMode, workbookCellCounts } from './load-budget'
+import { startFullLoad, startProgressiveFullLoad } from './full-load'
+import {
+  autoFullLoadsAtOpen,
+  opensInFormulaMode,
+  progressiveFullLoadMode,
+  workbookCellCounts,
+} from './load-budget'
 import { installReplaceAutoSearch } from './replace-autosearch'
 import { FindReplacePanel } from './FindReplacePanel'
 import { SpellingDialog } from './SpellingDialog'
@@ -5240,6 +5245,20 @@ export function App({
     }
     const cellCounts = workbookCellCounts(selected.sheets)
     const progressive = selected.sheets.some((sheet) => sheet.progressive)
+    let initialViewportReady = false
+    function scheduleProgressiveFullLoad(): void {
+      if (!initialViewportReady || !progressiveFullLoadMode(state.file.sheets)) return
+      const load = (): void => {
+        const runtime = univerRef.current
+        if (!runtime || lazyWorkbookRef.current !== state || state.flags.preloadComplete) return
+        if (isCellEditing()) {
+          setTimeout(load, AUTO_FULL_LOAD_DELAY_MS)
+          return
+        }
+        void startProgressiveFullLoad(runtime, lazyWorkbookRef, state, setMessage)
+      }
+      setTimeout(load, AUTO_FULL_LOAD_DELAY_MS)
+    }
     setWorkbookFile(selected)
     // Calculation mode is workbook state: the next file starts automatic,
     // in the engine and in the menu alike.
@@ -5314,6 +5333,19 @@ export function App({
                   sparklineDisposablesRef,
                   sparklineTimerRef,
                 )
+              }
+            },
+            onProgressiveCountsChanged: (recalcFitsBudget: boolean) => {
+              if (lazyWorkbookRef.current !== state) return
+              setWorkbookFile((file) =>
+                file && lazyWorkbookRef.current === state
+                  ? { ...file, sheets: state.file.sheets }
+                  : file,
+              )
+              scheduleProgressiveFullLoad()
+              const runtime = univerRef.current
+              if (initialViewportReady && recalcFitsBudget && runtime) {
+                queueFormulaRecalc(runtime, lazyWorkbookRef, setMessage)
               }
             },
           }
@@ -5635,6 +5667,8 @@ export function App({
         const afterViewport = () => {
           opts?.onInitialRangeLoaded?.()
           if (progressive) {
+            initialViewportReady = true
+            scheduleProgressiveFullLoad()
             loadProgressiveSheetIndexes(runtime, state, (restoredSheet ?? worksheet).getSheetId())
           }
         }

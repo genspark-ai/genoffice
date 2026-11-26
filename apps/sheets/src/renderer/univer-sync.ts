@@ -194,6 +194,7 @@ import type { SheetOutlineState } from './outline-model'
 import { externalLinkOverlayCell } from './external-link-values'
 import type { ExternalLinkCell } from '../shared/desktop-api'
 import { isManualCalculation } from './calc-options'
+import { workbookCellCounts } from './load-budget'
 import {
   registerCellFontAliases,
   richRunFamilies,
@@ -1789,6 +1790,7 @@ export async function activateFormulaClosure(
   const sessionId = state.file.sessionId
   const current = () =>
     lazyWorkbookRef.current === state &&
+    !state.formulaMode &&
     state.file.sessionId === sessionId &&
     (!root || isActiveSheet(runtime, root.id))
   const compatible = () =>
@@ -1825,7 +1827,7 @@ export async function activateFormulaClosure(
         if (!current()) return
         if (result.truncated) {
           recordCachedFormulaValues(state, sheet.id, result.cells)
-          if (truncatedIndexRetiresEngine(state)) state.recalc.engineOverBudget = true
+          if (truncatedIndexRetiresEngine(state)) state.recalc.formulaIndexRetired = true
           return giveUp()
         }
         if (result.indexingComplete) {
@@ -2906,13 +2908,11 @@ export const RECALC_MAX_FAILURES = 3
 /// ~4GB for minutes at open) — and the formula-count gate never fires on
 /// such files. Cap by grid cell count (the dominant cost) and by compressed
 /// size (catches string-heavy files with small grids): past either, cached
-/// values stand for the session, same as engineOverBudget after a truncated
+/// values stand while the file is over budget, as with a truncated
 /// formula index. 2M cells ≈ 1GB import.
 export const RECALC_MAX_FILE_BYTES = 64 * 1024 * 1024
 export const RECALC_MAX_GRID_CELLS = 2_000_000
 
-/// Decided once at open (engineOverBudget seed); the recalc queue re-checks
-/// nothing size-related after that.
 export function recalcOverBudgetAtOpen(
   fileBytes: number | undefined,
   gridCellCount: number,
@@ -2936,7 +2936,7 @@ export function queueFormulaRecalc(
   if (formulaClosureStatus(state, activeId) !== 'unavailable') return
   // minimal states (tests, partial teardown) may carry no recalc slot
   if (!state.recalc || state.recalc.failures >= RECALC_MAX_FAILURES) return
-  if (state.recalc.engineOverBudget) return
+  if (state.recalc.engineOverBudget || state.recalc.formulaIndexRetired) return
   // The engine loads the file from disk; session structural edits would
   // desync every coordinate — fail soft to cached values.
   if ([...state.editJournal.structuralOps.values()].some((ops) => ops.length > 0)) return
@@ -2977,7 +2977,7 @@ async function recalcFormulaCellKeys(
   if (result.truncated) {
     state.recalc.formulaCells.set(sheetId, new Set())
     recordCachedFormulaValues(state, sheetId, result.cells)
-    if (truncatedIndexRetiresEngine(state)) state.recalc.engineOverBudget = true
+    if (truncatedIndexRetiresEngine(state)) state.recalc.formulaIndexRetired = true
     return null
   }
   if (!result.indexingComplete) return null
@@ -3032,6 +3032,12 @@ async function runFormulaRecalc(
   state: LazyWorkbookState,
   setMessage: (message: string) => void,
 ): Promise<void> {
+  const current = () =>
+    lazyWorkbookRef.current === state &&
+    !state.formulaMode &&
+    !state.recalc.engineOverBudget &&
+    !state.recalc.formulaIndexRetired
+  if (!current()) return
   const workbook = runtime.univerAPI.getActiveWorkbook()
   const worksheet = workbook?.getActiveSheet()
   if (!workbook || !worksheet) return
@@ -3060,8 +3066,7 @@ async function runFormulaRecalc(
   state.recalc.lastRunAt = Date.now()
   try {
     const keys = await recalcFormulaCellKeys(state, sheetId)
-    if (lazyWorkbookRef.current !== state || formulaClosureStatus(state, sheetId) !== 'unavailable')
-      return
+    if (!current() || formulaClosureStatus(state, sheetId) !== 'unavailable') return
     if (!keys || keys.size === 0) {
       // nothing to recalculate on this sheet: mark it followed so the
       // finished-run chain below doesn't loop on it forever
@@ -3082,7 +3087,7 @@ async function runFormulaRecalc(
     })
     // A newer run superseded this one while the sidecar was evaluating.
     if (
-      lazyWorkbookRef.current !== state ||
+      !current() ||
       state.recalc.generation !== generation ||
       formulaClosureStatus(state, sheetId) !== 'unavailable'
     )
@@ -3163,7 +3168,7 @@ async function runFormulaRecalc(
     // a superseded run failing after a newer success must not stack stale
     // failures toward the kill switch. "Busy" is not a failure — another
     // recalculation holds the worker and this one simply retries later.
-    if (lazyWorkbookRef.current !== state || state.recalc.generation !== generation) return
+    if (!current() || state.recalc.generation !== generation) return
     const busy = error instanceof Error && error.message.includes('busy with another recalculation')
     if (!busy) state.recalc.failures += 1
     // The in-flight import that rejected this run may itself be superseded
@@ -3700,8 +3705,8 @@ async function loadRange(
         sheetMeta.freeze,
         state.formulaMode,
         state.editJournal,
-        state.closure.pinned.get(sheetId),
-        state.recalc.overlay.get(sheetId),
+        state.formulaMode ? undefined : state.closure.pinned.get(sheetId),
+        state.formulaMode ? undefined : state.recalc.overlay.get(sheetId),
         undefined,
         undefined,
         undefined,
@@ -3750,8 +3755,8 @@ async function loadRange(
           sheetMeta.freeze,
           state.formulaMode,
           state.editJournal,
-          state.closure.pinned.get(sheetId),
-          state.recalc.overlay.get(sheetId),
+          state.formulaMode ? undefined : state.closure.pinned.get(sheetId),
+          state.formulaMode ? undefined : state.recalc.overlay.get(sheetId),
           undefined,
           sheetRowColStyleKeys(state, sheetId),
           inheritedWrapLookup(state.file.styles, mapped.screen.rows, sheetMeta.columnWidths),
@@ -6506,8 +6511,8 @@ async function preloadEntireWorkbookInner(
           sheet.freeze,
           state.formulaMode,
           state.editJournal,
-          state.closure.pinned.get(sheetId),
-          state.recalc.overlay.get(sheetId),
+          state.formulaMode ? undefined : state.closure.pinned.get(sheetId),
+          state.formulaMode ? undefined : state.recalc.overlay.get(sheetId),
           state.formulaMode ? arrayFollowers : undefined,
           sheetRowColStyleKeys(state, sheetId),
           inheritedWrapLookup(state.file.styles, screen.rows, sheet.columnWidths),
@@ -6615,7 +6620,12 @@ async function preloadEntireWorkbookInner(
   }
   if (lazyWorkbookRef.current === state) {
     state.flags.preloadComplete = true
-    if (state.formulaMode && !isManualCalculation(runtime)) requestFullRecalcAfterStream()
+    if (state.formulaMode) {
+      state.closure.pinned.clear()
+      state.recalc.overlay.clear()
+      state.recalc.incompleteRuns.clear()
+      if (!isManualCalculation(runtime)) requestFullRecalcAfterStream()
+    }
     setMessage(t('appFullyLoaded'))
   }
 }
@@ -6728,6 +6738,12 @@ function captureSheetFileState(
           sheet.id === fileSheetId ? { ...sheet, ...counts } : sheet,
         ),
       }
+      const wasOverBudget = state.recalc.engineOverBudget
+      state.recalc.engineOverBudget = recalcOverBudgetAtOpen(
+        state.file.fileBytes,
+        workbookCellCounts(state.file.sheets).gridCells,
+      )
+      state.onProgressiveCountsChanged?.(wasOverBudget && !state.recalc.engineOverBudget)
     }
     if (first) {
       if (result.sparklines) state.deferredSparklines?.set(sheetId, result.sparklines)

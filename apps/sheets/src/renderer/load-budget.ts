@@ -8,6 +8,7 @@ import {
 } from './app-constants'
 
 export interface CellCountedSheet {
+  readonly progressive?: boolean | undefined
   readonly rowCount: number
   readonly columnCount: number
   readonly storedCellCount?: number | undefined
@@ -40,6 +41,17 @@ export function workbookCellCounts(sheets: readonly CellCountedSheet[]): Workboo
     valueCells += sheet.valueCellCount ?? stored
   }
   return { gridCells, storedCells, valueCells }
+}
+
+export function progressiveFullLoadMode(
+  sheets: readonly CellCountedSheet[],
+): 'formulas' | 'values' | undefined {
+  // A progressive header only supplies dimensions. Wait for EOF counts
+  // delivered by ordinary reads without demanding any other sheet's index.
+  if (sheets.some((sheet) => sheet.progressive && sheet.storedCellCount === undefined)) return
+  const counts = workbookCellCounts(sheets)
+  if (opensInFormulaMode(counts)) return 'formulas'
+  if (autoFullLoadsAtOpen(counts)) return 'values'
 }
 
 /// Formula mode preloads the whole workbook at open, so it is bounded like

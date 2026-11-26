@@ -17,9 +17,11 @@ import {
   type WorkbookRangeRequest,
 } from '../src/shared/desktop-api'
 import { createEditJournal } from '../src/renderer/edit-journal'
+import { progressiveFullLoadMode } from '../src/renderer/load-budget'
 import { loadRowOutlines } from '../src/renderer/outline-actions'
 import {
   activateFormulaClosure,
+  ensureSheetFileState,
   formulaClosureStatus,
   recalcOverBudgetAtOpen,
 } from '../src/renderer/univer-sync'
@@ -31,6 +33,7 @@ interface Tab {
   grouped?: boolean
   formula?: string
   dimension?: string
+  longInlineStrings?: boolean
 }
 
 const active = { name: 'Dashboard', formula: 'A1*2', dimension: 'A1:R1000' }
@@ -78,6 +81,13 @@ async function workbookBytes(tabs: Tab[]): Promise<Buffer> {
       ? '<row r="600" outlineLevel="1" hidden="1"><c r="A600"><v>8</v></c></row>' +
         '<row r="601" collapsed="1"><c r="A601"><v>9</v></c></row>'
       : ''
+    const text = tab.longInlineStrings ? 'x'.repeat(32_767) : ''
+    const longRows = text
+      ? Array.from({ length: 1_024 }, (_, offset) => {
+          const row = offset + 2
+          return `<row r="${row}"><c r="A${row}" t="inlineStr"><is><t>${text}</t></is></c></row>`
+        }).join('')
+      : ''
     zip.file(
       'xl/worksheets/sheet' + (i + 1) + '.xml',
       '<worksheet><dimension ref="' +
@@ -88,7 +98,8 @@ async function workbookBytes(tabs: Tab[]): Promise<Buffer> {
         formula +
         '</c></row>' +
         group +
-        (i === 0 ? ' '.repeat(32 * 1024 * 1024) : '') +
+        longRows +
+        (i === 0 && !text ? ' '.repeat(32 * 1024 * 1024) : '') +
         '</sheetData></worksheet>',
     )
   })
@@ -144,6 +155,10 @@ async function harness(tabs: Tab[]) {
     formulaText: new Map(),
     sharedFormulaGroups: new Map(),
     cachedFormulaValues: new Map(),
+    sheetPageBreaks: new Map(),
+    sheetProtections: new Map(),
+    sheetFilePageSetups: new Map(),
+    sheetProtectedRanges: new Map(),
     rowColStyleKeys: new Map(),
     hiddenFileRows: new Map(),
     hiddenRowsCoveredThrough: new Map(),
@@ -236,6 +251,27 @@ it('activates local formulas without probing or starting an unrelated hidden she
   expect(h.formulaReads()).toEqual(['sheet-1'])
   expect((await h.peekFormulas('sheet-2')).indexingComplete).toBe(false)
   expect(h.state.recalc.timer).toBeNull()
+})
+
+it('uses EOF counts for a progressive sheet with long inline strings and an oversized declared extent', async () => {
+  const h = await harness([{ ...active, dimension: 'A1:R120000', longInlineStrings: true }])
+  const countsChanged = vi.fn()
+  h.state.onProgressiveCountsChanged = countsChanged
+  h.state.recalc.formulaIndexRetired = true
+
+  expect(h.state.recalc.engineOverBudget).toBe(true)
+  expect(progressiveFullLoadMode(h.state.file.sheets)).toBeUndefined()
+
+  expect(await ensureSheetFileState(h.state, 'sheet-1', h.ref)).toBe(true)
+  expect(h.state.file.sheets[0]).toMatchObject({
+    storedCellCount: 1_026,
+    valueRowCount: 1_025,
+    valueColumnCount: 2,
+  })
+  expect(progressiveFullLoadMode(h.state.file.sheets)).toBe('formulas')
+  expect(h.state.recalc.engineOverBudget).toBe(false)
+  expect(h.state.recalc.formulaIndexRetired).toBe(true)
+  expect(countsChanged).toHaveBeenCalledExactlyOnceWith(true)
 })
 
 it('indexes transitive formula precedents and leaves another hidden sheet parked', async () => {

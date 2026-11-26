@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { startFullLoad } from '../src/renderer/full-load'
+import { startFullLoad, startProgressiveFullLoad } from '../src/renderer/full-load'
 import type { LazyWorkbookState, UniverRuntime } from '../src/renderer/univer-state'
 import { preloadEntireWorkbook } from '../src/renderer/univer-sync'
 
@@ -87,5 +87,75 @@ describe('startFullLoad', () => {
     preloadA.finish()
     preloadB.finish()
     await Promise.all([loadA, loadB])
+  })
+})
+
+describe('startProgressiveFullLoad', () => {
+  const sheet = { progressive: true, rowCount: 10_000, columnCount: 20 }
+
+  function progressiveState(...sheets: (typeof sheet & { storedCellCount?: number })[]) {
+    return {
+      ...lazyState(),
+      file: { sheets },
+      formulaMode: false,
+    } as LazyWorkbookState
+  }
+
+  beforeEach(() => {
+    vi.mocked(preloadEntireWorkbook).mockReset()
+  })
+
+  it('waits for counts from every progressive sheet', async () => {
+    const state = progressiveState({ ...sheet, storedCellCount: 20_000 }, sheet)
+    await startProgressiveFullLoad(runtime, { current: state }, state, vi.fn())
+    expect(preloadEntireWorkbook).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    [50_000, true],
+    [500_000, false],
+  ])('sets the mode before preloading %i cells', async (storedCellCount, formulaMode) => {
+    const state = progressiveState({ ...sheet, storedCellCount })
+    const preload = manualPreload(state)
+    const run = startProgressiveFullLoad(runtime, { current: state }, state, vi.fn())
+
+    expect(state.formulaMode).toBe(formulaMode)
+    expect(preloadEntireWorkbook).toHaveBeenCalledTimes(1)
+    preload.finish()
+    await run
+    expect(state.formulaMode).toBe(formulaMode)
+  })
+
+  it('keeps large and replaced workbooks streamed', async () => {
+    const state = progressiveState({ ...sheet, storedCellCount: 500_001 })
+    const small = progressiveState({ ...sheet, storedCellCount: 20_000 })
+    await startProgressiveFullLoad(runtime, { current: state }, state, vi.fn())
+    await startProgressiveFullLoad(runtime, { current: state }, small, vi.fn())
+    expect(preloadEntireWorkbook).not.toHaveBeenCalled()
+  })
+
+  it('leaves an in-flight manual load in its original mode', async () => {
+    const state = progressiveState({ ...sheet, storedCellCount: 20_000 })
+    const ref = { current: state }
+    const preload = manualPreload(state)
+    const manual = startFullLoad(runtime, ref, vi.fn())
+
+    await startProgressiveFullLoad(runtime, ref, state, vi.fn())
+    expect(preloadEntireWorkbook).toHaveBeenCalledTimes(1)
+    expect(state.formulaMode).toBe(false)
+    preload.finish()
+    await manual
+  })
+
+  it('restores streaming mode when the promoted load fails', async () => {
+    const state = progressiveState({ ...sheet, storedCellCount: 20_000 })
+    const failing = manualPreload(state)
+    const setMessage = vi.fn()
+    const run = startProgressiveFullLoad(runtime, { current: state }, state, setMessage)
+
+    failing.fail(new Error('disk'))
+    await run
+    expect(state.formulaMode).toBe(false)
+    expect(setMessage).toHaveBeenLastCalledWith('disk')
   })
 })
