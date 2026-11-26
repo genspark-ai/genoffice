@@ -437,7 +437,7 @@ pub struct DataValidationRule {
     pub prompt: Option<String>,
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CellRange {
     pub start_row: usize,
@@ -578,6 +578,9 @@ pub struct RangeResult {
     pub sparklines: Option<Vec<SparklineGroupInfo>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cell_counts: Option<IndexedCellCounts>,
+    /// Present on preload-plan reads, with ranges available at EOF.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub preload_ranges: Option<Vec<CellRange>>,
     /// Saved print settings, None when the sheet declares none.
     pub page_setup: Option<PagePrintInfo>,
     pub indexed_through_row: Option<usize>,

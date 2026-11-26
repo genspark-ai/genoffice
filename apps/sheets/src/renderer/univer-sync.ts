@@ -6426,6 +6426,38 @@ export async function preloadEntireWorkbook(
   }
 }
 
+function* preloadGridRanges(rowCount: number, columnCount: number): Iterable<IRange> {
+  const rowsPerRead = Math.max(1, Math.floor(SIDECAR_RANGE_CELL_LIMIT / columnCount))
+  for (let startRow = 0; startRow < rowCount; startRow += rowsPerRead) {
+    yield {
+      startRow,
+      endRow: Math.min(rowCount - 1, startRow + rowsPerRead - 1),
+      startColumn: 0,
+      endColumn: columnCount - 1,
+    }
+  }
+}
+
+async function readPreloadPlan(
+  state: LazyWorkbookState,
+  sheetId: string,
+  lazyWorkbookRef: { readonly current: LazyWorkbookState | null },
+): Promise<IRange[] | undefined | null> {
+  for (let attempt = 0; attempt < 400 && lazyWorkbookRef.current === state; attempt += 1) {
+    const result = await window.desktopApi.readWorkbookRange({
+      sessionId: state.file.sessionId,
+      sheetId,
+      range: { startRow: 0, endRow: 0, startColumn: 0, endColumn: 0 },
+      mode: 'status',
+      preloadPlan: true,
+    })
+    // Older sidecars treat this request as a regular status read.
+    if (result.preloadRanges === undefined || result.indexingComplete) return result.preloadRanges
+    await new Promise((resolve) => setTimeout(resolve, 150))
+  }
+  return null
+}
+
 async function preloadEntireWorkbookInner(
   runtime: UniverRuntime,
   state: LazyWorkbookState,
@@ -6433,20 +6465,21 @@ async function preloadEntireWorkbookInner(
   lazyWorkbookRef: { current: LazyWorkbookState | null },
   setMessage: (message: string) => void,
 ): Promise<void> {
+  const usePlan = state.file.sheets.some((sheet) => sheet.progressive)
   for (const sheet of state.file.sheets) {
     const worksheet = workbook.getSheetBySheetId(sheet.id)
     if (!worksheet) continue
     const sheetId = sheet.id
-    const rowsPerBlock = Math.max(1, Math.floor(SIDECAR_RANGE_CELL_LIMIT / sheet.columnCount))
+    let plan: IRange[] | undefined | null
+    try {
+      plan = usePlan ? await readPreloadPlan(state, sheetId, lazyWorkbookRef) : undefined
+    } catch {
+      return
+    }
+    if (plan === null) return
     const arrayFollowers = new Set<string>()
-    for (let startRow = 0; startRow < sheet.rowCount; startRow += rowsPerBlock) {
+    for (const range of plan ?? preloadGridRanges(sheet.rowCount, sheet.columnCount)) {
       if (lazyWorkbookRef.current !== state) return
-      const range: IRange = {
-        startRow,
-        endRow: Math.min(sheet.rowCount - 1, startRow + rowsPerBlock - 1),
-        startColumn: 0,
-        endColumn: sheet.columnCount - 1,
-      }
       let result
       try {
         result = await window.desktopApi.readWorkbookRange({
@@ -6487,6 +6520,11 @@ async function preloadEntireWorkbookInner(
         : screen.cells
       if (state.formulaMode) collectArrayFollowers(arrayFollowers, installable, ops)
       recordRowStyleKeys(state, sheetId, screen.rows)
+      const coveredThrough = state.hiddenRowsCoveredThrough.get(sheetId) ?? -1
+      if (plan && coveredThrough < screenRange.startRow - 1) {
+        // The plan covers every indexed row property, including hidden rows.
+        state.hiddenRowsCoveredThrough.set(sheetId, screenRange.startRow - 1)
+      }
       recordHiddenFileRows(state, sheetId, screen.rows, screenRange)
       const installRange = preloadInstallRange(
         screenRange,

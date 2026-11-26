@@ -916,6 +916,7 @@ export const workbookRangeRequestSchema = z
     // requests return only progress when the visible cells are already loaded.
     mode: z.enum(['viewport', 'status']).optional(),
     foreground: z.boolean().optional(),
+    preloadPlan: z.literal(true).optional(),
     rows: z.array(z.number().int().nonnegative()).min(1).max(512).optional(),
     range: z
       .object({
@@ -1172,6 +1173,7 @@ export const workbookRangeResultSchema = z
     /// null then means that the worksheet has no <sheetProtection>.
     sheetProtection: sheetProtectionSchema,
     sparklines: sparklineGroupsSchema.optional(),
+    preloadRanges: z.array(cellAreaSchema).optional(),
     cellCounts: z
       .object({
         storedCellCount: z.number().int().nonnegative(),

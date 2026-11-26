@@ -49,6 +49,8 @@ pub enum Command {
         mode: RangeReadMode,
         #[serde(default)]
         foreground: bool,
+        #[serde(default, rename = "preloadPlan")]
+        preload_plan: bool,
     },
     Close {
         #[serde(rename = "sessionId")]
@@ -576,10 +578,19 @@ pub fn handle_request(
         Command::ReadRange {
             session_id,
             sheet_id,
+            preload_plan: true,
+            ..
+        } => sessions
+            .read_preload_plan(&session_id, &sheet_id)
+            .and_then(to_json_value),
+        Command::ReadRange {
+            session_id,
+            sheet_id,
             range,
             rows,
             mode,
             foreground,
+            ..
         } => sessions
             .read_range_with_mode(
                 &session_id,

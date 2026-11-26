@@ -1427,7 +1427,7 @@ fn flush_chunk(
     indexed_through_row: usize,
 ) -> Result<(), SidecarError> {
     let path = cache_directory.join(format!("sheet-{sheet_index}-chunk-{chunk_index}.bin"));
-    let has_data = !chunk.cells.is_empty() || !chunk.rows.is_empty();
+    let bounds = preload_ranges::chunk_bounds(chunk);
     let outline_rows: Vec<RowOutlineEntry> = chunk
         .rows
         .iter()
@@ -1440,7 +1440,7 @@ fn flush_chunk(
         })
         .collect();
     let (lock, condition) = &**state;
-    if has_data {
+    if bounds.is_some() {
         chunks::write_chunk(&path, chunk, |bytes| {
             let index = lock
                 .lock()
@@ -1467,8 +1467,9 @@ fn flush_chunk(
     let mut index = lock
         .lock()
         .map_err(|_| SidecarError::Io("Worksheet index lock was poisoned.".into()))?;
-    if has_data {
+    if let Some(bounds) = bounds {
         index.chunk_files.insert(chunk_index, path);
+        index.chunk_bounds.insert(chunk_index, bounds);
     }
     index.outline_rows.extend(outline_rows);
     if !pending_formulas.is_empty() {

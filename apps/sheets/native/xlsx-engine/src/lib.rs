@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 use std::fs::{self, File};
 use std::io::{BufReader, BufWriter, Read, Seek, Write};
 #[cfg(unix)]
@@ -22,6 +22,7 @@ pub mod find;
 mod formula_dependencies;
 mod index_scheduler;
 pub mod odf;
+mod preload_ranges;
 pub mod protocol;
 pub mod recalc;
 mod rels_normalize;
@@ -733,6 +734,41 @@ impl WorkbookSessions {
         Ok(result)
     }
 
+    pub(crate) fn read_preload_plan(
+        &mut self,
+        session_id: &str,
+        sheet_id: &str,
+    ) -> Result<RangeResult, SidecarError> {
+        let session = self
+            .sessions
+            .get_mut(session_id)
+            .ok_or_else(|| SidecarError::InvalidRequest("Unknown workbook session.".into()))?;
+        let sheet_index = session
+            .sheets
+            .iter()
+            .position(|sheet| sheet.id == sheet_id)
+            .ok_or_else(|| SidecarError::InvalidRequest("Unknown worksheet.".into()))?;
+        session.ensure_parser(sheet_index)?;
+        let (lock, _) = &*session.runtimes[sheet_index];
+        let index = lock
+            .lock()
+            .map_err(|_| SidecarError::Io("Worksheet index lock was poisoned.".into()))?;
+        if let Some(error) = &index.error {
+            return Err(SidecarError::Workbook(error.clone()));
+        }
+        let ranges = if index.complete {
+            preload_ranges::plan(&index, &session.sheets[sheet_index])
+        } else {
+            Vec::new()
+        };
+        Ok(RangeResult {
+            preload_ranges: Some(ranges),
+            indexing_complete: index.complete,
+            indexed_through_row: index.indexed_through_row,
+            ..RangeResult::default()
+        })
+    }
+
     pub fn read_formula_cells(
         &mut self,
         session_id: &str,
@@ -1125,6 +1161,7 @@ impl WorkbookSession {
             protected_ranges,
             sparklines,
             cell_counts,
+            preload_ranges: None,
             page_setup,
             indexed_through_row,
             indexing_complete,
@@ -1203,6 +1240,7 @@ struct SheetIndex {
     complete: bool,
     error: Option<String>,
     chunk_files: HashMap<usize, PathBuf>,
+    chunk_bounds: BTreeMap<usize, CellRange>,
     prefetch_bytes_remaining: Option<usize>,
     decorations: Option<SheetDecorations>,
     metadata_scan_failed: bool,

@@ -1498,6 +1498,7 @@ function parseRangeRequest(input: WorkbookRangeRequest): WorkbookRangeRequest {
     !isNonnegativeInteger(endColumn) ||
     startRow > endRow ||
     startColumn > endColumn ||
+    (input.preloadPlan !== undefined && input.preloadPlan !== true) ||
     (input.rows !== undefined &&
       (!Array.isArray(input.rows) ||
         !input.rows.length ||
@@ -2282,6 +2283,10 @@ function parseRangeResult(input: unknown): WorkbookRangeResult {
     return value as number[]
   }
   const counts = input.cellCounts
+  const preloadRanges = input.preloadRanges
+  if (preloadRanges !== undefined && !Array.isArray(preloadRanges)) {
+    throw new Error('Invalid workbook preload plan.')
+  }
   if (
     counts !== undefined &&
     (!isRecord(counts) ||
@@ -2302,6 +2307,7 @@ function parseRangeResult(input: unknown): WorkbookRangeResult {
     autoFilterColumns,
     dataValidations,
     sheetProtection: parseSheetProtection(input.sheetProtection),
+    ...(preloadRanges === undefined ? {} : { preloadRanges: preloadRanges.map(parseCellArea) }),
     ...(input.sparklines === undefined
       ? {}
       : { sparklines: parseSparklineGroups(input.sparklines) }),

@@ -17,6 +17,7 @@ import {
   type WorkbookRangeRequest,
 } from '../src/shared/desktop-api'
 import { createEditJournal } from '../src/renderer/edit-journal'
+import { startProgressiveFullLoad } from '../src/renderer/full-load'
 import { progressiveFullLoadMode } from '../src/renderer/load-budget'
 import { loadRowOutlines } from '../src/renderer/outline-actions'
 import {
@@ -34,6 +35,7 @@ interface Tab {
   formula?: string
   dimension?: string
   longInlineStrings?: boolean
+  distantFormatting?: boolean
 }
 
 const active = { name: 'Dashboard', formula: 'A1*2', dimension: 'A1:R1000' }
@@ -75,6 +77,14 @@ async function workbookBytes(tabs: Tab[]): Promise<Buffer> {
       '<Relationship Id="rId' + (i + 1) + '" Target="worksheets/sheet' + (i + 1) + '.xml"/>',
   )
   zip.file('xl/_rels/workbook.xml.rels', '<Relationships>' + rels.join('') + '</Relationships>')
+  if (tabs.some((tab) => tab.distantFormatting)) {
+    zip.file(
+      'xl/styles.xml',
+      '<styleSheet><fills count="2"><fill><patternFill patternType="none"/></fill>' +
+        '<fill><patternFill patternType="solid"><fgColor rgb="FFFF0000"/></patternFill></fill></fills>' +
+        '<cellXfs count="2"><xf/><xf fillId="1" applyFill="1"/></cellXfs></styleSheet>',
+    )
+  }
   tabs.forEach((tab, i) => {
     const formula = tab.formula ? '<f>' + tab.formula + '</f><v>4</v>' : '<v>10</v>'
     const group = tab.grouped
@@ -99,8 +109,16 @@ async function workbookBytes(tabs: Tab[]): Promise<Buffer> {
         '</c></row>' +
         group +
         longRows +
+        (tab.distantFormatting
+          ? '<row r="700000" ht="30" customHeight="1"/><row r="900000"><c r="XFA900000" s="1"/></row>'
+          : '') +
         (i === 0 && !text ? ' '.repeat(32 * 1024 * 1024) : '') +
-        '</sheetData></worksheet>',
+        '</sheetData>' +
+        (tab.distantFormatting
+          ? '<mergeCells><mergeCell ref="F800000:G800001"/></mergeCells>' +
+            '<hyperlinks><hyperlink ref="D600000" location="Dashboard!A1"/></hyperlinks>'
+          : '') +
+        '</worksheet>',
     )
   })
   return zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' })
@@ -162,6 +180,14 @@ async function harness(tabs: Tab[]) {
     rowColStyleKeys: new Map(),
     hiddenFileRows: new Map(),
     hiddenRowsCoveredThrough: new Map(),
+    flags: { preloadComplete: false, preloadRunning: false },
+    loadedRanges: new Map(),
+    appliedRowKeys: new Map(),
+    appliedMerges: new Map(),
+    appliedFilterSheets: new Set(),
+    appliedDvSheets: new Set(),
+    decorationsPendingSheets: new Set(),
+    hyperlinkTargets: new Map(),
     outline: new Map(),
     recalc: {
       timer: null,
@@ -184,16 +210,27 @@ async function harness(tabs: Tab[]) {
   })
   const ref = { current: state }
   const setMessage = vi.fn()
+  const setValues = vi.fn()
+  const merge = vi.fn()
+  const setRowHeightsForced = vi.fn()
+  const getRange = vi.fn((_row: number, _column: number, _rows: number, _columns: number) => ({
+    setValues,
+    merge,
+  }))
   let activeSheetId = 'sheet-1'
   const workbook = {
     getActiveSheet: () => ({ getSheetId: () => activeSheetId }),
     getSheetBySheetId: (sheetId: string) => ({
       getSheetId: () => sheetId,
-      getRange: () => ({ setValues: () => undefined }),
+      getRange,
+      getSelection: () => undefined,
+      setRowHeightsForced,
+      getSheet: () => ({ getUnitId: () => 'test-workbook', getColumnCount: () => 16_383 }),
     }),
   }
   const runtime = {
     univerAPI: { getActiveWorkbook: () => workbook },
+    univer: { __getInjector: () => ({ get: () => ({ beforeCommandExecuted: () => undefined }) }) },
   } as unknown as UniverRuntime
   const visit = async (sheetId: string) => {
     activeSheetId = sheetId
@@ -236,6 +273,13 @@ async function harness(tabs: Tab[]) {
     peekOutline,
     readWorkbookFormulas,
     readWorkbookRowOutline,
+    readWorkbookRange,
+    runtime,
+    setMessage,
+    getRange,
+    setValues,
+    merge,
+    setRowHeightsForced,
     status: (sheetId: string) => formulaClosureStatus(state, sheetId),
     formulaReads: () => readWorkbookFormulas.mock.calls.map(([req]) => req.sheetId),
     activate: () => activateFormulaClosure(runtime, ref, setMessage),
@@ -272,6 +316,36 @@ it('uses EOF counts for a progressive sheet with long inline strings and an over
   expect(h.state.recalc.engineOverBudget).toBe(false)
   expect(h.state.recalc.formulaIndexRetired).toBe(true)
   expect(countsChanged).toHaveBeenCalledExactlyOnceWith(true)
+})
+
+it('automatically preloads a sparse progressive sheet and installs formatting across its empty gaps', async () => {
+  const h = await harness([{ ...active, dimension: 'A1:XFC1000000', distantFormatting: true }])
+  await ensureSheetFileState(h.state, 'sheet-1', h.ref)
+  h.readWorkbookRange.mockClear()
+
+  await startProgressiveFullLoad(h.runtime, h.ref, h.state, h.setMessage)
+
+  expect(h.state.flags.preloadComplete).toBe(true)
+  expect(h.state.formulaMode).toBe(true)
+  expect(h.state.loadedRanges.get('sheet-1')).toEqual({
+    startRow: 0,
+    endRow: 999_999,
+    startColumn: 0,
+    endColumn: 16_382,
+  })
+  expect(h.readWorkbookRange).toHaveBeenCalledTimes(6)
+  expect(h.readWorkbookRange.mock.calls[0]?.[0]).toMatchObject({ preloadPlan: true })
+  expect(h.setValues).toHaveBeenCalledWith([
+    [expect.objectContaining({ v: 2 }), expect.objectContaining({ f: '=A1*2' })],
+  ])
+  expect(h.getRange).toHaveBeenCalledWith(899_999, 16_380, 1, 1)
+  expect(h.setValues).toHaveBeenCalledWith([
+    [expect.objectContaining({ s: expect.objectContaining({ bg: { rgb: '#FF0000' } }) })],
+  ])
+  expect(h.setRowHeightsForced).toHaveBeenCalledWith(699_999, 1, 40)
+  expect(h.getRange).toHaveBeenCalledWith(799_999, 5, 2, 2)
+  expect(h.merge).toHaveBeenCalledTimes(1)
+  expect(h.state.hyperlinkTargets.get('sheet-1')?.has('599999:3')).toBe(true)
 })
 
 it('indexes transitive formula precedents and leaves another hidden sheet parked', async () => {
