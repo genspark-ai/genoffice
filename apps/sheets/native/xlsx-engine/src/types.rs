@@ -513,6 +513,9 @@ pub struct RichRun {
     pub bold: bool,
     pub italic: bool,
     pub underline: bool,
+    /// rPr <u val> beyond single ("double" et al.); absent for single.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub underline_style: Option<String>,
     pub strikethrough: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub color: Option<String>,

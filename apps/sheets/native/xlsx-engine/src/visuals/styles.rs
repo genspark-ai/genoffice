@@ -321,7 +321,7 @@ pub(crate) fn parse_font(font: Node<'_, '_>, colors: &ColorContext) -> FontStyle
             .children()
             .find(|node| node.has_tag_name("u"))
             .and_then(|node| node.attribute("val"))
-            .filter(|value| *value == "double")
+            .filter(|value| *value != "single" && *value != "none")
             .map(ToOwned::to_owned),
         strikethrough: font
             .children()

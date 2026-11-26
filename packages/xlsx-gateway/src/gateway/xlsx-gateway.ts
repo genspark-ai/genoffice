@@ -3424,7 +3424,9 @@ function serializeRunProperties(run: WorkbookRichRun): string {
   if (run.bold) parts.push('<b/>')
   if (run.italic) parts.push('<i/>')
   if (run.strikethrough) parts.push('<strike/>')
-  if (run.underline) parts.push('<u/>')
+  if (run.underline) {
+    parts.push(run.underlineStyle === 'double' ? '<u val="double"/>' : '<u/>')
+  }
   if (run.size !== undefined) parts.push(`<sz val="${run.size}"/>`)
   if (run.color !== undefined) {
     const hex = run.color.replace(/^#/, '').toUpperCase()

@@ -1,4 +1,6 @@
 use super::*;
+use crate::workbook::apply_run_property;
+use crate::types::RichRun;
 
 fn row_kinds(pivot_fields: &str, row_fields: &str, row_items: &str) -> String {
     let xml = format!(
@@ -2192,4 +2194,32 @@ fn anchor_properties_read_edit_as_alt_text_hyperlink_and_picture_xfrm() {
     let mut shape = text_box_visual("");
     apply_anchor_properties(&mut shape, anchors[1], &relationships);
     assert!(shape.edit_as.is_none() && shape.alt_text.is_none() && shape.hyperlink.is_none());
+}
+
+/// A font's <u val> carries the variant through (#2912): double and the
+/// accounting forms ride underline_style; a bare <u/> and "single" stay None.
+#[test]
+fn parse_font_underline_keeps_its_variant() {
+    let colors = ColorContext::default();
+    let parse = |body: &str| {
+        let xml = format!(
+            r#"<x xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><font>{body}</font></x>"#
+        );
+        let doc = Document::parse(&xml).unwrap();
+        let font = doc.root_element().children().next().unwrap();
+        parse_font(font, &colors)
+    };
+    let double = parse(r#"<u val="double"/>"#);
+    assert!(double.underline);
+    assert_eq!(double.underline_style.as_deref(), Some("double"));
+    let accounting = parse(r#"<u val="doubleAccounting"/>"#);
+    assert_eq!(accounting.underline_style.as_deref(), Some("doubleAccounting"));
+    let single = parse("<u/>");
+    assert!(single.underline);
+    assert_eq!(single.underline_style, None);
+    let named_single = parse(r#"<u val="single"/>"#);
+    assert_eq!(named_single.underline_style, None);
+    let off = parse(r#"<u val="none"/>"#);
+    assert!(!off.underline);
+    assert_eq!(off.underline_style, None);
 }

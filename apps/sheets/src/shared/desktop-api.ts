@@ -455,7 +455,8 @@ const cellStyleSchema = z
     bold: z.boolean(),
     italic: z.boolean(),
     underline: z.boolean(),
-    underlineStyle: z.enum(['single', 'double']).optional(),
+    /// font <u val> beyond single; absent for single (a bare <u/> is single).
+    underlineStyle: z.enum(['double', 'singleAccounting', 'doubleAccounting']).optional(),
     strikethrough: z.boolean(),
     /// font <vertAlign val>; absent for baseline.
     vertAlign: z.enum(['superscript', 'subscript']).optional(),
@@ -792,6 +793,8 @@ const visualObjectSchema = z
                   bold: z.boolean().optional(),
                   italic: z.boolean().optional(),
                   underline: z.boolean().optional(),
+                  /// a:rPr/@u beyond single ("dbl" et al.); display-only.
+                  underlineStyle: z.string().max(32).optional(),
                   size: z.number().finite().optional(),
                   /// a:rPr cap — all | small (display-only; `text` keeps its casing).
                   caps: z.enum(['all', 'small']).optional(),

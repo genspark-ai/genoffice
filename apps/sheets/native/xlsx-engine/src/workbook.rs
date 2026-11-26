@@ -595,6 +595,7 @@ pub(crate) fn has_run_formatting(run: &RichRun) -> bool {
     run.bold
         || run.italic
         || run.underline
+        || run.underline_style.is_some()
         || run.strikethrough
         || run.color.is_some()
         || run.size.is_some()
@@ -620,7 +621,11 @@ pub(crate) fn apply_run_property<R: std::io::BufRead>(
         b"b" => run.bold = flag_on(attribute_value(reader, element, b"val")?),
         b"i" => run.italic = flag_on(attribute_value(reader, element, b"val")?),
         b"u" => {
-            run.underline = attribute_value(reader, element, b"val")?.as_deref() != Some("none");
+            let val = attribute_value(reader, element, b"val")?;
+            run.underline = val.as_deref() != Some("none");
+            // A bare <u/> (no val) reads as single; any other val beyond
+            // "single" carries the variant through (double, accounting).
+            run.underline_style = val.filter(|value| value != "single" && value != "none");
         }
         b"strike" => run.strikethrough = flag_on(attribute_value(reader, element, b"val")?),
         b"sz" => {

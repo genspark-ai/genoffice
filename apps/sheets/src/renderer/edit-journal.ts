@@ -2195,11 +2195,14 @@ function extractRichRuns(text: string, textRuns: unknown): WorkbookRichRun[] | u
     if (start > cursor) runs.push(plain(text.slice(cursor, start)))
     const style = (typeof ts === 'object' && ts !== null ? ts : {}) as Record<string, unknown>
     const color = (style.cl as { rgb?: unknown } | undefined)?.rgb
+    const ul = style.ul as { s?: unknown; t?: unknown } | undefined
     const run: WorkbookRichRun = {
       text: text.slice(start, end),
       bold: style.bl === 1,
       italic: style.it === 1,
-      underline: (style.ul as { s?: unknown } | undefined)?.s === 1,
+      underline: ul?.s === 1,
+      // Univer TextDecoration.DOUBLE = 10; anything else saves as single.
+      ...(ul?.s === 1 && ul.t === 10 ? { underlineStyle: 'double' as const } : {}),
       strikethrough: (style.st as { s?: unknown } | undefined)?.s === 1,
       ...(typeof color === 'string' ? { color } : {}),
       ...(typeof style.fs === 'number' ? { size: style.fs } : {}),
