@@ -50,7 +50,7 @@ A Beállításokban a GenOffice beállítható alapértelmezett kezelőként a .
 
 - A bejelentkezési pont (a Beállításokban vagy a felhőbeli projektlistában) **eszközkódos** folyamatot használ: a GenOffice megjelenít egy kódot, és megnyitja a bejelentkezési oldalt a böngészőben; ha végeztél, a folyamat automatikusan folytatódik.
 - A bejelentkezésre kizárólag ezekhez van szükség: a felhőbeli projektlistához és a Genspark által üzemeltetett modellekhez. Enélkül is működik minden helyi funkció és az egyéni modellek.
-- A kijelentkezés egyetlen kattintás a Beállításokban.
+- A kijelentkezés előbb megerősítést kér, majd kijelentkeztet minden Genspark-fiókhoz kötött AI-funkcióból (felhőprojektek és tárolt modellek); a helyi funkciók tovább működnek.
 
 ## MCP-integráció (haladó felhasználóknak / AI-klienseknek)
 

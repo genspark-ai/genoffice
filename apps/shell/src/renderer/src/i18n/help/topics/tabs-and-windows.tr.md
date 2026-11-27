@@ -10,6 +10,7 @@ Açık olan her dosya tek bir pencereyi paylaşır; üstteki sekme şeridi, tara
 - **Kapatma**: sekmedeki × veya ⌘W/ctrl+W. Kaydedilmemiş değişiklikler önce sorar.
 - **Yeni**: şeridin sağ ucundaki +.
 - **Etkinleştirme anındadır**: bir sekmeye basmak, tıklamanın bitmesini beklemeden basıldığı anda geçiş yapar.
+- **Dosyayı yeniden adlandırma**: sekmesine çift tıklayın veya sekmeye sağ tıklayıp **Yeniden Adlandır**'ı seçin; tek tıklama yalnızca sekmeyi etkinleştirir.
 
 ## Yeniden adlandırma: sekmeye çift tıklayın
 

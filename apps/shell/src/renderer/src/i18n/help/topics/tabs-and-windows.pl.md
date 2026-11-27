@@ -10,6 +10,7 @@ Wszystkie otwarte pliki zajmują jedno okno; pasek kart u góry przełącza się
 - **Zamknij**: × na karcie albo ⌘W/ctrl+W. Przy niezapisanych zmianach najpierw zostanie zapytanie.
 - **Nowa**: + na prawym końcu paska.
 - **Aktywacja jest natychmiastowa**: naciśnięcie karty przełącza od razu, bez czekania, aż kliknięcie się zakończy.
+- **Zmiana nazwy pliku**: kliknij dwukrotnie kartę lub kliknij ją prawym przyciskiem i wybierz **Zmień nazwę**; pojedyncze kliknięcie tylko aktywuje kartę.
 
 ## Zmiana nazwy: kliknij dwukrotnie kartę
 

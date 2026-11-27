@@ -20,6 +20,7 @@ Le schede: **Home / Inserisci / Disegno / Layout / Progettazione / Riferimenti /
 - **Visualizza**: cinque modi per guardare il file — **Layout di stampa**, **Layout Web**, **Struttura**, **Modalità di lettura** e **Anteprima pagine**; riduci/ingrandisci/100 %/larghezza pagina/una pagina; **Pannello IA**; **Modalità scura**; righello, griglia e riquadro di spostamento; **Nuova scheda**, **Dividi** e **Cambia scheda**; la finestra di dialogo ricercabile delle **scorciatoie da tastiera**.
   - **Modalità scura** scurisce la pagina e la tela intorno, mai il nastro: è la divisione di Word fra una superficie di modifica scura e una finestra scura. La scelta viene ricordata e in ogni caso prevail sull'aspetto dell'app.
   - **Dividi** apre un secondo riquadro sotto che scorre in modo indipendente e rispecchia il primo; chiudilo con la × sul suo bordo.
+- **Struttura dedotta**: i paragrafi che sembrano titoli ma non hanno uno stile titolo compaiono contrassegnati come dedotti nella visualizzazione **Struttura** e nella visualizzazione **Story** — ma solo finché il documento non contiene alcuno stile titolo reale; applicare uno stile titolo li rende reali.
 
 ## Il riquadro di navigazione
 
@@ -89,3 +90,5 @@ Fai clic destro ovunque nel corpo del testo — il menu si adatta all'elemento s
 ## Stampa
 
 ctrl+P tramite la finestra di dialogo di sistema, con pagine WYSIWYG.
+
+- **Anteprima di stampa sul cursore**: aprendo Stampa si va subito alla pagina del cursore invece che alla pagina 1.

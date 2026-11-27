@@ -10,6 +10,7 @@ Todos los archivos abiertos comparten una sola ventana; la barra de pestañas de
 - **Cerrar**: la × de la pestaña, o ⌘W/ctrl+W. Si hay cambios sin guardar, pregunta primero.
 - **Nuevo**: el + al extremo derecho de la barra.
 - **La activación es inmediata**: al pulsar una pestaña ya se cambia, sin esperar a que termine el clic.
+- **Renombrar un archivo**: haz doble clic en su pestaña, o haz clic derecho en la pestaña y elige **Renombrar**; un solo clic solo activa la pestaña.
 
 ## Cambiar nombre: haga doble clic en una pestaña
 

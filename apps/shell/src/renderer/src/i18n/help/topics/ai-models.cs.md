@@ -9,6 +9,7 @@ Modely a klíče se nastavují v Nastavení (řádek účtu vlevo dole na domovs
 - **Genspark v cloudu**: přihlaste se (postup s kódem zařízení) a používejte — bez žádného nastavení.
 - **Vlastní koncové body (BYOK)**: Nastavení ▸ Model AI přijímá základní URL a klíč API pro každý protokol — kompatibilní s OpenAI, Anthropic, Gemini, DeepSeek, DashScope (qwen) a další. Klíče se ukládají do souboru nastavení aplikace na tomto počítači a odesílají pouze v hlavičkách požadavků. Atlas Cloud patří mezi zabudované protokoly.
 - Pro každou schopnost lze zvolit jiný model: chat/generování, generování obrázků, analýza obrázků.
+- Pro generování obrázků jsou k dispozici **MiniMax H3-Image** a **MiniMax H3-Image Highspeed** vedle image-01 (až 16 referenčních obrázků při úpravě).
 - **Otestovat připojení**: ověří dosažitelnost koncového bodu a viditelnost modelu před uložením.
 - Základní URL může obsahovat cestu a dotaz (ve stylu brány); cesty koncových bodů se správně připojují.
 

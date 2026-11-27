@@ -20,6 +20,7 @@ Karty: **Narzędzia główne / Wstawianie / Rysowanie / Układ / Projektowanie /
 - **Widok**: pięć sposobów patrzenia na plik — **Układ wydruku**, **Układ sieci Web**, **Konspekt**, **Tryb czytania** i **Podgląd stron**; pomniejsz/powiększ/100 %/szerokość strony/jedna strona; **Panel AI**; **Tryb ciemny**; linijka, linie siatki i okienko nawigacji; **Nowa karta**, **Podziel** i **Przełącz karty**; wyszukiwalne okno **skrótów klawiaturowych**.
   - **Tryb ciemny** przyciemnia stronę i płótno wokół niej, nigdy wstążkę — podział programu Word między ciemną powierzchnią edycji a ciemnym oknem. Wybór jest zapamiętywany i w każdym przypadku ma pierwszeństwo przed motywem aplikacji.
   - **Podziel** otwiera poniżej drugie okienko, które przewija się niezależnie i odwzorowuje pierwsze; zamknij je krzyżykiem × na jego krawędzi.
+- **Konspekt wnioskowany**: akapity przypominające nagłówki, ale bez stylu nagłówka, pojawiają się z oznaczeniem wnioskowania w widoku **Konspekt** i w widoku **Story** — ale tylko dopóki dokument nie zawiera żadnych prawdziwych stylów nagłówków; zastosowanie stylu nagłówka czyni je prawdziwymi nagłówkami.
 
 ## Okno nawigacji
 
@@ -87,3 +88,5 @@ Kliknij prawym przyciskiem w dowolnym miejscu tekstu — menu dostosowuje się d
 ## Drukowanie
 
 ctrl+P przez okno systemowe, strony WYSIWYG.
+
+- **Podgląd wydruku od kursora**: otwarcie okna Drukowanie przechodzi od razu do strony kursora, a nie do strony 1.

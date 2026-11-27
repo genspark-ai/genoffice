@@ -10,6 +10,7 @@ Všechny otevřené soubory sdílejí jedno okno; pruh karet nahoře se mezi nim
 - **Zavřít**: × na kartě nebo ⌘W/ctrl+W. U neuložených změn se nejdřív zeptá.
 - **Nová**: + na pravém konci pruhu.
 - **Aktivace je okamžitá**: stisknutí karty přepne hned, bez čekání na dokončení kliknutí.
+- **Přejmenování souboru**: dvakrát klikněte na kartu, nebo na kartu klikněte pravým tlačítkem a zvolte **Přejmenovat**; jediné kliknutí kartu pouze aktivuje.
 
 ## Přejmenování: dvojklik na kartu
 

@@ -52,6 +52,7 @@ La pestaña Fórmulas, botón por botón:
 ![La pestaña Fórmulas](img/sheets-formulas.png)
 
 - **Insertar función** (fx): busca funciones con un asistente de argumentos.
+- **Funciones de Excel 365**: REGEXTEST, REGEXEXTRACT, REGEXREPLACE y PERCENTOF están disponibles en la barra de fórmulas (firmas de Excel; los patrones regex inseguros se rechazan).
 - **Autosuma** (desplegable): SUMA con un clic, además de promedio/recuento/máximo/mínimo.
 - **Recientes / Financieras / Lógicas / Texto / Fecha y hora / Búsqueda y referencia / Matemáticas y trigonometría / Más**: explore e inserte funciones por categoría.
 - **Administrador de nombres**: ver, crear y quitar rangos con nombre.

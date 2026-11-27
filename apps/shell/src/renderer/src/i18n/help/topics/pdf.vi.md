@@ -5,6 +5,7 @@ Trình soạn thảo PDF có năm thẻ ruy-bâng: **Trang chủ / Chú thích /
 ## Đọc và điều hướng
 
 - Thanh bên trái: **hình thu nhỏ** (nhấp để nhảy, vùng đang hiện được đánh dấu) hoặc **mục lục** (bookmark, nếu có).
+- **Dấu trang có thể chỉnh sửa**: bảng dàn ý cho phép thêm, đổi tên và xóa dấu trang; thay đổi được ghi lại vào tệp khi lưu.
 - Thu phóng: bộ điều khiển tỉ lệ ở góc dưới bên phải; ctrl+lăn chuột thay đổi từng bậc.
 - Xoay: theo từng trang hoặc tất cả các trang từ menu Trang; góc xoay được ghi lại khi lưu.
 - Tìm kiếm: ctrl+F tìm trong toàn văn, tô sáng mọi kết quả.
@@ -57,6 +58,7 @@ Sáu công cụ: **Vẽ, Hình chữ nhật, Hình elip, Mũi tên, Ghi chú**, 
 - **Sửa văn bản**: nhấp vào văn bản để sửa theo từng khối (bộ xử lý pdfium; cố gắng khớp phông chữ).
 - **Chèn văn bản**: đặt văn bản có thể tìm kiếm với phông chữ/cỡ/màu tuỳ chọn.
 - **Chèn hình ảnh / dấu đóng dấu**.
+- **Lớp văn bản OCR**: **Nhận dạng văn bản** trên trang quét sẽ thêm lớp văn bản có thể tìm kiếm; lớp này sửa được tại chỗ và ảnh trang vẫn ở bên dưới (biểu tượng con mắt để so sánh).
 - Biểu mẫu: điền trực tiếp vào các trường AcroForm; giá trị được ghi khi lưu.
 
 ## Chữ ký

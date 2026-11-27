@@ -5,6 +5,7 @@ A PDF-szerkesztő menüszalagján öt lap van: **Kezdőlap / Széljegyzetek / Sz
 ## Olvasás és navigáció
 
 - Bal oldalsáv: **miniatűrök** (kattintással ugorhatsz oda, az éppen látható tartomány ki van emelve) vagy **vázlat** (könyvjelzők, ha vannak).
+- **Szerkeszthető könyvjelzők**: a vázlatpanel könyvjelzőket adhat hozzá, nevezhet át és törölhet; a módosítások mentéskor a fájlba íródnak.
 - Nagyítás: a nagyítás szabályozója jobbra lent; a ctrl+görgő lépésenként változtatja a nagyítást.
 - Elforgatás: oldalanként vagy az összes oldalra egyszerre, az Oldalak lapról; az elforgatások mentéskor visszaíródnak.
 - Keresés: a ctrl+F teljes szövegű keresést indít, az összes találat ki van emelve.
@@ -57,6 +58,7 @@ Hat eszköz: **toll, téglalap, ellipszis, nyíl, jegyzet**, továbbá a **kitak
 - **Szöveg szerkesztése**: kattints a szövegre, és blokkonként szerkesztheted (pdfium motor; a betűtípusokat a program a lehető legjobban megközelíti).
 - **Szöveg beszúrása**: kereshető szöveget helyezhetsz el az általad választott betűtípussal, mérettel és színnel.
 - **Kép / bélyegző beszúrása**.
+- **OCR szövegréteg**: a **Szöveg felismerése** parancs beolvasott oldalon kereshető szövegréteget ad; a réteg helyben szerkeszthető, az oldalkép alatta marad (szem ikon az összehasonlításhoz).
 - Űrlapok: az AcroForm-mezők közvetlenül kitölthetők; az értékek mentéskor íródnak a fájlba.
 
 ## Aláírások

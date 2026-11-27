@@ -52,6 +52,7 @@ A guia Fórmulas, botão a botão:
 ![A guia Fórmulas](img/sheets-formulas.png)
 
 - **Inserir Função** (fx): procure funções com um assistente de argumentos.
+- **Funções do Excel 365**: REGEXTEST, REGEXEXTRACT, REGEXREPLACE e PERCENTOF estão disponíveis na barra de fórmulas (assinaturas do Excel; padrões regex inseguros são recusados).
 - **AutoSoma** (menu suspenso): SUM com um clique, mais média/contagem/máximo/mínimo.
 - **Usadas Recentemente / Financeira / Lógica / Texto / Data e Hora / Pesquisa e Referência / Matemática e Trigonometria / Mais**: percorra e insira funções por categoria.
 - **Gerenciador de Nomes**: ver, criar e eliminar intervalos com nome.

@@ -5,6 +5,7 @@ PDF düzenleyicisinin beş şerit sekmesi vardır: **Giriş / Açıklama / Düze
 ## Okuma ve gezinme
 
 - Sol kenar çubuğu: **küçük resimler** (atlamak için tıklayın, görünen aralık vurgulanır) veya **ana hat** (varsa yer işaretleri).
+- **Düzenlenebilir yer imleri**: ana hat paneli yer imi ekleyebilir, yeniden adlandırabilir ve silebilir; değişiklikler kaydederken dosyaya yazılır.
 - Yakınlaştırma: sağ alttaki oran denetimi; ctrl+tekerlek yakınlaştırmayı kademeli değiştirir.
 - Döndürme: Sayfa menüsünden sayfa başına veya tüm sayfalar; döndürmeler kaydederken geri yazılır.
 - Arama: ctrl+F ile tüm eşleşmeler vurgulanarak tam metin araması.
@@ -57,6 +58,7 @@ Altı araç: **mürekkep, dikdörtgen, elips, ok, not** ve Açıklama sekmesinde
 - **Metni düzenle**: metne tıklayarak blok blok düzenleyin (pdfium motoru; yazı tipleri elden geldiğince eşleştirilir).
 - **Metin ekle**: seçtiğiniz yazı tipi/boyut/renkle aranabilir metin yerleştirin.
 - **Görsel / damga ekle**.
+- **OCR metin katmanı**: taranmış bir sayfada **Metni tanı** çalıştırmak aranabilir bir metin katmanı ekler; katman yerinde düzenlenebilir ve sayfa görüntüsü altında kalır (karşılaştırmak için göz simgesi).
 - Formlar: AcroForm alanları doğrudan doldurulur; değerler kaydederken yazılır.
 
 ## İmzalar

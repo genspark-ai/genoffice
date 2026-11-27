@@ -10,6 +10,7 @@ Mọi tập tin đang mở dùng chung một cửa sổ; dải thẻ ở trên c
 - **Đóng**: dấu × trên thẻ, hoặc ⌘W/ctrl+W. Có thay đổi chưa lưu sẽ hỏi trước.
 - **Mới**: dấu + ở cuối bên phải của dải thẻ.
 - **Kích hoạt tức thì**: nhấn một thẻ là chuyển ngay, không phải đợi thao tác nhấp hoàn tất.
+- **Đổi tên tệp**: nhấp đúp vào thẻ, hoặc nhấp chuột phải vào thẻ và chọn **Đổi tên**; một lần nhấp chỉ kích hoạt thẻ.
 
 ## Đổi tên: nhấp đúp vào một thẻ
 

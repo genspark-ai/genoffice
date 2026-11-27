@@ -11,6 +11,7 @@ Pencere üç parçadan oluşur:
 - **Sekme şeridi (üstte)**: açık her dosya bir sekmedir. En soldaki Giriş sekmesi her zaman vardır ve kapatılamaz; diğer sekmeler belgelerinizdir. Dosyasını satır içinde yeniden adlandırmak için bir sekmeye çift tıklayın.
 - **İçerik alanı**: etkin sekmeye ait düzenleyici (veya Giriş).
 - **Menü çubuğu**: macOS'ta sistem menü çubuğunda, Windows/Linux'ta pencerenin üstünde. Dosya/Düzenle/Görünüm menüleri etkin düzenleyiciye göre değişir.
+- **Arayüz ölçeği**: **Görünüm ▸ Arayüzü Yakınlaştır / Arayüzü Uzaklaştır / Arayüz Yakınlaştırmasını Sıfırla** tüm pencereyi %80–%150 arasında ölçekler (macOS'ta ⌘⌃= / ⌘⌃- / ⌘⌃0; diğerlerinde ctrl+alt+= / ctrl+alt+- / ctrl+alt+0).
 
 ## Belge oluşturma
 

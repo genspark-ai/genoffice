@@ -11,6 +11,7 @@ A janela tem três partes:
 - **Barra de guias (no topo)**: cada arquivo aberto é uma guia. A guia Início mais à esquerda está sempre presente e não pode ser fechada; as demais guias são os seus documentos. Faça clique duplo em uma guia para renomear o arquivo no local.
 - **Área de conteúdo**: o editor (ou a tela Início) da guia ativa.
 - **Barra de menus**: na barra de menus do sistema no macOS, no topo da janela no Windows/Linux. Os menus Arquivo/Editar/Exibir mudam para corresponder ao editor ativo.
+- **Escala da interface**: **Exibir ▸ Aumentar a interface / Diminuir a interface / Redefinir a escala da interface para 100%** dimensiona a janela inteira entre 80% e 150% (⌘⌃= / ⌘⌃- / ⌘⌃0 no macOS; ctrl+alt+= / ctrl+alt+- / ctrl+alt+0 nos demais).
 
 ## Criar um documento
 

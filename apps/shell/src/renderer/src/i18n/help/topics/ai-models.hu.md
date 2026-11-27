@@ -9,6 +9,7 @@ A modellek és kulcsok a Beállításokban adhatók meg (a Kezdőképernyő bal 
 - **Genspark által üzemeltetett**: jelentkezz be (eszközkódos bejelentkezéssel), és már használhatod is — külön beállítás nélkül.
 - **Egyéni végpontok (BYOK)**: a Beállítások ▸ AI oldalon protokollonként megadhatsz egy alap URL-t és egy API-kulcsot — OpenAI-kompatibilis, Anthropic, Gemini, DeepSeek, DashScope (qwen) és továbbiak. A kulcsok az alkalmazás beállítási fájljában tárolódnak ezen a gépen, és csak a kérések fejlécében kerülnek elküldésre. A beépített protokollok között az Atlas Cloud is szerepel.
 - Képességenként más-más modellt választhatsz: csevegés/generálás, képgenerálás, képelemzés.
+- Képgeneráláshoz a **MiniMax H3-Image** és a **MiniMax H3-Image Highspeed** is elérhető az image-01 mellett (szerkesztéshez legfeljebb 16 referenciakép).
 - **Kapcsolatteszt**: mentés előtt ellenőrizd a végpont elérhetőségét és a modellek láthatóságát.
 - Az alap URL tartalmazhat elérési utat és lekérdezési paramétereket is (átjáró-stílusú címek); a végpontok útvonalait a program helyesen fűzi hozzá.
 
