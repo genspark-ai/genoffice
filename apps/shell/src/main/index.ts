@@ -110,9 +110,11 @@ import {
 } from './app-settings'
 import { OPEN_DOCUMENTS_FILE, clearOpenDocuments, publishOpenDocuments } from './open-documents'
 import {
+  consumeLastSessionPlan,
   LAST_SESSION_DOCUMENTS_KEY,
+  LAST_SESSION_RESTORE_IN_FLIGHT_KEY,
+  LAST_SESSION_RESTORE_FAILURES_KEY,
   RESTORE_LAST_SESSION_KEY,
-  launchPathsWithLastSession,
   restoreLastSessionEnabled,
 } from './last-session'
 import { startControlServer, type ControlServer } from './control-server'
@@ -5657,7 +5659,13 @@ function registerHomeIpc(): void {
     // turning it off forgets the stored paths instead of keeping them around
     writeAppSettings(APP_SETTINGS_PATH(), {
       [RESTORE_LAST_SESSION_KEY]: on,
-      ...(on ? {} : { [LAST_SESSION_DOCUMENTS_KEY]: undefined }),
+      ...(on
+        ? {}
+        : {
+            [LAST_SESSION_DOCUMENTS_KEY]: undefined,
+            [LAST_SESSION_RESTORE_IN_FLIGHT_KEY]: undefined,
+            [LAST_SESSION_RESTORE_FAILURES_KEY]: undefined,
+          }),
     })
   })
 
@@ -7747,7 +7755,7 @@ app.whenReady().then(async () => {
     })
   }
 
-  openLaunchPaths(consumeLastSessionPaths(pendingLaunchPaths))
+  openWithLastSession(pendingLaunchPaths)
   pendingLaunchPaths = []
   for (const recoverAs of pendingUnsavedNewRecoveries()) void newSheetTab(recoverAs)
 
@@ -7771,27 +7779,42 @@ app.whenReady().then(async () => {
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length > 0) return
     createShellWindow()
-    openLaunchPaths(consumeLastSessionPaths([]))
+    openWithLastSession([])
   })
 })
 
-/** the last session's documents ahead of the launch paths, forgotten as they are read */
-function consumeLastSessionPaths(launchPaths: readonly string[]): string[] {
+/**
+ * The last session's documents ahead of the launch paths. The restore is
+ * armed while it runs and disarmed once the documents opened (#2891): one
+ * crashed launch no longer costs the whole list, but a document that crashes
+ * the app at launch twice in a row still drops it — the crash-loop guard.
+ * The writes straddle the open on purpose: a crash between them is what the
+ * arm records. Excluded folders never reopen (#2906).
+ */
+function openWithLastSession(launchPaths: readonly string[]): void {
   const settings = readAppSettings(APP_SETTINGS_PATH())
+  const plan = consumeLastSessionPlan(settings, launchPaths)
   const excluded = readExcludedFolders(settings)
-  const paths = launchPathsWithLastSession(settings, launchPaths).filter(
-    (p) => !isUnderExcludedFolder(p, excluded),
-  )
-  if (settings[LAST_SESSION_DOCUMENTS_KEY] !== undefined) {
-    // consumed before opening: a document that crashes the app during restore
-    // must not be restored again at the next launch
+  const paths = plan.paths.filter((p) => !isUnderExcludedFolder(p, excluded))
+  for (const write of plan.writes) {
     try {
-      writeAppSettings(APP_SETTINGS_PATH(), { [LAST_SESSION_DOCUMENTS_KEY]: undefined })
+      writeAppSettings(APP_SETTINGS_PATH(), write)
     } catch (err) {
-      console.warn('[shell] could not clear the session documents:', err)
+      console.warn('[shell] could not update the session restore state:', err)
     }
   }
-  return paths
+  if (plan.dropped)
+    console.warn(
+      '[shell] the session restore crashed twice in a row; the saved document list was dropped',
+    )
+  openLaunchPaths(paths)
+  if (plan.completedWrite) {
+    try {
+      writeAppSettings(APP_SETTINGS_PATH(), plan.completedWrite)
+    } catch (err) {
+      console.warn('[shell] could not disarm the session restore:', err)
+    }
+  }
 }
 
 app.on('window-all-closed', () => {
