@@ -62,19 +62,19 @@ pub(crate) fn read_custom_table_styles(
             break;
         };
         match event {
-            Event::Start(element) if element.local_name().as_ref() == b"tableStyle" => {
-                if let Ok(Some(name)) = attribute_value(&reader, &element, b"name") {
+            Event::Start(element) if element.local_name().as_ref() == "tableStyle" => {
+                if let Ok(Some(name)) = attribute_value(&reader, &element, "name") {
                     current = Some((name, CustomTablePalette::default()));
                 }
             }
             Event::Start(element) | Event::Empty(element)
-                if element.local_name().as_ref() == b"tableStyleElement" =>
+                if element.local_name().as_ref() == "tableStyleElement" =>
             {
                 let Some((_, palette)) = current.as_mut() else {
                     continue;
                 };
-                let kind = attribute_value(&reader, &element, b"type").ok().flatten();
-                let dxf = attribute_value(&reader, &element, b"dxfId")
+                let kind = attribute_value(&reader, &element, "type").ok().flatten();
+                let dxf = attribute_value(&reader, &element, "dxfId")
                     .ok()
                     .flatten()
                     .and_then(|value| value.parse::<usize>().ok())
@@ -148,7 +148,7 @@ pub(crate) fn read_custom_table_styles(
                     _ => {}
                 }
             }
-            Event::End(element) if element.local_name().as_ref() == b"tableStyle" => {
+            Event::End(element) if element.local_name().as_ref() == "tableStyle" => {
                 if let Some((name, palette)) = current.take() {
                     palettes.insert(name, palette);
                 }
@@ -706,12 +706,12 @@ pub(crate) fn read_sheet_tables(
                 Event::Start(element) | Event::Empty(element)
                     if matches!(
                         element.local_name().as_ref(),
-                        b"filters"
-                            | b"customFilters"
-                            | b"dynamicFilter"
-                            | b"top10"
-                            | b"colorFilter"
-                            | b"iconFilter"
+                        "filters"
+                            | "customFilters"
+                            | "dynamicFilter"
+                            | "top10"
+                            | "colorFilter"
+                            | "iconFilter"
                     ) =>
                 {
                     filter_active = true;
@@ -721,40 +721,40 @@ pub(crate) fn read_sheet_tables(
                 // altText=…/> shares the local name and would otherwise reset
                 // the parsed range, dropping the whole table.
                 Event::Start(element) | Event::Empty(element)
-                    if element.local_name().as_ref() == b"table" =>
+                    if element.local_name().as_ref() == "table" =>
                 {
-                    let Some(reference) = attribute_value(&reader, &element, b"ref")? else {
+                    let Some(reference) = attribute_value(&reader, &element, "ref")? else {
                         continue;
                     };
                     range = parse_area_reference(&reference);
-                    header_row_count = attribute_value(&reader, &element, b"headerRowCount")?
+                    header_row_count = attribute_value(&reader, &element, "headerRowCount")?
                         .and_then(|value| value.parse::<usize>().ok())
                         .unwrap_or(1);
-                    totals_row_count = attribute_value(&reader, &element, b"totalsRowCount")?
+                    totals_row_count = attribute_value(&reader, &element, "totalsRowCount")?
                         .and_then(|value| value.parse::<usize>().ok())
                         .unwrap_or(0);
                     // displayName is the token structured references use; name is a fallback
-                    name = attribute_value(&reader, &element, b"displayName")?
-                        .or(attribute_value(&reader, &element, b"name")?);
+                    name = attribute_value(&reader, &element, "displayName")?
+                        .or(attribute_value(&reader, &element, "name")?);
                 }
                 Event::Start(element) | Event::Empty(element)
-                    if element.local_name().as_ref() == b"tableColumn" =>
+                    if element.local_name().as_ref() == "tableColumn" =>
                 {
-                    if let Some(column) = attribute_value(&reader, &element, b"name")? {
+                    if let Some(column) = attribute_value(&reader, &element, "name")? {
                         columns.push(column);
                     }
                 }
                 Event::Start(element) | Event::Empty(element)
-                    if element.local_name().as_ref() == b"tableStyleInfo" =>
+                    if element.local_name().as_ref() == "tableStyleInfo" =>
                 {
-                    style_name = attribute_value(&reader, &element, b"name")?;
-                    show_first_column = attribute_value(&reader, &element, b"showFirstColumn")?
+                    style_name = attribute_value(&reader, &element, "name")?;
+                    show_first_column = attribute_value(&reader, &element, "showFirstColumn")?
                         .is_some_and(|value| value == "1" || value == "true");
-                    show_last_column = attribute_value(&reader, &element, b"showLastColumn")?
+                    show_last_column = attribute_value(&reader, &element, "showLastColumn")?
                         .is_some_and(|value| value == "1" || value == "true");
-                    show_row_stripes = attribute_value(&reader, &element, b"showRowStripes")?
+                    show_row_stripes = attribute_value(&reader, &element, "showRowStripes")?
                         .is_some_and(|value| value == "1" || value == "true");
-                    show_column_stripes = attribute_value(&reader, &element, b"showColumnStripes")?
+                    show_column_stripes = attribute_value(&reader, &element, "showColumnStripes")?
                         .is_some_and(|value| value == "1" || value == "true");
                 }
                 Event::Eof => break,
