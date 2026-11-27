@@ -141,7 +141,9 @@ export function applyHeaderFooter(
           { x: Math.round(cx * 0.86), y: barY, cx: Math.round(cx * 0.09), cy: barH },
           {
             align: 'right',
-            runs: [{ text: String(i + 1), field: 'slidenum', ...style }],
+            // cache the real deck position: targets may be a subset, and the
+            // cached field text is what readers show before recomputation
+            runs: [{ text: String(deck.slides.indexOf(slide) + 1), field: 'slidenum', ...style }],
           },
         ),
       )
