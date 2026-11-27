@@ -136,11 +136,15 @@ export function creationIdXml(): string {
 }
 
 const DEFAULT_TAG = /<Default\b[^>]*\/?>/g
+const EXTENSION_ATTR = /\bExtension\s*=\s*(["'])(.*?)\1/
 
 /** Any <Default> already declaring this extension, whatever its attribute order or quoting. */
 export function hasDefaultFor(ct: string, ext: string): boolean {
-  const re = new RegExp(`\\bExtension\\s*=\\s*(["'])${ext}\\1`)
-  for (const tag of ct.matchAll(DEFAULT_TAG)) if (re.test(tag[0])) return true
+  // The extension is typed data, not a regex: interpolating `a+b` into a RegExp
+  // made a real `a+b` default invisible and matched `ab` by accident.
+  for (const tag of ct.matchAll(DEFAULT_TAG)) {
+    if (EXTENSION_ATTR.exec(tag[0])?.[2] === ext) return true
+  }
   return false
 }
 
