@@ -33,6 +33,13 @@ describe('validateBates', () => {
   it('accepts the defaults', () => {
     expect(validateBates(base)).toBeNull()
   })
+  it('rejects non-finite font sizes', () => {
+    // NaN makes both range comparisons false, so it used to validate and then
+    // reach the insert writer as a NaN font size and NaN origin
+    expect(validateBates({ ...base, fontSize: NaN })).toBe('batesErrFontSize')
+    expect(validateBates({ ...base, fontSize: Infinity })).toBe('batesErrFontSize')
+    expect(validateBates({ ...base, fontSize: -Infinity })).toBe('batesErrFontSize')
+  })
   it('rejects a fractional or negative start, bad digits, bad range', () => {
     expect(validateBates({ ...base, start: -1 })).toBe('batesErrStart')
     expect(validateBates({ ...base, start: 1.5 })).toBe('batesErrStart')
