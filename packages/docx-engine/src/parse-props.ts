@@ -658,14 +658,15 @@ function fieldsNested(xml: string): boolean {
 /** Complex-field instructions, one string per field: Word splits a long
  * instruction (Mendeley/Zotero JSON) over several w:instrText runs, so the
  * fragments must be joined before any instruction regex sees them. Nested
- * fields contribute their own entry. */
+ * fields contribute their own entry. A tracked-deleted field carries its
+ * instruction in w:delInstrText — the same string for classification. */
 export function fieldInstructions(xml: string): string[] {
   const out: string[] = []
   const stack: { text: string; inResult: boolean }[] = []
-  const re = /<w:fldChar\b[^>]*>|<w:instrText\b[^>]*>([\s\S]*?)<\/w:instrText>/g
+  const re = /<w:fldChar\b[^>]*>|<w:(?:del)?instrText\b[^>]*>([\s\S]*?)<\/w:(?:del)?instrText>/g
   let m: RegExpExecArray | null
   while ((m = re.exec(xml)) !== null) {
-    if (m[0].startsWith('<w:instrText')) {
+    if (/^<w:(?:del)?instrText/.test(m[0])) {
       const top = stack[stack.length - 1]
       if (top && !top.inResult) top.text += decodeEntities(m[1])
       else if (!top) out.push(decodeEntities(m[1]))
@@ -685,6 +686,17 @@ export function fieldInstructions(xml: string): string[] {
   return out
 }
 
+/** every w:del holding a deleted field instruction wraps the field's whole
+ * begin..end span, as Word writes it (a field is deleted as one unit): a
+ * partially deleted field — its end still live — cannot fold into one run and
+ * must stay byte-preserved */
+function deletedFieldsWhole(xml: string): boolean {
+  for (const del of xml.match(/<w:del(?:\s[^>]*)?(?<!\/)>[\s\S]*?<\/w:del>/g) ?? []) {
+    if (del.includes('<w:delInstrText') && !fieldCharsBalanced(del)) return false
+  }
+  return true
+}
+
 export function onlyXeFields(xml: string): boolean {
   // fldSimple instructions fold too (extractRuns turns XE / REF / simple
   // fields into the same runs as the fldChar form); one without w:instr can't
@@ -695,6 +707,7 @@ export function onlyXeFields(xml: string): boolean {
   const instrs = fieldInstructions(xml)
   if (instrs.length === 0 && simple.length === 0) return false
   if (!fieldCharsBalanced(xml)) return false
+  if (!deletedFieldsWhole(xml)) return false
   // an instruction-less field stays editable unless it nests another field,
   // which the empty-instruction run could not carry through a save
   if (instrs.some((text) => text.trim() === '') && fieldsNested(xml)) return false
