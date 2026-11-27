@@ -150,7 +150,9 @@ export function glbBounds(bytes: Uint8Array): GlbBounds | null {
   }
   const scene = gltf.scenes?.[gltf.scene ?? 0]
   for (const index of scene?.nodes ?? []) visit(index, IDENTITY)
-  if (!Number.isFinite(min[0])) return null
+  // A scale can overflow an otherwise finite accessor bound on any axis; the
+  // old check only looked at min[0] and returned an infinite center/size.
+  if (!min.every(Number.isFinite) || !max.every(Number.isFinite)) return null
   return {
     center: [0, 1, 2].map((i) => (min[i]! + max[i]!) / 2) as Vec3,
     size: [0, 1, 2].map((i) => max[i]! - min[i]!) as Vec3,
