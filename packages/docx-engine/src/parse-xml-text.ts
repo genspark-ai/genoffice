@@ -100,7 +100,7 @@ export function plainText(xml: string): string {
 /** Visible OMML leaf tokens; editing these preserves the surrounding formula tree. */
 export function mathTokens(xml: string): string[] {
   const tokens: string[] = []
-  const re = /<m:t(?:\s[^>]*)?>([\s\S]*?)<\/m:t>/g
+  const re = /<m:t(?![^>]*\/>)(?:\s[^>]*)?>([\s\S]*?)<\/m:t>/g
   let m: RegExpExecArray | null
   while ((m = re.exec(xml)) !== null) tokens.push(decodeEntities(m[1]))
   return tokens

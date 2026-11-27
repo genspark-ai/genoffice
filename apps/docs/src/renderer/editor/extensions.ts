@@ -92,6 +92,7 @@ import { citationOf } from './citations'
 import { noteMarkText } from '../note-format'
 import { t } from '../i18n/locale'
 import {
+  ommlToLatex,
   ommlToMathML,
   parseLazyMediaUrl,
   patchMathTokens,
@@ -1245,20 +1246,19 @@ export const DocInlineMath = Node.create({
       }
       render()
       dom.addEventListener('dblclick', () => {
-        // formulas with recovered LaTeX can be re-edited; MathType OLE formulas
-        // can also be converted to native OMML even when outside the LaTeX subset
         const latex = currentNode.attrs.latex
         const isMathType = Boolean(currentNode.attrs.oleXml)
         const omml = String(currentNode.attrs.omml ?? '')
         const pos = (getPos as () => number | undefined)()
-        if (typeof pos === 'number' && (latex || (isMathType && omml))) {
+        if (typeof pos === 'number' && (latex || omml)) {
           window.dispatchEvent(
             new CustomEvent('ai-docs-edit-inline-math', {
               detail: {
                 pos,
                 latex: latex ? String(latex) : '',
                 kind: 'inline',
-                ...(isMathType ? { isMathType: true, omml } : {}),
+                omml,
+                ...(isMathType ? { isMathType: true } : {}),
               },
             }),
           )
@@ -1286,8 +1286,8 @@ function inlineMathDomAttrs(node: { attrs: Record<string, unknown> }): Record<st
     ...(size ? { style: `font-size:${size / 2}pt` } : {}),
     title: isMathType
       ? t('appMathTypeEditHint')
-      : node.attrs.latex
-        ? t('editorEquationEditHint', { latex: String(node.attrs.latex) })
+      : node.attrs.latex || node.attrs.omml
+        ? t('editorEquationEditHint', { latex: String(node.attrs.latex ?? node.attrs.text ?? '') })
         : t('editorEquation'),
   }
 }
@@ -5622,7 +5622,10 @@ function protectedDomSpec(node: PmNode): DomSpec {
       return ['div', attrs, spec]
     }
   }
-  if ((formulaDisplay as FormulaDisplay | null)?.tokens?.length) {
+  if (
+    (formulaDisplay as FormulaDisplay | null)?.tokens?.length ||
+    (formulaDisplay as FormulaDisplay | null)?.mathml
+  ) {
     attrs.class += ' doc-protected-formula'
     const formula = formulaDisplay as FormulaDisplay
     if (formula.mathml) attrs.class += ' doc-protected-formula-display'
@@ -6214,7 +6217,7 @@ function wireFieldEditing(
   }
 }
 
-/** hover button on display formulas whose LaTeX was recovered (or MathType OLE formulas): full re-edit / convert */
+/** Open the same editor for display equations as for inline math. */
 function wireFormulaLatexEdit(
   dom: HTMLElement,
   getNode: () => PmNode,
@@ -6222,7 +6225,7 @@ function wireFormulaLatexEdit(
 ): (() => void) | null {
   const formula = getNode().attrs.formulaDisplay as FormulaDisplay | null
   const isMathType = Boolean(formula?.oleMathType)
-  if (!formula?.latex && !(isMathType && formula?.omml)) return null
+  if (!formula?.latex && !formula?.omml) return null
   const host = dom.querySelector('.doc-formula-wrap') ?? dom
   const openModal = (e: Event) => {
     e.preventDefault()
@@ -6230,14 +6233,15 @@ function wireFormulaLatexEdit(
     const pos = getPos()
     const current = getNode().attrs.formulaDisplay as FormulaDisplay | null
     const currentMathType = Boolean(current?.oleMathType)
-    if (typeof pos === 'number' && (current?.latex || (currentMathType && current?.omml))) {
+    if (typeof pos === 'number' && current) {
       window.dispatchEvent(
         new CustomEvent('ai-docs-edit-inline-math', {
           detail: {
             pos,
             latex: current?.latex ?? '',
             kind: 'block',
-            ...(currentMathType ? { isMathType: true, omml: current?.omml ?? '' } : {}),
+            omml: current.omml,
+            ...(currentMathType ? { isMathType: true } : {}),
           },
         }),
       )
@@ -6245,7 +6249,11 @@ function wireFormulaLatexEdit(
   }
   const button = document.createElement('button')
   button.className = 'doc-formula-edit'
-  button.title = isMathType ? t('appMathTypeEditHint') : t('editorEditFormulaLatex')
+  button.title = isMathType
+    ? t('appMathTypeEditHint')
+    : formula.latex
+      ? t('editorEditFormulaLatex')
+      : t('editorEdit')
   button.textContent = t('editorEdit')
   button.setAttribute('contenteditable', 'false')
   button.addEventListener('mousedown', (e) => {
@@ -6296,13 +6304,16 @@ function wireFormulaEditing(
     // re-derive the 2D preview (and, for editor-created formulas, the OOXML
     // to be saved) from the patched OMML source
     const omml = currentFormula.omml ? patchMathTokens(currentFormula.omml, tokens) : undefined
-    const { mathPara, jcDefault, paraAlign, align } = currentFormula
     const nextFormula: FormulaDisplay = {
-      ...(omml ? { tokens, omml, mathml: ommlToMathML(omml, mathLimits()) } : { tokens }),
-      ...(mathPara ? { mathPara } : {}),
-      ...(mathPara && align ? { align } : {}),
-      ...(jcDefault ? { jcDefault } : {}),
-      ...(paraAlign ? { paraAlign } : {}),
+      ...currentFormula,
+      ...(omml
+        ? {
+            tokens,
+            omml,
+            mathml: currentFormula.mathml ? ommlToMathML(omml, mathLimits()) : undefined,
+          }
+        : { tokens }),
+      latex: omml ? (ommlToLatex(omml) ?? undefined) : undefined,
     }
     const attrs: Record<string, unknown> = { ...current.attrs, formulaDisplay: nextFormula }
     if (current.attrs.genXml) {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { parseDocx, patchFieldParagraphXml, patchMathTokens } from '../src/index'
+import { mathTokensOf, parseDocx, patchFieldParagraphXml, patchMathTokens } from '../src/index'
 import { buildDocx } from './helpers/build-docx'
 
 const TOC_ENTRY =
@@ -125,6 +125,14 @@ describe('protected visible-text patching', () => {
     expect(patched).toContain('<m:t>a</m:t>')
     expect(patched).toContain('<m:t>b</m:t>')
     expect(patched).toContain('<m:t/>')
+  })
+
+  it('edits one math run without rewriting an empty run or a neighbouring character reference', () => {
+    const source = FORMULA.replace('<m:t>a</m:t>', '<m:t xml:space="preserve"/><m:t>&#x3B1;</m:t>')
+    expect(mathTokensOf(source)).toEqual(['α', 'b'])
+    expect(patchMathTokens(source, ['α', ' c '])).toBe(
+      source.replace('<m:t>b</m:t>', '<m:t xml:space="preserve"> c </m:t>'),
+    )
   })
 
   it('leaves out-of-range and surrogate char refs untouched instead of throwing', () => {

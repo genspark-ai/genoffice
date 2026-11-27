@@ -10,6 +10,7 @@ import {
   xmlParser,
   type XNode,
 } from './xml-utils'
+export { mathTokens as mathTokensOf } from './parse-xml-text'
 import type { MathLimLoc, MathLimits } from './math-pr'
 
 /**
@@ -32,24 +33,6 @@ export function ommlFragmentsOf(paragraphXml: string): string[] {
 /** a trailing <m:r><w:br/></m:r>: Word's manual line break inside a math zone */
 export function ommlEndsWithBreak(ommlXml: string): boolean {
   return /<w:br\b[^>]*\/>\s*<\/m:r>\s*<\/m:oMath>\s*$/.test(ommlXml)
-}
-
-/** visible <m:t> leaf texts in document order (the editable formula tokens) */
-export function mathTokensOf(xml: string): string[] {
-  const tokens: string[] = []
-  const re = /<m:t(?:\s[^>]*)?>([\s\S]*?)<\/m:t>/g
-  let match: RegExpExecArray | null
-  while ((match = re.exec(xml)) !== null) {
-    tokens.push(
-      match[1]
-        .replace(/&lt;/g, '<')
-        .replace(/&gt;/g, '>')
-        .replace(/&quot;/g, '"')
-        .replace(/&apos;/g, "'")
-        .replace(/&amp;/g, '&'),
-    )
-  }
-  return tokens
 }
 
 // ---- OMML -> MathML ----
@@ -754,7 +737,7 @@ function latexOfNode(node: XNode): string {
     case 'm:box':
     case 'm:borderBox':
     case 'm:phant':
-      return latexSlot(node, 'm:e')
+      throw new UnsupportedOmml()
     case undefined:
       return ''
     default:
@@ -762,19 +745,24 @@ function latexOfNode(node: XNode): string {
   }
 }
 
-/** rows of an m:m / m:eqArr as "a & b \\ c & d" */
+/** Rows of an m:m as "a & b \\ c & d" */
 function matrixBody(node: XNode): string {
-  const rowName = findChildren(node, 'm:mr').length > 0 ? 'm:mr' : 'm:e'
-  const rows = childrenOf(node)
-    .filter((c) => nameOf(c) === rowName)
-    .map((row) =>
-      rowName === 'm:mr'
-        ? childrenOf(row)
-            .filter((c) => nameOf(c) === 'm:e')
-            .map((cell) => latexOfChildren(contentChildren(cell)))
-            .join(' & ')
-        : latexOfChildren(contentChildren(row)),
+  // Regenerating this LaTeX matrix would reset non-default column layout.
+  const props = findChild(node, 'm:mPr')
+  if (props && childrenOf(props).some((p) => nameOf(p) !== 'm:mcs')) throw new UnsupportedOmml()
+  const columns = props && findChild(props, 'm:mcs')
+  if (
+    columns &&
+    findChildren(columns, 'm:mc').some(
+      (col) => (propVal(col, 'm:mcPr', 'm:mcJc') ?? 'center') !== 'center',
     )
+  )
+    throw new UnsupportedOmml()
+  const rows = findChildren(node, 'm:mr').map((row) =>
+    findChildren(row, 'm:e')
+      .map((cell) => latexOfChildren(contentChildren(cell)))
+      .join(' & '),
+  )
   return rows.join(' \\\\ ')
 }
 
@@ -795,8 +783,8 @@ function delimiterToLatex(node: XNode): string {
   ) {
     return `\\binom{${latexSlot(inner[0], 'm:num')}}{${latexSlot(inner[0], 'm:den')}}`
   }
-  // matrix environments: delimiters wrapping a single matrix / equation array
-  if (inner.length === 1 && (nameOf(inner[0]) === 'm:m' || nameOf(inner[0]) === 'm:eqArr')) {
+  // Matrix environments wrap a matrix; a delimited equation array must keep its own layout.
+  if (inner.length === 1 && nameOf(inner[0]) === 'm:m') {
     const env = matrixEnvs().get(`${beg} ${end}`)
     if (env) return `\\begin{${env}} ${matrixBody(inner[0])} \\end{${env}}`
   }

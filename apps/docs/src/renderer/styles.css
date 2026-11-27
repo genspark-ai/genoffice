@@ -2360,6 +2360,11 @@ span.rb-group-menu-button::after,
   line-height: 1.4;
 }
 
+.equation-tokens {
+  max-height: 30vh;
+  overflow-y: auto;
+}
+
 .equation-preview {
   min-height: 64px;
   display: flex;

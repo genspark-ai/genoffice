@@ -1,6 +1,13 @@
 import { useMemo, useState } from 'react'
 import type { Editor } from '@tiptap/core'
-import { latexToOmml, ommlToMathML } from '@genoffice/docx-engine'
+import {
+  latexToOmml,
+  mathTokensOf,
+  ommlFragmentsOf,
+  ommlToLatex,
+  ommlToMathML,
+  patchMathTokens,
+} from '@genoffice/docx-engine'
 import { t, useI18n, type StringKey } from '../i18n/locale'
 import { autoCaptionInserted } from '../editor/auto-caption'
 import {
@@ -71,7 +78,7 @@ export interface MathEditTarget {
   kind: 'inline' | 'block'
   /** true when the equation came from a MathType OLE embed (saving converts it to native OMML) */
   isMathType?: boolean
-  /** decoded <m:oMath> fallback when the MathType equation is outside the LaTeX subset */
+  /** Original math fragment(s), including structure outside the editable LaTeX subset. */
   omml?: string
 }
 
@@ -87,7 +94,7 @@ function previewOf(latex: string): { mathml: string } | { error: string } | null
   }
 }
 
-/** MathML preview for a decoded <m:oMath> fragment (used in convert-only MathType mode) */
+/** Preview the original structure, including edits to individual text leaves. */
 function previewOmmlOf(omml: string): { mathml: string } | { error: string } {
   const mathml = ommlToMathML(omml, mathLimits())
   return mathml ? { mathml } : { error: t('appPreviewUnavailable') }
@@ -106,37 +113,74 @@ export function EquationModal({
 }) {
   const { t } = useI18n()
   const modalKeys = useModalKeys(onClose)
-  const convertOnly = Boolean(editTarget?.isMathType && !editTarget.latex && editTarget.omml)
+  const source = editTarget?.omml
+  const zones = useMemo(() => (source ? ommlFragmentsOf(source).length : 0), [source])
+  const [tokens, setTokens] = useState(() =>
+    source && !editTarget?.latex ? mathTokensOf(source) : [],
+  )
+  const [rewriting, setRewriting] = useState(false)
+  const editText = !rewriting && (tokens.length > 0 || zones > 1)
   const [latex, setLatex] = useState(editTarget?.latex ?? '')
   const [inline, setInline] = useState(editTarget?.kind === 'inline')
-  const preview = useMemo(() => {
-    if (convertOnly && editTarget?.omml) return previewOmmlOf(editTarget.omml)
-    return previewOf(latex)
-  }, [convertOnly, editTarget?.omml, latex])
+  const keptOmml = useMemo(() => {
+    if (!source) return undefined
+    if (editText) return patchMathTokens(source, tokens)
+    if (!rewriting && latex === editTarget?.latex) return source
+    return undefined
+  }, [source, editText, tokens, rewriting, latex, editTarget?.latex])
+  const preview = useMemo(
+    () => (keptOmml ? previewOmmlOf(keptOmml) : previewOf(latex)),
+    [keptOmml, latex],
+  )
   const canInsert = preview !== null && 'mathml' in preview
 
   const insert = () => {
     if (!canInsert || !editor.isEditable) return
     if (editTarget) {
       const node = editor.state.doc.nodeAt(editTarget.pos)
+      if (keptOmml === source && source && !editTarget.isMathType) {
+        onClose()
+        return
+      }
       if (editTarget.kind === 'inline' && node?.type.name === 'docInlineMath') {
-        const next =
-          convertOnly && editTarget.omml
-            ? inlineEquationNodeFromOmml(editTarget.omml)
-            : inlineEquationNodeJson(latex)
+        const display = Boolean(node.attrs.display)
+        const next = keptOmml
+          ? inlineEquationNodeFromOmml(keptOmml, ommlToLatex(keptOmml), display)
+          : inlineEquationNodeJson(latex, display)
         const tr = editor.state.tr.setNodeMarkup(editTarget.pos, undefined, {
           ...next.attrs,
           sizeHalfPoints: node.attrs.sizeHalfPoints ?? null,
-          display: Boolean(node.attrs.display),
         })
         editor.view.dispatch(tr)
       } else if (editTarget.kind === 'block' && node?.type.name === 'docProtected') {
-        // rebuilt from LaTeX (or converted directly from decoded MathType OMML):
-        // the block loses its original anchor and saves as native OMML
-        const nextJson =
-          convertOnly && editTarget.omml
-            ? equationBlockFromOmml(editTarget.omml)
-            : equationBlockJson(latex)
+        if (source && !editTarget.isMathType) {
+          // The anchor owns the paragraph properties and any text around the equation.
+          const omml = keptOmml ?? `<m:oMath>${latexToOmml(latex, mathLimits())}</m:oMath>`
+          const original = node.attrs.formulaDisplay
+          const formulaDisplay = {
+            ...original,
+            tokens: mathTokensOf(omml),
+            omml,
+            mathml: original.mathml ? preview.mathml : undefined,
+            latex: ommlToLatex(omml) ?? undefined,
+          }
+          const xml = node.attrs.genXml as string | null
+          const genXml =
+            xml && (editText ? patchMathTokens(xml, tokens) : xml.replace(source, () => omml))
+          editor.view.dispatch(
+            editor.state.tr.setNodeMarkup(editTarget.pos, undefined, {
+              ...node.attrs,
+              formulaDisplay,
+              genXml,
+              previewText: formulaDisplay.tokens.join(''),
+            }),
+          )
+          onClose()
+          return
+        }
+        const nextJson = keptOmml
+          ? equationBlockFromOmml(keptOmml, ommlToLatex(keptOmml))
+          : equationBlockJson(latex)
         const next = editor.schema.nodeFromJSON(nextJson)
         editor.view.dispatch(
           editor.state.tr.replaceWith(editTarget.pos, editTarget.pos + node.nodeSize, next),
@@ -158,13 +202,36 @@ export function EquationModal({
       onMouseDown={(e) => e.target === e.currentTarget && onClose()}
     >
       <div className="modal equation-modal">
-        <h2>{t('appInsertEquation')}</h2>
+        <h2>{t(editTarget ? 'editorEquation' : 'appInsertEquation')}</h2>
         {editTarget?.isMathType && (
-          <div className="equation-mathtype-note">
-            {convertOnly ? t('appMathTypeConvertOnlyNote') : t('appMathTypeConvertNote')}
-          </div>
+          <div className="equation-mathtype-note">{t('appMathTypeConvertNote')}</div>
         )}
-        {!convertOnly && (
+        {editText && tokens.length > 0 && (
+          <fieldset className="equation-tokens">
+            <legend>{t('ribbonGroupText')}</legend>
+            {tokens.map((value, index) => (
+              <input
+                key={index}
+                aria-label={`${t('ribbonGroupText')} ${index + 1}`}
+                value={value}
+                onChange={(e) =>
+                  setTokens(tokens.map((token, i) => (i === index ? e.target.value : token)))
+                }
+              />
+            ))}
+          </fieldset>
+        )}
+        {tokens.length > 0 && zones === 1 && (
+          <button
+            type="button"
+            className="btn-ghost"
+            aria-pressed={rewriting}
+            onClick={() => setRewriting(!rewriting)}
+          >
+            {rewriting ? t('ribbonGroupText') : t('editorEditFormulaLatex')}
+          </button>
+        )}
+        {!editText && (
           <label>
             LaTeX
             <input

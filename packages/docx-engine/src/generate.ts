@@ -451,7 +451,7 @@ function decodeXmlText(text: string): string {
 function textNodes(xml: string, tag: 'w:t' | 'm:t'): XmlTextNode[] {
   const nodes: XmlTextNode[] = []
   // Paired text nodes: <w:t>text</w:t> (may carry xml:space)
-  const re = new RegExp(`<${tag}(?:\\s[^>]*)?>([\\s\\S]*?)<\\/${tag}>`, 'g')
+  const re = new RegExp(`<${tag}(?![^>]*\\/>)(?:\\s[^>]*)?>([\\s\\S]*?)<\\/${tag}>`, 'g')
   let match: RegExpExecArray | null
   while ((match = re.exec(xml)) !== null) {
     const openEnd = match[0].indexOf('>') + 1
@@ -514,7 +514,7 @@ function replaceTextNodes(
     const open =
       /xml:space\s*=/.test(node.open) || !hasEdgeWs
         ? node.open
-        : node.open.replace(/<w:t(?=[\s>/])/, '<w:t xml:space="preserve"')
+        : node.open.replace(/<(?:w|m):t(?=[\s>/])/, '$& xml:space="preserve"')
     // Self-closing empty run: expand to paired form so the replacement lands
     const close = node.close || `</w:t>`
     const openPaired = node.close ? open : open.replace(/\/>$/, '>')
@@ -621,7 +621,7 @@ export function patchMathTokens(xml: string, tokens: readonly string[]): string 
   if (nodes.length === 0 || nodes.length !== tokens.length) return xml
   return replaceTextNodes(
     xml,
-    nodes.map((node, i) => ({ node, text: tokens[i] })),
+    nodes.flatMap((node, i) => (node.text === tokens[i] ? [] : [{ node, text: tokens[i] }])),
   )
 }
 
