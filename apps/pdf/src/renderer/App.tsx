@@ -217,6 +217,7 @@ import {
   useDismissablePopover,
   useRibbonCollapse,
   useAiSidebarEnabled,
+  WebShareChip,
 } from '@genoffice/ui'
 import { useI18n } from './i18n/locale'
 import type { StringKey } from './i18n/locale'
@@ -11906,6 +11907,7 @@ export default function App() {
               </span>
             </div>
             <div className="status-right">
+              <WebShareChip lang={lang} />
               <button
                 className="zoom-btn"
                 data-tip={t('zoomOut')}

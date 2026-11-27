@@ -2363,6 +2363,12 @@ export const strings = {
     ...certSignStringsFor('hu'),
     ...protectStringsFor('hu'),
     ...redactFindStringsFor('hu'),
+    ocrRecognize: 'Szövegfelismerés',
+    ocrRecognizeTip:
+      'Futtassa az OCR-t a dokumentum minden beolapott oldalára (oldalkorlát nélkül)',
+    ocrNothing: 'Nincs több beolapott oldal a felismeréshez.',
+    texteditReveal:
+      'Szerkesztés után jelenítse meg a szöveget az oldalon; kikapcsolva a láthatatlan keresési rétegen marad',
     ribbonTabHome: 'Kezdőlap',
     ribbonTabAnnotate: 'Széljegyzetek',
     ribbonTabEdit: 'Szerkesztés',

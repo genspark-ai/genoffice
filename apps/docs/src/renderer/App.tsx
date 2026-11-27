@@ -58,6 +58,7 @@ import {
   createZoomWheelClassifier,
   useAutoSavePref,
   useAiSidebarEnabled,
+  WebShareChip,
 } from '@genoffice/ui'
 import { commentAnchors, commentIdsAt, wordRangeAtCaret } from './editor/comments'
 import { isCommandLetter } from './command-letter'
@@ -12224,6 +12225,7 @@ export function App() {
               {status && <span className="status-msg"> — {status}</span>}
             </div>
             <div className="status-right">
+              <WebShareChip lang={lang} />
               {doc && (
                 <div className="status-views" role="group">
                   <button

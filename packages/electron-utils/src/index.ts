@@ -89,6 +89,11 @@ export {
   USER_FILE_PATHS_SEEN_CHANNEL,
   seenFilePaths,
 } from './drop-open'
+export {
+  WEB_SHARE_CHANNELS,
+  installWebShareBridge,
+  type WebShareBridgeStatus,
+} from './web-share-bridge'
 export { safeExternalUrl, type SafeExternalUrlOptions } from './safe-external-url'
 export {
   fetchWithSsrfGuard,

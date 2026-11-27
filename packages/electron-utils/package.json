@@ -11,6 +11,7 @@
     "./copy-file": "./src/copy-file.ts",
     "./disk-watch": "./src/disk-watch.ts",
     "./drop-open": "./src/drop-open.ts",
+    "./web-share-bridge": "./src/web-share-bridge.ts",
     "./font-catalog": "./src/font-catalog.ts",
     "./font-store": "./src/font-store.ts",
     "./generated-image-url": "./src/generated-image-url.ts",
