@@ -170,6 +170,23 @@ function hashPathKey(key: string): string {
   return createHash('sha256').update(key).digest('hex').slice(0, 16)
 }
 
+/**
+ * Identity of the physical file at a path. The path alone is not enough: a
+ * document deleted or moved away while its index entry survives, then replaced
+ * by an unrelated file at the same path, must not inherit the old transcript.
+ * device + inode distinguish replacements on POSIX; birthtime distinguishes
+ * them on Windows (where inode may be 0). Returns undefined when the file does
+ * not exist or cannot be stat'ed, in which case identity stays path-only.
+ */
+export function fileIncarnation(filePath: string): string | undefined {
+  try {
+    const info = statSync(filePath)
+    return hashPathKey(`${info.dev}:${info.ino}:${Math.round(info.birthtimeMs)}`)
+  } catch {
+    return undefined
+  }
+}
+
 function readChatTail(filePath: string): string {
   const size = statSync(filePath).size
   if (size === 0) return ''
@@ -576,17 +593,39 @@ export class ProjectStore {
     const projectId = this.resolveProjectForFile(filePath)
     const index = this.readIndex()
     const key = canonicalPathKey(filePath)
+    const incarnation = fileIncarnation(filePath)
     const mappedKey = this.findMapKey(index.chatIdByPath, filePath)
     if (mappedKey !== undefined) {
-      const chatId = index.chatIdByPath![mappedKey]!
-      if (mappedKey !== key) {
-        ProjectStore.rekeyEntry(index.chatIdByPath!, mappedKey, key)
+      const incarnations = (index.incarnationByPath ??= {})
+      const incKey = this.findMapKey(incarnations, filePath) ?? mappedKey
+      const stored = incarnations[incKey]
+      if (incarnation !== undefined && stored !== undefined && stored !== incarnation) {
+        // A different physical file now occupies the remembered path. Keep the
+        // old transcript reachable by its old id, but give this document a new
+        // identity so the two histories stay separate.
+        const chatId = hashPathKey(`${key}|${incarnation}`)
+        delete incarnations[incKey]
+        if (mappedKey !== key) delete index.chatIdByPath![mappedKey]
+        index.chatIdByPath![key] = chatId
+        incarnations[key] = incarnation
         this.writeIndex(index)
+        return { projectId, chatId }
       }
-      return { projectId, chatId }
+      // Legacy indexes have no incarnation; adopt the current file as the one
+      // the existing chat belongs to rather than invalidating its history.
+      if (incarnation !== undefined && stored !== incarnation) {
+        delete incarnations[incKey]
+        incarnations[key] = incarnation
+      }
+      if (mappedKey !== key) ProjectStore.rekeyEntry(index.chatIdByPath!, mappedKey, key)
+      this.writeIndex(index)
+      return { projectId, chatId: index.chatIdByPath![key]! }
     }
     const chatId = this.fallbackChatId(projectId, filePath)
     index.chatIdByPath = { ...(index.chatIdByPath ?? {}), [key]: chatId }
+    if (incarnation !== undefined) {
+      index.incarnationByPath = { ...(index.incarnationByPath ?? {}), [key]: incarnation }
+    }
     this.writeIndex(index)
     return { projectId, chatId }
   }
@@ -613,6 +652,7 @@ export class ProjectStore {
     // the raw-path hash, and it needs the projectId to look inside.
     const pid = pidKey !== undefined ? index.fileMap[pidKey] : undefined
     const chatKey = this.findMapKey(index.chatIdByPath, oldPath)
+    const incKey = this.findMapKey(index.incarnationByPath, oldPath)
     // The file at newPath (if any) was replaced by the renamed one, so the
     // source mappings win; the displaced file's entries are cleaned up instead
     // of lingering in project.files or as an unreachable transcript.
@@ -659,6 +699,17 @@ export class ProjectStore {
     if (chatKey !== undefined) delete index.chatIdByPath![chatKey]
     if (displacedChatId !== undefined) delete index.chatIdByPath![displacedChatKey!]
     index.chatIdByPath = { ...(index.chatIdByPath ?? {}), [newKey]: chatId }
+    // The incarnation follows the same file (inode/birthtime stay the same on
+    // a rename), so it moves with the chat and the displaced file's identity
+    // goes away with its transcript.
+    if (incKey !== undefined && index.incarnationByPath) {
+      const incarnation = index.incarnationByPath[incKey]!
+      delete index.incarnationByPath[incKey]
+      index.incarnationByPath[newKey] = incarnation
+    }
+    const displacedIncKey = this.findMapKey(index.incarnationByPath, newPath)
+    if (displacedIncKey !== undefined && displacedIncKey !== incKey)
+      delete index.incarnationByPath![displacedIncKey]
     if (displacedChatId !== undefined && displacedChatId !== chatId) {
       this.trashChat(displacedPid ?? pid ?? 'default', displacedChatId)
     }
@@ -869,7 +920,10 @@ export class ProjectStore {
     const index = this.readIndex()
     const bound = Object.entries(index.chatIdByPath ?? {}).filter(([, id]) => id === chatId)
     if (bound.length > 0) {
-      for (const [key] of bound) delete index.chatIdByPath![key]
+      for (const [key] of bound) {
+        delete index.chatIdByPath![key]
+        if (index.incarnationByPath) delete index.incarnationByPath[key]
+      }
       this.writeIndex(index)
     }
     if (!existsSync(path)) return
