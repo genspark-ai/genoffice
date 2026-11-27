@@ -95,7 +95,11 @@ export async function hashSheetPassword(
   spinCount = DEFAULT_SPIN_COUNT,
   salt: Uint8Array = globalThis.crypto.getRandomValues(new Uint8Array(16)),
 ): Promise<SheetPasswordHash> {
-  const count = Math.min(Math.max(0, Math.trunc(spinCount)), MAX_SPIN_COUNT)
+  // Math.trunc(NaN) is NaN, which made the loop run zero times and wrote
+  // spinCount="NaN" into the workbook. Fall back to the documented default.
+  const count = Number.isFinite(spinCount)
+    ? Math.min(Math.max(0, Math.trunc(spinCount)), MAX_SPIN_COUNT)
+    : DEFAULT_SPIN_COUNT
   const hash = await iteratedHash('SHA-512', password, salt, count)
   return {
     algorithmName: 'SHA-512',
@@ -118,6 +122,7 @@ export async function verifySheetPassword(
   const salt = fromBase64(stored.saltValue)
   const expected = fromBase64(stored.hashValue)
   if (!salt || !expected) return false
+  if (!Number.isFinite(stored.spinCount)) return false
   const count = Math.min(Math.max(0, Math.trunc(stored.spinCount)), MAX_SPIN_COUNT)
   const actual = await iteratedHash(algorithm, password, salt, count)
   if (actual.length !== expected.length) return false
