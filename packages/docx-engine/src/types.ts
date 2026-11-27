@@ -2494,6 +2494,18 @@ export interface TextboxParaDisplay extends ParaFormat {
    *  their own borders / widths (display-only; the box turns readOnly) */
   cells?: HfTableCell[]
   row?: HfTableRow
+  /**
+   * Tracked paragraph-property change inside the box (w:pPrChange): the
+   * record's summary for the review list, and the pre-change formatting
+   * (modeled subset) a reject restores in the editor. The save-side revert
+   * swaps the whole pPr for the record's old one read from the original
+   * bytes, so unmodeled properties revert faithfully too (#2892).
+   */
+  pPrChange?: { id?: string; author?: string; date?: string }
+  /** the formatting the record's old w:pPr carries (undefined when it has none) */
+  pPrChangeOld?: ParaFormat
+  /** set by the editor's accept / reject; the save applies it to the block XML */
+  pPrResolved?: 'accept' | 'reject'
 }
 
 /**

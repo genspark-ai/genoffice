@@ -929,6 +929,13 @@ export interface TextboxParaPatch {
   numPr?: { numId: string; ilvl: number } | null
   /** left indent in twips; null clears w:ind/@w:left, undefined keeps the original */
   indentLeft?: number | null
+  /**
+   * Tracked paragraph-property revision (w:pPrChange) resolution: 'accept'
+   * keeps the current properties and strips the record; 'reject' swaps the
+   * whole pPr for the record's old one — Word's reject restores the recorded
+   * pre-change state, so unmodeled properties revert faithfully (#2892).
+   */
+  pPrResolution?: 'accept' | 'reject'
 }
 
 /** plain text of one w:p fragment (w:t + tabs/breaks), for change detection */
@@ -1028,10 +1035,22 @@ function patchTxbxContent(
       continue
     }
     const template = originals[Math.min(i, originals.length - 1)]
-    let pPr = /<w:pPr[\s\S]*?<\/w:pPr>|<w:pPr[^>]*\/>/.exec(template)?.[0] ?? ''
-    if (patch.numPr !== undefined) pPr = pPrWithNumPr(pPr, patch.numPr)
-    if (patch.indentLeft !== undefined) pPr = pPrWithIndLeft(pPr, patch.indentLeft)
-    if (patch.align !== undefined) pPr = pPrWithJc(pPr, patch.align)
+    // depth-aware: a w:pPrChange child nests another <w:pPr>, so a plain
+    // non-greedy match truncates the element mid-record
+    let pPr = rawPprOfParagraph(template)
+    if (patch.pPrResolution === 'reject') {
+      // the recorded old state wins wholesale; a record without a usable old
+      // pPr falls back to stripping it, the modeled old props ride the fields
+      const old = pPrChangeOldXml(pPr)
+      pPr = old ?? stripPPrChange(pPr)
+    } else {
+      // the record goes first, so the field patches below meet a clean pPr
+      // (the record's own old pPr would otherwise answer their lookups)
+      if (patch.pPrResolution === 'accept') pPr = stripPPrChange(pPr)
+      if (patch.numPr !== undefined) pPr = pPrWithNumPr(pPr, patch.numPr)
+      if (patch.indentLeft !== undefined) pPr = pPrWithIndLeft(pPr, patch.indentLeft)
+      if (patch.align !== undefined) pPr = pPrWithJc(pPr, patch.align)
+    }
     // no rel allocation inside textboxes: only links that already have an rId
     // survive re-generation, new links degrade to plain text
     parts.push(`<w:p>${pPr}${runsXml(patch.runs, null)}</w:p>`)
@@ -2462,6 +2481,39 @@ export function resolveParaMarkRPrChange(rawPPr: string, mode: 'accept' | 'rejec
   }
   const rPr = next.trim() ? `<w:rPr>${next}</w:rPr>` : ''
   return live.slice(0, open) + rPr + live.slice(close + '</w:rPr>'.length) + tail
+}
+
+/**
+ * The paragraph's <w:pPr> element, depth-aware: a w:pPrChange child nests
+ * another <w:pPr>, so a plain non-greedy match would truncate mid-record.
+ */
+export function rawPprOfParagraph(pXml: string): string {
+  const open = /<w:pPr(?: [^>]*)?>/.exec(pXml)
+  if (!open) return ''
+  if (open[0].endsWith('/>')) return open[0]
+  const start = open.index
+  let depth = 0
+  const re = /<w:pPr(?: [^>]*)?>|<\/w:pPr>/g
+  re.lastIndex = start
+  let m: RegExpExecArray | null
+  while ((m = re.exec(pXml)) !== null) {
+    if (m[0].startsWith('</')) depth -= 1
+    else depth += 1
+    if (depth === 0) return pXml.slice(start, re.lastIndex)
+  }
+  return ''
+}
+
+/**
+ * The pPr the record reverts to: the old <w:pPr> element carried inside the
+ * paragraph's own w:pPrChange, or null when the record has none. Rejecting a
+ * paragraph-property revision restores it wholesale.
+ */
+export function pPrChangeOldXml(rawPPr: string): string | null {
+  const start = rawPPr.indexOf('<w:pPrChange')
+  if (start === -1) return null
+  const m = /<w:pPr(?: [^>]*)?>[\s\S]*?<\/w:pPr>/.exec(rawPPr.slice(start))
+  return m ? m[0] : null
 }
 
 export function stripPPrChange(rawPPr: string): string {

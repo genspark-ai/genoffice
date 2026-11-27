@@ -301,3 +301,86 @@ function collectNoteRevisionsOf(note: NoteInfo) {
   editor.destroy()
   return out
 }
+
+describe('textbox paragraph-property revisions (#2892)', () => {
+  const pPrChangeXml =
+    '<w:txbxContent><w:p><w:pPr>' +
+    '<w:jc w:val="center"/>' +
+    '<w:pPrChange w:id="41" w:author="Reviewer" w:date="2026-10-01T00:00:00Z">' +
+    '<w:pPr><w:jc w:val="left"/></w:pPr>' +
+    '</w:pPrChange>' +
+    '</w:pPr><w:r><w:t>Box text</w:t></w:r></w:p></w:txbxContent>'
+  const bodyOf = () =>
+    TXBX_PARAGRAPH.replace(/<w:txbxContent>[\s\S]*?<\/w:txbxContent>/, pPrChangeXml)
+
+  const openDoc = async () => {
+    const parsed = await parseDocx(await buildDocx({ bodyXml: bodyOf() }))
+    const editor = new Editor({
+      extensions: editorExtensions,
+      content: blocksToPmDoc(parsed.blocks),
+    })
+    return { parsed, editor }
+  }
+
+  it('the paragraph-property revision lists and Reject All restores the old alignment', async () => {
+    const { parsed, editor } = await openDoc()
+    const revs = collectTextboxRevisions(editor.state.doc)
+    expect(revs.map((r) => [r.kind, r.author])).toEqual([['pPrChange', 'Reviewer']])
+    expect(editor.state.doc.firstChild!.attrs.textboxes[0].paras[0].align).toBe('center')
+    const story = revs[0].story
+    const boxes = resolveTextboxes(editor.state.doc.firstChild!.attrs.textboxes, [story], 'reject')
+    const para = boxes[0].paras[0]
+    expect(para.align).toBe('left')
+    expect(para.pPrChange).toBeUndefined()
+    expect(para.pPrResolved).toBe('reject')
+    editor.destroy()
+
+    // the save swaps the whole pPr for the record's old one: left alignment,
+    // no pPrChange left in the file
+    const editor2 = await (async () => {
+      const p = await parseDocx(await buildDocx({ bodyXml: bodyOf() }))
+      return new Editor({ extensions: editorExtensions, content: blocksToPmDoc(p.blocks) })
+    })()
+    const node = editor2.state.doc.nodeAt(0)!
+    const revs2 = collectTextboxRevisions(editor2.state.doc)
+    const boxes2 = resolveTextboxes(
+      node.attrs.textboxes,
+      revs2.map((r) => r.story),
+      'reject',
+    )
+    editor2.view.dispatch(
+      editor2.state.tr.setNodeMarkup(0, undefined, { ...node.attrs, textboxes: boxes2 }),
+    )
+    const plan = pmDocToSavePlan(editor2.getJSON() as PmNode, parsed.blocks)
+    const saved = await saveDocx(parsed, plan.saveBlocks)
+    const xml = await (await JSZip.loadAsync(saved)).file('word/document.xml')!.async('string')
+    expect(countTrackedChangesXml(xml)).toBe(0)
+    const reopened = await parseDocx(saved)
+    expect(reopened.blocks[0].textboxes![0].paras[0].align).toBe('left')
+    editor2.destroy()
+  })
+
+  it('Accept keeps the current alignment and strips the record from the file', async () => {
+    const { parsed, editor } = await openDoc()
+    const revs = collectTextboxRevisions(editor.state.doc)
+    const node = editor.state.doc.nodeAt(0)!
+    const boxes = resolveTextboxes(
+      node.attrs.textboxes,
+      revs.map((r) => r.story),
+      'accept',
+    )
+    expect(boxes[0].paras[0].align).toBe('center')
+    expect(boxes[0].paras[0].pPrResolved).toBe('accept')
+    editor.view.dispatch(
+      editor.state.tr.setNodeMarkup(0, undefined, { ...node.attrs, textboxes: boxes }),
+    )
+    expect(collectTextboxRevisions(editor.state.doc)).toHaveLength(0)
+    const plan = pmDocToSavePlan(editor.getJSON() as PmNode, parsed.blocks)
+    const saved = await saveDocx(parsed, plan.saveBlocks)
+    const xml = await (await JSZip.loadAsync(saved)).file('word/document.xml')!.async('string')
+    expect(countTrackedChangesXml(xml)).toBe(0)
+    const reopened = await parseDocx(saved)
+    expect(reopened.blocks[0].textboxes![0].paras[0].align).toBe('center')
+    editor.destroy()
+  })
+})

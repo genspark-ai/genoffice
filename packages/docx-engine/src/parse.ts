@@ -3035,6 +3035,28 @@ function collectTxbxParas(
         ),
       )
       if (styleId) para.styleId = styleId
+      // tracked paragraph-property change: the record summary rides the display
+      // model so the review list can show it, and the old formatting (modeled
+      // subset) is what a reject restores in the editor — the save-side revert
+      // swaps the whole pPr from the record in the original bytes (#2892)
+      const pPrChange = pPr ? findChild(pPr, 'w:pPrChange') : undefined
+      if (pPrChange) {
+        const attrs = attrsOf(pPrChange)
+        para.pPrChange = {
+          ...(attrs['w:id'] ? { id: attrs['w:id'] } : {}),
+          ...(attrs['w:author'] ? { author: attrs['w:author'] } : {}),
+          ...(attrs['w:date'] ? { date: attrs['w:date'] } : {}),
+        }
+        const oldPpr = findChild(pPrChange, 'w:pPr')
+        if (oldPpr)
+          para.pPrChangeOld = extractParaFormat(
+            oldPpr,
+            ctx.themeColors,
+            levelBidi ??
+              (styleId ? ctx.styles.get(styleId)?.display?.bidi : undefined) ??
+              ctx.docDefaults?.bidi,
+          )
+      }
       if (spaceOnlyRuns(para.runs) && !hasLayoutRunContent(child)) {
         const markSz = emptyParaSizeHalfPoints(child, pPr, true)
         if (markSz) para.emptyRunSizeHalfPoints = markSz
