@@ -64,6 +64,19 @@ describe('glbBounds', () => {
     expect(bounds).toEqual({ center: [11, 3, 1], size: [2, 2, 2] })
   })
 
+  it('refuses bounds that overflow to infinity on any axis', () => {
+    const big = 1e308
+    const bytes = glb({
+      scene: 0,
+      scenes: [{ nodes: [0] }],
+      nodes: [{ mesh: 0, scale: [1, big, 1] }],
+      meshes: [{ primitives: [{ attributes: { POSITION: 0 } }] }],
+      accessors: [{ min: [0, 0, 0], max: [1, big, 1] }],
+    })
+    // min[0] stays finite, but the Y bound overflows through the node scale
+    expect(glbBounds(bytes)).toBeNull()
+  })
+
   it('reads nothing from bytes that are not glTF binary', () => {
     expect(glbBounds(new Uint8Array([1, 2, 3, 4]))).toBeNull()
     expect(glbBounds(cubeScene([{}]))).toBeNull()
