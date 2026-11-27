@@ -1002,7 +1002,11 @@ export function isoDateSerial(value: string): { serial: number; format: string }
     return undefined
   }
   if ((hh ?? 0) > 23 || (mm ?? 0) > 59 || (ss ?? 0) > 59) return undefined
-  const serial = (utc - EXCEL_EPOCH_UTC) / 86_400_000
+  const days = (utc - EXCEL_EPOCH_UTC) / 86_400_000
+  // Excel's 1900 date system counts a phantom 1900-02-29 (serial 60), so real
+  // dates before 1900-03-01 sit one serial higher in plain-epoch arithmetic —
+  // shift them back to what Excel stores, mirroring serialDateText's read side
+  const serial = days - (utc < Date.UTC(1900, 2, 1) ? 1 : 0)
   const format =
     hh === undefined ? 'yyyy-mm-dd' : ss === undefined ? 'yyyy-mm-dd hh:mm' : 'yyyy-mm-dd hh:mm:ss'
   return { serial, format }
