@@ -50,6 +50,12 @@ describe('intrinsicSize', () => {
     expect(intrinsicSize(jpeg(800, 600))).toEqual({ width: 800, height: 600 })
   })
 
+  it('reads a minimal JPEG whose SOF ends at the last byte', () => {
+    // SOI + SOF0(11) + precision + height + width, with no trailing bytes
+    const bytes = new Uint8Array([0xff, 0xd8, 0xff, 0xc0, 0x00, 0x0b, 0x08, 0x00, 0x04, 0x01, 0x02])
+    expect(intrinsicSize(bytes)).toEqual({ width: 258, height: 4 })
+  })
+
   it('refuses zero and out-of-spec dimensions', () => {
     for (const bytes of [
       png(0, 480),
