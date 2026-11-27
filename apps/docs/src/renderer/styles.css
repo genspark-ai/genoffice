@@ -17674,12 +17674,140 @@ tr > .page-gap-cut {
 }
 
 .selection-pane .selection-pane-text,
-.citations-pane .selection-pane-text {
+.citations-pane .selection-pane-text,
+.zotero-library-pane .selection-pane-text,
+.zotero-quick-cite .selection-pane-text {
   color: var(--text-dim);
   font-size: 12px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* Zotero: the library pane beside the document and the Quick Cite bar over it */
+.zotero-library-pane .selection-pane-row,
+.zotero-quick-cite .selection-pane-row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  padding: 6px 10px;
+  border: 0;
+  border-radius: var(--radius-6);
+  background: none;
+  color: var(--text);
+  font-size: 13px;
+  text-align: start;
+  cursor: pointer;
+}
+
+.zotero-library-pane .selection-pane-row:hover:not(:disabled),
+.zotero-quick-cite .selection-pane-row.active {
+  background: var(--hover);
+}
+
+.zotero-library-pane .selection-pane-row.active,
+.zotero-quick-cite .selection-pane-row.picked {
+  background: var(--accent-soft);
+}
+
+.zotero-item-title {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.zotero-library-pane .comments-pane-list {
+  flex: 1;
+  gap: 2px;
+}
+
+.zotero-library-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+.zotero-library-controls select,
+.zotero-library-controls input {
+  width: 100%;
+  min-width: 0;
+  font-size: 12.5px;
+}
+
+.zotero-library-actions {
+  display: flex;
+  justify-content: flex-end;
+  padding: 8px;
+  border-top: 1px solid var(--border);
+}
+
+.zotero-quick-cite {
+  position: fixed;
+  top: 132px;
+  left: 50%;
+  z-index: 1200;
+  display: flex;
+  flex-direction: column;
+  width: min(560px, calc(100vw - 48px));
+  max-height: min(420px, calc(100vh - 180px));
+  transform: translateX(-50%);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-8);
+  background: var(--surface);
+  box-shadow: var(--shadow-menu);
+  overflow: hidden;
+}
+
+.zotero-quick-cite-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.zotero-quick-cite-bar input {
+  flex: 1;
+  min-width: 160px;
+  border: 0;
+  outline: none;
+  background: none;
+  color: var(--text);
+  font-size: 14px;
+}
+
+.zotero-quick-cite-chip {
+  padding: 2px 8px;
+  border: 0;
+  border-radius: var(--radius-12);
+  background: var(--accent-soft);
+  color: var(--text);
+  font-size: 12.5px;
+  cursor: pointer;
+}
+
+.zotero-quick-cite-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px;
+  overflow-y: auto;
+}
+
+.zotero-quick-cite-message,
+.zotero-quick-cite-hint {
+  padding: 8px 12px;
+  color: var(--text-dim);
+  font-size: 12px;
+}
+
+.zotero-quick-cite-hint {
+  border-top: 1px solid var(--border);
 }
 
 .tco-dialog.symbol-dialog {

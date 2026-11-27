@@ -18,6 +18,24 @@ export const zoteroStrings = defineStrings({
     zoteroNoteFieldsUnsupported:
       '此文档的脚注或尾注中含有 Zotero 引文，GenOffice 目前还不能更新它们。为保持参考文献表完整，已停用此文档的 Zotero 命令。',
     zoteroGroup: 'Zotero',
+    zoteroQuickCite: '快速引用',
+    zoteroQuickCiteTip: '在 Zotero 文库中搜索，不离开文档即可插入引文',
+    zoteroLibrary: '文库',
+    zoteroLibraryTip: '在文档旁显示 Zotero 文库，单击条目即可引用',
+    zoteroLibraryGroup: '引用',
+    zoteroAutoRefresh: '打开时刷新',
+    zoteroAutoRefreshTip: '打开含 Zotero 引文的文档时自动刷新引文',
+    zoteroSearchPlaceholder: '标题、作者或年份',
+    zoteroNoResults: '没有匹配的条目',
+    zoteroMyLibrary: '我的文库',
+    zoteroQuickCiteHint: 'Enter 插入引文 · {mod}+单击可选多项 · Esc 关闭',
+    zoteroCiteTip: '单击在光标处引用',
+    zoteroCitePicked: '引用 {n} 项',
+    zoteroLocalApiOff:
+      '请在 Zotero 设置 ▸ 高级 中开启“允许此计算机上的其他应用程序与 Zotero 通信”，然后重试。',
+    zoteroCannotInsert: '此处无法插入引文。',
+    zoteroNoteStyleUnsupported:
+      '此文档使用脚注或尾注引文样式，GenOffice 目前还不能在注释中插入 Zotero 引文。',
   },
   en: {
     zoteroCitation: 'Add/Edit Citation',
@@ -36,6 +54,24 @@ export const zoteroStrings = defineStrings({
     zoteroNoteFieldsUnsupported:
       'This document has Zotero citations in footnotes or endnotes, which GenOffice cannot update yet. Zotero commands are turned off here so the bibliography stays intact.',
     zoteroGroup: 'Zotero',
+    zoteroQuickCite: 'Quick Cite',
+    zoteroQuickCiteTip: 'Search your Zotero library and cite without leaving the document',
+    zoteroLibrary: 'Library',
+    zoteroLibraryTip: 'Show your Zotero library beside the document; click an item to cite it',
+    zoteroLibraryGroup: 'Cite',
+    zoteroAutoRefresh: 'Refresh on Open',
+    zoteroAutoRefreshTip: 'Refresh the Zotero citations of a document when it opens',
+    zoteroSearchPlaceholder: 'Title, author or year',
+    zoteroNoResults: 'No matching items',
+    zoteroMyLibrary: 'My Library',
+    zoteroQuickCiteHint: 'Enter cites · {mod}-click picks several · Esc closes',
+    zoteroCiteTip: 'Click to cite at the cursor',
+    zoteroCitePicked: 'Cite Selected ({n})',
+    zoteroLocalApiOff:
+      'Turn on "Allow other applications on this computer to communicate with Zotero" in Zotero Settings ▸ Advanced, then try again.',
+    zoteroCannotInsert: 'A citation cannot be inserted here.',
+    zoteroNoteStyleUnsupported:
+      'This document uses a footnote or endnote citation style. GenOffice cannot put Zotero citations in notes yet.',
   },
   ja: {
     zoteroCitation: '引用を追加/編集',
@@ -54,6 +90,25 @@ export const zoteroStrings = defineStrings({
     zoteroNoteFieldsUnsupported:
       'この文書の脚注または文末脚注に Zotero の引用が含まれていますが、GenOffice はまだ更新できません。参考文献一覧を保つため、この文書では Zotero コマンドを無効にしています。',
     zoteroGroup: 'Zotero',
+    zoteroQuickCite: 'クイック引用',
+    zoteroQuickCiteTip: 'ドキュメントを離れずに Zotero ライブラリを検索して引用を挿入します',
+    zoteroLibrary: 'ライブラリ',
+    zoteroLibraryTip:
+      'ドキュメントの横に Zotero ライブラリを表示します。項目をクリックすると引用します',
+    zoteroLibraryGroup: '引用',
+    zoteroAutoRefresh: '開くときに更新',
+    zoteroAutoRefreshTip: 'Zotero の引用を含むドキュメントを開いたときに引用を更新します',
+    zoteroSearchPlaceholder: 'タイトル、著者、または年',
+    zoteroNoResults: '一致する項目はありません',
+    zoteroMyLibrary: 'マイライブラリ',
+    zoteroQuickCiteHint: 'Enter で引用 · {mod}+クリックで複数選択 · Esc で閉じる',
+    zoteroCiteTip: 'クリックするとカーソル位置に引用します',
+    zoteroCitePicked: '{n} 件を引用',
+    zoteroLocalApiOff:
+      'Zotero の設定 ▸ 詳細 で「このコンピュータ上の他のアプリケーションが Zotero と通信することを許可」をオンにして、もう一度お試しください。',
+    zoteroCannotInsert: 'ここには引用を挿入できません。',
+    zoteroNoteStyleUnsupported:
+      'このドキュメントは脚注または文末脚注の引用スタイルを使っています。GenOffice はまだ注に Zotero の引用を挿入できません。',
   },
   ko: {
     zoteroCitation: '인용 추가/편집',
@@ -72,6 +127,24 @@ export const zoteroStrings = defineStrings({
     zoteroNoteFieldsUnsupported:
       '이 문서의 각주 또는 미주에 Zotero 인용이 있으며 GenOffice는 아직 이를 업데이트할 수 없습니다. 참고문헌을 그대로 유지하기 위해 이 문서에서는 Zotero 명령이 비활성화되었습니다.',
     zoteroGroup: 'Zotero',
+    zoteroQuickCite: '빠른 인용',
+    zoteroQuickCiteTip: '문서를 떠나지 않고 Zotero 라이브러리를 검색해 인용을 삽입합니다',
+    zoteroLibrary: '라이브러리',
+    zoteroLibraryTip: '문서 옆에 Zotero 라이브러리를 표시합니다. 항목을 클릭하면 인용합니다',
+    zoteroLibraryGroup: '인용',
+    zoteroAutoRefresh: '열 때 새로 고침',
+    zoteroAutoRefreshTip: 'Zotero 인용이 있는 문서를 열 때 인용을 새로 고칩니다',
+    zoteroSearchPlaceholder: '제목, 저자 또는 연도',
+    zoteroNoResults: '일치하는 항목이 없습니다',
+    zoteroMyLibrary: '내 라이브러리',
+    zoteroQuickCiteHint: 'Enter로 인용 · {mod}+클릭으로 여러 개 선택 · Esc로 닫기',
+    zoteroCiteTip: '클릭하면 커서 위치에 인용합니다',
+    zoteroCitePicked: '{n}개 인용',
+    zoteroLocalApiOff:
+      'Zotero 설정 ▸ 고급에서 "이 컴퓨터의 다른 응용 프로그램이 Zotero와 통신하도록 허용"을 켠 다음 다시 시도하세요.',
+    zoteroCannotInsert: '여기에는 인용을 삽입할 수 없습니다.',
+    zoteroNoteStyleUnsupported:
+      '이 문서는 각주 또는 미주 인용 스타일을 사용합니다. GenOffice는 아직 주석에 Zotero 인용을 넣을 수 없습니다.',
   },
   fr: {
     zoteroCitation: 'Ajouter/Modifier une citation',
@@ -92,6 +165,27 @@ export const zoteroStrings = defineStrings({
     zoteroNoteFieldsUnsupported:
       'Ce document contient des citations Zotero dans les notes de bas de page ou de fin, que GenOffice ne peut pas encore mettre à jour. Les commandes Zotero sont désactivées ici afin de préserver la bibliographie.',
     zoteroGroup: 'Zotero',
+    zoteroQuickCite: 'Citation rapide',
+    zoteroQuickCiteTip:
+      'Rechercher dans votre bibliothèque Zotero et citer sans quitter le document',
+    zoteroLibrary: 'Bibliothèque',
+    zoteroLibraryTip:
+      'Afficher votre bibliothèque Zotero à côté du document ; cliquez sur un élément pour le citer',
+    zoteroLibraryGroup: 'Citer',
+    zoteroAutoRefresh: "Actualiser à l'ouverture",
+    zoteroAutoRefreshTip: "Actualiser les citations Zotero d'un document à son ouverture",
+    zoteroSearchPlaceholder: 'Titre, auteur ou année',
+    zoteroNoResults: 'Aucun élément correspondant',
+    zoteroMyLibrary: 'Ma bibliothèque',
+    zoteroQuickCiteHint:
+      'Entrée pour citer · {mod}-clic pour en choisir plusieurs · Échap pour fermer',
+    zoteroCiteTip: 'Cliquez pour citer au niveau du curseur',
+    zoteroCitePicked: 'Citer {n} éléments',
+    zoteroLocalApiOff:
+      'Activez « Autoriser les autres applications de cet ordinateur à communiquer avec Zotero » dans Zotero, Paramètres ▸ Avancés, puis réessayez.',
+    zoteroCannotInsert: "Impossible d'insérer une citation ici.",
+    zoteroNoteStyleUnsupported:
+      'Ce document utilise un style de citation en notes de bas de page ou de fin. GenOffice ne peut pas encore placer de citations Zotero dans les notes.',
   },
   de: {
     zoteroCitation: 'Zitat hinzufügen/bearbeiten',
@@ -111,6 +205,26 @@ export const zoteroStrings = defineStrings({
     zoteroNoteFieldsUnsupported:
       'Dieses Dokument enthält Zotero-Zitate in Fuß- oder Endnoten, die GenOffice noch nicht aktualisieren kann. Die Zotero-Befehle sind hier deaktiviert, damit das Literaturverzeichnis intakt bleibt.',
     zoteroGroup: 'Zotero',
+    zoteroQuickCite: 'Schnell zitieren',
+    zoteroQuickCiteTip:
+      'Zotero-Bibliothek durchsuchen und zitieren, ohne das Dokument zu verlassen',
+    zoteroLibrary: 'Bibliothek',
+    zoteroLibraryTip:
+      'Zotero-Bibliothek neben dem Dokument anzeigen; auf einen Eintrag klicken, um ihn zu zitieren',
+    zoteroLibraryGroup: 'Zitieren',
+    zoteroAutoRefresh: 'Beim Öffnen aktualisieren',
+    zoteroAutoRefreshTip: 'Zotero-Zitationen eines Dokuments beim Öffnen aktualisieren',
+    zoteroSearchPlaceholder: 'Titel, Autor oder Jahr',
+    zoteroNoResults: 'Keine passenden Einträge',
+    zoteroMyLibrary: 'Meine Bibliothek',
+    zoteroQuickCiteHint: 'Eingabe zitiert · {mod}-Klick wählt mehrere · Esc schließt',
+    zoteroCiteTip: 'Klicken, um an der Cursorposition zu zitieren',
+    zoteroCitePicked: '{n} Einträge zitieren',
+    zoteroLocalApiOff:
+      'Aktivieren Sie in Zotero unter Einstellungen ▸ Erweitert „Anderen Anwendungen auf diesem Computer erlauben, mit Zotero zu kommunizieren“ und versuchen Sie es erneut.',
+    zoteroCannotInsert: 'Hier kann keine Zitation eingefügt werden.',
+    zoteroNoteStyleUnsupported:
+      'Dieses Dokument verwendet einen Zitierstil mit Fuß- oder Endnoten. GenOffice kann Zotero-Zitationen noch nicht in Notizen einfügen.',
   },
   es: {
     zoteroCitation: 'Añadir/Editar cita',
@@ -129,6 +243,25 @@ export const zoteroStrings = defineStrings({
     zoteroNoteFieldsUnsupported:
       'Este documento tiene citas de Zotero en notas al pie o al final que GenOffice aún no puede actualizar. Los comandos de Zotero están desactivados aquí para mantener intacta la bibliografía.',
     zoteroGroup: 'Zotero',
+    zoteroQuickCite: 'Cita rápida',
+    zoteroQuickCiteTip: 'Busca en tu biblioteca de Zotero y cita sin salir del documento',
+    zoteroLibrary: 'Biblioteca',
+    zoteroLibraryTip:
+      'Muestra tu biblioteca de Zotero junto al documento; haz clic en un elemento para citarlo',
+    zoteroLibraryGroup: 'Citar',
+    zoteroAutoRefresh: 'Actualizar al abrir',
+    zoteroAutoRefreshTip: 'Actualiza las citas de Zotero de un documento al abrirlo',
+    zoteroSearchPlaceholder: 'Título, autor o año',
+    zoteroNoResults: 'No hay elementos coincidentes',
+    zoteroMyLibrary: 'Mi biblioteca',
+    zoteroQuickCiteHint: 'Intro cita · {mod}+clic elige varios · Esc cierra',
+    zoteroCiteTip: 'Haz clic para citar en el cursor',
+    zoteroCitePicked: 'Citar {n} elementos',
+    zoteroLocalApiOff:
+      'Activa «Permitir que otras aplicaciones de este equipo se comuniquen con Zotero» en Zotero, Configuración ▸ Avanzado, y vuelve a intentarlo.',
+    zoteroCannotInsert: 'No se puede insertar una cita aquí.',
+    zoteroNoteStyleUnsupported:
+      'Este documento usa un estilo de cita con notas al pie o al final. GenOffice aún no puede poner citas de Zotero en notas.',
   },
   th: {
     zoteroCitation: 'เพิ่ม/แก้ไขการอ้างอิง',
@@ -147,6 +280,24 @@ export const zoteroStrings = defineStrings({
     zoteroNoteFieldsUnsupported:
       'เอกสารนี้มีการอ้างอิง Zotero ในเชิงอรรถหรืออ้างอิงท้ายเรื่อง ซึ่ง GenOffice ยังอัปเดตไม่ได้ คำสั่ง Zotero จึงถูกปิดไว้เพื่อรักษาบรรณานุกรมให้ครบถ้วน',
     zoteroGroup: 'Zotero',
+    zoteroQuickCite: 'อ้างอิงด่วน',
+    zoteroQuickCiteTip: 'ค้นหาในคลัง Zotero และแทรกการอ้างอิงโดยไม่ต้องออกจากเอกสาร',
+    zoteroLibrary: 'คลัง',
+    zoteroLibraryTip: 'แสดงคลัง Zotero ข้างเอกสาร คลิกรายการเพื่ออ้างอิง',
+    zoteroLibraryGroup: 'อ้างอิง',
+    zoteroAutoRefresh: 'รีเฟรชเมื่อเปิด',
+    zoteroAutoRefreshTip: 'รีเฟรชการอ้างอิง Zotero ของเอกสารเมื่อเปิด',
+    zoteroSearchPlaceholder: 'ชื่อเรื่อง ผู้แต่ง หรือปี',
+    zoteroNoResults: 'ไม่มีรายการที่ตรงกัน',
+    zoteroMyLibrary: 'คลังของฉัน',
+    zoteroQuickCiteHint: 'Enter เพื่ออ้างอิง · {mod}+คลิกเพื่อเลือกหลายรายการ · Esc เพื่อปิด',
+    zoteroCiteTip: 'คลิกเพื่ออ้างอิงที่เคอร์เซอร์',
+    zoteroCitePicked: 'อ้างอิง {n} รายการ',
+    zoteroLocalApiOff:
+      'เปิด "อนุญาตให้แอปพลิเคชันอื่นในคอมพิวเตอร์นี้สื่อสารกับ Zotero" ใน Zotero การตั้งค่า ▸ ขั้นสูง แล้วลองอีกครั้ง',
+    zoteroCannotInsert: 'ไม่สามารถแทรกการอ้างอิงที่นี่ได้',
+    zoteroNoteStyleUnsupported:
+      'เอกสารนี้ใช้รูปแบบการอ้างอิงแบบเชิงอรรถหรือไว้ท้ายเรื่อง GenOffice ยังไม่สามารถใส่การอ้างอิง Zotero ในหมายเหตุได้',
   },
   id: {
     zoteroCitation: 'Tambah/Edit Kutipan',
@@ -167,6 +318,24 @@ export const zoteroStrings = defineStrings({
     zoteroNoteFieldsUnsupported:
       'Dokumen ini memiliki sitasi Zotero di catatan kaki atau catatan akhir yang belum dapat diperbarui GenOffice. Perintah Zotero dinonaktifkan di sini agar daftar pustaka tetap utuh.',
     zoteroGroup: 'Zotero',
+    zoteroQuickCite: 'Kutip Cepat',
+    zoteroQuickCiteTip: 'Cari di pustaka Zotero dan sisipkan sitasi tanpa meninggalkan dokumen',
+    zoteroLibrary: 'Pustaka',
+    zoteroLibraryTip: 'Tampilkan pustaka Zotero di samping dokumen; klik butir untuk mengutipnya',
+    zoteroLibraryGroup: 'Kutip',
+    zoteroAutoRefresh: 'Segarkan Saat Dibuka',
+    zoteroAutoRefreshTip: 'Segarkan sitasi Zotero dokumen saat dokumen dibuka',
+    zoteroSearchPlaceholder: 'Judul, penulis, atau tahun',
+    zoteroNoResults: 'Tidak ada butir yang cocok',
+    zoteroMyLibrary: 'Pustaka Saya',
+    zoteroQuickCiteHint: 'Enter mengutip · {mod}-klik memilih beberapa · Esc menutup',
+    zoteroCiteTip: 'Klik untuk mengutip di posisi kursor',
+    zoteroCitePicked: 'Kutip {n} butir',
+    zoteroLocalApiOff:
+      'Aktifkan "Izinkan aplikasi lain di komputer ini berkomunikasi dengan Zotero" di Zotero, Pengaturan ▸ Lanjutan, lalu coba lagi.',
+    zoteroCannotInsert: 'Sitasi tidak dapat disisipkan di sini.',
+    zoteroNoteStyleUnsupported:
+      'Dokumen ini memakai gaya sitasi catatan kaki atau catatan akhir. GenOffice belum dapat menaruh sitasi Zotero di catatan.',
   },
   ru: {
     zoteroCitation: 'Добавить/изменить цитату',
@@ -186,6 +355,25 @@ export const zoteroStrings = defineStrings({
     zoteroNoteFieldsUnsupported:
       'В сносках или концевых сносках этого документа есть цитаты Zotero, которые GenOffice пока не может обновлять. Команды Zotero здесь отключены, чтобы библиография осталась целой.',
     zoteroGroup: 'Zotero',
+    zoteroQuickCite: 'Быстрая цитата',
+    zoteroQuickCiteTip: 'Поиск в библиотеке Zotero и вставка цитаты, не покидая документ',
+    zoteroLibrary: 'Библиотека',
+    zoteroLibraryTip:
+      'Показать библиотеку Zotero рядом с документом; щёлкните запись, чтобы процитировать её',
+    zoteroLibraryGroup: 'Цитировать',
+    zoteroAutoRefresh: 'Обновлять при открытии',
+    zoteroAutoRefreshTip: 'Обновлять цитаты Zotero при открытии документа',
+    zoteroSearchPlaceholder: 'Название, автор или год',
+    zoteroNoResults: 'Нет подходящих записей',
+    zoteroMyLibrary: 'Моя библиотека',
+    zoteroQuickCiteHint: 'Enter — цитировать · {mod}+щелчок — выбрать несколько · Esc — закрыть',
+    zoteroCiteTip: 'Щёлкните, чтобы вставить цитату в позицию курсора',
+    zoteroCitePicked: 'Цитировать записи: {n}',
+    zoteroLocalApiOff:
+      'Включите «Разрешить другим приложениям на этом компьютере взаимодействовать с Zotero» в Zotero, Настройки ▸ Дополнительно, и повторите попытку.',
+    zoteroCannotInsert: 'Здесь нельзя вставить цитату.',
+    zoteroNoteStyleUnsupported:
+      'В этом документе используется стиль цитирования со сносками или концевыми сносками. GenOffice пока не умеет вставлять цитаты Zotero в сноски.',
   },
   ar: {
     zoteroCitation: 'إضافة/تحرير اقتباس',
@@ -203,6 +391,24 @@ export const zoteroStrings = defineStrings({
     zoteroNoteFieldsUnsupported:
       'يحتوي هذا المستند على استشهادات Zotero في الحواشي السفلية أو الختامية، ولا يستطيع GenOffice تحديثها بعد. تم تعطيل أوامر Zotero هنا للحفاظ على قائمة المراجع سليمة.',
     zoteroGroup: 'Zotero',
+    zoteroQuickCite: 'اقتباس سريع',
+    zoteroQuickCiteTip: 'ابحث في مكتبة Zotero وأدرج اقتباسًا دون مغادرة المستند',
+    zoteroLibrary: 'المكتبة',
+    zoteroLibraryTip: 'اعرض مكتبة Zotero بجانب المستند؛ انقر عنصرًا لاقتباسه',
+    zoteroLibraryGroup: 'اقتباس',
+    zoteroAutoRefresh: 'التحديث عند الفتح',
+    zoteroAutoRefreshTip: 'حدِّث اقتباسات Zotero في المستند عند فتحه',
+    zoteroSearchPlaceholder: 'العنوان أو المؤلف أو السنة',
+    zoteroNoResults: 'لا توجد عناصر مطابقة',
+    zoteroMyLibrary: 'مكتبتي',
+    zoteroQuickCiteHint: 'Enter للاقتباس · {mod}+نقر لاختيار عدة عناصر · Esc للإغلاق',
+    zoteroCiteTip: 'انقر للاقتباس عند المؤشر',
+    zoteroCitePicked: 'اقتباس {n} عناصر',
+    zoteroLocalApiOff:
+      'شغّل «السماح للتطبيقات الأخرى على هذا الكمبيوتر بالتواصل مع Zotero» في Zotero، الإعدادات ▸ متقدم، ثم حاول مرة أخرى.',
+    zoteroCannotInsert: 'لا يمكن إدراج اقتباس هنا.',
+    zoteroNoteStyleUnsupported:
+      'يستخدم هذا المستند نمط اقتباس بالحواشي السفلية أو الختامية. لا يستطيع GenOffice بعد وضع اقتباسات Zotero في الحواشي.',
   },
   pt: {
     zoteroCitation: 'Adicionar/Editar citação',
@@ -222,6 +428,25 @@ export const zoteroStrings = defineStrings({
     zoteroNoteFieldsUnsupported:
       'Este documento tem citações do Zotero em notas de rodapé ou de fim que o GenOffice ainda não consegue atualizar. Os comandos do Zotero estão desativados aqui para manter a bibliografia intacta.',
     zoteroGroup: 'Zotero',
+    zoteroQuickCite: 'Citação rápida',
+    zoteroQuickCiteTip: 'Pesquise na sua biblioteca do Zotero e cite sem sair do documento',
+    zoteroLibrary: 'Biblioteca',
+    zoteroLibraryTip:
+      'Mostrar a biblioteca do Zotero ao lado do documento; clique num item para citá-lo',
+    zoteroLibraryGroup: 'Citar',
+    zoteroAutoRefresh: 'Atualizar ao abrir',
+    zoteroAutoRefreshTip: 'Atualizar as citações do Zotero de um documento ao abri-lo',
+    zoteroSearchPlaceholder: 'Título, autor ou ano',
+    zoteroNoResults: 'Nenhum item correspondente',
+    zoteroMyLibrary: 'Minha biblioteca',
+    zoteroQuickCiteHint: 'Enter cita · {mod}+clique escolhe vários · Esc fecha',
+    zoteroCiteTip: 'Clique para citar no cursor',
+    zoteroCitePicked: 'Citar {n} itens',
+    zoteroLocalApiOff:
+      'Ative "Permitir que outros aplicativos neste computador se comuniquem com o Zotero" no Zotero, Configurações ▸ Avançado, e tente novamente.',
+    zoteroCannotInsert: 'Não é possível inserir uma citação aqui.',
+    zoteroNoteStyleUnsupported:
+      'Este documento usa um estilo de citação em notas de rodapé ou de fim. O GenOffice ainda não pode colocar citações do Zotero em notas.',
   },
   it: {
     zoteroCitation: 'Aggiungi/Modifica citazione',
@@ -241,6 +466,25 @@ export const zoteroStrings = defineStrings({
     zoteroNoteFieldsUnsupported:
       'Questo documento contiene citazioni Zotero nelle note a piè di pagina o di chiusura, che GenOffice non può ancora aggiornare. I comandi Zotero sono disattivati qui per mantenere intatta la bibliografia.',
     zoteroGroup: 'Zotero',
+    zoteroQuickCite: 'Citazione rapida',
+    zoteroQuickCiteTip: 'Cerca nella libreria Zotero e cita senza lasciare il documento',
+    zoteroLibrary: 'Libreria',
+    zoteroLibraryTip:
+      'Mostra la libreria Zotero accanto al documento; fai clic su un elemento per citarlo',
+    zoteroLibraryGroup: 'Cita',
+    zoteroAutoRefresh: "Aggiorna all'apertura",
+    zoteroAutoRefreshTip: 'Aggiorna le citazioni Zotero di un documento quando viene aperto',
+    zoteroSearchPlaceholder: 'Titolo, autore o anno',
+    zoteroNoResults: 'Nessun elemento corrispondente',
+    zoteroMyLibrary: 'La mia libreria',
+    zoteroQuickCiteHint: 'Invio cita · {mod}+clic ne sceglie più di uno · Esc chiude',
+    zoteroCiteTip: 'Fai clic per citare nel punto del cursore',
+    zoteroCitePicked: 'Cita {n} elementi',
+    zoteroLocalApiOff:
+      'Attiva "Consenti ad altre applicazioni su questo computer di comunicare con Zotero" in Zotero, Impostazioni ▸ Avanzate, e riprova.',
+    zoteroCannotInsert: 'Qui non è possibile inserire una citazione.',
+    zoteroNoteStyleUnsupported:
+      'Questo documento usa uno stile di citazione con note a piè di pagina o di chiusura. GenOffice non può ancora inserire citazioni Zotero nelle note.',
   },
   pl: {
     zoteroCitation: 'Dodaj/edytuj cytowanie',
@@ -259,6 +503,24 @@ export const zoteroStrings = defineStrings({
     zoteroNoteFieldsUnsupported:
       'Ten dokument zawiera cytowania Zotero w przypisach dolnych lub końcowych, których GenOffice nie potrafi jeszcze aktualizować. Polecenia Zotero są tu wyłączone, aby bibliografia pozostała nienaruszona.',
     zoteroGroup: 'Zotero',
+    zoteroQuickCite: 'Szybkie cytowanie',
+    zoteroQuickCiteTip: 'Przeszukaj bibliotekę Zotero i wstaw cytowanie bez opuszczania dokumentu',
+    zoteroLibrary: 'Biblioteka',
+    zoteroLibraryTip: 'Pokaż bibliotekę Zotero obok dokumentu; kliknij element, aby go zacytować',
+    zoteroLibraryGroup: 'Cytuj',
+    zoteroAutoRefresh: 'Odśwież przy otwarciu',
+    zoteroAutoRefreshTip: 'Odśwież cytowania Zotero dokumentu przy jego otwarciu',
+    zoteroSearchPlaceholder: 'Tytuł, autor lub rok',
+    zoteroNoResults: 'Brak pasujących elementów',
+    zoteroMyLibrary: 'Moja biblioteka',
+    zoteroQuickCiteHint: 'Enter cytuje · {mod}+kliknięcie wybiera kilka · Esc zamyka',
+    zoteroCiteTip: 'Kliknij, aby zacytować w miejscu kursora',
+    zoteroCitePicked: 'Cytuj elementy: {n}',
+    zoteroLocalApiOff:
+      'Włącz „Zezwalaj innym aplikacjom na tym komputerze na komunikację z Zotero” w Zotero, Ustawienia ▸ Zaawansowane, i spróbuj ponownie.',
+    zoteroCannotInsert: 'Nie można tu wstawić cytowania.',
+    zoteroNoteStyleUnsupported:
+      'Ten dokument używa stylu cytowania z przypisami dolnymi lub końcowymi. GenOffice nie potrafi jeszcze wstawiać cytowań Zotero do przypisów.',
   },
   cs: {
     zoteroCitation: 'Přidat/upravit citaci',
@@ -277,6 +539,24 @@ export const zoteroStrings = defineStrings({
     zoteroNoteFieldsUnsupported:
       'Tento dokument obsahuje citace Zotero v poznámkách pod čarou nebo vysvětlivkách, které GenOffice zatím neumí aktualizovat. Příkazy Zotero jsou zde vypnuté, aby bibliografie zůstala nedotčená.',
     zoteroGroup: 'Zotero',
+    zoteroQuickCite: 'Rychlá citace',
+    zoteroQuickCiteTip: 'Vyhledejte v knihovně Zotero a citujte, aniž byste opustili dokument',
+    zoteroLibrary: 'Knihovna',
+    zoteroLibraryTip: 'Zobrazit knihovnu Zotero vedle dokumentu; kliknutím na položku ji citujete',
+    zoteroLibraryGroup: 'Citovat',
+    zoteroAutoRefresh: 'Aktualizovat při otevření',
+    zoteroAutoRefreshTip: 'Aktualizovat citace Zotero v dokumentu při jeho otevření',
+    zoteroSearchPlaceholder: 'Název, autor nebo rok',
+    zoteroNoResults: 'Žádné odpovídající položky',
+    zoteroMyLibrary: 'Moje knihovna',
+    zoteroQuickCiteHint: 'Enter cituje · {mod}+kliknutí vybere více · Esc zavře',
+    zoteroCiteTip: 'Kliknutím citujete na pozici kurzoru',
+    zoteroCitePicked: 'Citovat položky: {n}',
+    zoteroLocalApiOff:
+      'Zapněte „Povolit ostatním aplikacím v tomto počítači komunikovat se Zotero“ v Zotero, Nastavení ▸ Pokročilé, a zkuste to znovu.',
+    zoteroCannotInsert: 'Sem nelze vložit citaci.',
+    zoteroNoteStyleUnsupported:
+      'Tento dokument používá citační styl s poznámkami pod čarou nebo vysvětlivkami. GenOffice zatím neumí vkládat citace Zotero do poznámek.',
   },
   nl: {
     zoteroCitation: 'Citatie toevoegen/bewerken',
@@ -297,6 +577,25 @@ export const zoteroStrings = defineStrings({
     zoteroNoteFieldsUnsupported:
       'Dit document bevat Zotero-citaties in voet- of eindnoten die GenOffice nog niet kan bijwerken. Zotero-opdrachten zijn hier uitgeschakeld zodat de bibliografie intact blijft.',
     zoteroGroup: 'Zotero',
+    zoteroQuickCite: 'Snel citeren',
+    zoteroQuickCiteTip: 'Zoek in je Zotero-bibliotheek en citeer zonder het document te verlaten',
+    zoteroLibrary: 'Bibliotheek',
+    zoteroLibraryTip:
+      'Toon je Zotero-bibliotheek naast het document; klik op een item om het te citeren',
+    zoteroLibraryGroup: 'Citeren',
+    zoteroAutoRefresh: 'Vernieuwen bij openen',
+    zoteroAutoRefreshTip: 'Vernieuw de Zotero-citaties van een document bij het openen',
+    zoteroSearchPlaceholder: 'Titel, auteur of jaar',
+    zoteroNoResults: 'Geen overeenkomende items',
+    zoteroMyLibrary: 'Mijn bibliotheek',
+    zoteroQuickCiteHint: 'Enter citeert · {mod}-klik kiest meerdere · Esc sluit',
+    zoteroCiteTip: 'Klik om bij de cursor te citeren',
+    zoteroCitePicked: '{n} items citeren',
+    zoteroLocalApiOff:
+      'Zet "Andere programma\'s op deze computer toestaan met Zotero te communiceren" aan in Zotero, Instellingen ▸ Geavanceerd, en probeer het opnieuw.',
+    zoteroCannotInsert: 'Hier kan geen citatie worden ingevoegd.',
+    zoteroNoteStyleUnsupported:
+      'Dit document gebruikt een citeerstijl met voet- of eindnoten. GenOffice kan nog geen Zotero-citaties in notities plaatsen.',
   },
   ms: {
     zoteroCitation: 'Tambah/Edit Petikan',
@@ -317,6 +616,24 @@ export const zoteroStrings = defineStrings({
     zoteroNoteFieldsUnsupported:
       'Dokumen ini mempunyai petikan Zotero dalam nota kaki atau nota hujung yang belum boleh dikemas kini oleh GenOffice. Perintah Zotero dimatikan di sini supaya bibliografi kekal utuh.',
     zoteroGroup: 'Zotero',
+    zoteroQuickCite: 'Petik Pantas',
+    zoteroQuickCiteTip: 'Cari dalam pustaka Zotero dan petik tanpa meninggalkan dokumen',
+    zoteroLibrary: 'Pustaka',
+    zoteroLibraryTip: 'Tunjukkan pustaka Zotero di sebelah dokumen; klik item untuk memetiknya',
+    zoteroLibraryGroup: 'Petik',
+    zoteroAutoRefresh: 'Segar Semula Semasa Dibuka',
+    zoteroAutoRefreshTip: 'Segar semula petikan Zotero dokumen apabila dibuka',
+    zoteroSearchPlaceholder: 'Tajuk, pengarang atau tahun',
+    zoteroNoResults: 'Tiada item yang sepadan',
+    zoteroMyLibrary: 'Pustaka Saya',
+    zoteroQuickCiteHint: 'Enter memetik · {mod}-klik memilih beberapa · Esc menutup',
+    zoteroCiteTip: 'Klik untuk memetik di kursor',
+    zoteroCitePicked: 'Petik {n} item',
+    zoteroLocalApiOff:
+      'Hidupkan "Benarkan aplikasi lain pada komputer ini berkomunikasi dengan Zotero" dalam Zotero, Tetapan ▸ Lanjutan, kemudian cuba lagi.',
+    zoteroCannotInsert: 'Petikan tidak boleh disisipkan di sini.',
+    zoteroNoteStyleUnsupported:
+      'Dokumen ini menggunakan gaya petikan nota kaki atau nota akhir. GenOffice belum boleh meletakkan petikan Zotero dalam nota.',
   },
   he: {
     zoteroCitation: 'הוספה/עריכה של ציטוט',
@@ -335,6 +652,24 @@ export const zoteroStrings = defineStrings({
     zoteroNoteFieldsUnsupported:
       'מסמך זה מכיל ציטוטים של Zotero בהערות שוליים או הערות סיום, ש-GenOffice עדיין אינו יכול לעדכן. פקודות Zotero מושבתות כאן כדי לשמור על הביבליוגרפיה שלמה.',
     zoteroGroup: 'Zotero',
+    zoteroQuickCite: 'ציטוט מהיר',
+    zoteroQuickCiteTip: 'חיפוש בספריית Zotero והוספת ציטוט בלי לעזוב את המסמך',
+    zoteroLibrary: 'ספרייה',
+    zoteroLibraryTip: 'הצגת ספריית Zotero לצד המסמך; לחיצה על פריט מצטטת אותו',
+    zoteroLibraryGroup: 'ציטוט',
+    zoteroAutoRefresh: 'רענון בפתיחה',
+    zoteroAutoRefreshTip: 'רענון ציטוטי Zotero של מסמך בעת פתיחתו',
+    zoteroSearchPlaceholder: 'כותרת, מחבר או שנה',
+    zoteroNoResults: 'אין פריטים תואמים',
+    zoteroMyLibrary: 'הספרייה שלי',
+    zoteroQuickCiteHint: 'Enter לציטוט · {mod}+לחיצה לבחירת כמה · Esc לסגירה',
+    zoteroCiteTip: 'לחיצה מצטטת במיקום הסמן',
+    zoteroCitePicked: 'ציטוט {n} פריטים',
+    zoteroLocalApiOff:
+      'הפעילו את "אפשר ליישומים אחרים במחשב זה לתקשר עם Zotero" ב-Zotero, הגדרות ▸ מתקדם, ונסו שוב.',
+    zoteroCannotInsert: 'לא ניתן להוסיף כאן ציטוט.',
+    zoteroNoteStyleUnsupported:
+      'מסמך זה משתמש בסגנון ציטוט של הערות שוליים או הערות סיום. GenOffice עדיין לא יכול להוסיף ציטוטי Zotero להערות.',
   },
   hi: {
     zoteroCitation: 'उद्धरण जोड़ें/संपादित करें',
@@ -353,6 +688,25 @@ export const zoteroStrings = defineStrings({
     zoteroNoteFieldsUnsupported:
       'इस दस्तावेज़ के फ़ुटनोट या एंडनोट में Zotero उद्धरण हैं, जिन्हें GenOffice अभी अपडेट नहीं कर सकता। ग्रंथसूची को सुरक्षित रखने के लिए यहाँ Zotero कमांड बंद हैं।',
     zoteroGroup: 'Zotero',
+    zoteroQuickCite: 'त्वरित उद्धरण',
+    zoteroQuickCiteTip: 'दस्तावेज़ छोड़े बिना Zotero लाइब्रेरी में खोजें और उद्धरण डालें',
+    zoteroLibrary: 'लाइब्रेरी',
+    zoteroLibraryTip:
+      'दस्तावेज़ के पास Zotero लाइब्रेरी दिखाएँ; उद्धृत करने के लिए किसी आइटम पर क्लिक करें',
+    zoteroLibraryGroup: 'उद्धृत करें',
+    zoteroAutoRefresh: 'खोलने पर रीफ़्रेश करें',
+    zoteroAutoRefreshTip: 'दस्तावेज़ खुलने पर उसके Zotero उद्धरण रीफ़्रेश करें',
+    zoteroSearchPlaceholder: 'शीर्षक, लेखक या वर्ष',
+    zoteroNoResults: 'कोई मेल खाता आइटम नहीं',
+    zoteroMyLibrary: 'मेरी लाइब्रेरी',
+    zoteroQuickCiteHint: 'Enter से उद्धृत करें · {mod}+क्लिक से कई चुनें · Esc से बंद करें',
+    zoteroCiteTip: 'कर्सर पर उद्धृत करने के लिए क्लिक करें',
+    zoteroCitePicked: '{n} आइटम उद्धृत करें',
+    zoteroLocalApiOff:
+      'Zotero की सेटिंग्स ▸ उन्नत में "इस कंप्यूटर के अन्य ऐप्लिकेशन को Zotero से संवाद करने दें" चालू करें, फिर दोबारा कोशिश करें।',
+    zoteroCannotInsert: 'यहाँ उद्धरण नहीं डाला जा सकता।',
+    zoteroNoteStyleUnsupported:
+      'यह दस्तावेज़ फ़ुटनोट या एंडनोट उद्धरण शैली का उपयोग करता है। GenOffice अभी नोट्स में Zotero उद्धरण नहीं डाल सकता।',
   },
   'zh-TW': {
     zoteroCitation: '新增/編輯引文',
@@ -370,6 +724,24 @@ export const zoteroStrings = defineStrings({
     zoteroNoteFieldsUnsupported:
       '此文件的註腳或章節附註中含有 Zotero 引文，GenOffice 目前還無法更新它們。為保持參考文獻完整，已停用此文件的 Zotero 命令。',
     zoteroGroup: 'Zotero',
+    zoteroQuickCite: '快速引用',
+    zoteroQuickCiteTip: '在 Zotero 文獻庫中搜尋，不離開文件即可插入引文',
+    zoteroLibrary: '文獻庫',
+    zoteroLibraryTip: '在文件旁顯示 Zotero 文獻庫，按一下項目即可引用',
+    zoteroLibraryGroup: '引用',
+    zoteroAutoRefresh: '開啟時重新整理',
+    zoteroAutoRefreshTip: '開啟含 Zotero 引文的文件時自動重新整理引文',
+    zoteroSearchPlaceholder: '標題、作者或年份',
+    zoteroNoResults: '沒有符合的項目',
+    zoteroMyLibrary: '我的文獻庫',
+    zoteroQuickCiteHint: 'Enter 插入引文 · {mod}+按一下可選多項 · Esc 關閉',
+    zoteroCiteTip: '按一下在游標處引用',
+    zoteroCitePicked: '引用 {n} 項',
+    zoteroLocalApiOff:
+      '請在 Zotero 設定 ▸ 進階 中開啟「允許此電腦上的其他應用程式與 Zotero 通訊」，然後再試一次。',
+    zoteroCannotInsert: '此處無法插入引文。',
+    zoteroNoteStyleUnsupported:
+      '此文件使用註腳或章節附註引文樣式，GenOffice 目前還無法在附註中插入 Zotero 引文。',
   },
   vi: {
     zoteroCitation: 'Thêm/Sửa trích dẫn',
@@ -389,6 +761,24 @@ export const zoteroStrings = defineStrings({
     zoteroNoteFieldsUnsupported:
       'Tài liệu này có chứa trích dẫn Zotero trong chú thích cuối trang hoặc chú thích cuối tài liệu mà GenOffice hiện chưa thể cập nhật. Các lệnh Zotero đã bị tắt tại đây để giữ nguyên danh mục tài liệu tham khảo.',
     zoteroGroup: 'Zotero',
+    zoteroQuickCite: 'Trích dẫn nhanh',
+    zoteroQuickCiteTip: 'Tìm trong thư viện Zotero và chèn trích dẫn mà không rời tài liệu',
+    zoteroLibrary: 'Thư viện',
+    zoteroLibraryTip: 'Hiện thư viện Zotero bên cạnh tài liệu; bấm vào một mục để trích dẫn',
+    zoteroLibraryGroup: 'Trích dẫn',
+    zoteroAutoRefresh: 'Làm mới khi mở',
+    zoteroAutoRefreshTip: 'Làm mới các trích dẫn Zotero của tài liệu khi mở',
+    zoteroSearchPlaceholder: 'Tiêu đề, tác giả hoặc năm',
+    zoteroNoResults: 'Không có mục phù hợp',
+    zoteroMyLibrary: 'Thư viện của tôi',
+    zoteroQuickCiteHint: 'Enter để trích dẫn · {mod}+bấm để chọn nhiều · Esc để đóng',
+    zoteroCiteTip: 'Bấm để trích dẫn tại con trỏ',
+    zoteroCitePicked: 'Trích dẫn {n} mục',
+    zoteroLocalApiOff:
+      'Bật "Cho phép các ứng dụng khác trên máy tính này giao tiếp với Zotero" trong Zotero, Cài đặt ▸ Nâng cao, rồi thử lại.',
+    zoteroCannotInsert: 'Không thể chèn trích dẫn tại đây.',
+    zoteroNoteStyleUnsupported:
+      'Tài liệu này dùng kiểu trích dẫn chú thích cuối trang hoặc cuối tài liệu. GenOffice chưa thể đặt trích dẫn Zotero vào chú thích.',
   },
   tr: {
     zoteroCitation: 'Alıntı Ekle/Düzenle',
@@ -409,6 +799,25 @@ export const zoteroStrings = defineStrings({
     zoteroNoteFieldsUnsupported:
       'Bu belgenin dipnotlarında veya son notlarında GenOffice tarafından henüz güncellenemeyen Zotero alıntıları var. Kaynakçanın bozulmaması için Zotero komutları burada kapatıldı.',
     zoteroGroup: 'Zotero',
+    zoteroQuickCite: 'Hızlı Alıntı',
+    zoteroQuickCiteTip: 'Belgeden ayrılmadan Zotero kitaplığınızda arayın ve alıntı ekleyin',
+    zoteroLibrary: 'Kitaplık',
+    zoteroLibraryTip:
+      'Zotero kitaplığınızı belgenin yanında gösterin; alıntılamak için bir öğeye tıklayın',
+    zoteroLibraryGroup: 'Alıntıla',
+    zoteroAutoRefresh: 'Açılışta Yenile',
+    zoteroAutoRefreshTip: 'Bir belge açıldığında Zotero alıntılarını yenile',
+    zoteroSearchPlaceholder: 'Başlık, yazar veya yıl',
+    zoteroNoResults: 'Eşleşen öğe yok',
+    zoteroMyLibrary: 'Kitaplığım',
+    zoteroQuickCiteHint: 'Enter alıntılar · {mod}+tıklama birden çok seçer · Esc kapatır',
+    zoteroCiteTip: 'İmleçte alıntılamak için tıklayın',
+    zoteroCitePicked: '{n} öğeyi alıntıla',
+    zoteroLocalApiOff:
+      'Zotero Ayarlar ▸ Gelişmiş bölümünde "Bu bilgisayardaki diğer uygulamaların Zotero ile iletişim kurmasına izin ver" seçeneğini açın ve yeniden deneyin.',
+    zoteroCannotInsert: 'Buraya alıntı eklenemez.',
+    zoteroNoteStyleUnsupported:
+      'Bu belge dipnot veya son not alıntı stili kullanıyor. GenOffice henüz notlara Zotero alıntısı ekleyemiyor.',
   },
   hu: {
     zoteroCitation: 'Hivatkozás hozzáadása/szerkesztése',
@@ -429,5 +838,25 @@ export const zoteroStrings = defineStrings({
     zoteroNoteFieldsUnsupported:
       'Ez a dokumentum lábjegyzetekben vagy végjegyzetekben tartalmaz Zotero-hivatkozásokat, amelyeket a GenOffice egyelőre nem tud frissíteni. A Zotero-parancsok itt le vannak tiltva, hogy az irodalomjegyzék érintetlen maradjon.',
     zoteroGroup: 'Zotero',
+    zoteroQuickCite: 'Gyors hivatkozás',
+    zoteroQuickCiteTip:
+      'Keresés a Zotero-könyvtárban és hivatkozás beszúrása a dokumentum elhagyása nélkül',
+    zoteroLibrary: 'Könyvtár',
+    zoteroLibraryTip:
+      'A Zotero-könyvtár megjelenítése a dokumentum mellett; kattintson egy elemre a hivatkozáshoz',
+    zoteroLibraryGroup: 'Hivatkozás',
+    zoteroAutoRefresh: 'Frissítés megnyitáskor',
+    zoteroAutoRefreshTip: 'A dokumentum Zotero-hivatkozásainak frissítése megnyitáskor',
+    zoteroSearchPlaceholder: 'Cím, szerző vagy év',
+    zoteroNoResults: 'Nincs egyező elem',
+    zoteroMyLibrary: 'Saját könyvtár',
+    zoteroQuickCiteHint: 'Enter: hivatkozás · {mod}+kattintás: több kijelölése · Esc: bezárás',
+    zoteroCiteTip: 'Kattintson a kurzor helyére való hivatkozáshoz',
+    zoteroCitePicked: '{n} elem hivatkozása',
+    zoteroLocalApiOff:
+      'Kapcsolja be „A számítógép más alkalmazásai kommunikálhatnak a Zoteróval” beállítást a Zotero Beállítások ▸ Speciális lapján, majd próbálja újra.',
+    zoteroCannotInsert: 'Ide nem szúrható be hivatkozás.',
+    zoteroNoteStyleUnsupported:
+      'Ez a dokumentum láb- vagy végjegyzetes hivatkozási stílust használ. A GenOffice egyelőre nem tud Zotero-hivatkozást jegyzetbe tenni.',
   },
 })

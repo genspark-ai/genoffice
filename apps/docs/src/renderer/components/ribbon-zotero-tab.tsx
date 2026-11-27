@@ -1,12 +1,25 @@
 import { useState, type ReactNode } from 'react'
 import type { ZoteroCommand } from '../../shared/ipc'
 import { useI18n, type StringKey } from '../i18n/locale'
-import { IconBook, IconCitation, IconGear, IconRefresh, IconUnlink } from './icons'
+import { useRunCommand } from './ribbon-command'
+import {
+  IconBook,
+  IconCitation,
+  IconCitationsPane,
+  IconGear,
+  IconRefresh,
+  IconSearch,
+  IconUnlink,
+} from './icons'
 import { BIG, TabProps } from './ribbon-tabs'
 
 interface ZoteroTabProps extends Pick<TabProps, 'hasDoc' | 'setDropdown'> {
   /** footnotes/endnotes hold Zotero citation fields the bridge cannot see yet */
   zoteroNoteFields?: boolean
+  /** the library pane is open */
+  zoteroLibraryOpen?: boolean
+  /** Refresh on Open is on */
+  zoteroAutoRefresh?: boolean
 }
 
 // the buttons and their order are the Zotero plugin's own tab in Word
@@ -48,8 +61,15 @@ const BUTTONS: Array<{
   },
 ]
 
-export function ZoteroTab({ hasDoc, setDropdown, zoteroNoteFields }: ZoteroTabProps) {
+export function ZoteroTab({
+  hasDoc,
+  setDropdown,
+  zoteroNoteFields,
+  zoteroLibraryOpen,
+  zoteroAutoRefresh,
+}: ZoteroTabProps) {
   const { t } = useI18n()
+  const runCommand = useRunCommand()
   const [busy, setBusy] = useState<ZoteroCommand | null>(null)
 
   const runZotero = async (command: ZoteroCommand) => {
@@ -83,24 +103,68 @@ export function ZoteroTab({ hasDoc, setDropdown, zoteroNoteFields }: ZoteroTabPr
   }
 
   return (
-    <div className="ribbon-group">
-      <div className="ribbon-group-items">
-        {BUTTONS.map(({ command, label, tip, icon }) => (
+    <>
+      <div className="ribbon-group">
+        <div className="ribbon-group-items">
           <button
-            key={command}
             className="rb-big"
-            data-testid={`zotero-${command}`}
-            disabled={!hasDoc || busy !== null}
-            data-tip={t(tip)}
-            // command-exempt: Zotero drives the document over its own integration protocol
-            onClick={() => void runZotero(command)}
+            data-testid="zotero-quick-cite"
+            disabled={!hasDoc}
+            data-tip={t('zoteroQuickCiteTip')}
+            onClick={() => runCommand('zotero-quick-cite')}
           >
-            <span className="rb-big-icon">{icon(BIG)}</span>
-            <span>{t(label)}</span>
+            <span className="rb-big-icon">
+              <IconSearch size={BIG} />
+            </span>
+            <span>{t('zoteroQuickCite')}</span>
           </button>
-        ))}
+          <button
+            className={`rb-big${zoteroLibraryOpen ? ' active' : ''}`}
+            data-testid="zotero-library"
+            aria-pressed={!!zoteroLibraryOpen}
+            disabled={!hasDoc}
+            data-tip={t('zoteroLibraryTip')}
+            onClick={() => runCommand('zotero-library')}
+          >
+            <span className="rb-big-icon">
+              <IconCitationsPane size={BIG} />
+            </span>
+            <span>{t('zoteroLibrary')}</span>
+          </button>
+        </div>
+        <div className="ribbon-group-label">{t('zoteroLibraryGroup')}</div>
       </div>
-      <div className="ribbon-group-label">{t('zoteroGroup')}</div>
-    </div>
+      <div className="ribbon-group">
+        <div className="ribbon-group-items">
+          {BUTTONS.map(({ command, label, tip, icon }) => (
+            <button
+              key={command}
+              className="rb-big"
+              data-testid={`zotero-${command}`}
+              disabled={!hasDoc || busy !== null}
+              data-tip={t(tip)}
+              // command-exempt: Zotero drives the document over its own integration protocol
+              onClick={() => void runZotero(command)}
+            >
+              <span className="rb-big-icon">{icon(BIG)}</span>
+              <span>{t(label)}</span>
+            </button>
+          ))}
+          <div className="rb-col">
+            <button
+              className={`rb-small${zoteroAutoRefresh ? ' active' : ''}`}
+              data-testid="zotero-auto-refresh"
+              aria-pressed={!!zoteroAutoRefresh}
+              data-tip={t('zoteroAutoRefreshTip')}
+              onClick={() => runCommand('zotero-auto-refresh')}
+            >
+              <IconRefresh size={14} />
+              <span className="rb-small-label">{t('zoteroAutoRefresh')}</span>
+            </button>
+          </div>
+        </div>
+        <div className="ribbon-group-label">{t('zoteroGroup')}</div>
+      </div>
+    </>
   )
 }

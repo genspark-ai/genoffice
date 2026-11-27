@@ -415,6 +415,14 @@ export class ZoteroDocumentController {
   private setFieldCode(value: unknown, code: string): void {
     const field = this.requireField(value)
     const type = field.mark.type
+    const instr = zoteroInstructionFromCode(code)
+    // a Refresh hands back every code; one that did not change is not an edit
+    if (
+      field.segments.every(
+        (segment) => segment.mark.attrs.instr === instr && segment.mark.attrs.fieldId === field.id,
+      )
+    )
+      return
     let transaction = this.editor.state.tr
     for (const segment of field.segments) {
       transaction = transaction.removeMark(segment.from, segment.to, type).addMark(
@@ -422,7 +430,7 @@ export class ZoteroDocumentController {
         segment.to,
         type.create({
           ...segment.mark.attrs,
-          instr: zoteroInstructionFromCode(code),
+          instr,
           fieldId: field.id,
         }),
       )

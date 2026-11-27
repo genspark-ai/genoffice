@@ -309,6 +309,8 @@ interface RibbonProps {
   citationStyle?: CitationStyleId | null
   /** footnotes/endnotes hold Zotero citation fields the bridge cannot see yet */
   zoteroNoteFields?: boolean
+  zoteroLibraryOpen?: boolean
+  zoteroAutoRefresh?: boolean
   showZotero?: boolean
   onAddSource: (source: SourceInfo) => void
   zoom: number
@@ -696,6 +698,8 @@ function RibbonInner({
   sources,
   citationStyle,
   zoteroNoteFields,
+  zoteroLibraryOpen,
+  zoteroAutoRefresh,
   showZotero,
   onAddSource,
   zoom,
@@ -4152,6 +4156,8 @@ function RibbonInner({
             hasDoc={canEdit}
             setDropdown={setDropdown}
             zoteroNoteFields={zoteroNoteFields}
+            zoteroLibraryOpen={zoteroLibraryOpen}
+            zoteroAutoRefresh={zoteroAutoRefresh}
           />
         ) : tab === 'mailings' ? (
           <MailingsTab

@@ -337,6 +337,38 @@ export interface ZoteroCommandResult {
   error?: string
 }
 
+/** a regular item of the Zotero library, as Quick Cite and the library pane list it */
+export interface ZoteroLocalItem {
+  key: string
+  /** the user library's id: the item's URI is http://zotero.org/users/<id>/items/<key> */
+  libraryId: number
+  title: string
+  /** Zotero's own creator summary ("Smith", "Smith and Lee", "Smith et al.") */
+  creators: string
+  year: string
+  itemType: string
+}
+
+export interface ZoteroLocalCollection {
+  key: string
+  name: string
+  parent: string | null
+}
+
+/** one item's CSL-JSON and its citation formatted by Zotero in the requested style */
+export interface ZoteroLocalCiteData {
+  key: string
+  libraryId: number
+  itemData: Record<string, unknown>
+  citation: string
+}
+
+/** off: the local API setting is disabled; unreachable: Zotero is not running */
+export type ZoteroLocalErrorCode = 'off' | 'unreachable' | 'bad-response' | 'bad-request'
+
+export type ZoteroLocalResult<T> =
+  { ok: true; value: T } | { ok: false; errorCode: ZoteroLocalErrorCode; error: string }
+
 export interface ZoteroRendererRequest {
   requestId: string
   command: string
@@ -467,6 +499,14 @@ export interface DesktopApi {
   /** invoke Zotero's word-processor integration and service its document callbacks */
   zoteroCommand(command: ZoteroCommand): Promise<ZoteroCommandResult>
   onZoteroRequest(handler: (request: ZoteroRendererRequest) => void): () => void
+  /** Zotero's local API (read-only, 127.0.0.1): Quick Cite and the library pane */
+  zoteroSearch(query: string): Promise<ZoteroLocalResult<ZoteroLocalItem[]>>
+  zoteroCollections(): Promise<ZoteroLocalResult<ZoteroLocalCollection[]>>
+  zoteroCollectionItems(
+    collectionKey: string | null,
+    query: string,
+  ): Promise<ZoteroLocalResult<ZoteroLocalItem[]>>
+  zoteroCiteData(keys: string[], style: string): Promise<ZoteroLocalResult<ZoteroLocalCiteData[]>>
   respondToZotero(response: ZoteroRendererResponse): void
   openDocx(): Promise<OpenDocxResult>
   openDocxPath(path: string): Promise<OpenDocxResult>
