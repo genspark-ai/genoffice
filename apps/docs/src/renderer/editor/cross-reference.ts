@@ -6,8 +6,13 @@
  */
 import type { Editor } from '@tiptap/core'
 import type { Node as PmNode } from '@tiptap/pm/model'
-import { Selection, TextSelection } from '@tiptap/pm/state'
-import type { Block, NoteInfo, NumberingDef } from '@genoffice/docx-engine'
+import { NodeSelection, Selection, TextSelection, type Transaction } from '@tiptap/pm/state'
+import {
+  bookmarkNamesOf,
+  type Block,
+  type NoteInfo,
+  type NumberingDef,
+} from '@genoffice/docx-engine'
 import { collectCaptions } from '../commands/reference-commands'
 import type { ListNumberingStorage } from './extensions'
 import { noteMarkOf, relativeNoteRef } from './note-ref-fields'
@@ -18,7 +23,7 @@ import { xmlOfNode } from './toc-update'
 
 export interface BookmarkEntry {
   name: string
-  /** position of the paragraph that carries it */
+  /** position of the paragraph or inline field that carries it */
   pos: number
   preview: string
   hidden: boolean
@@ -37,7 +42,9 @@ const namesOf = (node: PmNode, attr: 'bookmarks' | 'hiddenBookmarks'): string[] 
 export function collectBookmarks(doc: PmNode, withHidden = false): BookmarkEntry[] {
   const out: BookmarkEntry[] = []
   doc.descendants((node, pos) => {
-    const preview = node.textContent.slice(0, 40)
+    const preview = (
+      node.type.name === 'docMathTypeField' ? String(node.attrs.text) : node.textContent
+    ).slice(0, 40)
     if (withHidden)
       for (const name of namesOf(node, 'hiddenBookmarks'))
         out.push({ name, pos, preview, hidden: true })
@@ -74,10 +81,7 @@ export function addBookmark(editor: Editor, name: string): boolean {
   const { tr, doc } = editor.state
   doc.descendants((node, pos) => {
     const names = namesOf(node, 'bookmarks')
-    if (pos !== at && names.includes(name)) {
-      const rest = names.filter((n) => n !== name)
-      tr.setNodeAttribute(pos, 'bookmarks', rest.length > 0 ? rest : null)
-    }
+    if (pos !== at && names.includes(name)) clearBookmark(tr, node, pos, 'bookmarks', name)
     return !node.isLeaf
   })
   const host = doc.nodeAt(at)
@@ -96,6 +100,31 @@ export function addBookmark(editor: Editor, name: string): boolean {
   return true
 }
 
+function clearBookmark(
+  tr: Transaction,
+  node: PmNode,
+  pos: number,
+  attr: 'bookmarks' | 'hiddenBookmarks',
+  name: string,
+): void {
+  if (node.type.name === 'docMathTypeField') {
+    const xml = String(node.attrs.xml)
+    const start = [...xml.matchAll(/<w:bookmarkStart\b[^>]*\/>/g)].find(([tag]) =>
+      bookmarkNamesOf(tag)[attr]?.includes(name),
+    )
+    const idOf = (tag: string) => /\bw:id\s*=\s*["']([^"']+)["']/.exec(tag)?.[1]
+    const id = start && idOf(start[0])
+    if (id) {
+      const updated = xml.replace(/<w:bookmark(?:Start|End)\b[^>]*\/>/g, (tag) =>
+        idOf(tag) === id ? '' : tag,
+      )
+      tr.setNodeAttribute(pos, 'xml', updated)
+    }
+  }
+  const rest = namesOf(node, attr).filter((n) => n !== name)
+  tr.setNodeAttribute(pos, attr, rest.length > 0 ? rest : null)
+}
+
 export function removeBookmark(editor: Editor, entry: BookmarkEntry): void {
   const node = editor.state.doc.nodeAt(entry.pos)
   if (!node) return
@@ -110,8 +139,8 @@ export function removeBookmark(editor: Editor, entry: BookmarkEntry): void {
     return
   }
   const attr = entry.hidden ? 'hiddenBookmarks' : 'bookmarks'
-  const rest = namesOf(node, attr).filter((n) => n !== entry.name)
-  const tr = editor.state.tr.setNodeAttribute(entry.pos, attr, rest.length > 0 ? rest : null)
+  const tr = editor.state.tr
+  clearBookmark(tr, node, entry.pos, attr, entry.name)
   const mark = editor.schema.marks[RANGE_MARK]?.create({ name: entry.name })
   if (mark && !entry.hidden) tr.removeMark(0, tr.doc.content.size, mark)
   editor.view.dispatch(tr.setMeta(TRACK_IGNORE, true))
@@ -123,10 +152,13 @@ export function goToBookmark(editor: Editor, entry: BookmarkEntry): void {
   const node = state.doc.nodeAt(entry.pos)
   if (!node) return
   const range = entry.hidden ? null : bookmarkRange(state.doc, entry.name)
-  const sel = TextSelection.between(
-    state.doc.resolve(range?.from ?? entry.pos + 1),
-    state.doc.resolve(range?.to ?? entry.pos + node.nodeSize - 1),
-  )
+  const sel =
+    node.type.name === 'docMathTypeField'
+      ? NodeSelection.create(state.doc, entry.pos)
+      : TextSelection.between(
+          state.doc.resolve(range?.from ?? entry.pos + 1),
+          state.doc.resolve(range?.to ?? entry.pos + node.nodeSize - 1),
+        )
   view.dispatch(state.tr.setSelection(sel).scrollIntoView())
   const dom = view.nodeDOM(entry.pos)
   if (dom instanceof HTMLElement) dom.scrollIntoView?.({ block: 'center' })

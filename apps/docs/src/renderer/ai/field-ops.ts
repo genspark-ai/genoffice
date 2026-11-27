@@ -349,6 +349,7 @@ function userBookmarks(doc: PmNode): string[] {
 
 /** bookmark text as shown, minus deleted runs and REF results that point back at `excludeRef` (a REF inside its own bookmark would otherwise grow on every refresh) */
 function liveTextOf(node: PmNode, excludeRef?: string): string {
+  if (node.type.name === 'docMathTypeField') return String(node.attrs.text ?? '')
   let out = ''
   node.descendants((child) => {
     if (!child.isText) return true

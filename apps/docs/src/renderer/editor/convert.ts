@@ -32,6 +32,7 @@ import {
   type TextboxSizePatch,
   patchTextboxParas,
   generateTableModelXml,
+  bookmarkNamesOf,
   nextBookmarkIdAllocator,
   resolvePropChangeXml,
   inlinePictureDrawingXml,
@@ -1611,6 +1612,18 @@ export function runsToInline(runs: Run[]): PmNode[] {
     noted = nodes.length
     const marks = runMarks(run)
     const atomMarks = marks.length > 0 ? { marks } : {}
+    if (run.mathTypeFieldXml !== undefined) {
+      nodes.push({
+        type: 'docMathTypeField',
+        ...atomMarks,
+        attrs: {
+          text: run.text,
+          xml: run.mathTypeFieldXml,
+          ...bookmarkNamesOf(run.mathTypeFieldXml),
+        },
+      })
+      continue
+    }
     if (run.math) {
       // MathType OLE equations carry a negative w:position on the run only to
       // align their WMF preview image's bottom edge with the text baseline.
@@ -2422,7 +2435,10 @@ export function pmDocToSavePlan(inputDoc: PmNode, originalBlocks: Block[]): Save
             : null
         if (structurallyUnchanged && formattingUnchanged && tableTexts && original.originalXml) {
           changedCount++
-          pushBlock({ kind: 'xml', xml: patchTableCellTexts(original.originalXml, tableTexts) })
+          pushBlock({
+            kind: 'xml',
+            xml: patchTableCellTexts(original.originalXml, tableTexts, original.table),
+          })
         } else if (structurallyUnchanged && formattingUnchanged) {
           pushBlock({ kind: 'original', docxIndex: idx! })
         } else {
@@ -3352,10 +3368,19 @@ function tableTextsPatchFromModel(
 }
 
 function cellParaMathChanged(current: Run[], original: Run[] | undefined): boolean {
-  const cur = current.filter((r) => r.math).map((r) => `${r.math!.omml}\0${r.math!.oleXml ?? ''}`)
-  const orig = (original ?? [])
-    .filter((r) => r.math)
-    .map((r) => `${r.math!.omml}\0${r.math!.oleXml ?? ''}`)
+  const mathItems = (runs: Run[]) => {
+    const items: string[] = []
+    let offset = 0
+    for (const run of runs) {
+      if (run.math) items.push(JSON.stringify([offset, run.math.omml, run.math.oleXml]))
+      if (run.mathTypeFieldXml !== undefined)
+        items.push(JSON.stringify([offset, run.mathTypeFieldXml]))
+      offset += run.text.length
+    }
+    return items
+  }
+  const cur = mathItems(current)
+  const orig = mathItems(original ?? [])
   return cur.length !== orig.length || cur.some((m, i) => m !== orig[i])
 }
 
@@ -4271,6 +4296,7 @@ export function inlineToRuns(inline: PmNode[]): Run[] {
           prev.sym ||
           prev.ruby ||
           prev.eqLayout ||
+          prev.mathTypeFieldXml !== undefined ||
           prev.image)
       if (node.marks?.length) runs.push(runFromMarks(ch, node.marks))
       // an unformatted break joins a plain run only: folding it into a
@@ -4350,6 +4376,17 @@ export function inlineToRuns(inline: PmNode[]): Run[] {
             ...(oleRawRPr ? { oleRawRPr } : {}),
             ...(oleProgId ? { oleProgId } : {}),
           },
+        })
+      }
+      continue
+    }
+    if (node.type === 'docMathTypeField') {
+      const xml = node.attrs?.xml
+      if (typeof xml === 'string' && xml) {
+        runs.push({
+          ...atomBase(node),
+          text: String(node.attrs?.text ?? ''),
+          mathTypeFieldXml: xml,
         })
       }
       continue
@@ -4665,6 +4702,7 @@ function mergeRuns(runs: Run[]): Run[] {
       run.sym ||
       run.ruby ||
       run.eqLayout ||
+      run.mathTypeFieldXml !== undefined ||
       run.image ||
       prev?.noteRef ||
       prev?.xeTerm !== undefined ||
@@ -4674,6 +4712,7 @@ function mergeRuns(runs: Run[]): Run[] {
       prev?.sym ||
       prev?.ruby ||
       prev?.eqLayout ||
+      prev?.mathTypeFieldXml !== undefined ||
       prev?.image
     if (prev && !atomic && runStyleKey(prev) === runStyleKey(run)) prev.text += run.text
     else merged.push({ ...run })
@@ -4764,6 +4803,7 @@ function runStyleKey(run: Run): string {
     run.sym ? [run.sym.font, run.sym.char] : null,
     run.ruby?.xml ?? null,
     run.eqLayout ?? null,
+    run.mathTypeFieldXml ?? null,
   ])
 }
 
@@ -4844,6 +4884,7 @@ function normalizedRuns(runs: Run[]): unknown[] {
           r.sym ? [r.sym.font, r.sym.char] : null,
           r.ruby?.xml ?? null,
           r.eqLayout ?? null,
+          r.mathTypeFieldXml ?? null,
           r.image?.xml ?? null,
         ],
   )

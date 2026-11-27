@@ -2,7 +2,9 @@ import { Editor } from '@tiptap/core'
 import { parseDocx, saveDocx } from '@genoffice/docx-engine'
 import { describe, expect, it } from 'vitest'
 import { buildDocx } from '../../../packages/docx-engine/tests/helpers/build-docx'
+import { executeOps } from '../src/renderer/ai/ops'
 import { blocksToPmDoc, pmDocToSavePlan, type PmNode } from '../src/renderer/editor/convert'
+import { addBookmark, collectBookmarks, goToBookmark } from '../src/renderer/editor/cross-reference'
 import { equationBlockJson, inlineEquationNodeJson } from '../src/renderer/editor/equation'
 import { editorExtensions } from '../src/renderer/editor/extensions'
 
@@ -121,6 +123,8 @@ const RELS =
 async function openMathTypeDoc(bodyXml: string, oleBase64 = SAMPLE_OLE_B64) {
   const source = await buildDocx({
     bodyXml,
+    docRootExtraAttrs:
+      'xmlns:v="urn:schemas-microsoft-com:vml" xmlns:o="urn:schemas-microsoft-com:office:office"',
     extraRels: RELS,
     binaryParts: [
       {
@@ -145,6 +149,109 @@ async function openMathTypeDoc(bodyXml: string, oleBase64 = SAMPLE_OLE_B64) {
   })
   return { editor, parsed }
 }
+
+describe('numbered MathType equations', () => {
+  const instruction = (code: string) => '<w:r><w:instrText>' + code + '</w:instrText></w:r>'
+  const fieldChar = (kind: string) => '<w:r><w:fldChar w:fldCharType="' + kind + '"/></w:r>'
+  const field = (code: string, result = '') =>
+    fieldChar('begin') + instruction(code) + result + fieldChar('end')
+  const counter = '<w:fldSimple w:instr=" SEQ MTEqn \\c ">' + instruction('3') + '</w:fldSimple>'
+  const number = field(
+    ' MACROBUTTON MTPlaceRef ',
+    field(' SEQ MTEqn \\h ') + instruction('(') + counter + instruction(')'),
+  )
+  const reference = field(' REF EqNum \\h ', fieldChar('separate') + '<w:r><w:t>(3)</w:t></w:r>')
+  const numbered =
+    '<w:bookmarkStart w:id="7" w:name="EqNum"/>' + number + '<w:bookmarkEnd w:id="7"/>'
+  const object = '<w:r>' + OBJECT_XML + '</w:r>'
+
+  it('resolves a new REF to the number instead of the entire equation paragraph', async () => {
+    const { editor } = await openMathTypeDoc(
+      '<w:p>' + object + numbered + '</w:p><w:p><w:r><w:t>See </w:t></w:r></w:p>',
+    )
+    try {
+      const outcome = executeOps(editor, [
+        { op: 'insertField', target: { blockIndexes: [1] }, type: 'REF', args: 'EqNum' },
+      ])
+      expect(outcome.ok, outcome.error).toBe(true)
+      expect(editor.state.doc.child(1).textContent).toMatch(/\(3\)$/)
+    } finally {
+      editor.destroy()
+    }
+  })
+
+  it('moves a number bookmark without duplicating it or disturbing the field', async () => {
+    const { editor, parsed } = await openMathTypeDoc(
+      '<w:p>' + object + numbered + '</w:p><w:p><w:r><w:t>Replacement</w:t></w:r></w:p>',
+    )
+    try {
+      editor.commands.setTextSelection(editor.state.doc.content.size - 1)
+      expect(addBookmark(editor, 'EqNum')).toBe(true)
+      const plan = pmDocToSavePlan(editor.getJSON() as PmNode, parsed.blocks)
+      const saved = await parseDocx(await saveDocx(parsed, plan.saveBlocks))
+      expect(saved.blocks[0].originalXml).toContain(number)
+      expect(saved.blocks[0].originalXml).not.toContain('w:bookmarkStart')
+      expect(saved.blocks[1].bookmarks).toEqual(['EqNum'])
+    } finally {
+      editor.destroy()
+    }
+  })
+
+  it.each(['body', 'table'])(
+    'converts just one of two equations next to a bookmarked number in the %s',
+    async (where) => {
+      const p = '<w:p>' + object + '<w:r><w:tab/></w:r>' + object + numbered + '</w:p>'
+      const { editor, parsed } = await openMathTypeDoc(
+        (where === 'body' ? p : '<w:tbl><w:tr><w:tc>' + p + '</w:tc></w:tr></w:tbl>') +
+          '<w:p>' +
+          reference +
+          '</w:p>',
+      )
+      try {
+        const equations: number[] = []
+        editor.state.doc.descendants((node, pos) => {
+          if (node.type.name === 'docInlineMath') equations.push(pos)
+        })
+        expect(equations).toHaveLength(2)
+        const [bookmark] = collectBookmarks(editor.state.doc)
+        expect(bookmark).toMatchObject({ name: 'EqNum', preview: '(3)' })
+        goToBookmark(editor, bookmark)
+        expect(editor.state.doc.nodeAt(editor.state.selection.from)?.type.name).toBe(
+          'docMathTypeField',
+        )
+        expect(pmDocToSavePlan(editor.getJSON() as PmNode, parsed.blocks).changedCount).toBe(0)
+        const second = equations[1]
+        const latex = editor.state.doc.nodeAt(second)!.attrs.latex
+        editor.view.dispatch(
+          editor.state.tr.setNodeMarkup(second, undefined, inlineEquationNodeJson(latex).attrs),
+        )
+        const plan = pmDocToSavePlan(editor.getJSON() as PmNode, parsed.blocks)
+        expect(plan.changedCount).toBe(1)
+        const saved = await parseDocx(await saveDocx(parsed, plan.saveBlocks))
+        const xml = saved.blocks[0].originalXml!
+        expect(xml.match(/<w:object\b/g)).toHaveLength(1)
+        expect(xml.match(/<m:oMath>/g)).toHaveLength(1)
+        expect(xml.indexOf('<w:object')).toBeLessThan(xml.indexOf('<m:oMath>'))
+        expect(xml).toContain(number)
+        expect(xml.match(/w:bookmarkStart\b/g)).toHaveLength(1)
+        expect(xml).toMatch(/<w:bookmarkStart\b[^>]*\/><w:r><w:fldChar w:fldCharType="begin"/)
+        expect(xml).toContain(fieldChar('end') + '<w:bookmarkEnd')
+        expect(saved.blocks[1].originalXml).toBe(parsed.blocks[1].originalXml)
+        const runs =
+          where === 'body'
+            ? saved.blocks[0].runs!
+            : saved.blocks[0].table!.rows[0][0].richParas![0].runs
+        expect(runs.filter((r) => r.math).map((r) => Boolean(r.math!.oleXml))).toEqual([
+          true,
+          false,
+        ])
+        expect(runs.find((r) => r.mathTypeFieldXml)?.text).toBe('(3)')
+      } finally {
+        editor.destroy()
+      }
+    },
+  )
+})
 
 describe('MathType editor rendering and conversion', () => {
   it('renders inline MathType as display-style MathML without negative position overlap and keeps untouched save clean', async () => {

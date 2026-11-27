@@ -149,20 +149,39 @@ export function noteMarkBookmarks(xml: string): Map<string, string[]> {
   return out
 }
 
+function* bookmarkStartsIn(xml: string): Iterable<string> {
+  for (const m of xml.matchAll(/<w:bookmarkStart [^>]*w:name=(?:"([^"]+)"|'([^']+)')/g))
+    yield decodeEntities(m[1] ?? m[2] ?? '')
+}
+
+/** Bookmarks carried inside the numbering field disappear with it when the field is deleted. */
+export function mathTypeFieldBookmarkNames(runs: readonly Run[] = []): Set<string> {
+  const names = new Set<string>()
+  for (const run of runs) {
+    if (!run.mathTypeFieldXml) continue
+    for (const name of bookmarkStartsIn(run.mathTypeFieldXml)) names.add(name)
+  }
+  return names
+}
+
 /** user bookmark names starting in this paragraph; Word internals (_Toc/_Ref/_GoBack…) split out as hiddenBookmarks */
-export function bookmarkNamesOf(xml: string): {
+export function bookmarkNamesOf(
+  xml: string,
+  runs?: readonly Run[],
+): {
   bookmarks: string[] | undefined
   hiddenBookmarks: string[] | undefined
 } {
+  if (!xml.includes('<w:bookmarkStart')) return { bookmarks: undefined, hiddenBookmarks: undefined }
   const names: string[] = []
   const hidden: string[] = []
   // a bookmark on a note mark, or in the result of a SET / ASK, stays there: the run carries it
   const onMarks = new Set([
     ...[...noteMarkBookmarks(xml).values()].flat(),
     ...ranRuleFields(xml).names,
+    ...mathTypeFieldBookmarkNames(runs),
   ])
-  for (const m of xml.matchAll(/<w:bookmarkStart [^>]*w:name=(?:"([^"]+)"|'([^']+)')/g)) {
-    const name = decodeEntities(m[1] ?? m[2] ?? '')
+  for (const name of bookmarkStartsIn(xml)) {
     if (onMarks.has(name)) continue
     // A _ prefix marks Word internal bookmarks (_Ref/_Toc/_Hlk): hidden from the UI, but
     // they must be re-emitted when the paragraph rebuilds, otherwise REF cross-references
@@ -1240,6 +1259,7 @@ function sameStyle(a: Run, b: Run): boolean {
   if (a.sym || b.sym) return false
   if (a.ruby || b.ruby) return false
   if (a.eqLayout || b.eqLayout) return false
+  if (a.mathTypeFieldXml !== undefined || b.mathTypeFieldXml !== undefined) return false
   if (a.image || b.image) return false
   return (
     (a.rawRPr ?? '') === (b.rawRPr ?? '') &&

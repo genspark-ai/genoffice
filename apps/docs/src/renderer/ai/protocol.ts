@@ -358,6 +358,7 @@ function inlineAtomToHtml(node: PmNode, image?: ImageSrcMapper, refs?: ImageRefs
     const source = String(node.attrs?.latex ?? '') || String(node.attrs?.text ?? '')
     return source ? `<formula>${escapeHtml(source)}</formula>` : ''
   }
+  if (node.type === 'docMathTypeField') return escapeHtml(String(node.attrs?.text ?? ''))
   if (node.type === 'docRuby') return escapeHtml(String(node.attrs?.base ?? ''))
   if (node.type === 'docEqLayout') return escapeHtml(eqLayoutText(node.attrs ?? {}))
   return ''

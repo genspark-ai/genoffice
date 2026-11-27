@@ -747,6 +747,28 @@ export const DocRuby = Node.create({
   },
 })
 
+/** A MathType field's cached label is display text. Its DOCX XML stays in the model. */
+export const DocMathTypeField = Node.create({
+  name: 'docMathTypeField',
+  inline: true,
+  group: 'inline',
+  atom: true,
+  addAttributes() {
+    return {
+      text: { default: '', rendered: false },
+      xml: { default: null, rendered: false },
+      bookmarks: { default: null, rendered: false },
+      hiddenBookmarks: { default: null, rendered: false },
+    }
+  },
+  renderText({ node }) {
+    return String(node.attrs.text ?? '')
+  },
+  renderHTML({ node }) {
+    return ['span', { 'data-doc-mathtype-field': 'true' }, String(node.attrs.text ?? '')]
+  },
+})
+
 /**
  * Enclosed characters (a character inside a circle, square, triangle or
  * diamond) and combined characters (two half-size lines in one character's
@@ -8298,6 +8320,7 @@ export const editorExtensions = [
   DocXeMark,
   DocRuby,
   DocEqLayout,
+  DocMathTypeField,
   DocInlineImage,
   DocInlineMath,
   DocParagraph,
