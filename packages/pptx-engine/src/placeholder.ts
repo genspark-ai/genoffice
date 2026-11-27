@@ -394,7 +394,11 @@ export function parseDefRPrStyle(
   if (!defRPrRaw || typeof defRPrRaw !== 'object') return undefined
   const defRPr = asXmlNode(defRPrRaw)
   const out: LevelTextStyle = {}
-  if (defRPr['@_sz']) out.fontSize = parseInt(String(defRPr['@_sz']), 10) / 100
+  // sz is integer hundredths of a point; a malformed value (sz="auto", garbage) stays
+  // undefined so the chain keeps looking — a NaN here is != null in mergeTextStyleChain,
+  // blocks every lower layer's real size, and lands on the 1pt save floor (invisible text)
+  const sz = parseInt(String(defRPr['@_sz']), 10)
+  if (Number.isFinite(sz)) out.fontSize = sz / 100
   if (defRPr['@_b'] != null) out.bold = defRPr['@_b'] === '1' || defRPr['@_b'] === 'true'
   if (defRPr['@_i'] != null) out.italic = defRPr['@_i'] === '1' || defRPr['@_i'] === 'true'
   if (defRPr['@_cap'] != null) out.cap = String(defRPr['@_cap'])
