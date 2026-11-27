@@ -2,12 +2,13 @@ import { execFile } from 'node:child_process'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { platform } from 'node:os'
 import { resolve } from 'node:path'
+import { setTimeout as delay } from 'node:timers/promises'
 import { promisify } from 'node:util'
 
 import { z } from 'zod'
 
 import { XlsxSidecarClient } from '../src/main/xlsx-sidecar-client'
-import { workbookRangeResultSchema } from '../src/shared/desktop-api'
+import { workbookRangeResultSchema, type WorkbookRangeRequest } from '../src/shared/desktop-api'
 
 const execFileAsync = promisify(execFile)
 const fixturePath = process.argv[2] ?? process.env.LARGE_XLSX_FIXTURE
@@ -16,6 +17,7 @@ const openResultSchema = z.object({
   sessionId: z.string().uuid(),
   name: z.string(),
   entryCount: z.number().int().nonnegative(),
+  activeTab: z.number().int().nonnegative().default(0),
   sheets: z
     .array(
       z.object({
@@ -23,6 +25,8 @@ const openResultSchema = z.object({
         name: z.string(),
         rowCount: z.number().int().positive(),
         columnCount: z.number().int().positive(),
+        hidden: z.boolean().optional(),
+        progressive: z.boolean().optional(),
       }),
     )
     .min(1),
@@ -33,7 +37,9 @@ async function main(): Promise<void> {
     throw new Error('Pass a large XLSX path or set LARGE_XLSX_FIXTURE.')
   }
   const executable = process.platform === 'win32' ? 'xlsx-sidecar.exe' : 'xlsx-sidecar'
-  const client = new XlsxSidecarClient(resolve('native/xlsx-engine/target/release', executable))
+  const client = new XlsxSidecarClient(
+    resolve(process.env.XLSX_SIDECAR_PATH ?? `native/xlsx-engine/target/release/${executable}`),
+  )
   let sessionId: string | null = null
   let peakSidecarRssKilobytes: number | null = null
   let sampling = false
@@ -52,56 +58,48 @@ async function main(): Promise<void> {
 
   try {
     const openStarted = performance.now()
-    const opened = openResultSchema.parse(await client.open(resolve(fixturePath)))
+    const opened = openResultSchema.parse(
+      await client.open(resolve(fixturePath), 'en', undefined, true),
+    )
     const openMilliseconds = performance.now() - openStarted
     sessionId = opened.sessionId
-    const largestSheet = opened.sheets.reduce((largest, sheet) =>
-      sheet.rowCount * sheet.columnCount > largest.rowCount * largest.columnCount ? sheet : largest,
+    const activeSheet = [opened.sheets[opened.activeTab], ...opened.sheets].find(
+      (sheet) => sheet && !sheet.hidden,
     )
-    const endColumn = Math.min(49, largestSheet.columnCount - 1)
+    if (!activeSheet) throw new Error('Workbook has no visible worksheet.')
+    const endColumn = Math.min(49, activeSheet.columnCount - 1)
     const firstRange = {
       startRow: 0,
-      endRow: Math.min(99, largestSheet.rowCount - 1),
+      endRow: Math.min(99, activeSheet.rowCount - 1),
       startColumn: 0,
       endColumn,
     }
     const firstViewportStarted = performance.now()
-    const firstViewport = workbookRangeResultSchema.parse(
-      await client.readRange({
-        sessionId,
-        sheetId: largestSheet.id,
-        range: firstRange,
-      }),
-    )
-    const firstViewportMilliseconds = performance.now() - firstViewportStarted
+    const firstViewport = await waitForIndexedRange(client, {
+      sessionId,
+      sheetId: activeSheet.id,
+      range: firstRange,
+    })
+    const firstViewportFinished = performance.now()
+    const firstViewportMilliseconds = firstViewportFinished - firstViewportStarted
 
     const bottomRange = {
-      startRow: Math.max(0, largestSheet.rowCount - 100),
-      endRow: largestSheet.rowCount - 1,
+      startRow: Math.max(0, activeSheet.rowCount - 100),
+      endRow: activeSheet.rowCount - 1,
       startColumn: 0,
       endColumn,
     }
     const fullIndexStarted = performance.now()
-    let bottomResult = firstViewport
-    for (let attempt = 0; attempt < 120; attempt += 1) {
-      bottomResult = workbookRangeResultSchema.parse(
-        await client.readRange({
-          sessionId,
-          sheetId: largestSheet.id,
-          range: bottomRange,
-        }),
-      )
-      if (
-        bottomResult.indexingComplete ||
-        (bottomResult.indexedThroughRow ?? -1) >= bottomRange.endRow
-      ) {
-        break
-      }
-    }
+    await waitForIndexedRange(client, {
+      sessionId,
+      sheetId: activeSheet.id,
+      range: bottomRange,
+      mode: 'status',
+    })
     const fullIndexMilliseconds = performance.now() - fullIndexStarted
-    if ((bottomResult.indexedThroughRow ?? -1) < bottomRange.endRow) {
-      throw new Error('Large worksheet did not finish indexing within the benchmark timeout.')
-    }
+    const bottomResult = workbookRangeResultSchema.parse(
+      await client.readRange({ sessionId, sheetId: activeSheet.id, range: bottomRange }),
+    )
 
     const report = {
       platform: platform(),
@@ -110,9 +108,10 @@ async function main(): Promise<void> {
       workbook: opened.name,
       entryCount: opened.entryCount,
       sheetCount: opened.sheets.length,
-      largestSheet,
+      activeSheet,
       openMilliseconds: round(openMilliseconds),
       firstViewportMilliseconds: round(firstViewportMilliseconds),
+      timeToFirstViewportMilliseconds: round(firstViewportFinished - openStarted),
       firstViewportCells: firstViewport.cells.length,
       fullIndexMilliseconds: round(fullIndexMilliseconds),
       bottomViewportCells: bottomResult.cells.length,
@@ -128,6 +127,23 @@ async function main(): Promise<void> {
     clearInterval(memoryTimer)
     if (sessionId) await client.close(sessionId)
     client.stop()
+  }
+}
+
+async function waitForIndexedRange(client: XlsxSidecarClient, request: WorkbookRangeRequest) {
+  const deadline = performance.now() + 180_000
+  for (;;) {
+    const result = workbookRangeResultSchema.parse(await client.readRange(request))
+    if (
+      result.indexingComplete ||
+      (request.mode !== 'status' && (result.indexedThroughRow ?? -1) >= request.range.endRow)
+    ) {
+      return result
+    }
+    if (performance.now() >= deadline) {
+      throw new Error('Large worksheet did not finish indexing within the benchmark timeout.')
+    }
+    await delay(50)
   }
 }
 

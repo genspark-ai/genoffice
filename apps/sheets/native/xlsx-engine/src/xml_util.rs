@@ -5,6 +5,8 @@ use std::borrow::Cow;
 use std::io::BufRead;
 
 use quick_xml::XmlVersion;
+use quick_xml::encoding::{DecodingReader, DetectedEncoding, detect_encoding};
+use quick_xml::events::BytesDecl;
 
 use super::*;
 
@@ -56,17 +58,41 @@ fn hex_value(value: u8) -> Option<u8> {
 /// only named in the XML declaration (windows-1252) is applied here.
 pub(crate) fn xml_reader<R: Read>(
     source: R,
-) -> Result<Reader<quick_xml::encoding::DecodingReader<BufReader<R>>>, SidecarError> {
-    let mut source = BufReader::new(source);
-    let declared = match Reader::from_reader(source.fill_buf()?).read_event() {
-        Ok(Event::Decl(declaration)) => declaration.encoder(),
-        _ => None,
-    };
-    let mut decoding = quick_xml::encoding::DecodingReader::new(source);
+) -> Result<Reader<DecodingReader<BufReader<R>>>, SidecarError> {
+    xml_reader_from_buf(BufReader::new(source))
+}
+
+pub(crate) fn xml_reader_from_buf<R: BufRead>(
+    mut source: R,
+) -> Result<Reader<DecodingReader<R>>, SidecarError> {
+    let declared = xml_declaration(source.fill_buf()?).and_then(|decl| decl.encoder());
+    let mut decoding = DecodingReader::new(source);
     if let Some(encoding) = declared.filter(|encoding| encoding.is_ascii_compatible()) {
         decoding.set_encoding(encoding);
     }
     Ok(Reader::from_reader(decoding))
+}
+
+fn xml_declaration(prefix: &[u8]) -> Option<BytesDecl<'_>> {
+    match Reader::from_reader(prefix).read_event() {
+        Ok(Event::Decl(declaration)) => Some(declaration),
+        _ => None,
+    }
+}
+
+/// Check the prefix before inspecting the worksheet's cell data as raw UTF-8.
+pub(crate) fn is_utf8_xml(prefix: &[u8]) -> bool {
+    let prefix = prefix.strip_prefix(b"\xef\xbb\xbf").unwrap_or(prefix);
+    match detect_encoding(prefix) {
+        Some(DetectedEncoding::AsciiCompatible) => xml_declaration(prefix).is_some_and(|decl| {
+            decl.encoding().is_none()
+                || decl
+                    .encoder()
+                    .is_some_and(|encoding| encoding.name() == "UTF-8")
+        }),
+        None => prefix.len() >= 4,
+        _ => false,
+    }
 }
 
 /// Entry lookup tolerant of non-conformant producers: '\' separators,

@@ -677,6 +677,9 @@ export const hu = {
     'A képletek újraszámolódtak a módosításaid alapján — {count} képlet gyorsítótárazott értéket tartott meg (a tartalék motorból hiányzó függvények).',
   appRecalcDone:
     'A képletek újraszámolódtak a módosításaid alapján ({count} cella, tartalék motor).',
+  appReadOnlyIndexing: 'Írásvédett előnézet a lapvédelem ellenőrzése közben.',
+  appReadOnlyMetadataFailed:
+    'A lapvédelmet nem sikerült előzetesen ellenőrizni. A munkalap az indexelés végéig írásvédett.',
   appIndexing: 'Indexelés: {name} ({rows} sor kész).',
   appStreamingRows: 'Betöltés: {name} ({rows} sor érhető el).',
   appLoadRangeFailed: 'Nem sikerült betölteni a látható tartományt.',

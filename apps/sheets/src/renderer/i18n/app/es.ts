@@ -699,6 +699,10 @@ export const es = {
   appRecalcPartial:
     'Fórmulas recalculadas según sus ediciones — {count} conservaron valores en caché (funciones que faltan en el motor de reserva).',
   appRecalcDone: 'Fórmulas recalculadas según sus ediciones ({count} celdas, motor de reserva).',
+  appReadOnlyIndexing:
+    'Vista previa de solo lectura mientras se comprueba la protección de la hoja.',
+  appReadOnlyMetadataFailed:
+    'No se pudo comprobar la protección de la hoja de forma anticipada. Podrás editarla cuando termine la indexación.',
   appIndexing: 'Indexando {name}: {rows} filas listas.',
   appStreamingRows: 'Cargando {name} por streaming: {rows} filas disponibles.',
   appLoadRangeFailed: 'No se puede cargar el rango visible.',

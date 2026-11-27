@@ -388,7 +388,7 @@ impl WorkbookSession {
         chunk_index: usize,
     ) -> Result<Option<Option<PathBuf>>, SidecarError> {
         let runtime = &self.runtimes[sheet_index];
-        let (lock, condition) = &*runtime.state;
+        let (lock, condition) = &**runtime;
         let last_row = self.sheets[sheet_index]
             .row_count
             .saturating_sub(1)

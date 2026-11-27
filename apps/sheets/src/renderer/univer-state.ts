@@ -55,11 +55,8 @@ export async function runAfterCellEditorCommit(
 export type WrapMeasureCoverage = Array<readonly [number, number]>
 
 export interface LazyWorkbookState {
-  /// Mutable only in its `sessionId`: a sidecar crash drops the session
-  /// server-side, and recovery re-opens the file to adopt a live one
-  /// (see recoverSidecarSession in univer-sync.ts). Every read site reads
-  /// `state.file.sessionId` at call time, so swapping it here re-points the
-  /// whole workbook at the new session without threading a second id through.
+  /// Replaced when progressive counts arrive or a recovered sidecar session
+  /// takes over. Range requests read the current sessionId from here.
   file: WorkbookFile
   readonly generation: number
   readonly loadedRanges: Map<string, IRange>
@@ -92,6 +89,12 @@ export interface LazyWorkbookState {
   /// conditional formatting / filters / validations were not yet available,
   /// so an already-loaded range must not satisfy the next load request.
   readonly decorationsPendingSheets: Set<string>
+  readonly metadataScanFailedSheets?: Set<string>
+  onMetadataScanFailed?(sheetId: string): void
+  /// Refresh the view once a progressively opened sheet has its full file state.
+  onProgressiveSheetReady?(sheetId: string): void
+  onProgressiveCountsChanged?(recalcFitsBudget: boolean): void
+  readonly deferredSparklines?: Map<string, WorkbookFile['sheets'][number]['sparklines']>
   /// File-side worksheet protection, delivered at open by the current sidecar.
   readonly sheetProtections: Map<string, SheetProtectionInfo>
   /// File-side manual page breaks (0-based index of the row/column after the
@@ -132,7 +135,7 @@ export interface LazyWorkbookState {
   readonly showFormulaSheets: Set<string>
   /// Small workbooks are fully loaded with formulas handed to Univer's engine
   /// for live recalculation; large ones stream cached values only.
-  readonly formulaMode: boolean
+  formulaMode: boolean
   readonly editJournal: EditJournal
   /// preloadRunning: preloadEntireWorkbook is filling the model — viewport
   /// loads must not evict installed rows or shrink loadedRanges meanwhile.
@@ -142,6 +145,8 @@ export interface LazyWorkbookState {
   /// viewport eviction) so the engine recalculates them live.
   readonly closure: {
     status: 'idle' | 'pending' | 'active' | 'unavailable'
+    /// Progressive workbooks settle each visited sheet and its precedents.
+    bySheet?: Map<string, 'pending' | 'active' | 'unavailable'>
     readonly pinned: Map<string, Map<string, PinnedClosureCell>>
   }
   /// Formula text per sheet ('row:col', file coordinates) harvested from
@@ -179,11 +184,13 @@ export interface LazyWorkbookState {
     generation: number
     /// consecutive engine failures; a success resets it
     failures: number
+    /// Budget based on the current file size and grid extent.
+    engineOverBudget: boolean
     /// a sheet's formula list came back truncated (>100k formulas): a cold
     /// IronCalc import of such a workbook grinds for minutes and gigabytes,
     /// so the engine fallback is off for the session — cached values stand
     /// (unless the file has none: see truncatedIndexRetiresEngine)
-    engineOverBudget: boolean
+    formulaIndexRetired?: boolean
     readonly formulaCells: Map<string, ReadonlySet<number>>
     readonly overlay: Map<string, Map<string, PinnedClosureCell>>
     /// Sheets whose latest engine run had to keep at least one cached value

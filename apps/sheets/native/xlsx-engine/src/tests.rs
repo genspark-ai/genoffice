@@ -352,6 +352,7 @@ fn rejects_oversized_ranges() {
         print_titles: None,
         has_scoped_defined_names: false,
         cell_images: Vec::new(),
+        progressive: false,
         protection: SheetProtectionMetadata::default(),
     };
     let range = CellRange {
@@ -504,6 +505,387 @@ fn open_reports_sparklines_that_follow_the_cells() {
 }
 
 #[test]
+fn parallel_metadata_scan_preserves_sheet_protection_after_cell_data() {
+    if !THREADS {
+        return;
+    }
+    let first = "xl/worksheets/sheet1.xml";
+    let middle = "xl/worksheets/sheet2.xml";
+    let last = "xl/worksheets/sheet3.xml";
+    let (_dir, path) = open_fixture(&[
+        (
+            first,
+            r#"<x:worksheet xmlns:x="urn:test"><x:sheetData><x:row r="23"><x:c s="0" r="E23"/><x:c><x:v>1</x:v></x:c></x:row></x:sheetData><x:sheetProtection sheet="1"/></x:worksheet>"#,
+        ),
+        (middle, "<worksheet><sheetData/></worksheet>"),
+        (
+            last,
+            r#"<worksheet><sheetData/><sheetProtection sheet="1" autoFilter="0"/></worksheet>"#,
+        ),
+    ]);
+    // Exercise the large-sheet scheduling without putting huge parts in the test.
+    let sources = [
+        WorksheetOpenSource {
+            path: first.into(),
+            xml_bytes: 64 * 1024 * 1024,
+        },
+        WorksheetOpenSource {
+            path: middle.into(),
+            xml_bytes: 1,
+        },
+        WorksheetOpenSource {
+            path: last.into(),
+            xml_bytes: 64 * 1024 * 1024,
+        },
+    ];
+    let mut scans = scan_worksheet_metadata_batch(
+        &path,
+        &sources,
+        &[None, None, None],
+        &[true, false, true],
+        &ColorContext::default(),
+        &AtomicBool::new(false),
+    );
+    let parse = |xml: String| {
+        read_sheet_protection(&xml)
+            .unwrap()
+            .sheet_protection
+            .unwrap()
+    };
+    let first = scans.pop_front().unwrap().unwrap().unwrap();
+    let dimensions = first.dimensions.unwrap();
+    assert_eq!((dimensions.row_count, dimensions.column_count), (23, 6));
+    assert_eq!(dimensions.stored_cell_count, Some(2));
+    assert_eq!(dimensions.value_cell_count, Some(1));
+    let protection = parse(first.envelope);
+    assert!(protection.protected && !protection.allow.auto_filter);
+    assert!(scans.pop_front().unwrap().is_none());
+    let last = parse(scans.pop_front().unwrap().unwrap().unwrap().envelope);
+    assert!(last.protected && last.allow.auto_filter);
+}
+
+#[test]
+fn progressive_open_prioritizes_the_active_sheet_and_prefetches_visible_sheets() {
+    if !THREADS {
+        return;
+    }
+    let sheet = format!(
+        r#"<worksheet><dimension ref="A1:R1000"/><sheetData>
+        <row r="1"><c r="A1" t="str"><v>Preview</v></c></row>
+        <row r="257" hidden="1"><c r="B257"><v>42</v></c><c r="C257" s="0"/></row>
+        {}</sheetData><sheetProtection sheet="1"/>
+        <protectedRanges><protectedRange name="Input" sqref="A1"/></protectedRanges>
+        <mergeCells><mergeCell ref="A1:B1"/></mergeCells></worksheet>"#,
+        " ".repeat(32 * 1024 * 1024)
+    );
+    let (_dir, path) = open_fixture(&[
+        (
+            "xl/workbook.xml",
+            r#"<workbook xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+              <bookViews><workbookView activeTab="1"/></bookViews><sheets>
+              <sheet name="Other" sheetId="1" r:id="rId1"/>
+              <sheet name="Active" sheetId="2" r:id="rId2"/>
+              <sheet name="Hidden" sheetId="3" state="hidden" r:id="rId3"/>
+              <sheet name="Next" sheetId="4" r:id="rId4"/>
+              <sheet name="Distant" sheetId="5" r:id="rId5"/></sheets></workbook>"#,
+        ),
+        (
+            "xl/_rels/workbook.xml.rels",
+            r#"<Relationships><Relationship Id="rId1" Target="worksheets/sheet1.xml"/>
+               <Relationship Id="rId2" Target="worksheets/sheet2.xml"/>
+               <Relationship Id="rId3" Target="worksheets/sheet3.xml"/>
+               <Relationship Id="rId4" Target="worksheets/sheet4.xml"/>
+               <Relationship Id="rId5" Target="worksheets/sheet5.xml"/></Relationships>"#,
+        ),
+        ("xl/worksheets/sheet1.xml", &sheet),
+        ("xl/worksheets/sheet2.xml", &sheet),
+        ("xl/worksheets/sheet3.xml", &sheet),
+        ("xl/worksheets/sheet4.xml", &sheet),
+        ("xl/worksheets/sheet5.xml", &sheet),
+    ]);
+    let mut sessions = WorkbookSessions::new();
+    let opened = sessions
+        .open_with_options(&path, "en", None, true, &AtomicBool::new(false))
+        .unwrap();
+    assert_eq!(opened.active_tab, 1);
+    assert!(opened.sheets[1].progressive);
+    assert_eq!(opened.sheets[1].stored_cell_count, None);
+    let session = &sessions.sessions[&opened.session_id];
+    for index in 0..session.runtimes.len() {
+        assert_eq!(
+            session.scheduler.worker_state(index),
+            (index == opened.active_tab, false)
+        );
+    }
+
+    let first_cell = CellRange {
+        start_row: 0,
+        end_row: 0,
+        start_column: 0,
+        end_column: 0,
+    };
+    let preview = sessions
+        .read_range(&opened.session_id, "sheet-2", &first_cell)
+        .unwrap();
+    assert_eq!(
+        preview.cells[0].value,
+        Some(CellValue::String("Preview".into()))
+    );
+
+    {
+        let runtime = &sessions.sessions[&opened.session_id].runtimes[1];
+        let (lock, ready) = &**runtime;
+        let (index, _) = ready
+            .wait_timeout_while(lock.lock().unwrap(), Duration::from_secs(10), |index| {
+                !index.complete && index.error.is_none()
+            })
+            .unwrap();
+        assert!(index.complete, "{:?}", index.error);
+        assert!(index.decorations.is_some());
+        assert!(!index.chunk_files.is_empty());
+    }
+    let hydrated = sessions
+        .read_range(&opened.session_id, "sheet-2", &first_cell)
+        .unwrap();
+    assert!(hydrated.sheet_protection.is_some());
+    assert!(hydrated.metadata_ready);
+    assert_eq!(hydrated.protected_ranges[0].name, "Input");
+    assert_eq!(hydrated.merges[0].end_column, 1);
+    let counts = hydrated.cell_counts.unwrap();
+    assert_eq!(counts.stored_cell_count, 3);
+    assert_eq!(counts.value_cell_count, 2);
+    assert_eq!(counts.value_row_count, 257);
+    assert_eq!(counts.value_column_count, 2);
+    let session = &sessions.sessions[&opened.session_id];
+    for index in [0, 1, 3] {
+        assert_eq!(session.scheduler.worker_state(index), (true, false));
+    }
+    assert_eq!(session.scheduler.worker_state(2), (false, false));
+    assert_eq!(session.scheduler.worker_state(4), (true, true));
+
+    // Simulate an independent scan failing to open its worksheet entry.
+    // The range status must surface that failure until the index supplies
+    // authoritative protection and the other sheet metadata.
+    let session = &sessions.sessions[&opened.session_id];
+    let error = read_worksheet_metadata(
+        &path,
+        "xl/worksheets/missing.xml",
+        2,
+        &ColorContext::default(),
+        &session.runtimes[2],
+        &AtomicBool::new(false),
+    )
+    .unwrap_err();
+    record_metadata_scan_failure(&session.runtimes[2], 2, &error);
+    let status = session
+        .read_range(2, &first_cell, RangeReadMode::Status, None)
+        .unwrap();
+    assert!(status.metadata_scan_failed);
+    assert!(!status.metadata_ready);
+    assert!(!status.indexing_complete);
+    let preview = session
+        .read_range(2, &first_cell, RangeReadMode::Viewport, None)
+        .unwrap();
+    assert!(preview.metadata_scan_failed);
+    assert!(preview.sheet_protection.is_none());
+
+    // A budget below the size of any nonempty chunk must prevent a write
+    // until the index is requested. The same worker then finishes normally.
+    session.scheduler.with_budget(2, 1);
+    let (lock, condition) = &*session.runtimes[2];
+    let (index, _) = condition
+        .wait_timeout_while(lock.lock().unwrap(), Duration::from_millis(100), |index| {
+            index.chunk_files.is_empty() && index.error.is_none()
+        })
+        .unwrap();
+    assert!(index.chunk_files.is_empty() && index.error.is_none());
+    assert_eq!(index.prefetch_bytes_remaining, Some(1));
+    drop(index);
+    let outlined = sessions
+        .read_row_outline(&opened.session_id, "sheet-3", true)
+        .unwrap();
+    let formulas = sessions
+        .read_formula_cells(&opened.session_id, "sheet-3", true)
+        .unwrap();
+    assert!(!outlined.indexing_complete && !formulas.indexing_complete);
+    let session = &sessions.sessions[&opened.session_id];
+    assert_eq!(session.scheduler.worker_state(2), (true, true));
+    session.scheduler.demand(2).unwrap();
+    let (lock, condition) = &*session.runtimes[2];
+    let (index, _) = condition
+        .wait_timeout_while(lock.lock().unwrap(), Duration::from_secs(10), |index| {
+            !index.complete && index.error.is_none()
+        })
+        .unwrap();
+    assert!(index.complete, "{:?}", index.error);
+    drop(index);
+    let recovered = session
+        .read_range(2, &first_cell, RangeReadMode::Viewport, None)
+        .unwrap();
+    assert!(recovered.indexing_complete && recovered.metadata_ready);
+    assert!(!recovered.metadata_scan_failed);
+    assert!(recovered.sheet_protection.is_some());
+    sessions.close(&opened.session_id).unwrap();
+}
+
+#[test]
+fn progressive_index_prioritizes_transitive_dependencies_without_visiting_their_tabs() {
+    if !THREADS {
+        return;
+    }
+    let names = [
+        "Active",
+        "Near 1",
+        "Near 2",
+        "Far",
+        "Link",
+        "Source Data",
+        "Unused",
+    ];
+    let formulas = [
+        "<f>InputCell</f>",
+        "",
+        "",
+        "",
+        "<f>'Source Data'!A1</f>",
+        "<f>Active!A1</f>",
+        "",
+    ];
+    let declarations: String = names
+        .iter()
+        .enumerate()
+        .map(|(index, name)| {
+            let i = index + 1;
+            let state = if index >= 5 { r#" state="hidden""# } else { "" };
+            format!(r#"<sheet name="{name}" sheetId="{i}" r:id="rId{i}"{state}/>"#)
+        })
+        .collect();
+    let workbook = format!(
+        r#"<workbook xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+        <sheets>{declarations}</sheets><definedNames>
+        <definedName name="InputCell">Link!A1</definedName></definedNames></workbook>"#
+    );
+    let relationships: String = (1..=names.len())
+        .map(|i| format!(r#"<Relationship Id="rId{i}" Target="worksheets/sheet{i}.xml"/>"#))
+        .collect();
+    let relationships = format!("<Relationships>{relationships}</Relationships>");
+    let worksheets: Vec<_> = formulas
+        .iter()
+        .enumerate()
+        .map(|(index, formula)| {
+            let (dimension, padding) = if index == 3 {
+                ("A1:R1000", " ".repeat(32 * 1024 * 1024))
+            } else {
+                ("A1", String::new())
+            };
+            (
+                format!("xl/worksheets/sheet{}.xml", index + 1),
+                format!(
+                    r#"<worksheet><dimension ref="{dimension}"/><sheetData>
+         <row r="1"><c r="A1">{formula}<v>9</v></c></row>{padding}</sheetData></worksheet>"#
+                ),
+            )
+        })
+        .collect();
+    let mut parts = vec![
+        ("xl/workbook.xml", workbook.as_str()),
+        ("xl/_rels/workbook.xml.rels", relationships.as_str()),
+    ];
+    parts.extend(
+        worksheets
+            .iter()
+            .map(|(path, xml)| (path.as_str(), xml.as_str())),
+    );
+    let (_dir, path) = open_fixture(&parts);
+    let mut sessions = WorkbookSessions::new();
+    let opened = sessions
+        .open_with_options(&path, "en", None, true, &AtomicBool::new(false))
+        .unwrap();
+    assert!(opened.sheets[3].progressive);
+    let first_cell = CellRange {
+        start_row: 0,
+        end_row: 0,
+        start_column: 0,
+        end_column: 0,
+    };
+    let deadline = std::time::Instant::now() + Duration::from_secs(5);
+    loop {
+        let active = sessions
+            .read_range(&opened.session_id, "sheet-1", &first_cell)
+            .unwrap();
+        if active.indexing_complete {
+            assert_eq!(active.cells[0].value, Some(CellValue::Number(9.0)));
+            break;
+        }
+        assert!(std::time::Instant::now() < deadline);
+    }
+    let session = &sessions.sessions[&opened.session_id];
+    for sheet in [4, 5] {
+        let (lock, condition) = &*session.runtimes[sheet];
+        let (state, _) = condition
+            .wait_timeout_while(lock.lock().unwrap(), Duration::from_secs(5), |index| {
+                !index.complete && index.error.is_none()
+            })
+            .unwrap();
+        assert!(
+            state.complete,
+            "dependency sheet {sheet}: {:?}",
+            state.error
+        );
+        assert!(state.prefetch_bytes_remaining.is_none());
+    }
+    assert_eq!(session.scheduler.worker_state(3), (true, true));
+    assert_eq!(session.scheduler.worker_state(6), (false, false));
+    sessions.close(&opened.session_id).unwrap();
+}
+
+#[test]
+fn worksheet_envelope_hydrates_protection_without_indexing_cells() {
+    let worksheet = "xl/worksheets/sheet1.xml";
+    let xml = format!(
+        r#"<worksheet><sheetData><row><c><v>1</v></c></row>{}</sheetData>
+        <sheetProtection sheet="1"/><protectedRanges><protectedRange name="Révision" sqref="A1"/></protectedRanges>
+        <mergeCells><mergeCell ref="A1:B1"/></mergeCells></worksheet>"#,
+        " ".repeat(128 * 1024 - 20)
+    );
+    let encoded = |encoding| {
+        let part = format!(r#"<?xml version="1.0" encoding="{encoding}"?>{xml}"#);
+        encode_part(&part, encoding)
+    };
+    for bytes in [
+        xml.as_bytes().to_vec(),
+        format!("\u{feff}<?xml version=\"1.0\" encoding=\"UTF-8\"?>{xml}").into_bytes(),
+        xml.replace("<row>", "<!-- </sheetData> --><row>")
+            .into_bytes(),
+        xml.replace("sheetData>", "s:sheetData>")
+            .replace("<worksheet>", r#"<worksheet xmlns:s="urn:test">"#)
+            .into_bytes(),
+        encoded("UTF-16"),
+        encoded("windows-1252"),
+    ] {
+        let (_dir, path) = open_fixture_bytes(&[(worksheet, &bytes)]);
+        let state = Arc::new((Mutex::new(SheetIndex::default()), Condvar::new()));
+        read_worksheet_metadata(
+            &path,
+            worksheet,
+            0,
+            &ColorContext::default(),
+            &state,
+            &AtomicBool::new(false),
+        )
+        .unwrap();
+        let index = state.0.lock().unwrap();
+        assert!(!index.complete);
+        assert!(index.chunk_files.is_empty());
+        let metadata = index.decorations.as_ref().unwrap();
+        let protection = metadata.protection.as_ref().unwrap();
+        assert!(protection.sheet_protection.as_ref().unwrap().protected);
+        assert_eq!(protection.protected_ranges[0].name, "Révision");
+        assert_eq!(metadata.merges[0].end_column, 1);
+    }
+}
+
+#[test]
 fn omits_empty_sparklines_field_from_metadata_json() {
     let sheet = SheetMetadata {
         id: "sheet-1".into(),
@@ -542,6 +924,7 @@ fn omits_empty_sparklines_field_from_metadata_json() {
         print_titles: None,
         has_scoped_defined_names: false,
         cell_images: Vec::new(),
+        progressive: false,
         protection: SheetProtectionMetadata::default(),
     };
     let json = serde_json::to_string(&sheet).unwrap();
@@ -3243,7 +3626,7 @@ fn expands_shared_formulas_into_followers() {
     assert_eq!(formula_at(6, 4).as_deref(), Some("=SUM($A$1:B6)")); // follower E7
     // The formula index lists masters only; followers come as groups.
     let formulas = sessions
-        .read_formula_cells(&metadata.session_id, &sheet_id)
+        .read_formula_cells(&metadata.session_id, &sheet_id, false)
         .unwrap();
     assert_eq!(formulas.cells.len(), 2);
     assert_eq!(formulas.shared_groups.len(), 2);
@@ -3287,7 +3670,7 @@ fn formula_index_of(sheet_xml: &str) -> (WorkbookSessions, WorkbookMetadata, For
     let sheet_id = metadata.sheets[0].id.clone();
     let result = loop {
         let result = sessions
-            .read_formula_cells(&metadata.session_id, &sheet_id)
+            .read_formula_cells(&metadata.session_id, &sheet_id, false)
             .unwrap();
         if result.indexing_complete {
             break result;
@@ -4836,6 +5219,7 @@ fn reads_sheet_protection_flags_hash_and_unlocked_styles() {
             &range,
             RangeReadMode::Status,
             None,
+            false,
         )
         .unwrap();
     assert!(status.indexing_complete);

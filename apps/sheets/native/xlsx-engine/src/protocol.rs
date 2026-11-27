@@ -31,6 +31,8 @@ fn default_locale() -> String {
 pub enum Command {
     Open {
         path: PathBuf,
+        #[serde(default)]
+        progressive: bool,
         #[serde(default = "default_locale")]
         locale: String,
         #[serde(default, rename = "shortDateFormat")]
@@ -45,6 +47,10 @@ pub enum Command {
         rows: Option<Vec<usize>>,
         #[serde(default)]
         mode: RangeReadMode,
+        #[serde(default)]
+        foreground: bool,
+        #[serde(default, rename = "preloadPlan")]
+        preload_plan: bool,
     },
     Close {
         #[serde(rename = "sessionId")]
@@ -61,6 +67,8 @@ pub enum Command {
         session_id: String,
         #[serde(rename = "sheetId")]
         sheet_id: String,
+        #[serde(default)]
+        background: bool,
     },
     FindCells(FindCellsRequest),
     FilterRows(FilterRequest),
@@ -69,6 +77,8 @@ pub enum Command {
         session_id: String,
         #[serde(rename = "sheetId")]
         sheet_id: String,
+        #[serde(default)]
+        background: bool,
     },
     Cancel {
         #[serde(rename = "targetRequestId")]
@@ -547,6 +557,7 @@ pub fn handle_request(
     let result = match request.command {
         Command::Open {
             path,
+            progressive,
             locale,
             short_date_format,
         } => {
@@ -555,10 +566,11 @@ pub fn handle_request(
             // longer can.
             let in_flight_cancelled = in_flight.flag();
             sessions
-                .open_with_locale(
+                .open_with_options(
                     &path,
                     &locale,
                     short_date_format.as_deref(),
+                    progressive,
                     &in_flight_cancelled,
                 )
                 .and_then(to_json_value)
@@ -566,11 +578,28 @@ pub fn handle_request(
         Command::ReadRange {
             session_id,
             sheet_id,
+            preload_plan: true,
+            ..
+        } => sessions
+            .read_preload_plan(&session_id, &sheet_id)
+            .and_then(to_json_value),
+        Command::ReadRange {
+            session_id,
+            sheet_id,
             range,
             rows,
             mode,
+            foreground,
+            ..
         } => sessions
-            .read_range_with_mode(&session_id, &sheet_id, &range, mode, rows.as_deref())
+            .read_range_with_mode(
+                &session_id,
+                &sheet_id,
+                &range,
+                mode,
+                rows.as_deref(),
+                foreground,
+            )
             .and_then(to_json_value),
         Command::Close { session_id } => {
             // A resident recalc model can dwarf the session itself (an
@@ -592,8 +621,9 @@ pub fn handle_request(
         Command::ReadFormulaCells {
             session_id,
             sheet_id,
+            background,
         } => sessions
-            .read_formula_cells(&session_id, &sheet_id)
+            .read_formula_cells(&session_id, &sheet_id, background)
             .and_then(to_json_value),
         Command::FilterRows(request) => sessions
             .filter_rows(request, &in_flight.flag())
@@ -604,8 +634,9 @@ pub fn handle_request(
         Command::ReadRowOutline {
             session_id,
             sheet_id,
+            background,
         } => sessions
-            .read_row_outline(&session_id, &sheet_id)
+            .read_row_outline(&session_id, &sheet_id, background)
             .and_then(to_json_value),
         // Normally intercepted out of band by the reader thread; through this
         // path (tests) it still marks the target for the skip check above.

@@ -1350,7 +1350,8 @@ function parseWorkbookFile(input: unknown): WorkbookFile {
       name: sheet.name,
       rowCount: sheet.rowCount,
       columnCount: sheet.columnCount,
-      ...(protection === undefined
+      ...(sheet.progressive === true ? { progressive: true } : {}),
+      ...(protection === undefined || sheet.progressive === true
         ? {}
         : {
             protection: {
@@ -1497,6 +1498,7 @@ function parseRangeRequest(input: WorkbookRangeRequest): WorkbookRangeRequest {
     !isNonnegativeInteger(endColumn) ||
     startRow > endRow ||
     startColumn > endColumn ||
+    (input.preloadPlan !== undefined && input.preloadPlan !== true) ||
     (input.rows !== undefined &&
       (!Array.isArray(input.rows) ||
         !input.rows.length ||
@@ -1616,11 +1618,16 @@ function parseFormulaCellsRequest(input: unknown): WorkbookFormulaCellsRequest {
     !isRecord(input) ||
     !isUuid(input.sessionId) ||
     typeof input.sheetId !== 'string' ||
-    input.sheetId.length === 0
+    input.sheetId.length === 0 ||
+    (input.background !== undefined && typeof input.background !== 'boolean')
   ) {
     throw new Error('Invalid formula-cells request.')
   }
-  return { sessionId: input.sessionId, sheetId: input.sheetId }
+  return {
+    sessionId: input.sessionId,
+    sheetId: input.sheetId,
+    ...(input.background === true ? { background: true } : {}),
+  }
 }
 
 function parseSharedFormulaGroup(group: unknown): WorkbookSharedFormulaGroup {
@@ -2275,6 +2282,21 @@ function parseRangeResult(input: unknown): WorkbookRangeResult {
     }
     return value as number[]
   }
+  const counts = input.cellCounts
+  const preloadRanges = input.preloadRanges
+  if (preloadRanges !== undefined && !Array.isArray(preloadRanges)) {
+    throw new Error('Invalid workbook preload plan.')
+  }
+  if (
+    counts !== undefined &&
+    (!isRecord(counts) ||
+      !isNonnegativeInteger(counts.storedCellCount) ||
+      !isNonnegativeInteger(counts.valueCellCount) ||
+      !isNonnegativeInteger(counts.valueRowCount) ||
+      !isNonnegativeInteger(counts.valueColumnCount))
+  ) {
+    throw new Error('Invalid indexed cell counts.')
+  }
   return {
     cells,
     rows,
@@ -2285,12 +2307,28 @@ function parseRangeResult(input: unknown): WorkbookRangeResult {
     autoFilterColumns,
     dataValidations,
     sheetProtection: parseSheetProtection(input.sheetProtection),
+    ...(preloadRanges === undefined ? {} : { preloadRanges: preloadRanges.map(parseCellArea) }),
+    ...(input.sparklines === undefined
+      ? {}
+      : { sparklines: parseSparklineGroups(input.sparklines) }),
+    ...(counts === undefined
+      ? {}
+      : {
+          cellCounts: {
+            storedCellCount: counts.storedCellCount as number,
+            valueCellCount: counts.valueCellCount as number,
+            valueRowCount: counts.valueRowCount as number,
+            valueColumnCount: counts.valueColumnCount as number,
+          },
+        }),
     rowBreaks: parseBreaks(input.rowBreaks, 'row breaks'),
     colBreaks: parseBreaks(input.colBreaks, 'column breaks'),
     protectedRanges: parseProtectedRanges(input.protectedRanges),
     pageSetup: parsePagePrintSettings(input.pageSetup),
     indexedThroughRow: input.indexedThroughRow,
     indexingComplete: input.indexingComplete,
+    ...(input.metadataReady === true ? { metadataReady: true } : {}),
+    ...(input.metadataScanFailed === true ? { metadataScanFailed: true } : {}),
   }
 }
 

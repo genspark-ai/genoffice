@@ -38,7 +38,10 @@ export function ToastHost() {
   }, [])
   if (!toast) return null
   return (
-    <div className={`app-toast ${toast.kind}${visible ? ' show' : ''}`} role="status">
+    <div
+      className={`app-toast ${toast.kind}${toast.placement ? ` ${toast.placement}` : ''}${visible ? ' show' : ''}`}
+      role="status"
+    >
       <svg
         className="app-toast-icon"
         viewBox="0 0 24 24"

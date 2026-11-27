@@ -966,6 +966,7 @@ dependencies = [
  "calamine",
  "cfb",
  "ironcalc",
+ "memchr",
  "quick-xml",
  "roxmltree",
  "serde",

@@ -8,6 +8,7 @@ import {
   qualifierMatches,
 } from '@genoffice/xlsx-gateway/gateway/xlsx-structure'
 import { swapPosition, toSwapSpans } from './edit-journal'
+import { extractFunctionNames } from './formula-functions'
 
 export interface ClosureSheetInput {
   readonly id: string
@@ -142,6 +143,37 @@ export function containsUnresolvedNames(formula: string): boolean {
     }
   }
   return false
+}
+
+/// A progressive closure can fetch only the sheets named by a statically
+/// resolvable formula. Dynamic addresses and 3-D references keep their cache.
+export function formulaDependencySheets<T extends { name: string }>(
+  formulas: ClosureSheetInput['formulas'],
+  sheetsByName: ReadonlyMap<string, T>,
+): Set<T> | null {
+  const dependencies = new Set<T>()
+  for (const { formula } of formulas) {
+    if (containsUnresolvedNames(formula)) return null
+    if (extractFunctionNames(formula).some((name) => name === 'INDIRECT' || name === 'OFFSET')) {
+      return null
+    }
+    const unresolvedQualifier = formula.split('"').some(
+      (segment, index) =>
+        index % 2 === 0 &&
+        segment
+          .replace(ERROR_LITERAL_PATTERN, '')
+          .replace(FORMULA_REFERENCE_PATTERN, (_match, lead: string) => lead)
+          .includes('!'),
+    )
+    if (unresolvedQualifier) return null
+    for (const { qualifier } of parseFormulaReferences(formula)) {
+      if (qualifier === undefined) continue
+      const target = sheetsByName.get(unquote(qualifier).toLowerCase())
+      if (!target) return null
+      dependencies.add(target)
+    }
+  }
+  return dependencies
 }
 
 export function computeFormulaClosure(

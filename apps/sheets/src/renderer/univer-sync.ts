@@ -118,6 +118,7 @@ import {
   cellKey,
   closureFetchRanges,
   computeFormulaClosure,
+  formulaDependencySheets,
   keyColumn,
   keyRow,
   recalcReadRanges,
@@ -193,6 +194,7 @@ import type { SheetOutlineState } from './outline-model'
 import { externalLinkOverlayCell } from './external-link-values'
 import type { ExternalLinkCell } from '../shared/desktop-api'
 import { isManualCalculation } from './calc-options'
+import { workbookCellCounts } from './load-budget'
 import {
   registerCellFontAliases,
   richRunFamilies,
@@ -1311,6 +1313,7 @@ export async function loadVisibleRange(
   worksheet: UniverWorksheet,
   setMessage: (message: string) => void,
   viewportStart?: { row: number; column: number },
+  waitForFirstRange = false,
 ): Promise<void> {
   const state = lazyWorkbookRef.current
   if (!state) return
@@ -1382,7 +1385,7 @@ export async function loadVisibleRange(
     return
   }
   evictFilteredViewport(worksheet, state, sheet)
-  await loadRange(runtime, lazyWorkbookRef, worksheet, range, setMessage)
+  await loadRange(runtime, lazyWorkbookRef, worksheet, range, setMessage, false, waitForFirstRange)
   await loadFrozenColumnStrip(lazyWorkbookRef, worksheet, sheet, range)
   await loadFrozenRowStrip(lazyWorkbookRef, worksheet, sheet, range)
   await extendWindowPastHiddenRows(
@@ -1752,109 +1755,162 @@ function degradeCostlyFormulas(
   )
 }
 
-/// Streams every sheet's formula list, computes the dependency closure, and
-/// — when it fits the budget — installs and pins the closure cells so the
-/// formula engine recalculates them live while the workbook keeps streaming.
+export function formulaClosureStatus(
+  state: LazyWorkbookState,
+  sheetId: string | undefined,
+): LazyWorkbookState['closure']['status'] {
+  const bySheet = state.closure.bySheet
+  return bySheet
+    ? sheetId === undefined
+      ? 'idle'
+      : (bySheet.get(sheetId) ?? 'idle')
+    : state.closure.status
+}
+
+/// A progressive closure starts at the visible sheet and expands only to
+/// formula precedents. Non-progressive workbooks still have a whole-book closure.
 export async function activateFormulaClosure(
   runtime: UniverRuntime,
   lazyWorkbookRef: { current: LazyWorkbookState | null },
   setMessage: (message: string) => void,
 ): Promise<void> {
   const state = lazyWorkbookRef.current
-  if (!state || state.formulaMode || state.closure.status !== 'idle') return
-  state.closure.status = 'pending'
+  if (!state || state.formulaMode) return
+  const progressive = state.file.sheets.some((sheet) => sheet.progressive)
+  const workbook = runtime.univerAPI.getActiveWorkbook()
+  if (!workbook) return
+  const activeId = progressive ? workbook.getActiveSheet()?.getSheetId() : undefined
+  const root = state.file.sheets.find((sheet) => sheet.id === activeId)
+  if (progressive && !root) return
+  const bySheet = root ? (state.closure.bySheet ??= new Map()) : undefined
+  if (formulaClosureStatus(state, activeId) !== 'idle') return
+  if (bySheet && root) bySheet.set(root.id, 'pending')
+  else state.closure.status = 'pending'
+
+  const sessionId = state.file.sessionId
+  const current = () =>
+    lazyWorkbookRef.current === state &&
+    !state.formulaMode &&
+    state.file.sessionId === sessionId &&
+    (!root || isActiveSheet(runtime, root.id))
+  const compatible = () =>
+    state.editJournal.structuralOps.size === 0 &&
+    (!root || (!state.editJournal.sheets?.renamed.size && !state.editJournal.sheets?.removed.size))
   const giveUp = (): void => {
-    if (lazyWorkbookRef.current !== state) return
-    state.closure.status = 'unavailable'
-    // Cache-mode fallback starts NOW, not at the first edit: the file's
-    // cached values may be stale or poisoned (saved by an earlier broken
-    // session) and would otherwise display until the user edits something.
+    if (!current()) return
+    if (bySheet && root) bySheet.set(root.id, 'unavailable')
+    else state.closure.status = 'unavailable'
+    // The file's cached values can already be stale at open.
     queueFormulaRecalc(runtime, lazyWorkbookRef, setMessage)
   }
 
-  const inputs: ClosureSheetInput[] = []
-  let indexedCount = 0
-  for (const sheet of state.file.sheets) {
-    const deadline = Date.now() + 180_000
-    for (;;) {
-      if (lazyWorkbookRef.current !== state) return
-      let result
-      try {
-        result = await window.desktopApi.readWorkbookFormulas({
-          sessionId: state.file.sessionId,
+  try {
+    const inputs: ClosureSheetInput[] = []
+    let indexedCount = 0
+    const sheets = new Set(root ? [root] : state.file.sheets)
+    const sheetsByName = new Map(
+      state.file.sheets.map((sheet) => [sheet.name.toLowerCase(), sheet]),
+    )
+    for (const sheet of sheets) {
+      const deadline = Date.now() + 180_000
+      let background = false
+      for (;;) {
+        if (!current()) return
+        if (root && !compatible()) return giveUp()
+        const result = await window.desktopApi.readWorkbookFormulas({
+          sessionId,
           sheetId: sheet.id,
+          // The first read demands this Tier 1/2 sheet. Subsequent reads
+          // only observe it, so we never wait on a parked Tier 3 worker.
+          ...(background ? { background: true } : {}),
         })
-      } catch {
-        return giveUp()
-      }
-      if (result.truncated) {
-        recordCachedFormulaValues(state, sheet.id, result.cells)
-        if (truncatedIndexRetiresEngine(state)) state.recalc.engineOverBudget = true
-        return giveUp()
-      }
-      if (result.indexingComplete) {
-        storeFormulaText(state, sheet.id, result.cells)
-        const shared = storeSharedFormulaGroups(state, sheet.id, result.sharedGroups)
-        recordCachedFormulaValues(state, sheet.id, result.cells)
-        // Followers are only expanded while the closure can still fit; the
-        // harvest above keeps running for the formula bar either way.
-        indexedCount += result.cells.length + shared.followerCount
-        if (indexedCount <= CLOSURE_MAX_CELLS) {
+        if (!current()) return
+        if (result.truncated) {
+          recordCachedFormulaValues(state, sheet.id, result.cells)
+          if (truncatedIndexRetiresEngine(state)) state.recalc.formulaIndexRetired = true
+          return giveUp()
+        }
+        if (result.indexingComplete) {
+          storeFormulaText(state, sheet.id, result.cells)
+          const shared = storeSharedFormulaGroups(state, sheet.id, result.sharedGroups)
+          recordCachedFormulaValues(state, sheet.id, result.cells)
+          indexedCount += result.cells.length + shared.followerCount
+          if (indexedCount > CLOSURE_MAX_CELLS) {
+            if (root) return giveUp()
+            // The non-progressive pass still harvests text for the formula bar.
+            break
+          }
+          const formulas = indexedFormulas(result.cells, shared)
+          if (root) {
+            const dependencies = formulaDependencySheets(formulas, sheetsByName)
+            if (!dependencies) return giveUp()
+            for (const dependency of dependencies) sheets.add(dependency)
+          }
           inputs.push({
             id: sheet.id,
             name: sheet.name,
             rowCount: sheet.rowCount,
             columnCount: sheet.columnCount,
-            formulas: indexedFormulas(result.cells, shared),
+            formulas,
           })
+          break
         }
-        break
+        if (!root && Date.now() > deadline) return giveUp()
+        background = progressive
+        await new Promise((resolve) => setTimeout(resolve, 400))
       }
-      if (Date.now() > deadline) return giveUp()
-      await new Promise((resolve) => setTimeout(resolve, 400))
     }
-  }
-  if (indexedCount > CLOSURE_MAX_CELLS) return giveUp()
-  if (inputs.every((sheet) => sheet.formulas.length === 0)) return giveUp()
-  const closure = computeFormulaClosure(inputs, CLOSURE_MAX_CELLS)
-  if (!closure.ok) return giveUp()
-  // Structural edits made while analyzing would shift the coordinates the
-  // closure was computed in.
-  if (state.editJournal.structuralOps.size > 0) return giveUp()
-  const workbook = runtime.univerAPI.getActiveWorkbook()
-  if (!workbook) return giveUp()
+    if (indexedCount > CLOSURE_MAX_CELLS || !compatible()) return giveUp()
+    if (!root && inputs.every((sheet) => sheet.formulas.length === 0)) return giveUp()
+    const closure = computeFormulaClosure(inputs, CLOSURE_MAX_CELLS)
+    if (!closure.ok) return giveUp()
+    const fitsRemainingBudget = () => {
+      let total = 0
+      for (const pinned of state.closure.pinned.values()) total += pinned.size
+      for (const [sheetId, cells] of closure.cellsBySheet) {
+        const pinned = state.closure.pinned.get(sheetId)
+        for (const key of cells) {
+          if (!pinned?.has(`${keyRow(key)}:${keyColumn(key)}`)) total += 1
+        }
+      }
+      return total <= CLOSURE_MAX_CELLS
+    }
+    if (root && !fitsRemainingBudget()) return giveUp()
 
-  for (const [sheetId, cells] of closure.cellsBySheet) {
-    const worksheet = workbook.getSheetBySheetId(sheetId)
-    const sheetMeta = state.file.sheets.find((candidate) => candidate.id === sheetId)
-    if (!worksheet || !sheetMeta) continue
-    const pinned = new Map<string, PinnedClosureCell>()
-    for (const range of closureFetchRanges(cells)) {
-      let result
-      try {
-        result = await window.desktopApi.readWorkbookRange({
-          sessionId: state.file.sessionId,
-          sheetId,
-          range,
-        })
-      } catch {
-        return giveUp()
+    // Stage the cell reads before installing any formulas. An abandoned
+    // scan must leave both previously activated closures and the grid intact.
+    const ranges: {
+      worksheet: UniverWorksheet
+      sheet: WorkbookFile['sheets'][number]
+      range: IRange
+      cells: WorkbookRangeResult['cells']
+      rows: WorkbookRangeResult['rows']
+    }[] = []
+    for (const [sheetId, cells] of closure.cellsBySheet) {
+      const worksheet = workbook.getSheetBySheetId(sheetId)
+      const sheet = state.file.sheets.find((candidate) => candidate.id === sheetId)
+      if (!worksheet || !sheet) return giveUp()
+      for (const range of closureFetchRanges(cells)) {
+        const result = await window.desktopApi.readWorkbookRange({ sessionId, sheetId, range })
+        if (!current()) return
+        if (!compatible() || (root && !result.indexingComplete)) return giveUp()
+        const picked = result.cells.filter((cell) => cells.has(cellKey(cell.row, cell.column)))
+        ranges.push({ worksheet, sheet, range, cells: picked, rows: result.rows })
       }
-      if (lazyWorkbookRef.current !== state) return
-      // Same hazard as the pre-install guard: a structural edit landing while
-      // the read was in flight shifts screen coordinates, so this file-space
-      // result (and its pinned keys) would install at stale positions. Drop
-      // pins from already-installed sheets too — a partial closure must not
-      // keep re-applying on eviction.
-      if (state.editJournal.structuralOps.size > 0) {
-        state.closure.pinned.clear()
-        return giveUp()
-      }
-      const picked = result.cells.filter((cell) => cells.has(cellKey(cell.row, cell.column)))
-      recordCachedFormulaValues(state, sheetId, picked)
-      const wanted = degradeCostlyFormulas(state, sheetMeta.name, picked)
-      recordRowStyleKeys(state, sheetId, result.rows)
-      recordHiddenFileRows(state, sheetId, result.rows, range)
+    }
+    // An edit may have pinned its own precedents during the reads.
+    if (root && !fitsRemainingBudget()) return giveUp()
+
+    for (const { worksheet, sheet, range, cells, rows } of ranges) {
+      const sheetId = sheet.id
+      let pinned = state.closure.pinned.get(sheetId)
+      if (!pinned) state.closure.pinned.set(sheetId, (pinned = new Map()))
+      recordCachedFormulaValues(state, sheetId, cells)
+      const wanted = degradeCostlyFormulas(state, sheet.name, cells).filter(
+        (cell) => bySheet?.get(sheetId) !== 'active' || !pinned.has(`${cell.row}:${cell.column}`),
+      )
+      recordRowStyleKeys(state, sheetId, rows)
+      recordHiddenFileRows(state, sheetId, rows, range)
       patchWorksheetRange(
         worksheet,
         undefined,
@@ -1862,19 +1918,19 @@ export async function activateFormulaClosure(
         wanted,
         state.file.styles,
         [],
-        sheetMeta.tables,
-        sheetMeta.pivotTables,
-        sheetMeta.freeze,
+        sheet.tables,
+        sheet.pivotTables,
+        sheet.freeze,
         true,
         state.editJournal,
         undefined,
         undefined,
         undefined,
         sheetRowColStyleKeys(state, sheetId),
-        inheritedWrapLookup(state.file.styles, result.rows, sheetMeta.columnWidths),
+        inheritedWrapLookup(state.file.styles, rows, sheet.columnWidths),
         hiddenRowsInfo(state, sheetId),
+        false,
       )
-      // Re-pinning must not revive a formula the install kept cache-only.
       for (const cell of wanted) {
         pinned.set(
           `${cell.row}:${cell.column}`,
@@ -1884,10 +1940,27 @@ export async function activateFormulaClosure(
         )
       }
     }
-    state.closure.pinned.set(sheetId, pinned)
+    if (bySheet) {
+      for (const { id } of inputs) {
+        bySheet.set(id, 'active')
+        // Eviction reapplies cached recalc overlays, so discard any old
+        // fallback overlay for a sheet whose formulas now run live.
+        state.recalc.overlay.delete(id)
+        state.recalc.incompleteRuns.delete(id)
+      }
+    } else {
+      state.closure.status = 'active'
+    }
+    if (closure.formulaCount > 0) {
+      setMessage(t('appClosureActive', { count: closure.formulaCount.toLocaleString() }))
+    }
+  } catch {
+    giveUp()
+  } finally {
+    if (state.file.sessionId === sessionId) {
+      if (root && bySheet?.get(root.id) === 'pending') bySheet.delete(root.id)
+    }
   }
-  state.closure.status = 'active'
-  setMessage(t('appClosureActive', { count: closure.formulaCount.toLocaleString() }))
 }
 
 /// On-demand precedent pinning for formulas written onto a streamed
@@ -2205,6 +2278,10 @@ export async function recoverSidecarSession(state: LazyWorkbookState): Promise<b
     // transient open failure leaves the next crash signal free to retry.
     sessionRecoveryAttempted.add(state)
     state.file = { ...state.file, sessionId: reopened.sessionId }
+    if (state.closure.status === 'pending') state.closure.status = 'idle'
+    for (const [sheetId, status] of state.closure.bySheet ?? []) {
+      if (status !== 'active') state.closure.bySheet?.delete(sheetId)
+    }
     for (const timer of state.retryTimers.values()) clearTimeout(timer)
     state.retryTimers.clear()
     state.loadedRanges.clear()
@@ -2236,9 +2313,10 @@ export async function readSheetRangeMapped(
   screenRange: IRange,
   sheet: WorkbookFile['sheets'][number],
   mode?: WorkbookRangeRequest['mode'],
+  foreground = false,
 ): Promise<MappedRangeRead | null> {
   try {
-    return await readSheetRangeMappedOnce(state, sheetId, screenRange, sheet, mode)
+    return await readSheetRangeMappedOnce(state, sheetId, screenRange, sheet, mode, foreground)
   } catch (error: unknown) {
     // Every range read in the app funnels through here, so this is the one
     // place a crashed sidecar can be noticed. The gate is the main process's
@@ -2247,7 +2325,7 @@ export async function readSheetRangeMapped(
     // session." and is NOT a crash, so it must surface as an ordinary error
     // instead of re-opening the file and orphaning a session.
     if (!sidecarCrashNotified || !(await recoverSidecarSession(state))) throw error
-    return await readSheetRangeMappedOnce(state, sheetId, screenRange, sheet, mode)
+    return await readSheetRangeMappedOnce(state, sheetId, screenRange, sheet, mode, foreground)
   }
 }
 
@@ -2256,7 +2334,8 @@ async function readSheetRangeMappedOnce(
   sheetId: string,
   screenRange: IRange,
   sheet: WorkbookFile['sheets'][number],
-  mode?: WorkbookRangeRequest['mode'],
+  mode: WorkbookRangeRequest['mode'],
+  foreground: boolean,
 ): Promise<MappedRangeRead | null> {
   const ops = state.editJournal.structuralOps.get(sheetId) ?? []
   const fileSheetId = lazyFileSheetId(state, sheetId)
@@ -2278,6 +2357,7 @@ async function readSheetRangeMappedOnce(
         sessionId: state.file.sessionId,
         sheetId: fileSheetId,
         ...(mode ? { mode } : {}),
+        ...(foreground && startRow === screenRange.startRow ? { foreground: true } : {}),
         range: { ...screenRange, startRow, endRow },
       })
       cells.push(...batch.cells)
@@ -2296,6 +2376,7 @@ async function readSheetRangeMappedOnce(
         sessionId: state.file.sessionId,
         sheetId: fileSheetId,
         ...(mode ? { mode } : {}),
+        ...(foreground ? { foreground: true } : {}),
         range: screenRange,
       })
     }
@@ -2333,6 +2414,7 @@ async function readSheetRangeMappedOnce(
       sessionId: state.file.sessionId,
       sheetId: fileSheetId,
       ...(mode ? { mode } : {}),
+      ...(foreground && startRow === fileRange.startRow ? { foreground: true } : {}),
       range: { ...fileRange, startRow, endRow },
     })
     cells.push(...batch.cells)
@@ -2826,13 +2908,11 @@ export const RECALC_MAX_FAILURES = 3
 /// ~4GB for minutes at open) — and the formula-count gate never fires on
 /// such files. Cap by grid cell count (the dominant cost) and by compressed
 /// size (catches string-heavy files with small grids): past either, cached
-/// values stand for the session, same as engineOverBudget after a truncated
+/// values stand while the file is over budget, as with a truncated
 /// formula index. 2M cells ≈ 1GB import.
 export const RECALC_MAX_FILE_BYTES = 64 * 1024 * 1024
 export const RECALC_MAX_GRID_CELLS = 2_000_000
 
-/// Decided once at open (engineOverBudget seed); the recalc queue re-checks
-/// nothing size-related after that.
 export function recalcOverBudgetAtOpen(
   fileBytes: number | undefined,
   gridCellCount: number,
@@ -2849,10 +2929,14 @@ export function queueFormulaRecalc(
   setMessage: (message: string) => void,
 ): void {
   const state = lazyWorkbookRef.current
-  if (!state || state.formulaMode || state.closure.status !== 'unavailable') return
+  if (!state || state.formulaMode) return
+  const activeId = state.closure.bySheet
+    ? runtime.univerAPI.getActiveWorkbook()?.getActiveSheet()?.getSheetId()
+    : undefined
+  if (formulaClosureStatus(state, activeId) !== 'unavailable') return
   // minimal states (tests, partial teardown) may carry no recalc slot
   if (!state.recalc || state.recalc.failures >= RECALC_MAX_FAILURES) return
-  if (state.recalc.engineOverBudget) return
+  if (state.recalc.engineOverBudget || state.recalc.formulaIndexRetired) return
   // The engine loads the file from disk; session structural edits would
   // desync every coordinate — fail soft to cached values.
   if ([...state.editJournal.structuralOps.values()].some((ops) => ops.length > 0)) return
@@ -2893,7 +2977,7 @@ async function recalcFormulaCellKeys(
   if (result.truncated) {
     state.recalc.formulaCells.set(sheetId, new Set())
     recordCachedFormulaValues(state, sheetId, result.cells)
-    if (truncatedIndexRetiresEngine(state)) state.recalc.engineOverBudget = true
+    if (truncatedIndexRetiresEngine(state)) state.recalc.formulaIndexRetired = true
     return null
   }
   if (!result.indexingComplete) return null
@@ -2948,10 +3032,17 @@ async function runFormulaRecalc(
   state: LazyWorkbookState,
   setMessage: (message: string) => void,
 ): Promise<void> {
+  const current = () =>
+    lazyWorkbookRef.current === state &&
+    !state.formulaMode &&
+    !state.recalc.engineOverBudget &&
+    !state.recalc.formulaIndexRetired
+  if (!current()) return
   const workbook = runtime.univerAPI.getActiveWorkbook()
   const worksheet = workbook?.getActiveSheet()
   if (!workbook || !worksheet) return
   const sheetId = worksheet.getSheetId()
+  if (formulaClosureStatus(state, sheetId) !== 'unavailable') return
   if (state.editJournal.sheets.added.has(sheetId)) return
   const edits: { sheetId: string; row: number; column: number; input: string }[] = []
   for (const [editSheetId, entries] of state.editJournal.cells) {
@@ -2975,7 +3066,7 @@ async function runFormulaRecalc(
   state.recalc.lastRunAt = Date.now()
   try {
     const keys = await recalcFormulaCellKeys(state, sheetId)
-    if (lazyWorkbookRef.current !== state) return
+    if (!current() || formulaClosureStatus(state, sheetId) !== 'unavailable') return
     if (!keys || keys.size === 0) {
       // nothing to recalculate on this sheet: mark it followed so the
       // finished-run chain below doesn't loop on it forever
@@ -2995,7 +3086,12 @@ async function runFormulaRecalc(
       reads: reads.map((range) => ({ sheetId, range })),
     })
     // A newer run superseded this one while the sidecar was evaluating.
-    if (lazyWorkbookRef.current !== state || state.recalc.generation !== generation) return
+    if (
+      !current() ||
+      state.recalc.generation !== generation ||
+      formulaClosureStatus(state, sheetId) !== 'unavailable'
+    )
+      return
     const overlay = new Map<string, PinnedClosureCell>()
     let unsupported = 0
     const journalCells = state.editJournal.cells.get(sheetId)
@@ -3072,7 +3168,7 @@ async function runFormulaRecalc(
     // a superseded run failing after a newer success must not stack stale
     // failures toward the kill switch. "Busy" is not a failure — another
     // recalculation holds the worker and this one simply retries later.
-    if (lazyWorkbookRef.current !== state || state.recalc.generation !== generation) return
+    if (!current() || state.recalc.generation !== generation) return
     const busy = error instanceof Error && error.message.includes('busy with another recalculation')
     if (!busy) state.recalc.failures += 1
     // The in-flight import that rejected this run may itself be superseded
@@ -3099,7 +3195,7 @@ async function runFormulaRecalc(
           activeId &&
           activeId !== sheetId &&
           lazyWorkbookRef.current === state &&
-          state.closure.status === 'unavailable' &&
+          formulaClosureStatus(state, activeId) === 'unavailable' &&
           state.recalc.failures < RECALC_MAX_FAILURES &&
           !state.recalc.follow.has(activeId)
         ) {
@@ -3525,6 +3621,8 @@ async function loadRange(
   try {
     const sheetMeta = lazySheetMeta(state, sheetId)
     if (!sheetMeta) return
+    const foreground =
+      isActiveSheet(runtime, sheetId) && state.file.sheets.some((sheet) => sheet.progressive)
     const isCurrent = () =>
       lazyWorkbookRef.current === state && state.loadingKeys.get(sheetId) === requestKey
     const scheduleViewportRetry = (delay: number): void => {
@@ -3540,17 +3638,29 @@ async function loadRange(
       state.retryTimers.set(sheetId, timer)
     }
     if (!waitForRequestedRange && loaded && containsRange(loaded, range)) {
-      // Conditional formatting, merges and other sheet-wide metadata arrive
-      // at EOF. Keep checking readiness without decoding the same cells.
+      // Poll metadata and cell indexing independently without decoding
+      // the same cells while neither just became ready.
       const anchor = {
         startRow: range.startRow,
         endRow: range.startRow,
         startColumn: range.startColumn,
         endColumn: range.startColumn,
       }
-      const status = await readSheetRangeMapped(state, sheetId, anchor, sheetMeta, 'status')
+      const status = await readSheetRangeMapped(
+        state,
+        sheetId,
+        anchor,
+        sheetMeta,
+        'status',
+        foreground,
+      )
       if (!isCurrent()) return
-      if (status && !status.raw.indexingComplete) {
+      if (status) recordMetadataScanFailure(state, sheetId, status.raw)
+      if (
+        status &&
+        !status.raw.indexingComplete &&
+        !(state.decorationsPendingSheets.has(sheetId) && status.raw.metadataReady)
+      ) {
         scheduleViewportRetry(250)
         return
       }
@@ -3561,8 +3671,10 @@ async function loadRange(
       range,
       sheetMeta,
       waitForRequestedRange ? undefined : 'viewport',
+      foreground && isActiveSheet(runtime, sheetId),
     )
     if (!isCurrent()) return
+    if (mapped) recordMetadataScanFailure(state, sheetId, mapped.raw)
     const richFamilies = mapped ? richRunFamilies(mapped.screen.cells) : null
     if (richFamilies?.size) {
       await untilCellFontsLoaded(registerCellFontAliases(richFamilies))
@@ -3593,8 +3705,8 @@ async function loadRange(
         sheetMeta.freeze,
         state.formulaMode,
         state.editJournal,
-        state.closure.pinned.get(sheetId),
-        state.recalc.overlay.get(sheetId),
+        state.formulaMode ? undefined : state.closure.pinned.get(sheetId),
+        state.formulaMode ? undefined : state.recalc.overlay.get(sheetId),
         undefined,
         undefined,
         undefined,
@@ -3607,6 +3719,8 @@ async function loadRange(
       mapped.indexedThroughScreen === null
         ? null
         : Math.min(mapped.indexedThroughScreen, range.endRow)
+    const result = mapped.raw
+    const metadataReady = result.metadataReady ?? result.indexingComplete
     // Merges before cells: shrinkToFit measures its budget from Univer's
     // merge data, so a merged label patched first would shrink to its
     // anchor column.
@@ -3616,7 +3730,13 @@ async function loadRange(
     if (availableEndRow !== null && availableEndRow >= range.startRow) {
       const availableRange = { ...range, endRow: availableEndRow }
       const alreadyLoaded = state.loadedRanges.get(sheetId)
-      if (!alreadyLoaded || !containsRange(alreadyLoaded, availableRange)) {
+      if (
+        !alreadyLoaded ||
+        !containsRange(alreadyLoaded, availableRange) ||
+        (metadataReady &&
+          state.decorationsPendingSheets.has(sheetId) &&
+          mapped.screen.merges.length > 0)
+      ) {
         if (state.formulaMode) recordCachedFormulaValues(state, sheetId, mapped.screen.cells)
         recordRowStyleKeys(state, sheetId, mapped.screen.rows)
         recordHiddenFileRows(state, sheetId, mapped.screen.rows, availableRange)
@@ -3635,8 +3755,8 @@ async function loadRange(
           sheetMeta.freeze,
           state.formulaMode,
           state.editJournal,
-          state.closure.pinned.get(sheetId),
-          state.recalc.overlay.get(sheetId),
+          state.formulaMode ? undefined : state.closure.pinned.get(sheetId),
+          state.formulaMode ? undefined : state.recalc.overlay.get(sheetId),
           undefined,
           sheetRowColStyleKeys(state, sheetId),
           inheritedWrapLookup(state.file.styles, mapped.screen.rows, sheetMeta.columnWidths),
@@ -3653,7 +3773,7 @@ async function loadRange(
         const follow = recalc.follow.get(sheetId)
         if (
           !state.formulaMode &&
-          state.closure.status === 'unavailable' &&
+          formulaClosureStatus(state, sheetId) === 'unavailable' &&
           !recalc.running &&
           // a pending debounce counts as in flight: re-queuing would RESET
           // the timer and starve the open-time recalc while streaming keeps
@@ -3667,7 +3787,6 @@ async function loadRange(
         }
       }
     }
-    const result = mapped.raw
     // Every mode needs formulaText for the formula bar: formulaMode for
     // cache-only (defined-name) cells, value mode because streamed cells
     // carry no `f` in the grid at all — without the harvest a formula cell
@@ -3689,7 +3808,7 @@ async function loadRange(
     // The stale-height reset must not hide behind the patch gate: the
     // post-indexing retry that finally carries the sheet's merges usually
     // finds its range already loaded and skips the patch entirely.
-    const wrapWindow = patchedRange ?? (result.indexingComplete ? range : undefined)
+    const wrapWindow = patchedRange ?? (metadataReady ? range : undefined)
     if (wrapWindow && !bulk) {
       const qualifyingCells = wrapAutoFitCells(
         mapped.screen.cells,
@@ -3731,7 +3850,7 @@ async function loadRange(
         coverWrapRows(coverage, freshRows, wrapWindow.startColumn, wrapWindow.endColumn)
       }
       const sheetKey = `file-${state.file.sha256}:${sheetId}`
-      if (result.indexingComplete) {
+      if (metadataReady) {
         const qualifyingWithoutMerges = wrapAutoFitRows(
           mapped.screen.cells,
           state.file.styles,
@@ -3789,7 +3908,7 @@ async function loadRange(
     // skip it (rare: the sheet was being edited before it first rendered).
     if (!hasStructuralOps) {
       await applyConditionalRules(worksheet, state, sheetId, result.conditionalRules)
-      if (result.indexingComplete) {
+      if (metadataReady) {
         applySheetFilter(
           runtime,
           worksheet,
@@ -3800,6 +3919,7 @@ async function loadRange(
         )
         applyDataValidations(runtime, state, sheetId, result.dataValidations)
         if (
+          result.indexingComplete &&
           result.autoFilterColumns.length &&
           state.restoredFilterSpans.has(sheetId) &&
           isLargeFilterSheet(state, sheetId) &&
@@ -3826,11 +3946,10 @@ async function loadRange(
       // a pending entry would only force pointless sidecar re-reads.
       state.decorationsPendingSheets.delete(sheetId)
     }
-    if (result.indexingComplete) captureSheetFileState(state, sheetId, result)
+    if (metadataReady) captureSheetFileState(state, sheetId, result)
     const sheet = sheetMeta
     if (!result.indexingComplete) {
-      // Poll until the stream finishes: merged-cell ranges and trailing row
-      // properties only become available at the end of the worksheet part.
+      // Keep polling until the workbook's metadata and cell cache settle.
       const indexedRows = (result.indexedThroughRow ?? -1) + 1
       if (
         isActiveSheet(runtime, sheetId) &&
@@ -6307,6 +6426,38 @@ export async function preloadEntireWorkbook(
   }
 }
 
+function* preloadGridRanges(rowCount: number, columnCount: number): Iterable<IRange> {
+  const rowsPerRead = Math.max(1, Math.floor(SIDECAR_RANGE_CELL_LIMIT / columnCount))
+  for (let startRow = 0; startRow < rowCount; startRow += rowsPerRead) {
+    yield {
+      startRow,
+      endRow: Math.min(rowCount - 1, startRow + rowsPerRead - 1),
+      startColumn: 0,
+      endColumn: columnCount - 1,
+    }
+  }
+}
+
+async function readPreloadPlan(
+  state: LazyWorkbookState,
+  sheetId: string,
+  lazyWorkbookRef: { readonly current: LazyWorkbookState | null },
+): Promise<IRange[] | undefined | null> {
+  for (let attempt = 0; attempt < 400 && lazyWorkbookRef.current === state; attempt += 1) {
+    const result = await window.desktopApi.readWorkbookRange({
+      sessionId: state.file.sessionId,
+      sheetId,
+      range: { startRow: 0, endRow: 0, startColumn: 0, endColumn: 0 },
+      mode: 'status',
+      preloadPlan: true,
+    })
+    // Older sidecars treat this request as a regular status read.
+    if (result.preloadRanges === undefined || result.indexingComplete) return result.preloadRanges
+    await new Promise((resolve) => setTimeout(resolve, 150))
+  }
+  return null
+}
+
 async function preloadEntireWorkbookInner(
   runtime: UniverRuntime,
   state: LazyWorkbookState,
@@ -6314,20 +6465,21 @@ async function preloadEntireWorkbookInner(
   lazyWorkbookRef: { current: LazyWorkbookState | null },
   setMessage: (message: string) => void,
 ): Promise<void> {
+  const usePlan = state.file.sheets.some((sheet) => sheet.progressive)
   for (const sheet of state.file.sheets) {
     const worksheet = workbook.getSheetBySheetId(sheet.id)
     if (!worksheet) continue
     const sheetId = sheet.id
-    const rowsPerBlock = Math.max(1, Math.floor(SIDECAR_RANGE_CELL_LIMIT / sheet.columnCount))
+    let plan: IRange[] | undefined | null
+    try {
+      plan = usePlan ? await readPreloadPlan(state, sheetId, lazyWorkbookRef) : undefined
+    } catch {
+      return
+    }
+    if (plan === null) return
     const arrayFollowers = new Set<string>()
-    for (let startRow = 0; startRow < sheet.rowCount; startRow += rowsPerBlock) {
+    for (const range of plan ?? preloadGridRanges(sheet.rowCount, sheet.columnCount)) {
       if (lazyWorkbookRef.current !== state) return
-      const range: IRange = {
-        startRow,
-        endRow: Math.min(sheet.rowCount - 1, startRow + rowsPerBlock - 1),
-        startColumn: 0,
-        endColumn: sheet.columnCount - 1,
-      }
       let result
       try {
         result = await window.desktopApi.readWorkbookRange({
@@ -6368,6 +6520,11 @@ async function preloadEntireWorkbookInner(
         : screen.cells
       if (state.formulaMode) collectArrayFollowers(arrayFollowers, installable, ops)
       recordRowStyleKeys(state, sheetId, screen.rows)
+      const coveredThrough = state.hiddenRowsCoveredThrough.get(sheetId) ?? -1
+      if (plan && coveredThrough < screenRange.startRow - 1) {
+        // The plan covers every indexed row property, including hidden rows.
+        state.hiddenRowsCoveredThrough.set(sheetId, screenRange.startRow - 1)
+      }
       recordHiddenFileRows(state, sheetId, screen.rows, screenRange)
       const installRange = preloadInstallRange(
         screenRange,
@@ -6392,8 +6549,8 @@ async function preloadEntireWorkbookInner(
           sheet.freeze,
           state.formulaMode,
           state.editJournal,
-          state.closure.pinned.get(sheetId),
-          state.recalc.overlay.get(sheetId),
+          state.formulaMode ? undefined : state.closure.pinned.get(sheetId),
+          state.formulaMode ? undefined : state.recalc.overlay.get(sheetId),
           state.formulaMode ? arrayFollowers : undefined,
           sheetRowColStyleKeys(state, sheetId),
           inheritedWrapLookup(state.file.styles, screen.rows, sheet.columnWidths),
@@ -6487,7 +6644,9 @@ async function preloadEntireWorkbookInner(
       } else {
         state.decorationsPendingSheets.delete(sheetId)
       }
-      if (result.indexingComplete) captureSheetFileState(state, sheetId, result)
+      if (result.metadataReady ?? result.indexingComplete) {
+        captureSheetFileState(state, sheetId, result)
+      }
     }
     const finalOps = state.editJournal.structuralOps.get(sheet.id) ?? []
     state.loadedRanges.set(sheetId, {
@@ -6499,7 +6658,12 @@ async function preloadEntireWorkbookInner(
   }
   if (lazyWorkbookRef.current === state) {
     state.flags.preloadComplete = true
-    if (state.formulaMode && !isManualCalculation(runtime)) requestFullRecalcAfterStream()
+    if (state.formulaMode) {
+      state.closure.pinned.clear()
+      state.recalc.overlay.clear()
+      state.recalc.incompleteRuns.clear()
+      if (!isManualCalculation(runtime)) requestFullRecalcAfterStream()
+    }
     setMessage(t('appFullyLoaded'))
   }
 }
@@ -6544,7 +6708,7 @@ export async function ensureSheetFileState(
     } catch {
       return false
     }
-    if (result.indexingComplete) {
+    if (result.metadataReady ?? result.indexingComplete) {
       captureSheetFileState(state, sheetId, result)
       return true
     }
@@ -6553,16 +6717,34 @@ export async function ensureSheetFileState(
   return false
 }
 
-/// Records the sheet-wide, complete-only file state (protection, manual page
-/// breaks, allow-edit ranges) the first time a sheet finishes indexing.
+function recordMetadataScanFailure(
+  state: LazyWorkbookState,
+  sheetId: string,
+  result: WorkbookRangeResult,
+): void {
+  const failures = state.metadataScanFailedSheets
+  if (
+    result.metadataScanFailed &&
+    failures &&
+    !failures.has(sheetId) &&
+    !state.sheetProtections.has(sheetId)
+  ) {
+    failures.add(sheetId)
+    state.onMetadataScanFailed?.(sheetId)
+  }
+}
+
+/// Records protection and other sheet metadata as soon as the tail arrives.
 function captureSheetFileState(
   state: LazyWorkbookState,
   sheetId: string,
   result: WorkbookRangeResult,
 ): void {
+  const first = !state.sheetPageBreaks.has(sheetId)
   if (!state.sheetProtections.has(sheetId)) {
     state.sheetProtections.set(sheetId, fileSheetProtection(result.sheetProtection))
   }
+  state.metadataScanFailedSheets?.delete(sheetId)
   if (!state.sheetPageBreaks.has(sheetId)) {
     state.sheetPageBreaks.set(sheetId, {
       rowBreaks: [...result.rowBreaks],
@@ -6582,6 +6764,29 @@ function captureSheetFileState(
         state.editJournal.structuralOps.get(sheetId) ?? [],
       ),
     )
+  }
+  const meta = lazySheetMeta(state, sheetId)
+  if (meta?.progressive) {
+    const counts = result.cellCounts
+    if (counts && meta.storedCellCount === undefined) {
+      const fileSheetId = lazyFileSheetId(state, sheetId)
+      state.file = {
+        ...state.file,
+        sheets: state.file.sheets.map((sheet) =>
+          sheet.id === fileSheetId ? { ...sheet, ...counts } : sheet,
+        ),
+      }
+      const wasOverBudget = state.recalc.engineOverBudget
+      state.recalc.engineOverBudget = recalcOverBudgetAtOpen(
+        state.file.fileBytes,
+        workbookCellCounts(state.file.sheets).gridCells,
+      )
+      state.onProgressiveCountsChanged?.(wasOverBudget && !state.recalc.engineOverBudget)
+    }
+    if (first) {
+      if (result.sparklines) state.deferredSparklines?.set(sheetId, result.sparklines)
+      state.onProgressiveSheetReady?.(sheetId)
+    }
   }
 }
 
@@ -8474,7 +8679,7 @@ export function queueSparklineInstall(
     disposeVisuals(sparklineDisposablesRef.current)
     const sheetMeta = state.file.sheets.find((sheet) => sheet.id === sheetId)
     const sparklines: SparklineGroupState[] = [
-      ...(sheetMeta?.sparklines ?? []),
+      ...(state.deferredSparklines?.get(sheetId) ?? sheetMeta?.sparklines ?? []),
       ...state.editJournal.sparklineAdds
         .filter((entry) => entry.sheetId === sheetId)
         .map((entry) => ({

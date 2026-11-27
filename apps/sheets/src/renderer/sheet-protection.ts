@@ -4,8 +4,8 @@
  * before they run: content edits are blocked on locked cells, every other
  * command maps to one of the dialog's permission flags.
  */
-import type { IRange } from '@univerjs/core'
-import { SheetsSelectionsService } from '@univerjs/sheets'
+import { IPermissionService, PermissionService, type IRange } from '@univerjs/core'
+import { SheetsSelectionsService, WorkbookEditablePermission } from '@univerjs/sheets'
 import {
   DEFAULT_SHEET_PROTECTION_ALLOW,
   type SheetProtectionAllow,
@@ -14,8 +14,54 @@ import {
 import type { SheetPasswordHash } from '@genoffice/xlsx-gateway/gateway/xlsx-protection-hash'
 
 import { t } from './i18n/locale'
-import { journalSuppression, type LazyWorkbookState, type UniverRuntime } from './univer-state'
+import {
+  journalSuppression,
+  lazySheetMeta,
+  type ActiveWorkbook,
+  type LazyWorkbookState,
+  type UniverRuntime,
+} from './univer-state'
 import type { WorkbookRangeResult } from '../shared/desktop-api'
+
+const previewLocks = new Set<string>()
+const previewDialogSettings = new WeakMap<IPermissionService, boolean>()
+let previewWritesInstalled = false
+
+/** The visible workbook stays read-only while its source is incomplete.
+ * Synchronous file installs already suppress journaling. Allow just those
+ * calls to populate the grid through Univer's ordinary range commands. */
+export function setProgressivePreviewEditable(
+  runtime: UniverRuntime,
+  workbook: ActiveWorkbook,
+  editable: boolean,
+): void {
+  if (!previewWritesInstalled) {
+    previewWritesInstalled = true
+    const prototype = PermissionService.prototype
+    const getPermission = prototype.getPermissionPoint
+    prototype.getPermissionPoint = function (this: PermissionService, id: string) {
+      const point = getPermission.call(this, id)
+      return point?.value === false && journalSuppression.active && previewLocks.has(id)
+        ? { ...point, value: true }
+        : point
+    } as typeof getPermission
+  }
+  const id = new WorkbookEditablePermission(workbook.getId()).id
+  const permissions = runtime.univer.__getInjector().get(IPermissionService)
+  if (editable) {
+    previewLocks.delete(id)
+    const previous = previewDialogSettings.get(permissions)
+    if (previous !== undefined) {
+      permissions.setShowComponents(previous)
+      previewDialogSettings.delete(permissions)
+    }
+  } else {
+    previewLocks.add(id)
+    previewDialogSettings.set(permissions, permissions.getShowComponents())
+    permissions.setShowComponents(false)
+  }
+  workbook.setEditable(editable)
+}
 
 /// ICellData.custom keys carrying the xf protection flags.
 export const CELL_LOCKED_KEY = 'xlsxLocked'
@@ -405,6 +451,7 @@ export function rangesTouchLockedCell(
 export interface SheetProtectionGuardDeps {
   readonly getState: () => LazyWorkbookState | null
   readonly notify: (message: string) => void
+  readonly notifyPreview?: () => void
 }
 
 /// Vetoes commands the active sheet's protection forbids. Loader writes run
@@ -426,12 +473,14 @@ export function installSheetProtectionGuard(
         ? workbook?.getSheetBySheetId(params.subUnitId)
         : workbook?.getActiveSheet()
     if (!state || !worksheet) return
-    const protection = effectiveSheetProtection(state, worksheet.getSheetId())
+    const sheetId = worksheet.getSheetId()
+    const protection = effectiveSheetProtection(state, sheetId)
     // Unknown until the sheet is indexed: fail closed rather than let edits
     // land on what may turn out to be a protected sheet.
     if (!protection) {
       event.cancel = true
-      deps.notify(t('appProtectionNeedsIndexed'))
+      if (lazySheetMeta(state, sheetId)?.progressive && deps.notifyPreview) deps.notifyPreview()
+      else deps.notify(t('appProtectionNeedsIndexed'))
       return
     }
     if (!protection.protected) return

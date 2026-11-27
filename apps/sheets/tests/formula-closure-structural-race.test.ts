@@ -117,13 +117,11 @@ describe('activateFormulaClosure structural-edit race', () => {
     expect(state.closure.pinned.get('sheet-2')?.get('0:0')).toEqual({ v: 2 })
   })
 
-  it('gives up and drops all pins when a structural edit lands during an install read', async () => {
+  it('leaves the grid and pins untouched when a structural edit lands during a read', async () => {
     const state = closureState()
     const patches: PatchCall[] = []
-    // The first sheet installs cleanly; while the second sheet's read is in
-    // flight the user inserts rows. Installing that file-space result (or
-    // keeping the already-stored pins for later re-application) would land
-    // cells at shifted screen positions.
+    // The first sheet's read succeeds. While the second is in flight, the
+    // user inserts rows and invalidates the staged file coordinates.
     stubDesktopApi((call) => {
       if (call === 2) {
         state.editJournal.structuralOps.set('sheet-2', [
@@ -135,7 +133,7 @@ describe('activateFormulaClosure structural-edit race', () => {
     await activateFormulaClosure(stubRuntime(patches) as never, { current: state }, () => undefined)
 
     expect(state.closure.status).toBe('unavailable')
-    expect(patches).toHaveLength(1)
+    expect(patches).toHaveLength(0)
     expect(state.closure.pinned.size).toBe(0)
   })
 })

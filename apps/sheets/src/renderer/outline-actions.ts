@@ -271,41 +271,59 @@ export function outlineSummarySettings(
 export async function loadRowOutlines(
   state: LazyWorkbookState,
   lazyWorkbookRef: { readonly current: LazyWorkbookState | null },
+  activeSheetId?: string,
 ): Promise<void> {
-  const sheets = state.file.sheets.filter((sheet) => (sheet.outlineLevelRow ?? 0) > 0)
-  if (sheets.length === 0) return
+  const progressive = state.file.sheets.some((sheet) => sheet.progressive)
+  if (progressive && activeSheetId === undefined) return
+  const sheets = state.file.sheets.filter(
+    (sheet) => (sheet.outlineLevelRow ?? 0) > 0 && (!progressive || sheet.id === activeSheetId),
+  )
+  const sessionId = state.file.sessionId
   const deadline = Date.now() + 180_000
   for (const sheet of sheets) {
-    for (;;) {
-      if (lazyWorkbookRef.current !== state) return
-      let result
-      try {
-        result = await window.desktopApi.readWorkbookRowOutline({
-          sessionId: state.file.sessionId,
+    const current = () =>
+      lazyWorkbookRef.current === state &&
+      state.file.sessionId === sessionId &&
+      !isSheetRemoved(state.editJournal, sheet.id) &&
+      !state.editJournal.structuralOps.get(sheet.id)?.some((op) => 'index' in op)
+    if (!current()) continue
+    const outline = sheetOutline(state, sheet.id)
+    if (outline.rowIndex?.sessionId === sessionId) continue
+    const load = { sessionId, complete: false }
+    outline.rowIndex = load
+    try {
+      let background = false
+      while (current()) {
+        const result = await window.desktopApi.readWorkbookRowOutline({
+          sessionId,
           sheetId: sheet.id,
+          ...(background ? { background: true } : {}),
         })
-      } catch {
-        return
+        if (!current()) break
+        let changed = false
+        for (const row of result.rows) {
+          // Each file row seeds once; session edits own the entry afterwards.
+          if (outline.seededRows.has(row.row)) continue
+          outline.seededRows.add(row.row)
+          if (outline.rows.has(row.row)) continue
+          outline.rows.set(row.row, {
+            level: row.level,
+            collapsed: row.collapsed ?? false,
+            fileHidden: row.hidden ?? false,
+          })
+          changed = true
+        }
+        if (changed) outline.version += 1
+        load.complete = result.indexingComplete
+        if (load.complete || (!progressive && Date.now() > deadline)) break
+        // A first visit demands the index. Later reads can just observe it.
+        background = progressive
+        await new Promise((resolve) => setTimeout(resolve, 500))
       }
-      const outline = sheetOutline(state, sheet.id)
-      // Once rows shifted this session, file coordinates no longer map.
-      if (state.editJournal.structuralOps.get(sheet.id)?.some((op) => 'index' in op)) break
-      let changed = false
-      for (const row of result.rows) {
-        // Each file row seeds once; session edits own the entry afterwards.
-        if (outline.seededRows.has(row.row)) continue
-        outline.seededRows.add(row.row)
-        if (outline.rows.has(row.row)) continue
-        outline.rows.set(row.row, {
-          level: row.level,
-          collapsed: row.collapsed ?? false,
-          fileHidden: row.hidden ?? false,
-        })
-        changed = true
-      }
-      if (changed) outline.version += 1
-      if (result.indexingComplete || Date.now() > deadline) break
-      await new Promise((resolve) => setTimeout(resolve, 500))
+    } catch {
+      // Allow a fresh attempt when the sheet is next visited.
+    } finally {
+      if (!load.complete && outline.rowIndex === load) delete outline.rowIndex
     }
   }
 }

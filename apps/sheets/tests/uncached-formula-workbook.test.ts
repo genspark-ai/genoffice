@@ -100,6 +100,7 @@ describe('activateFormulaClosure over a truncated formula index', () => {
 
     expect(state.closure.status).toBe('unavailable')
     expect(state.recalc.engineOverBudget).toBe(false)
+    expect(state.recalc.formulaIndexRetired).toBeUndefined()
     // the fallback recalc is queued right away, not at the first edit
     expect(state.recalc.timer).not.toBeNull()
   })
@@ -114,7 +115,7 @@ describe('activateFormulaClosure over a truncated formula index', () => {
     await activateFormulaClosure(runtime, { current: state }, () => undefined)
 
     expect(state.closure.status).toBe('unavailable')
-    expect(state.recalc.engineOverBudget).toBe(true)
+    expect(state.recalc.formulaIndexRetired).toBe(true)
     expect(state.recalc.timer).toBeNull()
   })
 
@@ -127,7 +128,7 @@ describe('activateFormulaClosure over a truncated formula index', () => {
 
     await activateFormulaClosure(runtime, { current: state }, () => undefined)
 
-    expect(state.recalc.engineOverBudget).toBe(true)
+    expect(state.recalc.formulaIndexRetired).toBe(true)
   })
 
   it('a size-gated workbook stays over budget regardless of caches', async () => {

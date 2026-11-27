@@ -141,6 +141,30 @@ const protectedRangesSchema = z
   )
   .max(1_024)
 
+const sparklineGroupsSchema = z
+  .array(
+    z
+      .object({
+        type: z.enum(['line', 'column', 'stacked']),
+        color: z.string().optional(),
+        negativeColor: z.string().optional(),
+        cells: z
+          .array(
+            z
+              .object({
+                /// A1 address of the host cell.
+                cell: z.string().min(2),
+                /// `Sheet1!A2:C2` source range (sheet-qualified, `$` allowed).
+                sourceRef: z.string().min(1),
+              })
+              .strict(),
+          )
+          .max(500),
+      })
+      .strict(),
+  )
+  .max(100)
+
 const worksheetMetadataSchema = z
   .object({
     id: z.string().min(1),
@@ -150,6 +174,7 @@ const worksheetMetadataSchema = z
     /// Uncompressed worksheet XML size reported by the sidecar. Optional for
     /// compatibility with an older sidecar binary.
     sourceXmlBytes: z.number().int().nonnegative().optional(),
+    progressive: z.boolean().optional(),
     /// Worksheet protection from the metadata pass. Absent for old sidecars.
     protection: z
       .object({ sheetProtection: sheetProtectionSchema, protectedRanges: protectedRangesSchema })
@@ -347,30 +372,7 @@ const worksheetMetadataSchema = z
       .default([]),
     /// x14 sparkline groups (in-cell line/column/win-loss minicharts).
     /// Defaulted for stale sidecar binaries, like pivotTables.
-    sparklines: z
-      .array(
-        z
-          .object({
-            type: z.enum(['line', 'column', 'stacked']),
-            color: z.string().optional(),
-            negativeColor: z.string().optional(),
-            cells: z
-              .array(
-                z
-                  .object({
-                    /// A1 address of the host cell.
-                    cell: z.string().min(2),
-                    /// `Sheet1!A2:C2` source range (sheet-qualified, `$` allowed).
-                    sourceRef: z.string().min(1),
-                  })
-                  .strict(),
-              )
-              .max(500),
-          })
-          .strict(),
-      )
-      .max(100)
-      .default([]),
+    sparklines: sparklineGroupsSchema.default([]),
     /// Saved `_xlnm.Print_Area` / `_xlnm.Print_Titles` formulas for this
     /// sheet, verbatim from workbook.xml.
     printArea: z.string().min(1).max(2_000).optional(),
@@ -913,6 +915,8 @@ export const workbookRangeRequestSchema = z
     // Interactive reads never wait in the sidecar command queue. Status
     // requests return only progress when the visible cells are already loaded.
     mode: z.enum(['viewport', 'status']).optional(),
+    foreground: z.boolean().optional(),
+    preloadPlan: z.literal(true).optional(),
     rows: z.array(z.number().int().nonnegative()).min(1).max(512).optional(),
     range: z
       .object({
@@ -1140,7 +1144,7 @@ export const workbookRangeResultSchema = z
       .max(MAX_RANGE_CELLS),
     conditionalRules: z.array(conditionalRuleSchema).max(MAX_RANGE_CELLS),
     autoFilter: cellAreaSchema.nullable(),
-    /// The autoFilter's live per-column criteria; sheet-wide, complete-only,
+    /// The autoFilter's live per-column criteria, available with metadata,
     /// empty when the filter has none (or the sheet has no filter).
     autoFilterColumns: z.array(filterColumnStateSchema).max(1_000),
     dataValidations: z
@@ -1165,15 +1169,25 @@ export const workbookRangeResultSchema = z
           .strict(),
       )
       .max(MAX_RANGE_CELLS),
-    /// Sheet-wide, delivered complete-only (like autoFilter). null = no
-    /// <sheetProtection> element in the worksheet.
+    /// Authoritative when metadataReady or indexingComplete is true.
+    /// null then means that the worksheet has no <sheetProtection>.
     sheetProtection: sheetProtectionSchema,
-    /// Manual page breaks (0-based index of the row/column after the break);
-    /// sheet-wide, complete-only.
+    sparklines: sparklineGroupsSchema.optional(),
+    preloadRanges: z.array(cellAreaSchema).optional(),
+    cellCounts: z
+      .object({
+        storedCellCount: z.number().int().nonnegative(),
+        valueCellCount: z.number().int().nonnegative(),
+        valueRowCount: z.number().int().nonnegative(),
+        valueColumnCount: z.number().int().nonnegative(),
+      })
+      .strict()
+      .optional(),
+    /// Manual page breaks (0-based index of the row/column after the break).
     rowBreaks: z.array(z.number().int().nonnegative()).max(1_024),
     colBreaks: z.array(z.number().int().nonnegative()).max(1_024),
     /// Saved print settings (pageSetup / pageMargins / printOptions /
-    /// headerFooter); sheet-wide, complete-only. Absent/null when the sheet
+    /// headerFooter). Absent/null when the sheet
     /// declares none (also for stale sidecar binaries).
     pageSetup: z
       .object({
@@ -1235,6 +1249,9 @@ export const workbookRangeResultSchema = z
     protectedRanges: protectedRangesSchema,
     indexedThroughRow: z.number().int().nonnegative().nullable(),
     indexingComplete: z.boolean(),
+    /// Older sidecars publish the sheet-wide metadata at indexingComplete.
+    metadataReady: z.boolean().optional(),
+    metadataScanFailed: z.boolean().optional(),
   })
   .strict()
 
@@ -1242,6 +1259,9 @@ export const workbookFormulaCellsRequestSchema = z
   .object({
     sessionId: z.string().uuid(),
     sheetId: z.string().min(1),
+    // A workbook-wide background scan observes the index without starting
+    // or accelerating a sheet the user has not visited.
+    background: z.boolean().optional(),
   })
   .strict()
 

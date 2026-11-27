@@ -141,7 +141,10 @@ pub struct SheetMetadata {
     /// In-cell rich-value pictures ("place picture in cell").
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub cell_images: Vec<CellImageInfo>,
-    /// Protection is known before cell indexing starts.
+    /// The streaming index supplies the tail metadata for this sheet.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub progressive: bool,
+    /// Only authoritative at open when progressive is false.
     pub protection: SheetProtectionMetadata,
 }
 
@@ -434,7 +437,7 @@ pub struct DataValidationRule {
     pub prompt: Option<String>,
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CellRange {
     pub start_row: usize,
@@ -525,7 +528,7 @@ pub struct RichRun {
     pub vert_align: Option<String>,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct SharedString {
     pub(crate) text: String,
     pub(crate) runs: Option<Vec<RichRun>>,
@@ -540,6 +543,15 @@ pub enum RangeReadMode {
     Status,
 }
 
+#[derive(Clone, Copy, Debug, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct IndexedCellCounts {
+    pub stored_cell_count: usize,
+    pub value_cell_count: usize,
+    pub value_row_count: usize,
+    pub value_column_count: usize,
+}
+
 #[derive(Debug, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RangeResult {
@@ -547,26 +559,38 @@ pub struct RangeResult {
     pub rows: Vec<RowProperty>,
     pub merges: Vec<MergedRange>,
     pub hyperlinks: Vec<HyperlinkRecord>,
-    /// Sheet-wide rules; empty until worksheet indexing completes.
+    /// Sheet-wide rules, populated once the worksheet metadata is ready.
     pub conditional_rules: Vec<ConditionalRule>,
-    /// Also sheet-wide, complete-only.
+    /// Also sheet-wide, available with the metadata.
     pub auto_filter: Option<MergedRange>,
     /// The autoFilter's live per-column criteria (filterColumn children);
-    /// sheet-wide, complete-only, empty when the filter has no criteria.
+    /// empty when the filter has no criteria.
     pub auto_filter_columns: Vec<FilterColumnCriteria>,
     pub data_validations: Vec<DataValidationRule>,
     pub sheet_protection: Option<SheetProtectionInfo>,
-    /// Manual page breaks (0-based index of the row/column after the break);
-    /// sheet-wide, complete-only.
+    /// Manual page breaks (0-based index of the row/column after the break).
     pub row_breaks: Vec<usize>,
     pub col_breaks: Vec<usize>,
-    /// protectedRanges entries; sheet-wide, complete-only.
+    /// protectedRanges entries, available with the metadata.
     pub protected_ranges: Vec<ProtectedRangeInfo>,
-    /// Saved print settings; sheet-wide, complete-only, None when the sheet
-    /// declares none.
+    /// Deferred file sparklines, published with the rest of the sheet tail.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparklines: Option<Vec<SparklineGroupInfo>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cell_counts: Option<IndexedCellCounts>,
+    /// Present on preload-plan reads, with ranges available at EOF.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub preload_ranges: Option<Vec<CellRange>>,
+    /// Saved print settings, None when the sheet declares none.
     pub page_setup: Option<PagePrintInfo>,
     pub indexed_through_row: Option<usize>,
     pub indexing_complete: bool,
+    /// Protection, merges, filters and other sheet-wide metadata are known.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub metadata_ready: bool,
+    /// Early scan failed; the full index can still supply the metadata.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub metadata_scan_failed: bool,
 }
 
 /// One `<filterColumn>` of a worksheet autoFilter: checked values

@@ -5,6 +5,7 @@ import type {
   ExternalLinksResult,
   ExternalLinksUpdateResult,
   WorkbookRangeRequest,
+  WorkbookFormulaCellsRequest,
   WorkbookFilterRequest,
 } from '../shared/desktop-api'
 
@@ -72,11 +73,17 @@ export class XlsxSidecarClient {
     for (const listener of this.exitListeners) listener()
   }
 
-  async open(path: string, locale = 'zh', shortDateFormat?: string): Promise<unknown> {
+  async open(
+    path: string,
+    locale = 'zh',
+    shortDateFormat?: string,
+    progressive = false,
+  ): Promise<unknown> {
     return this.request({
       command: 'open',
       path,
       locale,
+      ...(progressive ? { progressive } : {}),
       ...(shortDateFormat === undefined ? {} : { shortDateFormat }),
     })
   }
@@ -85,10 +92,7 @@ export class XlsxSidecarClient {
     return this.request({ command: 'read_range', ...input })
   }
 
-  async readFormulaCells(input: {
-    readonly sessionId: string
-    readonly sheetId: string
-  }): Promise<unknown> {
+  async readFormulaCells(input: WorkbookFormulaCellsRequest): Promise<unknown> {
     return this.request({ command: 'read_formula_cells', ...input })
   }
 
@@ -102,10 +106,7 @@ export class XlsxSidecarClient {
     return this.request({ command: 'find_cells', ...input })
   }
 
-  async readRowOutline(input: {
-    readonly sessionId: string
-    readonly sheetId: string
-  }): Promise<unknown> {
+  async readRowOutline(input: WorkbookFormulaCellsRequest): Promise<unknown> {
     return this.request({ command: 'read_row_outline', ...input })
   }
 

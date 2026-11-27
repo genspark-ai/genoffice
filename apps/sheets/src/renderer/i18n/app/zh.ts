@@ -587,6 +587,8 @@ export const zh = {
   appClosureActive: '{count} 个公式实时重算（闭包模式）；其余部分按需流式加载。',
   appRecalcPartial: '公式已按你的编辑重算——{count} 个保留了缓存值（回退引擎不支持的函数）。',
   appRecalcDone: '公式已按你的编辑重算（{count} 个单元格，引擎回退）。',
+  appReadOnlyIndexing: '正在检查工作表保护，暂时只能查看。',
+  appReadOnlyMetadataFailed: '无法提前检查工作表保护。工作表完成索引后即可编辑。',
   appIndexing: '正在索引 {name}：{rows} 行就绪。',
   appStreamingRows: '正在流式加载 {name}：{rows} 行可用。',
   appLoadRangeFailed: '无法加载可见区域。',

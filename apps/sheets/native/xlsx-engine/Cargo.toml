@@ -15,6 +15,7 @@ base64 = "0.22.1"
 calamine = "0.38.0"
 cfb = "0.15"
 ironcalc = "0.9.1"
+memchr = "2"
 quick-xml = { version = "0.42", features = ["encoding"] }
 roxmltree = "0.21.1"
 serde = { version = "1", features = ["derive"] }
