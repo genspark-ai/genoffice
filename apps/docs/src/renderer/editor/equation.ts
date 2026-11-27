@@ -25,13 +25,18 @@ export function inlineMathML(omml: string, display = false): string {
  * when converting a complex MathType equation whose OMML is outside the LaTeX
  * subset).
  */
-export function inlineEquationNodeFromOmml(omml: string, latex: string | null = null): PmNode {
+export function inlineEquationNodeFromOmml(
+  omml: string,
+  latex: string | null = null,
+  display = false,
+): PmNode {
   const normalized = omml.startsWith('<m:oMath') ? omml : `<m:oMath>${omml}</m:oMath>`
   return {
     type: 'docInlineMath',
     attrs: {
       omml: normalized,
-      mathml: inlineMathML(normalized),
+      mathml: inlineMathML(normalized, display),
+      display,
       latex: latex ? latex.trim() : null,
       text: mathTokensOf(normalized).join(''),
       oleXml: null,
@@ -46,9 +51,9 @@ export function inlineEquationNodeFromOmml(omml: string, latex: string | null = 
  * Atomic inline formula node built from LaTeX (throws on unsupported syntax).
  * Flows with paragraph text; saves as a Run.math (<m:oMath> emitted verbatim).
  */
-export function inlineEquationNodeJson(latex: string): PmNode {
+export function inlineEquationNodeJson(latex: string, display = false): PmNode {
   const inner = latexToOmml(latex, mathLimits())
-  return inlineEquationNodeFromOmml(`<m:oMath>${inner}</m:oMath>`, latex)
+  return inlineEquationNodeFromOmml(`<m:oMath>${inner}</m:oMath>`, latex, display)
 }
 
 /** Protected display-equation block built directly from an <m:oMath> fragment */

@@ -10065,7 +10065,7 @@ async function oleDisplay(
     if (omml) {
       const tokens = mathTokens(omml)
       const mathml = ommlToMathML(omml, ctx.mathLimits)
-      if (tokens.length > 0 && mathml) {
+      if (mathml) {
         const latex = ommlToLatex(omml)
         const pPr = /<w:pPr>[\s\S]*?<\/w:pPr>/.exec(fullParaXml)?.[0] ?? ''
         const styleId = tagAttr(pPr, 'w:pStyle', 'w:val')

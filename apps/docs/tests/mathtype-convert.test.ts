@@ -1,6 +1,11 @@
 import { Editor } from '@tiptap/core'
+import { createElement } from 'react'
+import { flushSync } from 'react-dom'
+import { createRoot } from 'react-dom/client'
+import JSZip from 'jszip'
 import { parseDocx, saveDocx } from '@genoffice/docx-engine'
 import { describe, expect, it } from 'vitest'
+import { EquationModal, type MathEditTarget } from '../src/renderer/components/EquationModal'
 import { buildDocx } from '../../../packages/docx-engine/tests/helpers/build-docx'
 import { blocksToPmDoc, pmDocToSavePlan, type PmNode } from '../src/renderer/editor/convert'
 import { equationBlockJson, inlineEquationNodeJson } from '../src/renderer/editor/equation'
@@ -138,12 +143,55 @@ async function openMathTypeDoc(bodyXml: string, oleBase64 = SAMPLE_OLE_B64) {
     ],
   })
   const parsed = await parseDocx(source)
-  const editor = new Editor({
+  return { editor: editorFor(parsed), parsed }
+}
+
+function editorFor(parsed: Awaited<ReturnType<typeof parseDocx>>) {
+  return new Editor({
     element: document.createElement('div'),
     extensions: editorExtensions,
     content: blocksToPmDoc(parsed.blocks) as never,
   })
-  return { editor, parsed }
+}
+
+function submitEquation(editor: Editor, trigger: Element, change?: (dialog: HTMLElement) => void) {
+  const host = document.createElement('div')
+  const root = createRoot(host)
+  let closed = false
+  const open = (event: Event) => {
+    const target = (event as CustomEvent<MathEditTarget>).detail
+    flushSync(() =>
+      root.render(
+        createElement(EquationModal, {
+          editor,
+          editTarget: target,
+          onClose: () => {
+            closed = true
+          },
+        }),
+      ),
+    )
+  }
+  window.addEventListener('ai-docs-edit-inline-math', open)
+  try {
+    trigger.dispatchEvent(
+      new MouseEvent(trigger.matches('button') ? 'click' : 'dblclick', { bubbles: true }),
+    )
+    expect(host.querySelector('.equation-modal')).not.toBeNull()
+    change?.(host)
+    host.querySelector<HTMLButtonElement>('.btn-primary')!.click()
+    expect(closed).toBe(true)
+  } finally {
+    window.removeEventListener('ai-docs-edit-inline-math', open)
+    root.unmount()
+  }
+}
+
+function fill(input: HTMLInputElement, value: string) {
+  flushSync(() => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, value)
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+  })
 }
 
 describe('MathType editor rendering and conversion', () => {
@@ -280,6 +328,149 @@ describe('MathType editor rendering and conversion', () => {
     const mathRun = cellRuns?.find((r) => r.math)
     expect(mathRun?.math?.oleXml).toBeUndefined()
     expect(mathRun?.math?.omml).toContain('<m:f>')
+    editor.destroy()
+  })
+})
+
+describe('re-editing converted MathType equations in the equation dialog', () => {
+  const object = `<w:r>${OBJECT_XML}</w:r>`
+  const inline = `<w:p><w:r><w:t>Eq.</w:t></w:r>${object}</w:p>`
+  const standalone = `<w:p>${object}</w:p>`
+  it.each([
+    {
+      shape: 'an inline pile with an empty last row',
+      body: inline,
+      control: '.doc-inline-math',
+      records: [4, 0, 2, 1, ...line(ch('x')), ...line(), 0],
+      layout: '<m:eqArr>',
+      tokens: ['x'],
+    },
+    {
+      shape: 'a standalone skewed fraction',
+      body: standalone,
+      control: '.doc-formula-edit',
+      records: template(11, 2, line(ch('a')), line(ch('x'))),
+      layout: '<m:type m:val="skw"/>',
+      tokens: ['a', 'x'],
+    },
+    {
+      shape: 'a left-justified matrix',
+      body: inline,
+      control: '.doc-inline-math',
+      records: [5, 0, 1, 1, 0, 1, 2, 0, 0, ...line(ch('a')), ...line(ch('x')), 0],
+      layout: '<m:mcJc m:val="left"/>',
+      tokens: ['a', 'x'],
+    },
+    {
+      shape: 'an equation with only its top border displayed',
+      body: inline,
+      control: '.doc-inline-math',
+      records: template(37, 8, line(ch('x'))),
+      layout: '<m:hideBot m:val="1"/>',
+      tokens: ['x'],
+    },
+  ])(
+    'converts, edits, saves and reopens $shape',
+    async ({ body, control, records, layout, tokens }) => {
+      const binary = buildMathTypeOle(Uint8Array.from([...V5, ...line(records), 0]))
+      const { editor, parsed } = await openMathTypeDoc(body, binary)
+      const unchanged = pmDocToSavePlan(editor.getJSON() as PmNode, parsed.blocks)
+      expect(unchanged.changedCount).toBe(0)
+      const original = await JSZip.loadAsync(await saveDocx(parsed, unchanged.saveBlocks))
+      expect(await original.file('word/embeddings/oleObject1.bin')!.async('base64')).toBe(binary)
+      const equation = (e: Editor) => e.view.dom.querySelector(control)!
+      submitEquation(editor, equation(editor))
+      const converted = pmDocToSavePlan(editor.getJSON() as PmNode, parsed.blocks)
+      const afterConversion = await parseDocx(await saveDocx(parsed, converted.saveBlocks))
+      const xml = afterConversion.blocks[0].originalXml!
+      expect(xml).toContain(layout)
+      expect(xml).not.toContain('<w:object')
+      if (layout === '<m:eqArr>') expect(xml).toContain('<m:e/></m:eqArr>')
+      const change = (next: string) => (host: HTMLElement) => {
+        const fields = Array.from(host.querySelectorAll<HTMLInputElement>('fieldset input'))
+        expect(fields.map((input) => input.value)).toEqual(tokens)
+        fill(fields.at(-1)!, next)
+      }
+      submitEquation(editor, equation(editor), change('y'))
+      const plan = pmDocToSavePlan(editor.getJSON() as PmNode, parsed.blocks)
+      const reopened = await parseDocx(await saveDocx(parsed, plan.saveBlocks))
+      const expected = xml.replace('<m:t>x</m:t>', '<m:t>y</m:t>')
+      expect(expected).not.toBe(xml)
+      expect(reopened.blocks[0].originalXml).toBe(expected)
+      editor.destroy()
+
+      const again = editorFor(reopened)
+      submitEquation(again, equation(again), (host) => {
+        const field = Array.from(host.querySelectorAll<HTMLInputElement>('fieldset input')).at(-1)!
+        expect(field.value).toBe('y')
+        fill(field, 'z')
+      })
+      const last = pmDocToSavePlan(again.getJSON() as PmNode, reopened.blocks)
+      const editedAgain = await parseDocx(await saveDocx(reopened, last.saveBlocks))
+      expect(editedAgain.blocks[0].originalXml).toBe(xml.replace('<m:t>x</m:t>', '<m:t>z</m:t>'))
+      again.destroy()
+    },
+  )
+
+  it('lets the user fill an empty converted square root', async () => {
+    const binary = buildMathTypeOle(Uint8Array.from([...V5, ...line(template(10, 0, [1, 1])), 0]))
+    const { editor, parsed } = await openMathTypeDoc(standalone, binary)
+    const button = () => editor.view.dom.querySelector('.doc-formula-edit')!
+    expect(editor.view.dom.querySelector('math msqrt')).not.toBeNull()
+    submitEquation(editor, button())
+    submitEquation(editor, button(), (host) => {
+      const latex = host.querySelector<HTMLInputElement>('label input')!
+      expect(latex.value).toBe('\\sqrt{}')
+      fill(latex, '\\sqrt{x}')
+    })
+    const plan = pmDocToSavePlan(editor.getJSON() as PmNode, parsed.blocks)
+    const reopened = await parseDocx(await saveDocx(parsed, plan.saveBlocks))
+    expect(reopened.blocks[0].formulaDisplay?.tokens).toEqual(['x'])
+    expect(reopened.blocks[0].formulaDisplay?.oleMathType).toBeUndefined()
+    editor.destroy()
+  })
+
+  it('keeps both display equations and their intervening text when editing the second equation', async () => {
+    const zone = (text: string) => `<m:oMath><m:r><m:t>${text}</m:t></m:r></m:oMath>`
+    const para =
+      '<w:p><m:oMathPara>' +
+      zone('a') +
+      '</m:oMathPara><w:r><w:t> and </w:t></w:r>' +
+      '<m:oMathPara>' +
+      zone('b') +
+      '</m:oMathPara></w:p>'
+    const { editor, parsed } = await openMathTypeDoc(para)
+    submitEquation(editor, editor.view.dom.querySelector('.doc-formula-edit')!, (host) => {
+      expect(host.querySelector('button[aria-pressed]')).toBeNull()
+      const fields = host.querySelectorAll<HTMLInputElement>('fieldset input')
+      expect(Array.from(fields, (field) => field.value)).toEqual(['a', 'b'])
+      fill(fields[1], 'y')
+    })
+    const plan = pmDocToSavePlan(editor.getJSON() as PmNode, parsed.blocks)
+    const reopened = await parseDocx(await saveDocx(parsed, plan.saveBlocks))
+    expect(reopened.blocks[0].originalXml).toBe(para.replace(zone('b'), zone('y')))
+    editor.destroy()
+  })
+
+  it('keeps the surrounding paragraph when the user chooses a new LaTeX expression', async () => {
+    const xml =
+      '<m:oMath><m:f><m:fPr><m:type m:val="skw"/></m:fPr>' +
+      '<m:num><m:r><m:t>a</m:t></m:r></m:num><m:den><m:r><m:t>b</m:t></m:r></m:den></m:f></m:oMath>'
+    const start =
+      '<w:p><w:pPr><w:jc w:val="right"/></w:pPr><w:r><w:t>Before</w:t></w:r><m:oMathPara>'
+    const end = '</m:oMathPara><w:r><w:t>After</w:t></w:r></w:p>'
+    const { editor, parsed } = await openMathTypeDoc(start + xml + end)
+    submitEquation(editor, editor.view.dom.querySelector('.doc-formula-edit')!, (host) => {
+      flushSync(() => host.querySelector<HTMLButtonElement>('button[aria-pressed]')!.click())
+      expect(host.querySelector<HTMLButtonElement>('.btn-primary')!.disabled).toBe(true)
+      fill(host.querySelector<HTMLInputElement>('label input')!, '\\sqrt{x}')
+    })
+    const plan = pmDocToSavePlan(editor.getJSON() as PmNode, parsed.blocks)
+    const after = await parseDocx(await saveDocx(parsed, plan.saveBlocks))
+    const result = after.blocks[0].originalXml!
+    expect(result).toContain(start)
+    expect(result).toContain('<m:rad>')
+    expect(result).toContain(end)
     editor.destroy()
   })
 })

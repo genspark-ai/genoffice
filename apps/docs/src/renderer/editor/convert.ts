@@ -1629,7 +1629,7 @@ export function runsToInline(runs: Run[]): PmNode[] {
           omml: run.math.omml,
           mathml: inlineMathML(run.math.omml, useDisplayMathStyle),
           display: !!run.math.display,
-          // recovered LaTeX makes parsed formulas re-editable; null = atom only
+          // The equation dialog offers text edits for structures outside the LaTeX subset.
           latex: ommlToLatex(run.math.omml),
           text: run.text,
           sizeHalfPoints: run.sizeHalfPoints ?? null,
@@ -2491,7 +2491,7 @@ export function pmDocToSavePlan(inputDoc: PmNode, originalBlocks: Block[]): Save
           (textboxOffsetX !== original.imageOffsetXEmu ||
             textboxOffsetY !== original.imageOffsetYEmu)
         const fieldText = fieldTextPatch(node, original)
-        const formulaTokens = formulaTokensPatch(node, original)
+        const formulaXml = patchedFormulaXml(node, original)
         // chart data edits live in the chart's own part; the body block stays original
         const chartPatch = chartPatchOf(node, original)
         if (chartPatch) {
@@ -2653,9 +2653,9 @@ export function pmDocToSavePlan(inputDoc: PmNode, originalBlocks: Block[]): Save
         } else if (fieldText && original.originalXml) {
           changedCount++
           pushBlock({ kind: 'xml', xml: patchFieldParagraphXml(original.originalXml, fieldText) })
-        } else if (formulaTokens && original.originalXml) {
+        } else if (formulaXml) {
           changedCount++
-          pushBlock({ kind: 'xml', xml: patchMathTokens(original.originalXml, formulaTokens) })
+          pushBlock({ kind: 'xml', xml: formulaXml })
         } else if (chartSize && original.originalXml) {
           changedCount++
           pushBlock({
@@ -2696,7 +2696,11 @@ export function pmDocToSavePlan(inputDoc: PmNode, originalBlocks: Block[]): Save
           changedCount++
           pushBlock({
             kind: 'xml',
-            xml: stripAnchorMarkers(seqRenumberedXml(node, original) ?? original.originalXml),
+            xml: stripAnchorMarkers(
+              seqRenumberedXml(node, original) ??
+                patchedFormulaXml(node, original) ??
+                original.originalXml,
+            ),
           })
         } else {
           console.warn('dropping unclonable copy of protected block', node.attrs?.label)
@@ -3669,11 +3673,19 @@ function fieldTextPatch(node: PmNode, original: Block): FieldTextPatch | null {
   return Object.keys(patch).length > 0 ? patch : null
 }
 
-function formulaTokensPatch(node: PmNode, original: Block): string[] | null {
+function patchedFormulaXml(node: PmNode, original: Block): string | null {
   const current = node.attrs?.formulaDisplay as FormulaDisplay | null
   const initial = original.formulaDisplay
-  if (!current || !initial || current.tokens.length !== initial.tokens.length) return null
-  return current.tokens.some((token, i) => token !== initial.tokens[i]) ? current.tokens : null
+  const xml = original.originalXml
+  if (!current || !initial || !xml) return null
+  if (initial.omml && current.omml && current.omml !== initial.omml && xml.includes(initial.omml))
+    return xml.replace(initial.omml, () => current.omml!)
+  if (
+    current.tokens.length === initial.tokens.length &&
+    current.tokens.some((token, i) => token !== initial.tokens[i])
+  )
+    return patchMathTokens(xml, current.tokens)
+  return null
 }
 
 /**
