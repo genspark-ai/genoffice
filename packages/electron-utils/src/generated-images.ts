@@ -10,6 +10,8 @@ import { tmpdir } from 'node:os'
 import { basename, join, resolve, sep } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
+import { GENERATED_IMAGE_FILE_RE } from './generated-image-url'
+
 export const GENERATED_IMAGE_DIR = join(tmpdir(), 'genoffice-ai-images')
 
 const MIME_BY_EXT: Record<string, string> = {
@@ -25,8 +27,7 @@ const EXT_BY_MIME: Record<string, string> = {
   'image/gif': 'gif',
   'image/webp': 'webp',
 }
-const FILE_NAME_RE =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.(png|jpg|gif|webp)$/
+const FILE_NAME_RE = GENERATED_IMAGE_FILE_RE
 
 const MAX_AGE_MS = 24 * 60 * 60 * 1000
 

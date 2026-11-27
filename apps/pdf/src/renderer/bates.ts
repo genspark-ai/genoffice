@@ -40,7 +40,13 @@ export type BatesError = 'batesErrStart' | 'batesErrDigits' | 'batesErrFontSize'
 export function validateBates(cfg: Omit<BatesConfig, 'color' | 'position'>): BatesError | null {
   if (!Number.isInteger(cfg.start) || cfg.start < 0) return 'batesErrStart'
   if (!Number.isInteger(cfg.digits) || cfg.digits < 1 || cfg.digits > 15) return 'batesErrDigits'
-  if (cfg.fontSize < BATES_MIN_FONT || cfg.fontSize > BATES_MAX_FONT) return 'batesErrFontSize'
+  if (
+    !Number.isFinite(cfg.fontSize) ||
+    cfg.fontSize < BATES_MIN_FONT ||
+    cfg.fontSize > BATES_MAX_FONT
+  ) {
+    return 'batesErrFontSize'
+  }
   if (!Number.isInteger(cfg.firstPage) || cfg.firstPage < 1) return 'batesErrRange'
   if (cfg.lastPage !== null && (!Number.isInteger(cfg.lastPage) || cfg.lastPage < cfg.firstPage)) {
     return 'batesErrRange'

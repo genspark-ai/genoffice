@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { escapeXmlText, escapeXmlAttr } from '../src/xml-utils'
+import { escapeXmlText, escapeXmlAttr, hasDefaultFor } from '../src/xml-utils'
 
 describe('escapeXmlText XML 1.0 character defence', () => {
   it('escapes markup characters', () => {
@@ -24,5 +24,17 @@ describe('escapeXmlText XML 1.0 character defence', () => {
 
   it('escapeXmlAttr inherits the defence', () => {
     expect(escapeXmlAttr(`n${String.fromCharCode(1)}"q"`)).toBe('n&quot;q&quot;')
+  })
+})
+
+describe('hasDefaultFor', () => {
+  it('compares the extension literally, including regex metacharacters', () => {
+    expect(hasDefaultFor('<Types><Default Extension="a+b"/></Types>', 'a+b')).toBe(true)
+    expect(hasDefaultFor('<Types><Default Extension="ab"/></Types>', 'a+b')).toBe(false)
+    expect(hasDefaultFor("<Types><Default Extension='png'/></Types>", 'png')).toBe(true)
+    expect(hasDefaultFor('<Types><Default ContentType="x" Extension="jpg"/></Types>', 'jpg')).toBe(
+      true,
+    )
+    expect(hasDefaultFor('<Types><Override PartName="/a"/></Types>', 'jpg')).toBe(false)
   })
 })

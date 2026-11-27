@@ -106,7 +106,7 @@ fn entry_text_contains(entry: impl std::io::Read, needle: &str) -> Result<bool, 
     // Text runs are searched when the element closes; the tail keeps needle
     // matches alive across the accumulation cap.
     const RUN_CAP: usize = 1 << 20;
-    let mut reader = quick_xml::Reader::from_reader(std::io::BufReader::new(entry));
+    let mut reader = crate::xml_util::xml_reader(entry)?;
     let mut buf = Vec::new();
     let mut run = String::new();
     loop {
@@ -115,10 +115,7 @@ fn entry_text_contains(entry: impl std::io::Read, needle: &str) -> Result<bool, 
             .map_err(|error| SidecarError::Workbook(error.to_string()))?;
         match event {
             Event::Text(text) => {
-                let decoded = text
-                    .decode()
-                    .map_err(|error| SidecarError::Workbook(error.to_string()))?;
-                run.push_str(&decoded);
+                run.push_str(&text.xml10_content());
             }
             Event::GeneralRef(reference) => {
                 run.push_str(&crate::general_ref_text(&reference)?);

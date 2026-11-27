@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 use std::fs::File;
-use std::io::{BufReader, Read};
+use std::io::{BufRead, BufReader, Read};
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -14,7 +14,7 @@ use zip::ZipArchive;
 
 use crate::SidecarError;
 use crate::types::{ThreadInfo, ThreadReplyInfo};
-use crate::xml_util::copy_entry_bounded;
+use crate::xml_util::{copy_entry_bounded, is_utf8_xml, xml_reader_from_buf};
 
 mod charts;
 mod colors;
@@ -1961,20 +1961,20 @@ pub(crate) fn read_worksheet_without_cells(
     // The XML parser can spend seconds inside read_to_end_into. Check for
     // cancellation on buffer refills so parallel scans can stop promptly.
     let input = WorksheetScanReader { entry, cancelled };
-    let mut reader = Reader::from_reader(BufReader::with_capacity(64 * 1024, input));
     let result = (|| {
+        let mut reader = xml_reader_from_buf(BufReader::with_capacity(64 * 1024, input))?;
         let mut writer = Writer::new(Vec::new());
         let mut buffer = Vec::new();
         let mut skipped = Vec::new();
         loop {
             match reader.read_event_into(&mut buffer)? {
                 Event::Eof => break,
-                Event::Start(start) if start.local_name().as_ref() == b"sheetData" => {
+                Event::Start(start) if start.local_name().as_ref() == "sheetData" => {
                     let end = start.to_end().into_owned();
                     reader.read_to_end_into(end.name(), &mut skipped)?;
                     skipped.clear();
                 }
-                Event::Empty(empty) if empty.local_name().as_ref() == b"sheetData" => {}
+                Event::Empty(empty) if empty.local_name().as_ref() == "sheetData" => {}
                 event => writer.write_event(event)?,
             }
             buffer.clear();
@@ -2002,34 +2002,37 @@ pub(crate) fn read_worksheet_envelope(
     {
         let entry = crate::zip_entry(archive, path)?;
         let input = WorksheetScanReader { entry, cancelled };
-        let mut reader = Reader::from_reader(BufReader::with_capacity(128 * 1024, input));
-        let mut writer = Writer::new(Vec::new());
-        let mut buffer = Vec::new();
-        loop {
-            match reader.read_event_into(&mut buffer)? {
-                Event::Start(tag) if tag.name().as_ref() == b"sheetData" => {
-                    if let Some(tail) = skim_cell_data(reader.into_inner())? {
-                        let mut xml = writer.into_inner();
-                        xml.extend(tail);
-                        return String::from_utf8(xml).map_err(|_| {
-                            SidecarError::Workbook(format!("{path} is not valid UTF-8."))
-                        });
-                    }
-                    break;
-                }
-                Event::Start(tag) if tag.local_name().as_ref() == b"sheetData" => break,
-                Event::Empty(tag) if tag.local_name().as_ref() == b"sheetData" => {}
-                Event::Eof => {
-                    return String::from_utf8(writer.into_inner()).map_err(|_| {
-                        SidecarError::Workbook(format!("{path} is not valid UTF-8."))
-                    });
-                }
-                event => writer.write_event(event)?,
-            }
-            buffer.clear();
+        let mut input = BufReader::with_capacity(128 * 1024, input);
+        if is_utf8_xml(input.fill_buf()?)
+            && let Some(xml) = try_read_utf8_worksheet_envelope(input)?
+        {
+            return String::from_utf8(xml)
+                .map_err(|_| SidecarError::Workbook(format!("{path} is not valid UTF-8.")));
         }
     }
     read_worksheet_without_cells(archive, path, cancelled)
+}
+
+fn try_read_utf8_worksheet_envelope(input: impl BufRead) -> Result<Option<Vec<u8>>, SidecarError> {
+    let mut reader = Reader::from_reader(input);
+    let mut writer = Writer::new(Vec::new());
+    let mut buffer = Vec::new();
+    loop {
+        match reader.read_event_into(&mut buffer)? {
+            Event::Start(tag) if tag.name().as_ref() == "sheetData" => {
+                return Ok(skim_cell_data(reader.into_inner())?.map(|tail| {
+                    let mut xml = writer.into_inner();
+                    xml.extend(tail);
+                    xml
+                }));
+            }
+            Event::Start(tag) if tag.local_name().as_ref() == "sheetData" => return Ok(None),
+            Event::Empty(tag) if tag.local_name().as_ref() == "sheetData" => {}
+            Event::Eof => return Ok(Some(writer.into_inner())),
+            event => writer.write_event(event)?,
+        }
+        buffer.clear();
+    }
 }
 
 fn skim_cell_data(mut input: impl Read) -> std::io::Result<Option<Vec<u8>>> {

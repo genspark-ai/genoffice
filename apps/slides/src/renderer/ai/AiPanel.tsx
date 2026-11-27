@@ -18,6 +18,7 @@ import {
 } from '@genoffice/agent-core'
 import type { RenderSlide } from '@genoffice/pptx-render'
 import { imageGenerationAvailable, mediaAnalysisAvailable } from '@genoffice/ai-provider/browser'
+import { generatedImageDisplayUrl } from '@genoffice/electron-utils/generated-image-url'
 import type { AiSettings, AttachmentAddResult, AttachmentMeta } from '../../shared/ipc'
 import { ATTACHMENT_IMAGE_EXTS } from '../../shared/ipc'
 import {
@@ -2609,7 +2610,12 @@ function ImageThumb({ url, title }: { url: string; title?: string }) {
       onClick={() => openExternal(url)}
       data-tip={title ?? url}
     >
-      <img src={url} alt={title ?? ''} loading="lazy" onError={() => setHidden(true)} />
+      <img
+        src={generatedImageDisplayUrl(url)}
+        alt={title ?? ''}
+        loading="lazy"
+        onError={() => setHidden(true)}
+      />
     </button>
   )
 }

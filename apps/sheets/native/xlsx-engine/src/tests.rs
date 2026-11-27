@@ -844,16 +844,26 @@ fn worksheet_envelope_hydrates_protection_without_indexing_cells() {
     let worksheet = "xl/worksheets/sheet1.xml";
     let xml = format!(
         r#"<worksheet><sheetData><row><c><v>1</v></c></row>{}</sheetData>
-        <sheetProtection sheet="1"/><mergeCells><mergeCell ref="A1:B1"/></mergeCells></worksheet>"#,
+        <sheetProtection sheet="1"/><protectedRanges><protectedRange name="Révision" sqref="A1"/></protectedRanges>
+        <mergeCells><mergeCell ref="A1:B1"/></mergeCells></worksheet>"#,
         " ".repeat(128 * 1024 - 20)
     );
-    for xml in [
-        xml.clone(),
-        xml.replace("<row>", "<!-- </sheetData> --><row>"),
+    let encoded = |encoding| {
+        let part = format!(r#"<?xml version="1.0" encoding="{encoding}"?>{xml}"#);
+        encode_part(&part, encoding)
+    };
+    for bytes in [
+        xml.as_bytes().to_vec(),
+        format!("\u{feff}<?xml version=\"1.0\" encoding=\"UTF-8\"?>{xml}").into_bytes(),
+        xml.replace("<row>", "<!-- </sheetData> --><row>")
+            .into_bytes(),
         xml.replace("sheetData>", "s:sheetData>")
-            .replace("<worksheet>", r#"<worksheet xmlns:s="urn:test">"#),
+            .replace("<worksheet>", r#"<worksheet xmlns:s="urn:test">"#)
+            .into_bytes(),
+        encoded("UTF-16"),
+        encoded("windows-1252"),
     ] {
-        let (_dir, path) = open_fixture(&[(worksheet, &xml)]);
+        let (_dir, path) = open_fixture_bytes(&[(worksheet, &bytes)]);
         let state = Arc::new((Mutex::new(SheetIndex::default()), Condvar::new()));
         read_worksheet_metadata(
             &path,
@@ -868,14 +878,9 @@ fn worksheet_envelope_hydrates_protection_without_indexing_cells() {
         assert!(!index.complete);
         assert!(index.chunk_files.is_empty());
         let metadata = index.decorations.as_ref().unwrap();
-        assert!(
-            metadata
-                .protection
-                .as_ref()
-                .unwrap()
-                .sheet_protection
-                .is_some()
-        );
+        let protection = metadata.protection.as_ref().unwrap();
+        assert!(protection.sheet_protection.as_ref().unwrap().protected);
+        assert_eq!(protection.protected_ranges[0].name, "Révision");
         assert_eq!(metadata.merges[0].end_column, 1);
     }
 }
@@ -1307,6 +1312,14 @@ fn sheet_state_maps_hidden_and_very_hidden() {
 }
 
 pub(crate) fn open_fixture(entries: &[(&str, &str)]) -> (tempfile::TempDir, PathBuf) {
+    let entries: Vec<(&str, &[u8])> = entries
+        .iter()
+        .map(|(name, content)| (*name, content.as_bytes()))
+        .collect();
+    open_fixture_bytes(&entries)
+}
+
+pub(crate) fn open_fixture_bytes(entries: &[(&str, &[u8])]) -> (tempfile::TempDir, PathBuf) {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("fixture.xlsx");
     let mut writer = zip::ZipWriter::new(File::create(&path).unwrap());
@@ -1314,10 +1327,78 @@ pub(crate) fn open_fixture(entries: &[(&str, &str)]) -> (tempfile::TempDir, Path
         .compression_method(zip::CompressionMethod::Deflated);
     for (name, content) in entries {
         writer.start_file(*name, options).unwrap();
-        writer.write_all(content.as_bytes()).unwrap();
+        writer.write_all(content).unwrap();
     }
     writer.finish().unwrap();
     (dir, path)
+}
+
+fn encode_part(xml: &str, label: &str) -> Vec<u8> {
+    match label {
+        "UTF-16" => {
+            let mut bytes = vec![0xFF, 0xFE];
+            bytes.extend(xml.encode_utf16().flat_map(u16::to_le_bytes));
+            bytes
+        }
+        _ => xml
+            .chars()
+            .map(|c| u8::try_from(u32::from(c)).expect("latin-1 text"))
+            .collect(),
+    }
+}
+
+fn non_utf8_workbook_strings(label: &str) -> Vec<String> {
+    let declaration = format!(r#"<?xml version="1.0" encoding="{label}"?>"#);
+    let part = |body: &str| encode_part(&format!("{declaration}{body}"), label);
+    let workbook = r#"<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="S" sheetId="1" r:id="rId1"/></sheets></workbook>"#;
+    let rels = r#"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/></Relationships>"#;
+    let shared = part(
+        r#"<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><si><t>Crème brûlée</t></si></sst>"#,
+    );
+    let sheet = part(
+        r#"<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData><row r="1"><c r="A1" t="s"><v>0</v></c><c r="B1" t="inlineStr"><is><t>Façade</t></is></c></row></sheetData></worksheet>"#,
+    );
+    let (_dir, path) = open_fixture_bytes(&[
+        ("xl/workbook.xml", workbook.as_bytes()),
+        ("xl/_rels/workbook.xml.rels", rels.as_bytes()),
+        ("xl/sharedStrings.xml", &shared),
+        ("xl/worksheets/sheet1.xml", &sheet),
+    ]);
+    let mut sessions = WorkbookSessions::new();
+    let metadata = sessions.open(&path).unwrap();
+    let range = CellRange {
+        start_row: 0,
+        end_row: 0,
+        start_column: 0,
+        end_column: 1,
+    };
+    let result = sessions
+        .read_range(&metadata.session_id, "sheet-1", &range)
+        .unwrap();
+    let mut texts = Vec::new();
+    for cell in &result.cells {
+        match &cell.value {
+            Some(CellValue::String(text)) => texts.push(text.clone()),
+            other => panic!("unexpected {other:?}"),
+        }
+    }
+    texts
+}
+
+#[test]
+fn reads_utf16_parts_with_a_bom() {
+    assert_eq!(
+        non_utf8_workbook_strings("UTF-16"),
+        ["Crème brûlée", "Façade"]
+    );
+}
+
+#[test]
+fn reads_parts_declared_as_a_legacy_code_page() {
+    assert_eq!(
+        non_utf8_workbook_strings("windows-1252"),
+        ["Crème brûlée", "Façade"]
+    );
 }
 
 /// Writers that never update `<dimension>` leave `ref="A1"` on sheets

@@ -62,7 +62,10 @@ export function intrinsicSize(bytes: Uint8Array): { width: number; height: numbe
   }
   if (kind === 'jpeg') {
     let offset = 2
-    while (offset + 9 < bytes.length) {
+    // A compact SOF ends on the low byte of the width at offset + 8, so that
+    // byte must still be inside the buffer: requiring one more was an off-by-one
+    // that dropped the size of a minimal JPEG header.
+    while (offset + 9 <= bytes.length) {
       if (bytes[offset] !== 0xff) return null
       const marker = bytes[offset + 1]
       const length = view.getUint16(offset + 2)

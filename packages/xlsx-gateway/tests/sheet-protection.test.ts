@@ -8,6 +8,7 @@ import {
   sheetProtectionElement,
 } from '../src/gateway/xlsx-protection'
 import {
+  DEFAULT_SPIN_COUNT,
   hashSheetPassword,
   legacySheetPasswordHash,
   verifySheetPassword,
@@ -31,6 +32,22 @@ describe('legacy sheet password hash', () => {
 })
 
 describe('SHA-512 sheet password hash', () => {
+  it('falls back to the default spin count for a non-finite value', async () => {
+    const salt = new Uint8Array(16).fill(7)
+    const hashed = await hashSheetPassword('secret', NaN, salt)
+    if ('legacy' in hashed) throw new Error('expected a hashed password')
+    expect(hashed.spinCount).toBe(DEFAULT_SPIN_COUNT)
+    expect(Number.isInteger(hashed.spinCount)).toBe(true)
+    expect(await verifySheetPassword('secret', hashed)).toBe(true)
+  })
+
+  it('fails closed when a stored spin count is not finite', async () => {
+    const hashed = await hashSheetPassword('secret', 10, new Uint8Array(16).fill(7))
+    expect(
+      await verifySheetPassword('secret', { ...hashed, spinCount: NaN } as typeof hashed),
+    ).toBe(false)
+  })
+
   it('is deterministic for a fixed salt and spin count', async () => {
     const salt = new Uint8Array(16).fill(7)
     const first = await hashSheetPassword('secret', 10, salt)

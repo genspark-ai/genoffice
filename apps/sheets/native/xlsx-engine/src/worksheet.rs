@@ -30,7 +30,7 @@ pub(crate) fn index_worksheet(
     let hyperlinks = visuals::hyperlink_targets(&mut archive, worksheet_path)?;
     let entry = zip_entry(&mut archive, worksheet_path)?;
     let header_footer = index_worksheet_xml(
-        Reader::from_reader(BufReader::with_capacity(64 * 1024, entry)),
+        xml_reader_from_buf(BufReader::with_capacity(64 * 1024, entry))?,
         worksheet_path,
         sheet_index,
         cache_directory,
@@ -67,7 +67,7 @@ pub(crate) fn read_worksheet_metadata(
     let xml = visuals::read_worksheet_envelope(&mut archive, worksheet_path, cancelled)?;
     let hyperlinks = visuals::hyperlink_targets(&mut archive, worksheet_path)?;
     let header_footer = index_worksheet_xml(
-        Reader::from_reader(xml.as_bytes()),
+        Reader::from_str(&xml),
         worksheet_path,
         sheet_index,
         Path::new(""),
@@ -222,17 +222,17 @@ fn index_worksheet_xml<R: std::io::BufRead>(
         let event = reader.read_event_into(&mut buffer)?;
         if let Some(writer) = envelope.as_mut() {
             match &event {
-                Event::Start(tag) if tag.local_name().as_ref() == b"sheetData" => {
+                Event::Start(tag) if tag.local_name().as_ref() == "sheetData" => {
                     sheet_data_depth += 1;
                 }
                 Event::End(tag)
-                    if sheet_data_depth > 0 && tag.local_name().as_ref() == b"sheetData" =>
+                    if sheet_data_depth > 0 && tag.local_name().as_ref() == "sheetData" =>
                 {
                     sheet_data_depth -= 1;
                 }
                 Event::Start(tag) | Event::Empty(tag)
                     if cell_builder.is_some()
-                        && matches!(tag.local_name().as_ref(), b"v" | b"f" | b"is") =>
+                        && matches!(tag.local_name().as_ref(), "v" | "f" | "is") =>
                 {
                     cell_has_value = true;
                 }
@@ -242,9 +242,9 @@ fn index_worksheet_xml<R: std::io::BufRead>(
         }
         match event {
             Event::Start(element) | Event::Empty(element)
-                if !metadata_only && element.local_name().as_ref() == b"row" =>
+                if !metadata_only && element.local_name().as_ref() == "row" =>
             {
-                current_row = attribute_value(&reader, &element, b"r")?
+                current_row = attribute_value(&reader, &element, "r")?
                     .and_then(|value| value.parse::<usize>().ok())
                     .filter(|value| *value > 0)
                     .map(|value| value - 1)
@@ -269,14 +269,14 @@ fn index_worksheet_xml<R: std::io::BufRead>(
                     chunk.rows.push(property);
                 }
             }
-            Event::Start(element) if !metadata_only && element.local_name().as_ref() == b"c" => {
+            Event::Start(element) if !metadata_only && element.local_name().as_ref() == "c" => {
                 let builder =
                     CellBuilder::from_element(&reader, &element, current_row, next_column)?;
                 next_column = builder.column + 1;
                 cell_builder = Some(builder);
                 cell_has_value = false;
             }
-            Event::Empty(element) if !metadata_only && element.local_name().as_ref() == b"c" => {
+            Event::Empty(element) if !metadata_only && element.local_name().as_ref() == "c" => {
                 // Self-closing cells carry no value but may carry a style
                 // (borders, fills); keep them like any other cell.
                 {
@@ -308,11 +308,11 @@ fn index_worksheet_xml<R: std::io::BufRead>(
                     }
                 }
             }
-            Event::Start(element) if element.local_name().as_ref() == b"f" => {
+            Event::Start(element) if element.local_name().as_ref() == "f" => {
                 in_formula = true;
                 cell_shared_si = shared_formula_si(&reader, &element)?;
                 cell_shared_ref = if cell_shared_si.is_some() {
-                    attribute_value(&reader, &element, b"ref")?
+                    attribute_value(&reader, &element, "ref")?
                         .and_then(|reference| parse_range_reference(&reference))
                 } else {
                     None
@@ -321,7 +321,7 @@ fn index_worksheet_xml<R: std::io::BufRead>(
                     builder.array_ref = array_formula_ref(&reader, &element)?;
                 }
             }
-            Event::Empty(element) if element.local_name().as_ref() == b"f" => {
+            Event::Empty(element) if element.local_name().as_ref() == "f" => {
                 // Self-closing shared-formula follower (<f t="shared" si="N"/>):
                 // inherit the master's formula shifted by the cell offset (#165).
                 if let (Some(si), Some(builder)) =
@@ -333,28 +333,28 @@ fn index_worksheet_xml<R: std::io::BufRead>(
                     }
                 }
             }
-            Event::Start(element) if element.local_name().as_ref() == b"v" => in_value = true,
+            Event::Start(element) if element.local_name().as_ref() == "v" => in_value = true,
             // Inline strings can carry <rPh> ruby annotations too.
-            Event::Start(element) if element.local_name().as_ref() == b"rPh" => {
+            Event::Start(element) if element.local_name().as_ref() == "rPh" => {
                 in_phonetic = true;
             }
-            Event::End(element) if element.local_name().as_ref() == b"rPh" => {
+            Event::End(element) if element.local_name().as_ref() == "rPh" => {
                 in_phonetic = false;
             }
-            Event::Start(element) if element.local_name().as_ref() == b"t" => {
+            Event::Start(element) if element.local_name().as_ref() == "t" => {
                 in_text = !in_phonetic;
                 text_preserve = preserves_space(&reader, &element)?;
                 text_node.clear();
             }
             Event::Start(element)
-                if element.local_name().as_ref() == b"r" && cell_builder.is_some() =>
+                if element.local_name().as_ref() == "r" && cell_builder.is_some() =>
             {
                 if let Some(builder) = &mut cell_builder {
                     builder.current_run = Some(RichRun::default());
                 }
             }
             Event::End(element)
-                if element.local_name().as_ref() == b"r" && cell_builder.is_some() =>
+                if element.local_name().as_ref() == "r" && cell_builder.is_some() =>
             {
                 if let Some(builder) = &mut cell_builder {
                     if let Some(run) = builder.current_run.take() {
@@ -444,7 +444,7 @@ fn index_worksheet_xml<R: std::io::BufRead>(
                     dv_sqref_text.push_str(&decoded);
                 }
             }
-            Event::End(element) if element.local_name().as_ref() == b"f" => {
+            Event::End(element) if element.local_name().as_ref() == "f" => {
                 in_formula = false;
                 if let (Some(si), Some(builder)) = (cell_shared_si.take(), cell_builder.as_mut()) {
                     if builder.formula.is_empty() {
@@ -466,8 +466,8 @@ fn index_worksheet_xml<R: std::io::BufRead>(
                     }
                 }
             }
-            Event::End(element) if element.local_name().as_ref() == b"v" => in_value = false,
-            Event::End(element) if element.local_name().as_ref() == b"t" => {
+            Event::End(element) if element.local_name().as_ref() == "v" => in_value = false,
+            Event::End(element) if element.local_name().as_ref() == "t" => {
                 if in_text {
                     let text = text_node_content(std::mem::take(&mut text_node), text_preserve);
                     if let Some(builder) = &mut cell_builder {
@@ -479,7 +479,7 @@ fn index_worksheet_xml<R: std::io::BufRead>(
                 }
                 in_text = false;
             }
-            Event::End(element) if element.local_name().as_ref() == b"c" => {
+            Event::End(element) if element.local_name().as_ref() == "c" => {
                 if let Some(builder) = cell_builder.take() {
                     if let Some(counts) = cell_counts.as_mut() {
                         counts.record(&builder, cell_has_value);
@@ -513,23 +513,23 @@ fn index_worksheet_xml<R: std::io::BufRead>(
                 }
             }
             Event::Start(element) | Event::Empty(element)
-                if element.local_name().as_ref() == b"mergeCell" =>
+                if element.local_name().as_ref() == "mergeCell" =>
             {
-                if let Some(reference) = attribute_value(&reader, &element, b"ref")? {
+                if let Some(reference) = attribute_value(&reader, &element, "ref")? {
                     if let Some(merge) = parse_merge_reference(&reference) {
                         merges.push(merge);
                     }
                 }
             }
             Event::Start(element) | Event::Empty(element)
-                if element.local_name().as_ref() == b"hyperlink" =>
+                if element.local_name().as_ref() == "hyperlink" =>
             {
-                if let Some(reference) = attribute_value(&reader, &element, b"ref")? {
+                if let Some(reference) = attribute_value(&reader, &element, "ref")? {
                     let anchor = reference.split(':').next().unwrap_or(&reference);
                     if let Ok((row, column)) = parse_address(&anchor.replace('$', "")) {
-                        let target = match attribute_value(&reader, &element, b"id")? {
+                        let target = match attribute_value(&reader, &element, "id")? {
                             Some(id) => link_targets.get(&id).cloned(),
-                            None => attribute_value(&reader, &element, b"location")?
+                            None => attribute_value(&reader, &element, "location")?
                                 .map(|location| format!("#{location}")),
                         };
                         if let Some(target) = target {
@@ -543,34 +543,34 @@ fn index_worksheet_xml<R: std::io::BufRead>(
                 }
             }
             Event::Start(element)
-                if element.local_name().as_ref() == b"autoFilter"
+                if element.local_name().as_ref() == "autoFilter"
                     && !in_custom_sheet_views
                     && !auto_filter_captured =>
             {
                 auto_filter_captured = true;
-                auto_filter = attribute_value(&reader, &element, b"ref")?
+                auto_filter = attribute_value(&reader, &element, "ref")?
                     .and_then(|reference| parse_area_reference(&reference));
                 in_auto_filter = true;
             }
             Event::Empty(element)
-                if element.local_name().as_ref() == b"autoFilter"
+                if element.local_name().as_ref() == "autoFilter"
                     && !in_custom_sheet_views
                     && !auto_filter_captured =>
             {
                 auto_filter_captured = true;
-                auto_filter = attribute_value(&reader, &element, b"ref")?
+                auto_filter = attribute_value(&reader, &element, "ref")?
                     .and_then(|reference| parse_area_reference(&reference));
             }
             Event::End(element)
-                if element.local_name().as_ref() == b"autoFilter" && in_auto_filter =>
+                if element.local_name().as_ref() == "autoFilter" && in_auto_filter =>
             {
                 in_auto_filter = false;
                 filter_column = None;
             }
             Event::Start(element) | Event::Empty(element)
-                if in_auto_filter && element.local_name().as_ref() == b"filterColumn" =>
+                if in_auto_filter && element.local_name().as_ref() == "filterColumn" =>
             {
-                filter_column = attribute_value(&reader, &element, b"colId")?
+                filter_column = attribute_value(&reader, &element, "colId")?
                     .and_then(|value| value.parse::<usize>().ok())
                     .map(|col_id| FilterColumnCriteria {
                         col_id,
@@ -580,7 +580,7 @@ fn index_worksheet_xml<R: std::io::BufRead>(
                     });
             }
             Event::End(element)
-                if in_auto_filter && element.local_name().as_ref() == b"filterColumn" =>
+                if in_auto_filter && element.local_name().as_ref() == "filterColumn" =>
             {
                 if let Some(column) = filter_column.take() {
                     // Color/icon/dynamic/top10-only columns stay criteria-less.
@@ -590,75 +590,75 @@ fn index_worksheet_xml<R: std::io::BufRead>(
                 }
             }
             Event::Start(element) | Event::Empty(element)
-                if in_auto_filter && element.local_name().as_ref() == b"filters" =>
+                if in_auto_filter && element.local_name().as_ref() == "filters" =>
             {
                 if let Some(column) = filter_column.as_mut() {
-                    column.blank = attribute_value(&reader, &element, b"blank")?
+                    column.blank = attribute_value(&reader, &element, "blank")?
                         .is_some_and(|value| value == "1" || value == "true");
                     column.values.get_or_insert_with(Vec::new);
                 }
             }
             Event::Start(element) | Event::Empty(element)
-                if in_auto_filter && element.local_name().as_ref() == b"filter" =>
+                if in_auto_filter && element.local_name().as_ref() == "filter" =>
             {
                 if let Some(values) = filter_column
                     .as_mut()
                     .and_then(|column| column.values.as_mut())
                 {
-                    if let Some(value) = attribute_value(&reader, &element, b"val")? {
+                    if let Some(value) = attribute_value(&reader, &element, "val")? {
                         values.push(value);
                     }
                 }
             }
             Event::Start(element) | Event::Empty(element)
-                if in_auto_filter && element.local_name().as_ref() == b"customFilters" =>
+                if in_auto_filter && element.local_name().as_ref() == "customFilters" =>
             {
                 if let Some(column) = filter_column.as_mut() {
                     column.customs = Some(CustomFilterCriteria {
-                        and: attribute_value(&reader, &element, b"and")?
+                        and: attribute_value(&reader, &element, "and")?
                             .is_some_and(|value| value == "1" || value == "true"),
                         filters: Vec::new(),
                     });
                 }
             }
             Event::Start(element) | Event::Empty(element)
-                if in_auto_filter && element.local_name().as_ref() == b"customFilter" =>
+                if in_auto_filter && element.local_name().as_ref() == "customFilter" =>
             {
                 if let Some(customs) = filter_column
                     .as_mut()
                     .and_then(|column| column.customs.as_mut())
                 {
-                    if let Some(val) = attribute_value(&reader, &element, b"val")? {
+                    if let Some(val) = attribute_value(&reader, &element, "val")? {
                         customs.filters.push(CustomFilterItem {
                             val,
-                            operator: attribute_value(&reader, &element, b"operator")?
+                            operator: attribute_value(&reader, &element, "operator")?
                                 .filter(|operator| operator != "equal"),
                         });
                     }
                 }
             }
-            Event::Start(element) if element.local_name().as_ref() == b"customSheetViews" => {
+            Event::Start(element) if element.local_name().as_ref() == "customSheetViews" => {
                 in_custom_sheet_views = true;
             }
-            Event::End(element) if element.local_name().as_ref() == b"customSheetViews" => {
+            Event::End(element) if element.local_name().as_ref() == "customSheetViews" => {
                 in_custom_sheet_views = false;
             }
             Event::Start(element) | Event::Empty(element)
-                if element.local_name().as_ref() == b"pageSetUpPr" && !in_custom_sheet_views =>
+                if element.local_name().as_ref() == "pageSetUpPr" && !in_custom_sheet_views =>
             {
-                page_print.fit_to_page = attribute_value(&reader, &element, b"fitToPage")?
+                page_print.fit_to_page = attribute_value(&reader, &element, "fitToPage")?
                     .is_some_and(|value| value == "1" || value == "true");
             }
             Event::Start(element) | Event::Empty(element)
-                if element.local_name().as_ref() == b"printOptions" && !in_custom_sheet_views =>
+                if element.local_name().as_ref() == "printOptions" && !in_custom_sheet_views =>
             {
-                page_print.print_gridlines = attribute_value(&reader, &element, b"gridLines")?
+                page_print.print_gridlines = attribute_value(&reader, &element, "gridLines")?
                     .is_some_and(|value| value == "1" || value == "true");
-                page_print.print_headings = attribute_value(&reader, &element, b"headings")?
+                page_print.print_headings = attribute_value(&reader, &element, "headings")?
                     .is_some_and(|value| value == "1" || value == "true");
             }
             Event::Start(element) | Event::Empty(element)
-                if element.local_name().as_ref() == b"pageMargins" && !in_custom_sheet_views =>
+                if element.local_name().as_ref() == "pageMargins" && !in_custom_sheet_views =>
             {
                 if let (
                     Some(left),
@@ -668,12 +668,12 @@ fn index_worksheet_xml<R: std::io::BufRead>(
                     Some(header),
                     Some(footer),
                 ) = (
-                    margin_attribute(&reader, &element, b"left")?,
-                    margin_attribute(&reader, &element, b"right")?,
-                    margin_attribute(&reader, &element, b"top")?,
-                    margin_attribute(&reader, &element, b"bottom")?,
-                    margin_attribute(&reader, &element, b"header")?,
-                    margin_attribute(&reader, &element, b"footer")?,
+                    margin_attribute(&reader, &element, "left")?,
+                    margin_attribute(&reader, &element, "right")?,
+                    margin_attribute(&reader, &element, "top")?,
+                    margin_attribute(&reader, &element, "bottom")?,
+                    margin_attribute(&reader, &element, "header")?,
+                    margin_attribute(&reader, &element, "footer")?,
                 ) {
                     page_print.margins = Some(PageMarginsInfo {
                         left,
@@ -686,36 +686,36 @@ fn index_worksheet_xml<R: std::io::BufRead>(
                 }
             }
             Event::Start(element) | Event::Empty(element)
-                if element.local_name().as_ref() == b"pageSetup" && !in_custom_sheet_views =>
+                if element.local_name().as_ref() == "pageSetup" && !in_custom_sheet_views =>
             {
-                page_print.orientation = attribute_value(&reader, &element, b"orientation")?
+                page_print.orientation = attribute_value(&reader, &element, "orientation")?
                     .filter(|value| value == "portrait" || value == "landscape");
-                page_print.paper_size = attribute_value(&reader, &element, b"paperSize")?
+                page_print.paper_size = attribute_value(&reader, &element, "paperSize")?
                     .and_then(|value| value.parse::<u32>().ok())
                     .filter(|value| (1..=256).contains(value));
                 // Excel's valid scale range; anything else means "as saved by
                 // a broken writer" and prints at 100.
-                page_print.scale = attribute_value(&reader, &element, b"scale")?
+                page_print.scale = attribute_value(&reader, &element, "scale")?
                     .and_then(|value| value.parse::<u32>().ok())
                     .filter(|value| (10..=400).contains(value));
-                page_print.fit_to_width = attribute_value(&reader, &element, b"fitToWidth")?
+                page_print.fit_to_width = attribute_value(&reader, &element, "fitToWidth")?
                     .and_then(|value| value.parse::<u32>().ok())
                     .filter(|value| *value <= 32_767);
-                page_print.fit_to_height = attribute_value(&reader, &element, b"fitToHeight")?
+                page_print.fit_to_height = attribute_value(&reader, &element, "fitToHeight")?
                     .and_then(|value| value.parse::<u32>().ok())
                     .filter(|value| *value <= 32_767);
             }
             Event::Start(element) | Event::Empty(element)
-                if element.local_name().as_ref() == b"headerFooter" && !in_custom_sheet_views =>
+                if element.local_name().as_ref() == "headerFooter" && !in_custom_sheet_views =>
             {
-                let flag = |name: &[u8]| -> Result<bool, SidecarError> {
+                let flag = |name: &str| -> Result<bool, SidecarError> {
                     Ok(attribute_value(&reader, &element, name)?
                         .is_some_and(|value| value == "1" || value == "true"))
                 };
-                page_print.different_odd_even = flag(b"differentOddEven")?;
-                page_print.different_first = flag(b"differentFirst")?;
+                page_print.different_odd_even = flag("differentOddEven")?;
+                page_print.different_first = flag("differentFirst")?;
                 page_print.header_footer_fixed_size =
-                    attribute_value(&reader, &element, b"scaleWithDoc")?
+                    attribute_value(&reader, &element, "scaleWithDoc")?
                         .is_some_and(|value| value == "0" || value == "false");
             }
             Event::Start(element)
@@ -731,31 +731,31 @@ fn index_worksheet_xml<R: std::io::BufRead>(
                 header_footer_section = None;
             }
             Event::Start(element) | Event::Empty(element)
-                if element.local_name().as_ref() == b"legacyDrawingHF" =>
+                if element.local_name().as_ref() == "legacyDrawingHF" =>
             {
-                legacy_drawing_hf_id = attribute_value(&reader, &element, b"id")?;
+                legacy_drawing_hf_id = attribute_value(&reader, &element, "id")?;
             }
-            Event::Start(element) if element.local_name().as_ref() == b"rowBreaks" => {
+            Event::Start(element) if element.local_name().as_ref() == "rowBreaks" => {
                 in_row_breaks = true;
             }
-            Event::End(element) if element.local_name().as_ref() == b"rowBreaks" => {
+            Event::End(element) if element.local_name().as_ref() == "rowBreaks" => {
                 in_row_breaks = false;
             }
-            Event::Start(element) if element.local_name().as_ref() == b"colBreaks" => {
+            Event::Start(element) if element.local_name().as_ref() == "colBreaks" => {
                 in_col_breaks = true;
             }
-            Event::End(element) if element.local_name().as_ref() == b"colBreaks" => {
+            Event::End(element) if element.local_name().as_ref() == "colBreaks" => {
                 in_col_breaks = false;
             }
             Event::Start(element) | Event::Empty(element)
-                if element.local_name().as_ref() == b"brk" && (in_row_breaks || in_col_breaks) =>
+                if element.local_name().as_ref() == "brk" && (in_row_breaks || in_col_breaks) =>
             {
                 // Only manual breaks: Excel also caches automatic ones when
                 // printer metrics are embedded, which we recompute instead.
-                let manual = attribute_value(&reader, &element, b"man")?
+                let manual = attribute_value(&reader, &element, "man")?
                     .is_some_and(|value| value == "1" || value == "true");
                 if manual {
-                    if let Some(id) = attribute_value(&reader, &element, b"id")?
+                    if let Some(id) = attribute_value(&reader, &element, "id")?
                         .and_then(|value| value.parse::<usize>().ok())
                     {
                         if in_row_breaks {
@@ -766,21 +766,21 @@ fn index_worksheet_xml<R: std::io::BufRead>(
                     }
                 }
             }
-            Event::Start(element) if element.local_name().as_ref() == b"ext" => {
-                in_x14_dv_ext = attribute_value(&reader, &element, b"uri")?
+            Event::Start(element) if element.local_name().as_ref() == "ext" => {
+                in_x14_dv_ext = attribute_value(&reader, &element, "uri")?
                     .is_some_and(|uri| uri.eq_ignore_ascii_case(X14_DV_EXT_URI));
             }
-            Event::Empty(element) if element.local_name().as_ref() == b"ext" => {
+            Event::Empty(element) if element.local_name().as_ref() == "ext" => {
                 in_x14_dv_ext = false;
             }
-            Event::End(element) if element.local_name().as_ref() == b"ext" => {
+            Event::End(element) if element.local_name().as_ref() == "ext" => {
                 in_x14_dv_ext = false;
             }
-            Event::Start(element) if element.local_name().as_ref() == b"dataValidation" => {
+            Event::Start(element) if element.local_name().as_ref() == "dataValidation" => {
                 // Legacy rules carry sqref as an attribute; the x14
                 // extension form has none (it arrives as an <xm:sqref>
                 // child), so the attribute's presence selects the shape.
-                if attribute_value(&reader, &element, b"sqref")?.is_some() {
+                if attribute_value(&reader, &element, "sqref")?.is_some() {
                     dv_x14 = false;
                     dv_rule = parse_dv_rule(&reader, &element)?;
                 } else if in_x14_dv_ext {
@@ -791,7 +791,7 @@ fn index_worksheet_xml<R: std::io::BufRead>(
                 // not a rule: Excel ignores it there, so it is not read as
                 // one either.
             }
-            Event::Empty(element) if element.local_name().as_ref() == b"dataValidation" => {
+            Event::Empty(element) if element.local_name().as_ref() == "dataValidation" => {
                 // A self-closing x14 form has no room for its <xm:sqref>
                 // child, so only the legacy shape is usable here.
                 if let Some(rule) = parse_dv_rule(&reader, &element)? {
@@ -799,7 +799,7 @@ fn index_worksheet_xml<R: std::io::BufRead>(
                 }
             }
             Event::Start(element)
-                if element.local_name().as_ref().starts_with(b"formula") && dv_rule.is_some() =>
+                if element.local_name().as_ref().starts_with("formula") && dv_rule.is_some() =>
             {
                 in_dv_formula = true;
                 if let Some(rule) = &mut dv_rule {
@@ -807,18 +807,18 @@ fn index_worksheet_xml<R: std::io::BufRead>(
                 }
             }
             Event::End(element)
-                if element.local_name().as_ref().starts_with(b"formula") && dv_rule.is_some() =>
+                if element.local_name().as_ref().starts_with("formula") && dv_rule.is_some() =>
             {
                 in_dv_formula = false;
             }
             Event::Start(element)
-                if element.local_name().as_ref() == b"sqref" && dv_x14 && dv_rule.is_some() =>
+                if element.local_name().as_ref() == "sqref" && dv_x14 && dv_rule.is_some() =>
             {
                 in_dv_sqref = true;
                 dv_sqref_text.clear();
             }
             Event::End(element)
-                if element.local_name().as_ref() == b"sqref" && dv_x14 && dv_rule.is_some() =>
+                if element.local_name().as_ref() == "sqref" && dv_x14 && dv_rule.is_some() =>
             {
                 in_dv_sqref = false;
                 if let Some(rule) = &mut dv_rule {
@@ -828,7 +828,7 @@ fn index_worksheet_xml<R: std::io::BufRead>(
                         .collect();
                 }
             }
-            Event::End(element) if element.local_name().as_ref() == b"dataValidation" => {
+            Event::End(element) if element.local_name().as_ref() == "dataValidation" => {
                 if let Some(rule) = dv_rule.take() {
                     // An x14 entry without a usable <xm:sqref> names no
                     // cells; drop it like an unparsable legacy one.
@@ -839,9 +839,9 @@ fn index_worksheet_xml<R: std::io::BufRead>(
                 dv_x14 = false;
             }
             Event::Start(element) | Event::Empty(element)
-                if element.local_name().as_ref() == b"conditionalFormatting" =>
+                if element.local_name().as_ref() == "conditionalFormatting" =>
             {
-                cf_ranges = attribute_value(&reader, &element, b"sqref")?
+                cf_ranges = attribute_value(&reader, &element, "sqref")?
                     .map(|sqref| {
                         sqref
                             .split_whitespace()
@@ -851,60 +851,60 @@ fn index_worksheet_xml<R: std::io::BufRead>(
                     .unwrap_or_default();
             }
             Event::Start(element)
-                if element.local_name().as_ref() == b"cfRule" && !cf_ranges.is_empty() =>
+                if element.local_name().as_ref() == "cfRule" && !cf_ranges.is_empty() =>
             {
                 cf_rule = Some(parse_cf_rule(&reader, &element, &cf_ranges)?);
             }
             Event::Empty(element)
-                if element.local_name().as_ref() == b"cfRule" && !cf_ranges.is_empty() =>
+                if element.local_name().as_ref() == "cfRule" && !cf_ranges.is_empty() =>
             {
                 conditional_rules.push(parse_cf_rule(&reader, &element, &cf_ranges)?);
             }
             Event::Start(element) | Event::Empty(element)
-                if element.local_name().as_ref() == b"iconSet" && cf_rule.is_some() =>
+                if element.local_name().as_ref() == "iconSet" && cf_rule.is_some() =>
             {
                 if let Some(rule) = &mut cf_rule {
                     rule.icon_set_name = Some(
-                        attribute_value(&reader, &element, b"iconSet")?
+                        attribute_value(&reader, &element, "iconSet")?
                             .unwrap_or_else(|| "3TrafficLights1".into()),
                     );
-                    rule.icon_reverse = attribute_value(&reader, &element, b"reverse")?
+                    rule.icon_reverse = attribute_value(&reader, &element, "reverse")?
                         .is_some_and(|value| value == "1" || value == "true");
-                    rule.show_value = attribute_value(&reader, &element, b"showValue")?
+                    rule.show_value = attribute_value(&reader, &element, "showValue")?
                         .map(|value| value != "0" && value != "false")
                         .unwrap_or(true);
                 }
             }
             Event::Start(element) | Event::Empty(element)
-                if element.local_name().as_ref() == b"dataBar" && cf_rule.is_some() =>
+                if element.local_name().as_ref() == "dataBar" && cf_rule.is_some() =>
             {
                 if let Some(rule) = &mut cf_rule {
-                    rule.show_value = attribute_value(&reader, &element, b"showValue")?
+                    rule.show_value = attribute_value(&reader, &element, "showValue")?
                         .map(|value| value != "0" && value != "false")
                         .unwrap_or(true);
                     // ECMA-376 defaults: the shortest bar spans 10% of the
                     // cell, the longest 90% (Excel 2007 look). An x14 twin
                     // overrides both below.
                     rule.min_length =
-                        Some(bar_length_attribute(&reader, &element, b"minLength", 10)?);
+                        Some(bar_length_attribute(&reader, &element, "minLength", 10)?);
                     rule.max_length =
-                        Some(bar_length_attribute(&reader, &element, b"maxLength", 90)?);
+                        Some(bar_length_attribute(&reader, &element, "maxLength", 90)?);
                 }
             }
             // x14:dataBar carries the attributes the 2006 element lacks.
             Event::Start(element) | Event::Empty(element)
-                if element.local_name().as_ref() == b"dataBar" && cf_rule.is_none() =>
+                if element.local_name().as_ref() == "dataBar" && cf_rule.is_none() =>
             {
                 if let Some(id) = &x14_current_id {
-                    let gradient = attribute_value(&reader, &element, b"gradient")?
+                    let gradient = attribute_value(&reader, &element, "gradient")?
                         .map(|value| value != "0" && value != "false");
                     let same_as_positive =
-                        attribute_value(&reader, &element, b"negativeBarColorSameAsPositive")?
+                        attribute_value(&reader, &element, "negativeBarColorSameAsPositive")?
                             .map(|value| value != "0" && value != "false")
                             .unwrap_or(true);
                     // Only the three spec values travel; anything else reads
                     // as the default (automatic).
-                    let axis_position = attribute_value(&reader, &element, b"axisPosition")?
+                    let axis_position = attribute_value(&reader, &element, "axisPosition")?
                         .filter(|value| matches!(value.as_str(), "automatic" | "middle" | "none"));
                     x14_databars.insert(
                         id.clone(),
@@ -913,38 +913,36 @@ fn index_worksheet_xml<R: std::io::BufRead>(
                             same_as_positive,
                             axis_position,
                             // x14 defaults: 0/100 (the shortest bar is empty).
-                            min_length: bar_length_attribute(&reader, &element, b"minLength", 0)?,
-                            max_length: bar_length_attribute(&reader, &element, b"maxLength", 100)?,
+                            min_length: bar_length_attribute(&reader, &element, "minLength", 0)?,
+                            max_length: bar_length_attribute(&reader, &element, "maxLength", 100)?,
                         },
                     );
                 }
             }
             // <x14:id> inside a main cfRule's extLst links the rule to its
             // x14 twin in the worksheet extLst.
-            Event::Start(element)
-                if element.local_name().as_ref() == b"id" && cf_rule.is_some() =>
-            {
+            Event::Start(element) if element.local_name().as_ref() == "id" && cf_rule.is_some() => {
                 in_cf_ext_id = true;
             }
-            Event::End(element) if element.local_name().as_ref() == b"id" => {
+            Event::End(element) if element.local_name().as_ref() == "id" => {
                 in_cf_ext_id = false;
             }
             // x14:cfRule (its parent x14:conditionalFormatting has no sqref
             // attribute, so cf_ranges is empty and the main arms skip it).
             Event::Start(element)
-                if element.local_name().as_ref() == b"cfRule" && cf_ranges.is_empty() =>
+                if element.local_name().as_ref() == "cfRule" && cf_ranges.is_empty() =>
             {
-                x14_current_id = attribute_value(&reader, &element, b"id")?;
+                x14_current_id = attribute_value(&reader, &element, "id")?;
             }
             Event::Start(element) | Event::Empty(element)
-                if element.local_name().as_ref() == b"negativeFillColor" =>
+                if element.local_name().as_ref() == "negativeFillColor" =>
             {
                 if let Some(id) = &x14_current_id {
                     if let Some(color) = visuals::resolve_color(
-                        attribute_value(&reader, &element, b"rgb")?.as_deref(),
-                        attribute_value(&reader, &element, b"indexed")?.as_deref(),
-                        attribute_value(&reader, &element, b"theme")?.as_deref(),
-                        attribute_value(&reader, &element, b"tint")?.as_deref(),
+                        attribute_value(&reader, &element, "rgb")?.as_deref(),
+                        attribute_value(&reader, &element, "indexed")?.as_deref(),
+                        attribute_value(&reader, &element, "theme")?.as_deref(),
+                        attribute_value(&reader, &element, "tint")?.as_deref(),
                         colors,
                     ) {
                         x14_negative_colors.insert(id.clone(), color);
@@ -952,14 +950,14 @@ fn index_worksheet_xml<R: std::io::BufRead>(
                 }
             }
             Event::Start(element) | Event::Empty(element)
-                if element.local_name().as_ref() == b"axisColor" =>
+                if element.local_name().as_ref() == "axisColor" =>
             {
                 if let Some(id) = &x14_current_id {
                     if let Some(color) = visuals::resolve_color(
-                        attribute_value(&reader, &element, b"rgb")?.as_deref(),
-                        attribute_value(&reader, &element, b"indexed")?.as_deref(),
-                        attribute_value(&reader, &element, b"theme")?.as_deref(),
-                        attribute_value(&reader, &element, b"tint")?.as_deref(),
+                        attribute_value(&reader, &element, "rgb")?.as_deref(),
+                        attribute_value(&reader, &element, "indexed")?.as_deref(),
+                        attribute_value(&reader, &element, "theme")?.as_deref(),
+                        attribute_value(&reader, &element, "tint")?.as_deref(),
                         colors,
                     ) {
                         x14_axis_colors.insert(id.clone(), color);
@@ -969,36 +967,36 @@ fn index_worksheet_xml<R: std::io::BufRead>(
             // x14:cfvo inside an x14 twin: autoMin/autoMax refine the 2006
             // twin's plain min/max (Excel anchors auto bounds at zero).
             Event::Start(element) | Event::Empty(element)
-                if element.local_name().as_ref() == b"cfvo" && cf_rule.is_none() =>
+                if element.local_name().as_ref() == "cfvo" && cf_rule.is_none() =>
             {
                 if let Some(id) = &x14_current_id {
-                    if let Some(kind) = attribute_value(&reader, &element, b"type")? {
+                    if let Some(kind) = attribute_value(&reader, &element, "type")? {
                         x14_cfvo_kinds.entry(id.clone()).or_default().push(kind);
                     }
                 }
             }
             Event::Start(element) | Event::Empty(element)
-                if element.local_name().as_ref() == b"cfvo" && cf_rule.is_some() =>
+                if element.local_name().as_ref() == "cfvo" && cf_rule.is_some() =>
             {
                 if let Some(rule) = &mut cf_rule {
                     rule.cfvos.push(Cfvo {
-                        kind: attribute_value(&reader, &element, b"type")?
+                        kind: attribute_value(&reader, &element, "type")?
                             .unwrap_or_else(|| "num".into()),
-                        value: attribute_value(&reader, &element, b"val")?,
-                        gte: attribute_value(&reader, &element, b"gte")?
+                        value: attribute_value(&reader, &element, "val")?,
+                        gte: attribute_value(&reader, &element, "gte")?
                             .and_then(|value| (value == "0" || value == "false").then_some(false)),
                     });
                 }
             }
             Event::Start(element) | Event::Empty(element)
-                if element.local_name().as_ref() == b"color" && cf_rule.is_some() =>
+                if element.local_name().as_ref() == "color" && cf_rule.is_some() =>
             {
                 if let Some(rule) = &mut cf_rule {
                     if let Some(color) = visuals::resolve_color(
-                        attribute_value(&reader, &element, b"rgb")?.as_deref(),
-                        attribute_value(&reader, &element, b"indexed")?.as_deref(),
-                        attribute_value(&reader, &element, b"theme")?.as_deref(),
-                        attribute_value(&reader, &element, b"tint")?.as_deref(),
+                        attribute_value(&reader, &element, "rgb")?.as_deref(),
+                        attribute_value(&reader, &element, "indexed")?.as_deref(),
+                        attribute_value(&reader, &element, "theme")?.as_deref(),
+                        attribute_value(&reader, &element, "tint")?.as_deref(),
                         colors,
                     ) {
                         rule.colors.push(color);
@@ -1006,17 +1004,17 @@ fn index_worksheet_xml<R: std::io::BufRead>(
                 }
             }
             Event::Start(element)
-                if element.local_name().as_ref() == b"formula" && cf_rule.is_some() =>
+                if element.local_name().as_ref() == "formula" && cf_rule.is_some() =>
             {
                 in_cf_formula = true;
                 if let Some(rule) = &mut cf_rule {
                     rule.formulas.push(String::new());
                 }
             }
-            Event::End(element) if element.local_name().as_ref() == b"formula" => {
+            Event::End(element) if element.local_name().as_ref() == "formula" => {
                 in_cf_formula = false;
             }
-            Event::End(element) if element.local_name().as_ref() == b"cfRule" => {
+            Event::End(element) if element.local_name().as_ref() == "cfRule" => {
                 if let Some(rule) = cf_rule.take() {
                     conditional_rules.push(rule);
                     if let Some(id) = cf_rule_ext_id.take() {
@@ -1192,7 +1190,7 @@ pub(crate) fn parse_dv_rule<R: std::io::BufRead>(
     reader: &Reader<R>,
     element: &BytesStart<'_>,
 ) -> Result<Option<DataValidationRule>, SidecarError> {
-    let Some(sqref) = attribute_value(reader, element, b"sqref")? else {
+    let Some(sqref) = attribute_value(reader, element, "sqref")? else {
         return Ok(None);
     };
     let ranges = sqref
@@ -1219,24 +1217,24 @@ fn dv_rule_attributes<R: std::io::BufRead>(
     element: &BytesStart<'_>,
     ranges: Vec<MergedRange>,
 ) -> Result<DataValidationRule, SidecarError> {
-    let flag = |name: &[u8]| -> Result<bool, SidecarError> {
+    let flag = |name: &str| -> Result<bool, SidecarError> {
         Ok(attribute_value(reader, element, name)?
             .is_some_and(|value| value == "1" || value == "true"))
     };
     Ok(DataValidationRule {
         ranges,
-        rule_type: attribute_value(reader, element, b"type")?.unwrap_or_else(|| "none".into()),
-        operator: attribute_value(reader, element, b"operator")?,
+        rule_type: attribute_value(reader, element, "type")?.unwrap_or_else(|| "none".into()),
+        operator: attribute_value(reader, element, "operator")?,
         formulas: Vec::new(),
-        allow_blank: flag(b"allowBlank")?,
-        suppress_dropdown: flag(b"showDropDown")?,
-        show_input_message: flag(b"showInputMessage")?,
-        show_error_message: flag(b"showErrorMessage")?,
-        error_style: attribute_value(reader, element, b"errorStyle")?,
-        error_title: attribute_value(reader, element, b"errorTitle")?,
-        error: attribute_value(reader, element, b"error")?,
-        prompt_title: attribute_value(reader, element, b"promptTitle")?,
-        prompt: attribute_value(reader, element, b"prompt")?,
+        allow_blank: flag("allowBlank")?,
+        suppress_dropdown: flag("showDropDown")?,
+        show_input_message: flag("showInputMessage")?,
+        show_error_message: flag("showErrorMessage")?,
+        error_style: attribute_value(reader, element, "errorStyle")?,
+        error_title: attribute_value(reader, element, "errorTitle")?,
+        error: attribute_value(reader, element, "error")?,
+        prompt_title: attribute_value(reader, element, "promptTitle")?,
+        prompt: attribute_value(reader, element, "prompt")?,
     })
 }
 
@@ -1247,22 +1245,21 @@ pub(crate) fn parse_cf_rule<R: std::io::BufRead>(
 ) -> Result<ConditionalRule, SidecarError> {
     Ok(ConditionalRule {
         ranges: ranges.to_vec(),
-        rule_type: attribute_value(reader, element, b"type")?.unwrap_or_else(|| "unknown".into()),
-        operator: attribute_value(reader, element, b"operator")?,
+        rule_type: attribute_value(reader, element, "type")?.unwrap_or_else(|| "unknown".into()),
+        operator: attribute_value(reader, element, "operator")?,
         formulas: Vec::new(),
-        text: attribute_value(reader, element, b"text")?,
-        dxf_index: attribute_value(reader, element, b"dxfId")?
+        text: attribute_value(reader, element, "text")?,
+        dxf_index: attribute_value(reader, element, "dxfId")?
             .and_then(|value| value.parse::<usize>().ok()),
-        priority: attribute_value(reader, element, b"priority")?
+        priority: attribute_value(reader, element, "priority")?
             .and_then(|value| value.parse::<i64>().ok())
             .unwrap_or(0),
-        stop_if_true: attribute_value(reader, element, b"stopIfTrue")?
+        stop_if_true: attribute_value(reader, element, "stopIfTrue")?
             .is_some_and(|value| value == "1" || value == "true"),
-        rank: attribute_value(reader, element, b"rank")?
-            .and_then(|value| value.parse::<u32>().ok()),
-        percent: attribute_value(reader, element, b"percent")?
+        rank: attribute_value(reader, element, "rank")?.and_then(|value| value.parse::<u32>().ok()),
+        percent: attribute_value(reader, element, "percent")?
             .is_some_and(|value| value == "1" || value == "true"),
-        bottom: attribute_value(reader, element, b"bottom")?
+        bottom: attribute_value(reader, element, "bottom")?
             .is_some_and(|value| value == "1" || value == "true"),
         cfvos: Vec::new(),
         colors: Vec::new(),
@@ -1294,7 +1291,7 @@ pub(crate) struct X14DataBar {
 pub(crate) fn bar_length_attribute<R: std::io::BufRead>(
     reader: &Reader<R>,
     element: &BytesStart<'_>,
-    name: &[u8],
+    name: &str,
     default: u32,
 ) -> Result<u32, SidecarError> {
     Ok(attribute_value(reader, element, name)?
@@ -1315,14 +1312,14 @@ pub(crate) enum HeaderFooterSection {
 }
 
 impl HeaderFooterSection {
-    fn from_tag(local_name: &[u8]) -> Option<Self> {
+    fn from_tag(local_name: &str) -> Option<Self> {
         match local_name {
-            b"oddHeader" => Some(Self::OddHeader),
-            b"oddFooter" => Some(Self::OddFooter),
-            b"evenHeader" => Some(Self::EvenHeader),
-            b"evenFooter" => Some(Self::EvenFooter),
-            b"firstHeader" => Some(Self::FirstHeader),
-            b"firstFooter" => Some(Self::FirstFooter),
+            "oddHeader" => Some(Self::OddHeader),
+            "oddFooter" => Some(Self::OddFooter),
+            "evenHeader" => Some(Self::EvenHeader),
+            "evenFooter" => Some(Self::EvenFooter),
+            "firstHeader" => Some(Self::FirstHeader),
+            "firstFooter" => Some(Self::FirstFooter),
             _ => None,
         }
     }
@@ -1356,7 +1353,7 @@ pub(crate) fn truncate_utf16_units(value: &mut String, max_units: usize) {
 pub(crate) fn margin_attribute<R: std::io::BufRead>(
     reader: &Reader<R>,
     element: &BytesStart<'_>,
-    name: &[u8],
+    name: &str,
 ) -> Result<Option<f64>, SidecarError> {
     Ok(attribute_value(reader, element, name)?
         .and_then(|value| value.parse::<f64>().ok())
@@ -1373,27 +1370,27 @@ pub(crate) fn row_property<R: std::io::BufRead>(
     // fonts clipped wrapped CJK rows on Windows). customHeight distinguishes
     // a user-fixed height (clip like Excel) from an auto-fit result the
     // renderer may still grow past.
-    let height = attribute_value(reader, element, b"ht")?
+    let height = attribute_value(reader, element, "ht")?
         .and_then(|value| value.parse::<f64>().ok())
         .filter(|value| *value >= 0.0);
-    let custom_height = attribute_value(reader, element, b"customHeight")?
+    let custom_height = attribute_value(reader, element, "customHeight")?
         .is_some_and(|value| value == "1" || value == "true");
-    let hidden = attribute_value(reader, element, b"hidden")?
+    let hidden = attribute_value(reader, element, "hidden")?
         .is_some_and(|value| value == "1" || value == "true");
-    let outline_level = attribute_value(reader, element, b"outlineLevel")?
+    let outline_level = attribute_value(reader, element, "outlineLevel")?
         .and_then(|value| value.parse::<u8>().ok())
         .map(|value| value.min(7))
         .filter(|value| *value > 0);
-    let collapsed = attribute_value(reader, element, b"collapsed")?
+    let collapsed = attribute_value(reader, element, "collapsed")?
         .is_some_and(|value| value == "1" || value == "true");
     // <row s=> only styles the row when customFormat is set (spec: without it
     // the attribute is leftover noise Excel ignores). xf 0 is the default.
-    let style_index = attribute_value(reader, element, b"s")?
+    let style_index = attribute_value(reader, element, "s")?
         .and_then(|value| value.parse::<usize>().ok())
         .filter(|value| *value > 0)
         .filter(|_| {
             matches!(
-                attribute_value(reader, element, b"customFormat")
+                attribute_value(reader, element, "customFormat")
                     .ok()
                     .flatten()
                     .as_deref(),
@@ -1522,11 +1519,11 @@ impl CellBuilder {
     ) -> Result<Self, SidecarError> {
         // <c r=> is optional: an unaddressed cell sits one right of its predecessor.
         // A malformed one degrades the same way instead of failing the whole open.
-        let (row, column) = match attribute_value(reader, element, b"r")? {
+        let (row, column) = match attribute_value(reader, element, "r")? {
             Some(address) => parse_address(&address).unwrap_or((fallback_row, fallback_column)),
             None => (fallback_row, fallback_column),
         };
-        let style = attribute_value(reader, element, b"s")?;
+        let style = attribute_value(reader, element, "s")?;
         Ok(Self {
             row,
             column,
@@ -1534,7 +1531,7 @@ impl CellBuilder {
                 .as_deref()
                 .and_then(|value| value.parse::<usize>().ok()),
             has_style: style.is_some(),
-            cell_type: attribute_value(reader, element, b"t")?,
+            cell_type: attribute_value(reader, element, "t")?,
             raw_value: String::new(),
             formula: String::new(),
             array_ref: None,
@@ -1726,10 +1723,10 @@ pub(crate) fn array_formula_ref<R: std::io::BufRead>(
     reader: &Reader<R>,
     element: &BytesStart<'_>,
 ) -> Result<Option<String>, SidecarError> {
-    if attribute_value(reader, element, b"t")?.as_deref() != Some("array") {
+    if attribute_value(reader, element, "t")?.as_deref() != Some("array") {
         return Ok(None);
     }
-    attribute_value(reader, element, b"ref")
+    attribute_value(reader, element, "ref")
 }
 
 /// `si` of a `<f t="shared">` element; None for ordinary formulas.
@@ -1737,10 +1734,10 @@ pub(crate) fn shared_formula_si<R: std::io::BufRead>(
     reader: &Reader<R>,
     element: &BytesStart<'_>,
 ) -> Result<Option<u32>, SidecarError> {
-    if attribute_value(reader, element, b"t")?.as_deref() != Some("shared") {
+    if attribute_value(reader, element, "t")?.as_deref() != Some("shared") {
         return Ok(None);
     }
-    Ok(attribute_value(reader, element, b"si")?.and_then(|value| value.parse::<u32>().ok()))
+    Ok(attribute_value(reader, element, "si")?.and_then(|value| value.parse::<u32>().ok()))
 }
 
 fn is_true(value: &Option<String>) -> bool {
@@ -1760,22 +1757,22 @@ pub(crate) fn read_sheet_protection(xml: &str) -> Result<SheetProtectionMetadata
     loop {
         match reader.read_event()? {
             Event::Start(element) | Event::Empty(element)
-                if element.local_name().as_ref() == b"sheetProtection" =>
+                if element.local_name().as_ref() == "sheetProtection" =>
             {
                 sheet_protection = Some(parse_sheet_protection(&reader, &element)?);
             }
             Event::Start(element) | Event::Empty(element)
-                if element.local_name().as_ref() == b"protectedRange" =>
+                if element.local_name().as_ref() == "protectedRange" =>
             {
                 if let (Some(name), Some(sqref)) = (
-                    attribute_value(&reader, &element, b"name")?,
-                    attribute_value(&reader, &element, b"sqref")?,
+                    attribute_value(&reader, &element, "name")?,
+                    attribute_value(&reader, &element, "sqref")?,
                 ) {
                     // securityDescriptor carries per-user permissions the
                     // rewrite cannot preserve — treat like a password.
-                    let has_password = attribute_value(&reader, &element, b"password")?.is_some()
-                        || attribute_value(&reader, &element, b"hashValue")?.is_some()
-                        || attribute_value(&reader, &element, b"securityDescriptor")?.is_some();
+                    let has_password = attribute_value(&reader, &element, "password")?.is_some()
+                        || attribute_value(&reader, &element, "hashValue")?.is_some()
+                        || attribute_value(&reader, &element, "securityDescriptor")?.is_some();
                     protected_ranges.push(ProtectedRangeInfo {
                         name,
                         sqref,
@@ -1784,7 +1781,7 @@ pub(crate) fn read_sheet_protection(xml: &str) -> Result<SheetProtectionMetadata
                 }
             }
             Event::Start(element) | Event::Empty(element)
-                if element.local_name().as_ref() == b"securityDescriptor" =>
+                if element.local_name().as_ref() == "securityDescriptor" =>
             {
                 // The child-element form of the ACL, nested in the
                 // protectedRange just pushed.
@@ -1809,34 +1806,34 @@ pub(crate) fn parse_sheet_protection<R: std::io::BufRead>(
     reader: &Reader<R>,
     element: &BytesStart<'_>,
 ) -> Result<SheetProtectionInfo, SidecarError> {
-    let attr = |name: &[u8]| attribute_value(reader, element, name);
+    let attr = |name: &str| attribute_value(reader, element, name);
     let allowed_unless_locked =
-        |name: &[u8]| -> Result<bool, SidecarError> { Ok(!is_true(&attr(name)?)) };
+        |name: &str| -> Result<bool, SidecarError> { Ok(!is_true(&attr(name)?)) };
     let locked_unless_cleared =
-        |name: &[u8]| -> Result<bool, SidecarError> { Ok(is_false(&attr(name)?)) };
+        |name: &str| -> Result<bool, SidecarError> { Ok(is_false(&attr(name)?)) };
     let allow = SheetProtectionAllow {
-        select_locked_cells: allowed_unless_locked(b"selectLockedCells")?,
-        select_unlocked_cells: allowed_unless_locked(b"selectUnlockedCells")?,
-        objects: allowed_unless_locked(b"objects")?,
-        scenarios: allowed_unless_locked(b"scenarios")?,
-        format_cells: locked_unless_cleared(b"formatCells")?,
-        format_columns: locked_unless_cleared(b"formatColumns")?,
-        format_rows: locked_unless_cleared(b"formatRows")?,
-        insert_columns: locked_unless_cleared(b"insertColumns")?,
-        insert_rows: locked_unless_cleared(b"insertRows")?,
-        insert_hyperlinks: locked_unless_cleared(b"insertHyperlinks")?,
-        delete_columns: locked_unless_cleared(b"deleteColumns")?,
-        delete_rows: locked_unless_cleared(b"deleteRows")?,
-        sort: locked_unless_cleared(b"sort")?,
-        auto_filter: locked_unless_cleared(b"autoFilter")?,
-        pivot_tables: locked_unless_cleared(b"pivotTables")?,
+        select_locked_cells: allowed_unless_locked("selectLockedCells")?,
+        select_unlocked_cells: allowed_unless_locked("selectUnlockedCells")?,
+        objects: allowed_unless_locked("objects")?,
+        scenarios: allowed_unless_locked("scenarios")?,
+        format_cells: locked_unless_cleared("formatCells")?,
+        format_columns: locked_unless_cleared("formatColumns")?,
+        format_rows: locked_unless_cleared("formatRows")?,
+        insert_columns: locked_unless_cleared("insertColumns")?,
+        insert_rows: locked_unless_cleared("insertRows")?,
+        insert_hyperlinks: locked_unless_cleared("insertHyperlinks")?,
+        delete_columns: locked_unless_cleared("deleteColumns")?,
+        delete_rows: locked_unless_cleared("deleteRows")?,
+        sort: locked_unless_cleared("sort")?,
+        auto_filter: locked_unless_cleared("autoFilter")?,
+        pivot_tables: locked_unless_cleared("pivotTables")?,
     };
-    let password = match (attr(b"hashValue")?, attr(b"password")?) {
+    let password = match (attr("hashValue")?, attr("password")?) {
         (Some(hash_value), _) => Some(SheetPasswordHash::Hashed {
-            algorithm_name: attr(b"algorithmName")?.unwrap_or_else(|| "SHA-512".to_owned()),
+            algorithm_name: attr("algorithmName")?.unwrap_or_else(|| "SHA-512".to_owned()),
             hash_value,
-            salt_value: attr(b"saltValue")?.unwrap_or_default(),
-            spin_count: attr(b"spinCount")?
+            salt_value: attr("saltValue")?.unwrap_or_default(),
+            spin_count: attr("spinCount")?
                 .and_then(|value| value.parse::<u32>().ok())
                 .unwrap_or(0),
         }),
@@ -1844,7 +1841,7 @@ pub(crate) fn parse_sheet_protection<R: std::io::BufRead>(
         (None, None) => None,
     };
     Ok(SheetProtectionInfo {
-        protected: is_true(&attr(b"sheet")?),
+        protected: is_true(&attr("sheet")?),
         has_password: password.is_some(),
         allow,
         password,

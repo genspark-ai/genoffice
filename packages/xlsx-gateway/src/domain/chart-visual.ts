@@ -214,7 +214,8 @@ export function valueAxisScale(
   // non-negative default rather than scaling to -Infinity. Folding dataMax in
   // keeps the invariant that the axis always contains the data it was given:
   // a bare valueAxisScale(-100) can only be scaled by a negative floor.
-  const floor = Math.min(Number.isFinite(dataMin) ? dataMin : 0, dataMax)
+  const finiteMax = Number.isFinite(dataMax) ? dataMax : 0
+  const floor = Math.min(Number.isFinite(dataMin) ? dataMin : 0, finiteMax)
   // Below-zero data gets the same 5% headroom under its floor that the
   // maximum gets above (Excel: -100 -> -120, -500 -> -600).
   const autoMin =
@@ -227,8 +228,8 @@ export function valueAxisScale(
   // Data that never rises above zero tops out AT zero, not above it: Excel
   // shows no headroom over a zero baseline, and a bar/column needs that
   // baseline inside the plot to have something to stand on.
-  const zeroTop = explicit?.max === undefined && dataMax <= 0
-  const target = explicit?.max ?? (zeroTop ? 0 : Math.max(dataMax, min))
+  const zeroTop = explicit?.max === undefined && finiteMax <= 0
+  const target = explicit?.max ?? (zeroTop ? 0 : Math.max(finiteMax, min))
   const span = target - min
   // Flat data (all zeros, or one repeated negative value): Excel scales
   // 0..1 in 0.2 steps.

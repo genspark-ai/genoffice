@@ -52,6 +52,14 @@ describe('parseCsv with explicit delimiters', () => {
     expect(parseCsv('"a""b",c', ',')).toEqual([['a"b', 'c']])
   })
 
+  it('keeps an explicitly quoted empty field as one empty cell', () => {
+    // `""` is a real A1 in Excel; a bare blank line is still a dropped row
+    expect(parseCsv('""', ',')).toEqual([['']])
+    expect(parseCsv('""\n', ',')).toEqual([['']])
+    expect(parseCsv('\n', ',')).toEqual([])
+    expect(csvGridShape('"",x', ',')).toEqual({ rows: 1, columns: 2 })
+  })
+
   it('keeps line breaks inside quoted fields', () => {
     expect(parseCsv('"a\nb",c\n1,2', ',')).toEqual([
       ['a\nb', 'c'],
