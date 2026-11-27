@@ -3919,11 +3919,15 @@ export function generateIndexFieldXml(terms: string[]): string[] {
 /**
  * The instruction runs of a field. A mail-merge IF, SKIPIF or NEXTIF carries its nested
  * MERGEFIELD operands as «Name»; Word only reads them as nested fields, so
- * each one is written back as a field of its own.
+ * each one is written back as a field of its own. A tracked-deleted field
+ * writes the instruction as w:delInstrText and the nested placeholder result
+ * as w:delText, the way Word records a field deleted with track changes.
  */
-function fieldInstructionXml(instr: string): string {
+function fieldInstructionXml(instr: string, deleted = false): string {
+  const instrTag = deleted ? 'w:delInstrText' : 'w:instrText'
+  const textTag = deleted ? 'w:delText' : 'w:t'
   const text = (part: string): string =>
-    `<w:r><w:instrText xml:space="preserve">${escapeXmlText(part)}</w:instrText></w:r>`
+    `<w:r><${instrTag} xml:space="preserve">${escapeXmlText(part)}</${instrTag}></w:r>`
   if (!MERGE_RULE_INSTR_RE.test(instr)) return text(` ${instr} `)
   return ` ${instr} `
     .split(/(«[^»]+»)/)
@@ -3935,7 +3939,7 @@ function fieldInstructionXml(instr: string): string {
         '<w:r><w:fldChar w:fldCharType="begin"/></w:r>' +
         text(` MERGEFIELD ${code} `) +
         '<w:r><w:fldChar w:fldCharType="separate"/></w:r>' +
-        `<w:r><w:t>${escapeXmlText(part)}</w:t></w:r>` +
+        `<w:r><${textTag}>${escapeXmlText(part)}</${textTag}></w:r>` +
         '<w:r><w:fldChar w:fldCharType="end"/></w:r>'
       )
     })
@@ -4183,7 +4187,7 @@ function ranRuleFieldXml(
   )
   return (
     '<w:r><w:fldChar w:fldCharType="begin"/></w:r>' +
-    fieldInstructionXml(run.instrField ?? '') +
+    fieldInstructionXml(run.instrField ?? '', !!run.del && run.del.move === undefined) +
     '<w:r><w:fldChar w:fldCharType="separate"/></w:r>' +
     mark.starts +
     text +
@@ -4269,13 +4273,16 @@ function runFragmentXml(run: Run, insideLink: boolean): string {
     // Generic inline field: run text is the cached result; the instruction is written back verbatim.
     // A preserved begin run (form fields: w:ffData) replaces the bare begin, and the run text is a
     // synthesized glyph Word must not see as a cached result — Word draws the box from ffData.
+    // A tracked-deleted field keeps Word's form: the instruction rides w:delInstrText.
+    const deletedInstr = !!run.del && run.del.move === undefined
     const instrXml =
-      fieldInstructionXml(run.instrField) + '<w:r><w:fldChar w:fldCharType="separate"/></w:r>'
+      fieldInstructionXml(run.instrField, deletedInstr) +
+      '<w:r><w:fldChar w:fldCharType="separate"/></w:r>'
     const endXml = '<w:r><w:fldChar w:fldCharType="end"/></w:r>'
     if (run.text === NO_FIELD_RESULT)
       return (
         '<w:r><w:fldChar w:fldCharType="begin"/></w:r>' +
-        fieldInstructionXml(run.instrField) +
+        fieldInstructionXml(run.instrField, deletedInstr) +
         endXml
       )
     if (run.zoteroFieldPart && run.zoteroFieldPart !== 'single') {

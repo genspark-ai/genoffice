@@ -1422,8 +1422,12 @@ async function buildBlock(
   // ins/del) live in pPr and survive editing via Block.rawPPr passthrough.
   // moveFrom / moveTo are now parsed as editable with move-revision markers.
   // Only run-level revision constructs the run model cannot round-trip stay
-  // protected: run-property changes, deleted field instructions, table-cell ins/del.
-  if (/<w:(delInstrText|cellIns|cellDel)[ />]/.test(detect)) {
+  // protected: run-property changes, a deleted field that does not fold into
+  // one run (a partially deleted field, a stray w:delInstrText), table-cell ins/del.
+  if (
+    /<w:(cellIns|cellDel)[ />]/.test(detect) ||
+    (detect.includes('<w:delInstrText') && !onlyXeFields(detect))
+  ) {
     return {
       ...base,
       type: 'passthrough',
@@ -5119,7 +5123,8 @@ function extractRuns(
     if (fieldDepth > 0) {
       // keep the fragment index aligned even for ruby inside a field cache
       if (findChild(node, 'w:ruby')) rubyIndex++
-      const instr = findChild(node, 'w:instrText')
+      // the instruction of a tracked-deleted field arrives as w:delInstrText
+      const instr = findChild(node, 'w:instrText') ?? findChild(node, 'w:delInstrText')
       if (instr) {
         const text = textOf(instr)
         fieldInstr += text
