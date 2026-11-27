@@ -2,7 +2,7 @@
 name: genoffice
 description: Create, convert, read and edit Office documents locally with GenOffice's command line. Build a new presentation (pptx) from a brief through a checked outline, per-page spec and render pipeline, a new spreadsheet (xlsx) from CSV or JSON data with formulas, a new Word document (docx) from Markdown or HTML, or a PDF; convert between pdf, docx, xlsx, pptx, md, html and csv; read the structure and text of an existing file (including the user's own docx / xlsx / pptx as source material) and apply structured edits to it. Use whenever the user asks for a slide deck, presentation, spreadsheet, workbook, report, Word document or any real Office file, a format conversion, a rewrite of part of an existing document, or wants the result opened in the GenOffice editor. Documents are processed locally; only search, image and media send the query or the referenced file to the provider configured in GenOffice.
 metadata:
-  version: 2.71.0
+  version: 2.72.0
   cli: '>=0.9.0'
 ---
 
@@ -228,3 +228,20 @@ echo '[{"op":"insert_content","afterBlockIndex":0,"html":"<p>Executive summary.<
 - Conversions to PDF run inside the GenOffice app (hidden, a few seconds each); they need GenOffice installed, or `GENOFFICE_APP_BIN` pointing at it; the same holds for `docx→html` and `html→docx`.
 - `add_pivot` writes the pivot's cells at `targetCell` (no values or formulas there, on a sheet that already exists in the file) plus a native pivot Excel refreshes, source formulas are evaluated from the file so set them in an earlier batch; `add_sparkline` writes one in-cell sparkline per data row (at most 200 rows per op); `convert_to_values` replaces formulas with the values the workbook engine computes from the file (error results keep their formula; cell edits go in an earlier batch); `set_page_setup` also takes `printTitles`, `header`/`footer` and `rowBreaks`/`colBreaks`. Excel ops that still need the live editor (`refresh_pivot`, edits to session-created tables and shapes) are refused with the reason. `add_conditional_format` and `set_data_validation` add to the rules a sheet already has (`set_data_validation` on a range that has one replaces it, `null` removes it); `clear_conditional_formats` starts over.
 - Formulas are evaluated with the workbook engine after writing, so `sheet read` and cached-value readers see numbers.
+
+## Changing how the app looks and behaves, on the fly (unsupported)
+
+A coding agent can change how GenOffice looks and behaves while it is running. It can turn the background behind the page black, or make the ribbon stay hidden until you move the pointer to the top of the window. The change shows at once, with nothing rebuilt, and it is gone when the app quits.
+
+This works because GenOffice is an Electron app. Its interface is a web page, and any Electron app can be started with a debugging port through which an agent runs CSS and JavaScript in it. The port opens only at launch, so the app has to be restarted to use it.
+
+To use it:
+
+1. Save your work and quit GenOffice.
+2. Start it with the port open. On macOS: `open -a GenOffice --args --remote-debugging-port=9339`
+3. Ask your agent for the change, and tell it the port number.
+4. When you are done, quit and start GenOffice normally. That closes the port.
+
+For the agent: `http://127.0.0.1:9339/json` lists one page per open tab, and `Runtime.evaluate` on a page's `webSocketDebuggerUrl` runs script in that tab. Inspect the page first to find what to change. Appearance is a style element: `:root{--canvas:#000000 !important;}` turns the background behind the page black. Behaviour is a style element plus script: fix the ribbon above the window, and a `mousemove` listener brings it down when the pointer reaches the top edge.
+
+GenOffice does not support this. While the port is open, any program on your computer can read and change your open documents.
