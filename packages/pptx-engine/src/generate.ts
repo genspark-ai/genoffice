@@ -984,7 +984,7 @@ function fieldGuid(): string {
 }
 
 /** Normalize to 6-digit uppercase hex (dropping # and alpha). */
-function hex6(color: string): string {
+export function hex6(color: string): string {
   let c = color.replace(/^#/, '').toUpperCase()
   if (c.length === 3 || c.length === 4) c = [...c.slice(0, 3)].map((ch) => ch + ch).join('')
   if (c.length >= 6) c = c.slice(0, 6)
