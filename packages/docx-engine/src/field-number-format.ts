@@ -105,6 +105,9 @@ function ordinalSuffix(n: number): string {
  * leaves the result to Word. The worded formats are English.
  */
 export function fieldNumberText(n: number, format: string): string | null {
+  // NaN/Infinity have no field representation; without this guard the arabic
+  // formats stringified them into the document result ("NaN", "- Infinity -")
+  if (!Number.isFinite(n)) return null
   const key = format.toLowerCase()
   const whole = Math.trunc(Math.abs(n))
   const inWords = whole < 1_000_000

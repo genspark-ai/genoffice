@@ -47,6 +47,16 @@ describe('field number formats (ECMA-376 Part 1, 17.16.4.3)', () => {
     expect(fieldNumberText(47, 'AIUEO')).toBeNull()
   })
 
+  it('leaves non-finite numbers to Word instead of stringifying them', () => {
+    // the arabic formats had no guard and wrote "NaN" / "- Infinity -" as the
+    // cached field result
+    for (const n of [NaN, Infinity, -Infinity]) {
+      for (const format of ['arabic', 'arabicdash', 'ALPHABETIC', 'roman', 'HEBREW2']) {
+        expect(fieldNumberText(n, format)).toBeNull()
+      }
+    }
+  })
+
   it('does not know the formats whose glyphs the standard does not list', () => {
     for (const format of ['KANJINUM3', 'DBNUM2', 'DBNUM3', 'IROHA', 'HEBREW1', 'THAILETTER']) {
       expect(isFieldNumberFormat(format)).toBe(false)
