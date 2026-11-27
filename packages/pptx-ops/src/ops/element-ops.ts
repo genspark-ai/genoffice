@@ -85,6 +85,9 @@ register({
   name: 'setTransform',
   validate(op, ctx) {
     emuRect(op, op.group && op.absBox !== undefined ? 'absBox' : 'box')
+    // rotDeg is coerced with Math.round(rotDeg * 60000) in apply — NaN/Infinity
+    // would reach the xfrm rot attribute (angleAttr clamps Infinity to -2147483648)
+    if (op.rotDeg !== undefined) requireFinite(op.rotDeg, 'setTransform', 'rotDeg')
     if (op.group) {
       const { index, slide } = resolveSlide(ctx, op)
       resolveGroup(op, index, slide.elements)

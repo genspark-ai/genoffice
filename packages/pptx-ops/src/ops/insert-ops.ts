@@ -448,8 +448,15 @@ register({
     if (!Array.isArray(op.items) || op.items.length === 0) {
       throw new GuidedError('op "pasteElements" needs "items": copied element data.')
     }
-    if (typeof op.dx !== 'number' || typeof op.dy !== 'number') {
-      throw new GuidedError('op "pasteElements" needs "dx"/"dy" (EMU offsets).')
+    // dx/dy are added to the pasted a:off attributes verbatim (no clamp in the
+    // engine) — NaN/Infinity would serialize as x="NaN"/x="Infinity"
+    if (
+      typeof op.dx !== 'number' ||
+      typeof op.dy !== 'number' ||
+      !Number.isFinite(op.dx) ||
+      !Number.isFinite(op.dy)
+    ) {
+      throw new GuidedError('op "pasteElements" needs "dx"/"dy": finite EMU offsets.')
     }
   },
   apply(op, ctx): OpRecord {
