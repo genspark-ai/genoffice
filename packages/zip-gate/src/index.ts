@@ -281,6 +281,9 @@ export async function inflateRawWithinCap(
   raw: Uint8Array,
   maxBytes: number,
 ): Promise<Uint8Array | null> {
+  // `seen > maxBytes` is false when the cap is NaN, which used to let the whole
+  // stream through; treat any invalid cap as a failed gate.
+  if (!Number.isFinite(maxBytes) || maxBytes < 0) return null
   let seen = 0
   const chunks: Uint8Array[] = []
   try {

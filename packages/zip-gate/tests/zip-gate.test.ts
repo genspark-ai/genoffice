@@ -157,6 +157,15 @@ describe('inflateRawWithinCap', () => {
     await expect(inflateRawWithinCap(raw, 99)).resolves.toBeNull()
   })
 
+  it('refuses a non-finite or negative cap', async () => {
+    // NaN makes `seen > maxBytes` false for every chunk, so the old gate let
+    // the entire part through instead of refusing a meaningless budget
+    const raw = deflateRawSync(Buffer.alloc(100))
+    for (const cap of [NaN, Infinity, -Infinity, -1]) {
+      await expect(inflateRawWithinCap(raw, cap)).resolves.toBeNull()
+    }
+  })
+
   it('cancels a lying stream at the cap instead of materialising the payload', async () => {
     // 1 MB of output behind a small compressed block — the serving-side twin
     // of the #759 bomb, where the caller never gate-checked the declaration.
