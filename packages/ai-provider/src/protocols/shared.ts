@@ -164,6 +164,17 @@ export interface SseDataEvent {
 }
 
 /**
+ * Max accumulated size of one assembled SSE data event: providers may split one
+ * JSON body across several `data:` lines, so fragments are held and joined — but
+ * a broken gateway streaming opener fragments forever (never a complete body, no
+ * blank line to flush) would otherwise grow the held buffer without bound. The
+ * bound matches the response body cap: no single event can legitimately carry
+ * more than one whole capped body. Throwing aborts the turn; sseLines cancels
+ * the underlying stream on the way out.
+ */
+export const MAX_SSE_DATA_EVENT_CHARS = MAX_SSE_LINE_BYTES
+
+/**
  * Frames the `data:` payloads of an SSE stream into whole events.
  *
  * A server may split one JSON body across several `data:` lines (one event, joined
@@ -178,10 +189,12 @@ export async function* sseDataEvents(
   onBytes?: () => void,
 ): AsyncGenerator<SseDataEvent> {
   let parts: string[] = []
+  let eventChars = 0
   const flush = (): SseDataEvent | undefined => {
     if (!parts.length) return undefined
     const raw = parts.join('\n')
     parts = []
+    eventChars = 0
     return { raw, json: parseJson(raw) }
   }
   for await (const line of sseLines(body, onBytes)) {
@@ -204,13 +217,25 @@ export async function* sseDataEvents(
       yield { raw, json }
       continue
     }
+    eventChars += raw.length + (parts.length ? 1 : 0)
     parts.push(raw)
+    if (eventChars > MAX_SSE_DATA_EVENT_CHARS) {
+      throw new Error(
+        `SSE data event exceeded buffer limit (${eventChars} chars, cap ${MAX_SSE_DATA_EVENT_CHARS}); ` +
+          'the gateway kept streaming fragments without finishing the event.',
+      )
+    }
+    // A fragment not ending in `}` or `]` cannot complete the (object- or
+    // array-shaped) document, so the O(n) re-join is skipped: a flood of opener
+    // fragments must not re-copy the held buffer on every line.
+    if (!raw.endsWith('}') && !raw.endsWith(']')) continue
     // Dispatch as soon as the joined fragments form a body, so a later keep-alive
     // is not glued onto it.
     const joined = parts.join('\n')
     const whole = parseJson(joined)
     if (whole !== undefined) {
       parts = []
+      eventChars = 0
       yield { raw: joined, json: whole }
     }
   }
