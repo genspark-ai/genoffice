@@ -92,8 +92,29 @@ register({
     pageIndex(m.pageIndex, ctx, 'markup.pageIndex')
     if (!['highlight', 'underline', 'strikeout', 'squiggly'].includes(m.type))
       throw new GuidedError('markup.type must be highlight | underline | strikeout | squiggly')
-    if (!Array.isArray(m.quads) || m.quads.length === 0)
+    // save-pdf's validMarkup() refuses a malformed quad/color while building
+    // the appearance stream, but it only skipped the markup: the op reported
+    // success and the save silently dropped it. Fail in the plan instead.
+    const color = m.color
+    if (
+      !Array.isArray(color) ||
+      color.length !== 3 ||
+      !color.every((c) => typeof c === 'number' && Number.isFinite(c) && c >= 0 && c <= 1)
+    ) {
+      throw new GuidedError('markup.color must be three numbers in 0..1')
+    }
+    if (
+      !Array.isArray(m.quads) ||
+      m.quads.length === 0 ||
+      !m.quads.every(
+        (q) =>
+          Array.isArray(q) &&
+          q.length === 8 &&
+          q.every((v) => typeof v === 'number' && Number.isFinite(v)),
+      )
+    ) {
       throw new GuidedError('markup.quads must hold at least one 8-number quad')
+    }
   },
   apply(op, s) {
     const m = op.markup as MarkupInput

@@ -64,6 +64,22 @@ const savedNote = (objNum: number, contents = 'old') => ({
 })
 
 describe('plan', () => {
+  it('rejects a markup the save appearance builder would drop', () => {
+    // malformed quads/colors used to validate, then vanish at save time with
+    // no failure reported to the caller
+    const badQuad = { ...markup(), quads: [[0, 10, NaN, 10, 0, 0, 50, 0]] }
+    const shortQuad = { ...markup(), quads: [[0, 10, 50, 10]] }
+    const badColor = { ...markup(), color: [1, 2, 0.3] as [number, number, number] }
+    const { plan } = run(empty(), [
+      { op: 'addMarkup', markup: badQuad },
+      { op: 'addMarkup', markup: shortQuad },
+      { op: 'addMarkup', markup: badColor },
+    ])
+    expect(plan.failures.map((f) => f.index)).toEqual([0, 1, 2])
+    expect(plan.failures[0]!.error).toContain('quads')
+    expect(plan.failures[2]!.error).toContain('color')
+  })
+
   it('stamps ids on additive ops and reports them as created', () => {
     const { plan } = run(empty(), [{ op: 'addMarkup', markup: markup() }])
     expect(plan.failures).toEqual([])
