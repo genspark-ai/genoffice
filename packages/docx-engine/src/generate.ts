@@ -29,7 +29,12 @@ import {
   paragraphPermMarkers,
   restoreParagraphPermMarkers,
 } from './perm-ranges'
-import { MERGE_RULE_INSTR_RE, NO_FIELD_RESULT, ruleBookmarkName } from './parse-props'
+import {
+  mathTypeFieldBookmarkNames,
+  MERGE_RULE_INSTR_RE,
+  NO_FIELD_RESULT,
+  ruleBookmarkName,
+} from './parse-props'
 import { resolvePropChangeXml } from './revision-xml'
 
 export interface GenerateContext {
@@ -681,7 +686,11 @@ export function xmlSegments(
  * null entries keep the original paragraph bytes untouched.
  * Returns null when the cell is too complex to patch safely (nested table).
  */
-function patchCellXml(tcXml: string, paras: readonly CellParaPatch[]): string | null {
+function patchCellXml(
+  tcXml: string,
+  paras: readonly CellParaPatch[],
+  originalCell?: TableCell,
+): string | null {
   if (tcXml.indexOf('<w:tbl', 1) !== -1) return null
   const openTag = /^<w:tc(?: [^>]*)?>/.exec(tcXml)?.[0]
   if (!openTag) return null
@@ -712,7 +721,19 @@ function patchCellXml(tcXml: string, paras: readonly CellParaPatch[]): string | 
       (m) => m[1],
     )
   const DRAWING_TAGS = new Set(['mc:AlternateContent', 'w:drawing', 'w:pict', 'w:object'])
-  const carriedRunsOf = (pXml: string, emittedMedia: Set<string>) => {
+  const oleId = (xml: string) => /<o:OLEObject\b[^>]*?\br:id\s*=\s*["']([^"']+)["']/.exec(xml)?.[1]
+  const modeledEquationIds = (paragraphs: readonly CellParaPatch[]) => {
+    const ids = new Set<string>()
+    for (const paragraph of paragraphs) {
+      if (!paragraph || typeof paragraph === 'string') continue
+      for (const run of paragraph.runs) {
+        const id = run.math?.oleXml && oleId(run.math.oleXml)
+        if (id) ids.add(id)
+      }
+    }
+    return ids
+  }
+  const carriedRunsOf = (pXml: string, emittedMedia: Set<string>, modeledOleIds: Set<string>) => {
     // a payload is a twin of an emitted image when all its media is already
     // re-emitted and it carries no textbox text of its own
     const isTwin = (payload: string) => {
@@ -730,13 +751,19 @@ function patchCellXml(tcXml: string, paras: readonly CellParaPatch[]): string | 
         const open = /^<w:r(?:\s[^>]*)?>/.exec(r)?.[0]
         if (!open) return ''
         const kept = splitXmlChildren(r.slice(open.length, r.length - '</w:r>'.length)).filter(
-          (c) => DRAWING_TAGS.has(c.name) && !isTwin(c.xml),
+          (c) =>
+            DRAWING_TAGS.has(c.name) &&
+            !(c.name === 'w:object' && modeledOleIds.has(oleId(c.xml) ?? '')) &&
+            !isTwin(c.xml),
         )
         return kept.length > 0 ? `<w:r>${kept.map((c) => c.xml).join('')}</w:r>` : ''
       })
       .join('')
   }
   const aligned = paras.length === originals.length
+  const priorParagraphs = originalCell?.richParas ?? paras
+  // When a paragraph was split or removed, the carry pass scans the entire original cell.
+  const cellEquationIds = aligned ? undefined : modeledEquationIds(priorParagraphs)
   const rebuilt = paras
     .map((entry, i) => {
       if (entry === null) return originals[i] ?? ''
@@ -752,10 +779,13 @@ function patchCellXml(tcXml: string, paras: readonly CellParaPatch[]): string | 
         : pPrOf(template)
       const emitted = entry.xml ?? runsXml(entry.runs, null)
       const emittedMedia = new Set(mediaRIds(emitted))
+      // A decoded equation is emitted by its run, or replaced with OMML by the editor.
+      // Blind embedded objects still need to be carried from the original paragraph.
+      const modeledOleIds = cellEquationIds ?? modeledEquationIds([priorParagraphs[i] ?? entry])
       const keep = aligned
-        ? carriedRunsOf(template, emittedMedia)
+        ? carriedRunsOf(template, emittedMedia, modeledOleIds)
         : i === 0
-          ? originals.map((p) => carriedRunsOf(p, emittedMedia)).join('')
+          ? originals.map((p) => carriedRunsOf(p, emittedMedia, modeledOleIds)).join('')
           : ''
       return `<w:p>${pPr}${emitted}${keep}</w:p>`
     })
@@ -864,6 +894,7 @@ export type CellTextsPatch =
 export function patchTableCellTexts(
   tableXml: string,
   texts: ReadonlyArray<ReadonlyArray<CellTextsPatch | null | undefined> | null | undefined>,
+  originalTable?: TableModel,
 ): string {
   const trSegs = xmlSegments(tableXml, 'w:tr', 0, tableXml.length)
   let out = ''
@@ -871,14 +902,19 @@ export function patchTableCellTexts(
   trSegs.forEach((tr, r) => {
     const rowTexts = texts[r]
     if (!rowTexts) return
+    const originalCells = originalTable?.rows[r]?.filter((cell) => !cell.gridGap)
     const tcSegs = xmlSegments(tableXml, 'w:tc', tr.start, tr.end)
     tcSegs.forEach((tc, c) => {
       const entry = rowTexts[c]
       if (entry == null) return
       const tcXml = tableXml.slice(tc.start, tc.end)
       const patched = Array.isArray(entry)
-        ? patchCellXml(tcXml, entry as CellParaPatch[])
-        : patchNestedInCell(tcXml, (entry as { nested?: unknown }).nested as never)
+        ? patchCellXml(tcXml, entry as CellParaPatch[], originalCells?.[c])
+        : patchNestedInCell(
+            tcXml,
+            (entry as { nested?: unknown }).nested as never,
+            originalCells?.[c],
+          )
       if (patched === null) return
       out += tableXml.slice(cursor, tc.start) + patched
       cursor = tc.end
@@ -895,6 +931,7 @@ function patchNestedInCell(
         ReadonlyArray<readonly CellParaPatch[] | null | undefined> | null | undefined
       > | null>
     | undefined,
+  originalCell?: TableCell,
 ): string | null {
   if (!nested || nested.length === 0) return null
   const openTag = /^<w:tc(?: [^>]*)?>/.exec(tcXml)?.[0]
@@ -907,7 +944,8 @@ function patchNestedInCell(
     const grid = nested[i]
     if (!grid) return
     out +=
-      tcXml.slice(cursor, seg.start) + patchTableCellTexts(tcXml.slice(seg.start, seg.end), grid)
+      tcXml.slice(cursor, seg.start) +
+      patchTableCellTexts(tcXml.slice(seg.start, seg.end), grid, originalCell?.nestedTables?.[i])
     cursor = seg.end
   })
   return out + tcXml.slice(cursor)
@@ -2546,7 +2584,11 @@ export function generateParagraphXml(block: GeneratedBlock, ctx: GenerateContext
         `<w:r><w:commentReference w:id="${escapeXmlAttr(id)}"/></w:r>`,
     )
     .join('')
-  const marks = bookmarksXml(ctx, [...(block.hiddenBookmarks ?? []), ...(block.bookmarks ?? [])])
+  const marks = bookmarksXml(
+    ctx,
+    [...(block.hiddenBookmarks ?? []), ...(block.bookmarks ?? [])],
+    block.runs,
+  )
   const content =
     marks.starts + crossStarts + generateRunsXml(block.runs, ctx) + crossEnds + marks.ends
   if (block.rawPPr !== undefined) return `<w:p>${block.rawPPr}${content}</w:p>`
@@ -2604,11 +2646,16 @@ let standaloneBookmarkSeq = 0
 function bookmarksXml(
   ctx: Pick<GenerateContext, 'allocateBookmarkId'> | null,
   names: string[],
+  runs?: readonly Run[],
 ): { starts: string; ends: string } {
+  if (names.length === 0) return { starts: '', ends: '' }
+  // The field already writes its own bookmark around the number that REF should display.
+  const fieldBookmarks = mathTypeFieldBookmarkNames(runs)
   // the bookmark spans the paragraph's text: a REF field to an empty bookmark shows nothing in Word
   let starts = ''
   let ends = ''
   for (const name of names) {
+    if (fieldBookmarks.has(name)) continue
     const id = ctx?.allocateBookmarkId?.(name) ?? ++standaloneBookmarkSeq
     starts += `<w:bookmarkStart w:id="${id}" w:name="${escapeXmlAttr(name)}"/>`
     ends += `<w:bookmarkEnd w:id="${id}"/>`
@@ -2819,10 +2866,14 @@ function tableCellXml(
     // into an existing document supplies the document's allocator, whose ids
     // never collide with the bookmarks the untouched blocks keep (REF fields
     // match by name, but bookmarkStart / bookmarkEnd pair by id)
-    const marks = bookmarksXml(ctx ?? null, [
-      ...(('hiddenBookmarks' in paragraph && paragraph.hiddenBookmarks) || []),
-      ...(('bookmarks' in paragraph && paragraph.bookmarks) || []),
-    ])
+    const marks = bookmarksXml(
+      ctx ?? null,
+      [
+        ...(('hiddenBookmarks' in paragraph && paragraph.hiddenBookmarks) || []),
+        ...(('bookmarks' in paragraph && paragraph.bookmarks) || []),
+      ],
+      paragraph.runs,
+    )
     return `<w:p>${pPr}${marks.starts}${runsXml(paragraph.runs, null, undefined, ctx ?? null)}${marks.ends}</w:p>`
   })
   // nested tables are regenerated from the model at their paragraph anchors (reverse
@@ -4193,6 +4244,7 @@ function ranRuleFieldXml(
 }
 
 function runFragmentXml(run: Run, insideLink: boolean): string {
+  if (run.mathTypeFieldXml !== undefined) return run.mathTypeFieldXml
   // atomic inline formula: a MathType OLE equation decoded to OMML keeps its
   // original <w:object> bytes verbatim until the user converts/edits it; a
   // native <m:oMath> fragment is emitted directly (patch.ts adds xmlns:m)

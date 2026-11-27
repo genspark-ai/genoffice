@@ -77,6 +77,7 @@ export {
 export { setAltChunkHtmlConverter, type AltChunkHtmlConverter } from './alt-chunk'
 export { tocLevelOf } from './parse-fields'
 export {
+  bookmarkNamesOf,
   EMPTY_EA_THEME_FONT,
   mergeStyleBorders,
   shdPatternDisplay,

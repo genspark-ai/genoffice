@@ -458,6 +458,8 @@ export interface Run {
    * and emitted verbatim when the paragraph regenerates.
    */
   ruby?: { rt: string; xml: string }
+  /** Entire protected MathType numbering field. Its cached display text may be empty. */
+  mathTypeFieldXml?: string
   /**
    * Enclosed characters or combined characters: an EQ field that overlays
    * its parts. Enclose: `a` is the enclosure, `b` the text inside it.

@@ -151,6 +151,46 @@ async function buildMathTypeDocx(bodyXml: string, oleBase64 = SAMPLE_OLE_B64): P
 }
 
 describe('MathType OLE decoding and round-trip', () => {
+  it('keeps a hidden section field and the cached number beside the untouched OLE equation', async () => {
+    const begin = '<w:r><w:fldChar w:fldCharType="begin"/></w:r>'
+    const end = '<w:r><w:fldChar w:fldCharType="end"/></w:r>'
+    const chapter =
+      begin +
+      '<w:r><w:instrText> MACROBUTTON MTEditEquationSection2 </w:instrText></w:r>' +
+      begin +
+      '<w:r><w:instrText> SEQ MTSec \\r 1 \\h </w:instrText></w:r>' +
+      end +
+      end
+    const mark =
+      '<w:fldSimple w:instr=" SEQ Equation \\h \\* ARABIC "><w:r><w:t>5</w:t></w:r></w:fldSimple>'
+    const input = await buildMathTypeDocx(
+      '<w:p>' + chapter + '<w:r>' + OBJECT_XML + '</w:r>' + mark + '</w:p>',
+    )
+    const doc = await parseDocx(input)
+    const [section, equation, number] = doc.blocks[0].runs!
+    expect(section).toMatchObject({ text: '', mathTypeFieldXml: chapter })
+    expect(equation.math?.oleXml).toContain('Equation.DSMT4')
+    expect(number).toMatchObject({ text: '5', mathTypeFieldXml: mark })
+    const out = await JSZip.loadAsync(await saveDocx(doc, [{ kind: 'original', docxIndex: 0 }]))
+    const original = await JSZip.loadAsync(input)
+    for (const path of ['word/document.xml', 'word/embeddings/oleObject1.bin']) {
+      expect(await out.file(path)!.async('uint8array')).toEqual(
+        await original.file(path)!.async('uint8array'),
+      )
+    }
+  })
+
+  it.each([
+    '<w:fldSimple w:instr=" MACROBUTTON OtherMacro "><w:r><w:t>Click</w:t></w:r></w:fldSimple>',
+    '<w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText> MACROBUTTON MTPlaceRef (1)</w:instrText></w:r>',
+  ])('leaves unsupported or incomplete fields on the protected path', async (field) => {
+    const doc = await parseDocx(
+      await buildMathTypeDocx('<w:p><w:r>' + OBJECT_XML + '</w:r>' + field + '</w:p>'),
+    )
+    expect(doc.blocks[0]).toMatchObject({ type: 'passthrough', label: 'Field (MACROBUTTON)' })
+    expect(doc.blocks[0].originalXml).toContain(field)
+  })
+
   it('decodes a standalone MathType paragraph to vector MathML and preserves OLE bytes on untouched save', async () => {
     const src = await buildMathTypeDocx(
       `<w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:rPr><w:sz w:val="24"/></w:rPr>${OBJECT_XML}</w:r></w:p>`,

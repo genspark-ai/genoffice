@@ -12,6 +12,7 @@ import { isTiffMime, tiffToDataUrlAsync } from './tiff'
 import { readKeyCustomizations } from './key-customizations'
 import { ommlEndsWithBreak, ommlFragmentsOf, ommlToLatex, ommlToMathML } from './math'
 import { isMathTypeProgId, oleBytesToOmml } from './mtef'
+import { equationNumberFields } from './equation-number-fields'
 import { readMathPr, type MathLimits, type MathPr } from './math-pr'
 import { splitXmlChildren } from './generate'
 import { readPropChangeXml } from './revision-xml'
@@ -1371,6 +1372,17 @@ async function buildBlock(
   // branch below, which keeps the caption as the block's field display
   const hasChart = detect.includes('<c:chart') || detect.includes('<cx:chart')
   if (hasFields && !hasChart && !zoteroField) {
+    if (detect.includes('<w:object') || detect.includes('<m:oMath')) {
+      const node = textParagraphNode(xml)
+      const fields = node && equationNumberFields(node)
+      if (node && fields) {
+        await resolveBlipMedia(detect, ctx)
+        await resolveOleMath(detect, ctx)
+        const objects = detect.match(/<w:object\b[\s\S]*?<\/w:object>/g) ?? []
+        if (objects.every((object) => displayableOleObject(object, ctx)))
+          return buildTextParagraph(base, xml, ctx, true, el.start, undefined, { node, fields })
+      }
+    }
     // Legacy field-form OLE ({ EMBED ... } / { LINK ... } around a w:object):
     // take the OLE display path so the packaged preview picture and its
     // declared size survive instead of a bare "Field (EMBED)" chip.
@@ -1634,12 +1646,7 @@ async function buildBlock(
       await resolveBlipMedia(detect, ctx)
       await resolveOleMath(detect, ctx)
       const objects = detect.match(/<w:object[\s\S]*?<\/w:object>/g) ?? []
-      const displayable = objects.every((o) => {
-        const oleTarget = oleMathTargetOf(o)
-        if (oleTarget && ctx.oleMathByRid?.has(oleTarget.rId)) return true
-        const rId = /<v:imagedata[^>]*r:id="([^"]+)"/.exec(o)?.[1]
-        return rId !== undefined && ctx.mediaByRid?.has(rId)
-      })
+      const displayable = objects.every((object) => displayableOleObject(object, ctx))
       if (displayable && objects.length > 0)
         return buildTextParagraph(base, xml, ctx, true, el.start)
     }
@@ -2636,6 +2643,14 @@ function mathSourceXmlOf(xml: string): string {
   )
 }
 
+function textParagraphNode(xml: string): XNode | undefined | null {
+  try {
+    return (xmlParser.parse(xml) as XNode[]).find((n) => nameOf(n) === 'w:p')
+  } catch {
+    return null
+  }
+}
+
 function buildTextParagraph(
   base: Pick<Block, 'id' | 'docxIndex' | 'originalXml'>,
   xml: string,
@@ -2643,17 +2658,12 @@ function buildTextParagraph(
   withImages = false,
   docOffset?: number,
   zoteroField?: ZoteroFieldParagraph,
+  prepared?: { node: XNode; fields: ReadonlyMap<XNode, Run | null> },
 ): Block {
-  let parsed: XNode[]
-  try {
-    parsed = xmlParser.parse(xml) as XNode[]
-  } catch {
-    // unparseable paragraph (e.g. pathological nesting): keep the original bytes
-    return { ...base, type: 'passthrough', label: 'Paragraph', previewText: plainText(xml) }
-  }
-  const pNode = parsed.find((n) => nameOf(n) === 'w:p')
+  const pNode = prepared?.node ?? textParagraphNode(xml)
   if (!pNode) {
-    return { ...base, type: 'passthrough', label: 'Unknown paragraph', previewText: plainText(xml) }
+    const label = pNode === null ? 'Paragraph' : 'Unknown paragraph'
+    return { ...base, type: 'passthrough', label, previewText: plainText(xml) }
   }
 
   const pPr = findChild(pNode, 'w:pPr')
@@ -2700,6 +2710,7 @@ function buildTextParagraph(
     withImages,
     zoteroField,
     { eff: eff0, rctx },
+    prepared?.fields,
   )
   shadowParaFormat(ctx, 'body', pPr, styleBidiOf(ctx, styleId, listRef), direct, runs)
   const spaceOnly = runs.length > 0 && spaceOnlyRuns(runs) && !hasLayoutRunContent(pNode)
@@ -2761,7 +2772,7 @@ function buildTextParagraph(
       }
     }
   }
-  const { bookmarks, hiddenBookmarks } = bookmarkNamesOf(stripTextboxes(xml))
+  const { bookmarks, hiddenBookmarks } = bookmarkNamesOf(stripTextboxes(xml), runs)
   const { commentStarts, commentEnds } = crossParaCommentMarkers(
     stripTextboxes(xml),
     new Set(runs.flatMap((run) => run.commentIds ?? [])),
@@ -4787,6 +4798,7 @@ function extractRuns(
   withImages = false,
   zoteroField?: ZoteroFieldParagraph,
   para?: ParaResolve,
+  protectedFields?: ReadonlyMap<XNode, Run | null>,
 ): Run[] {
   const runs: Run[] = []
   let mathIndex = 0
@@ -5305,6 +5317,11 @@ function extractRuns(
   }
   const walk = (nodes: XNode[], link?: Run['link'], rev?: RevCtx) => {
     for (const node of nodes) {
+      const field = protectedFields?.get(node)
+      if (field !== undefined) {
+        if (field) pushRun(field, rev)
+        continue
+      }
       const name = nameOf(node)
       if (name === 'w:commentRangeStart' || name === 'w:commentRangeEnd') {
         const id = attrsOf(node)['w:id']
@@ -6701,7 +6718,17 @@ function extractCell(
     const mathFragments = hasDeepChild(p, MATH_HOSTS)
       ? ommlFragmentsOf(mathSourceXmlOf(serializeXNode(p)))
       : []
-    const runs = extractRuns(p, ctx, mathFragments, [], true, undefined, { eff: eff0, rctx })
+    const fields = equationNumberFields(p)
+    const runs = extractRuns(
+      p,
+      ctx,
+      mathFragments,
+      [],
+      true,
+      undefined,
+      { eff: eff0, rctx },
+      fields,
+    )
     const eff = eff0.indent.chars
       ? resolveParagraphProps(pPr, rctx, {
           charUnits: charUnitsOf(ctx, runs, p, pPr, cellStyleId, docOffset),
@@ -6724,7 +6751,7 @@ function extractCell(
     // on the model like the body paragraphs' names so a cell rebuild re-emits
     // them instead of silently dropping the anchor its REF fields point at
     const cellBookmarkNames = hasDeepChild(p, new Set(['w:bookmarkStart']))
-      ? bookmarkNamesOf(stripTextboxes(serializeXNode(p)))
+      ? bookmarkNamesOf(stripTextboxes(serializeXNode(p)), runs)
       : { bookmarks: undefined, hiddenBookmarks: undefined }
     const cellPPrChange = pPrChangeInfoOf(pPr, ctx)
     richParas.push({
@@ -9557,6 +9584,13 @@ async function tableOleMath(
     if (omml) out.set(rId, omml)
   }
   return out
+}
+
+function displayableOleObject(object: string, ctx: BuildContext): boolean {
+  const target = oleMathTargetOf(object)
+  if (target && ctx.oleMathByRid?.has(target.rId)) return true
+  const rId = /<v:imagedata[^>]*r:id="([^"]+)"/.exec(object)?.[1]
+  return rId !== undefined && ctx.mediaByRid?.has(rId) === true
 }
 
 /** resolve a paragraph's MathType OLE rIds into ctx.oleMathByRid so extractRuns (sync) can build math runs */
