@@ -72,6 +72,27 @@ describe('assertZipInflatesWithinLimits', () => {
     ).resolves.toBeUndefined()
   })
 
+  it('ignores an EOCD signature written inside the archive comment', async () => {
+    // A comment may legally contain the EOCD signature. Taking the last bare
+    // signature reads an empty directory from the comment, skips every real
+    // entry, and lets a lying part through the gate unchecked.
+    const good = await onePart(1024 * KB, 300)
+    const eocd = good.length - 22
+    const fake = Buffer.from('PK\u0005\u0006' + '\u0000'.repeat(18), 'latin1')
+    const commented = Buffer.concat([good, fake])
+    commented.writeUInt16LE(fake.length, eocd + 20)
+    await expect(assertZipInflatesWithinLimits(commented, LIMITS)).rejects.toThrow(/inflates past/)
+  })
+
+  it('accepts an honest archive that has a comment', async () => {
+    const good = await onePart(300, 300, { method: 'store' })
+    const eocd = good.length - 22
+    const comment = Buffer.from('genoffice', 'utf8')
+    const commented = Buffer.concat([good, comment])
+    commented.writeUInt16LE(comment.length, eocd + 20)
+    await expect(assertZipInflatesWithinLimits(commented, LIMITS)).resolves.toBeUndefined()
+  })
+
   it('refuses a stored part that holds more bytes than it declares', async () => {
     await expect(
       assertZipInflatesWithinLimits(await onePart(64 * KB, 300, { method: 'store' }), LIMITS),
