@@ -35,7 +35,13 @@ export function decodeXmlText(input: string): string {
     (match, hex: string | undefined, dec: string | undefined, named: string | undefined) => {
       if (named !== undefined) return XML_NAMED_ENTITIES[named] ?? match
       const code = hex !== undefined ? Number.parseInt(hex, 16) : Number(dec)
-      return code <= 0x10ffff ? String.fromCodePoint(code) : match
+      // a lone surrogate cannot be carried by XML 1.0 — keep the reference
+      // text, the same rule _xHHHH_ decoding applies, so a resave stays valid
+      return code >= 0xd800 && code <= 0xdfff
+        ? match
+        : code <= 0x10ffff
+          ? String.fromCodePoint(code)
+          : match
     },
   )
 }

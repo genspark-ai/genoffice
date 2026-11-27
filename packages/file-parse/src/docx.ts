@@ -393,7 +393,9 @@ function decodeEntities(text: string): string {
     if (e[0] === '#') {
       const code =
         e[1] === 'x' || e[1] === 'X' ? parseInt(e.slice(2), 16) : parseInt(e.slice(1), 10)
-      return Number.isFinite(code) ? String.fromCodePoint(code) : ''
+      // a reference beyond the Unicode range makes fromCodePoint throw, which would
+      // fail the whole extraction — skip it, like every other malformed fragment here
+      return Number.isFinite(code) && code <= 0x10ffff ? String.fromCodePoint(code) : ''
     }
     return { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'" }[e] ?? ''
   })

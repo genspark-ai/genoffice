@@ -130,7 +130,11 @@ async function commentImageOf(zip: JSZip, comment: XNode): Promise<CommentImage 
   const relsFile = zip.file('word/_rels/comments.xml.rels')
   if (!relsFile) return undefined
   const relsXml = await relsFile.async('string')
-  const relRe = new RegExp(`<Relationship\\b[^>]*Id="${relId}"[^>]*/>`)
+  // relId comes from the document: escape it before it reaches RegExp (a
+  // metacharacter would throw and fail the whole open), and anchor Id=" on
+  // whitespace so TargetId="…" and friends cannot false-match
+  const relIdRe = relId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const relRe = new RegExp(`<Relationship\\b[^>]*\\sId="${relIdRe}"[^>]*/>`)
   const rel = relRe.exec(relsXml)?.[0]
   const target = rel ? /Target="([^"]+)"/.exec(rel)?.[1] : undefined
   if (!target || /TargetMode="External"/.test(rel ?? '')) return undefined

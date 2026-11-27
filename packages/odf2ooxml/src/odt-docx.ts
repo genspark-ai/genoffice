@@ -881,10 +881,14 @@ function tableXml(
       const isOrigin = cell.row === rowIndex && cell.column === columnIndex
       if (!isOrigin) {
         if (columnIndex !== cell.column) return // a horizontal span's shadow slot: gridSpan already covers it
-        // vertical continuation: carry the merge (and its span) forward
+        // vertical continuation: carry the merge (and its span) forward; under
+        // a gridSpan the tcW is the whole spanned width, like the origin cell
         const span = cell.colSpan > 1 ? `<w:gridSpan w:val="${cell.colSpan}"/>` : ''
+        const widthTw = colTw
+          .slice(cell.column, cell.column + cell.colSpan)
+          .reduce((sum, width) => sum + width, 0)
         parts.push(
-          `<w:tc><w:tcPr><w:tcW w:w="${colTw[columnIndex]}" w:type="dxa"/>${span}<w:vMerge/></w:tcPr><w:p/></w:tc>`,
+          `<w:tc><w:tcPr><w:tcW w:w="${widthTw}" w:type="dxa"/>${span}<w:vMerge/></w:tcPr><w:p/></w:tc>`,
         )
         return
       }

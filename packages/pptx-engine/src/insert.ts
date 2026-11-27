@@ -10,7 +10,7 @@
  */
 import { cNvPrIdsInXml, pruneTimingForSpids } from './animation'
 import type { EmuRect, Paragraph, PictureElement, Slide, SlideElement, TextElement } from './types'
-import { clampPosEmu, generateParagraphXml, generateXfrmXml } from './generate'
+import { clampPosEmu, generateParagraphXml, generateXfrmXml, hex6 } from './generate'
 import { creationIdXml, escapeXmlAttr, hasDefaultFor, maxRelationshipIdNumber } from './xml-utils'
 import { relsPathFor } from './zip'
 import type { OpenedPptx } from './index'
@@ -65,7 +65,7 @@ export interface NewElementOptions {
  */
 function srgbClrXml(color: string): string {
   const hex = color.replace(/^#/, '').toUpperCase()
-  const rgb = hex.slice(0, 6)
+  const rgb = hex6(color)
   if (hex.length >= 8) {
     const alpha = Math.round((parseInt(hex.slice(6, 8), 16) / 255) * 100000)
     if (alpha < 100000) return `<a:srgbClr val="${rgb}"><a:alpha val="${alpha}"/></a:srgbClr>`
@@ -125,6 +125,13 @@ export function isLineKind(kind: string): boolean {
 
 const DEFAULT_LINE_STROKE = { color: '#000000', widthEmu: 12700 }
 
+/** ST_LineWidth tops out at 20116800 EMU; a non-finite width would emit
+ *  w="Infinity", which PowerPoint cannot open — fall back and clamp. */
+function lineWidthEmu(widthEmu: number): number {
+  if (!Number.isFinite(widthEmu)) return DEFAULT_LINE_STROKE.widthEmu
+  return Math.min(Math.max(Math.round(widthEmu), 0), 20116800)
+}
+
 /** a:xfrm flip attributes for generated fragments; empty when neither flag is set */
 
 function buildCxnSpXml(
@@ -142,7 +149,7 @@ function buildCxnSpXml(
   } ${id}`
   const o = opts.offset
   const stroke = opts.stroke ?? DEFAULT_LINE_STROKE
-  const color = stroke.color.replace(/^#/, '').slice(0, 6).toUpperCase()
+  const color = hex6(stroke.color)
   const head = def.head ? '<a:headEnd type="triangle" w="med" len="med"/>' : ''
   const tail = def.tail ? '<a:tailEnd type="triangle" w="med" len="med"/>' : ''
   return (
@@ -150,7 +157,7 @@ function buildCxnSpXml(
     '<p:cNvCxnSpPr/><p:nvPr/></p:nvCxnSpPr>' +
     `<p:spPr>${generateXfrmXml({ offset: o, rot: 0, flipH: opts.flipH === true, flipV: opts.flipV === true })}` +
     `<a:prstGeom prst="${def.prst}">${buildAvLstXml(opts.adjustments)}</a:prstGeom>` +
-    `<a:ln w="${Math.round(stroke.widthEmu)}" cap="flat">` +
+    `<a:ln w="${lineWidthEmu(stroke.widthEmu)}" cap="flat">` +
     `<a:solidFill><a:srgbClr val="${color}"/></a:solidFill>${head}${tail}</a:ln>` +
     '</p:spPr></p:cxnSp>'
   )
@@ -187,7 +194,7 @@ export function buildSpXml(slide: Slide, opts: NewElementOptions): string {
     : `<a:prstGeom prst="${escapeXmlAttr(opts.kind)}">${buildAvLstXml(opts.adjustments)}</a:prstGeom>`
   const fill = opts.fillColor ? `<a:solidFill>${srgbClrXml(opts.fillColor)}</a:solidFill>` : ''
   const ln = opts.stroke
-    ? `<a:ln w="${Math.round(opts.stroke.widthEmu)}"><a:solidFill>${srgbClrXml(opts.stroke.color)}</a:solidFill></a:ln>`
+    ? `<a:ln w="${lineWidthEmu(opts.stroke.widthEmu)}"><a:solidFill>${srgbClrXml(opts.stroke.color)}</a:solidFill></a:ln>`
     : ''
   const paras = (opts.paragraphs?.length ? opts.paragraphs : [{ runs: [{ text: '' }] }])
     .map((p) => generateParagraphXml(p))
@@ -422,8 +429,8 @@ function tableCellXml(
   // CT_TableCellProperties child order: lnL lnR lnT lnB … fill
   let lines = ''
   if (border) {
-    const color = border.color.replace(/^#/, '').slice(0, 6).toUpperCase()
-    const w = Math.max(1, Math.round(border.widthEmu))
+    const color = hex6(border.color)
+    const w = Math.max(1, lineWidthEmu(border.widthEmu))
     const ln = (tag: string) =>
       `<a:${tag} w="${w}" cap="flat"><a:solidFill><a:srgbClr val="${color}"/></a:solidFill></a:${tag}>`
     if ((border.scope ?? 'all') === 'all') {
@@ -434,7 +441,7 @@ function tableCellXml(
     }
   }
   const fill = cell.fillColor
-    ? `<a:solidFill><a:srgbClr val="${cell.fillColor.replace(/^#/, '').slice(0, 6).toUpperCase()}"/></a:solidFill>`
+    ? `<a:solidFill><a:srgbClr val="${hex6(cell.fillColor)}"/></a:solidFill>`
     : ''
   const inner = lines + fill
   const tcPr = `<a:tcPr${tcPrAttrs.length ? ` ${tcPrAttrs.join(' ')}` : ''}${inner ? `>${inner}</a:tcPr>` : '/>'}`

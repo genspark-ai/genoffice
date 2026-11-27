@@ -110,25 +110,35 @@ export function parseSdtBlock(
   const pStart = innerContent.search(/<w:p[\s/>]/)
   if (pStart === -1) return null
 
-  // find matching closing </w:p>
+  // find matching closing </w:p>; the regex captures each whole tag so a
+  // self-closing <w:p w14:paraId="…"/> is recognized instead of opening a
+  // depth frame that would swallow the next paragraph into this one
   let depth = 0
   let pEnd = -1
-  const tagRe = /<\/?w:p(?=[\s/>])/g
+  const tagRe = /<\/?w:p(?=[\s/>])[^>]*?(\/?)>/g
   let m: RegExpExecArray | null
   while ((m = tagRe.exec(innerContent)) !== null) {
     if (m[0].startsWith('</')) {
       if (depth === 1) {
-        pEnd = m.index + m[0].length + 1 // include '>'
+        pEnd = m.index + m[0].length // the match already includes '>'
         break
       }
       depth--
+    } else if (m[1]) {
+      // w:p cannot nest: a self-closing tag is a whole paragraph, and at
+      // depth 0 it is the first paragraph itself
+      if (depth === 0) {
+        pEnd = m.index + m[0].length
+        break
+      }
     } else {
       depth++
     }
   }
   if (pEnd === -1) {
-    // self-closing <w:p/> or no </w:p> found — unlikely but safe
-    const selfClose = /<w:p\/>/.exec(innerContent)
+    // a self-closing <w:p/> after an unclosed first paragraph, or no </w:p>
+    // at all (truncated producer output) — keep to the end rather than drop
+    const selfClose = /<w:p(?=[\s/>])[^>]*\/>/.exec(innerContent)
     pEnd = selfClose ? selfClose.index + selfClose[0].length : innerContent.length
   }
   const pXml = innerContent.slice(pStart, pEnd)

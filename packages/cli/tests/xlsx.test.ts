@@ -141,6 +141,26 @@ describe('genoffice create --type xlsx / sheet', () => {
     })
   })
 
+  // Excel's 1900 date system counts a phantom 1900-02-29 (serial 60): serials
+  // before 1900-03-01 are days since 1899-12-31, after it days since 1899-12-30
+  describe('isoDateSerial around the phantom 1900-02-29', () => {
+    it('writes pre-March-1900 dates at the serial Excel stores', () => {
+      expect(isoDateSerial('1900-01-01')!.serial).toBe(1)
+      expect(isoDateSerial('1900-01-15')!.serial).toBe(15)
+      expect(isoDateSerial('1900-02-28')!.serial).toBe(59)
+      expect(isoDateSerial('1900-03-01')!.serial).toBe(61)
+    })
+
+    it('keeps the shift consistent for date-times in that window', () => {
+      expect(isoDateSerial('1900-02-28 23:30')!.serial).toBeCloseTo(59.979167, 5)
+      expect(isoDateSerial('1900-03-01 00:00')!.serial).toBe(61)
+    })
+
+    it('rejects the phantom day itself', () => {
+      expect(isoDateSerial('1900-02-29')).toBeUndefined()
+    })
+  })
+
   it.skipIf(!sidecar)(
     'sheet apply writes values, formulas and styles into an existing workbook',
     async () => {
