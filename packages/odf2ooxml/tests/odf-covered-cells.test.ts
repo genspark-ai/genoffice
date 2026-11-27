@@ -25,3 +25,22 @@ it.each(['horizontal', 'vertical'])('preserves cells following a %s merge', asyn
   if (direction === 'vertical') expect(xml).toContain('Below')
   expect(xml).toContain(direction === 'horizontal' ? '<w:gridSpan w:val="2"/>' : '<w:vMerge')
 })
+
+it('sizes a vertically merged spanning cell across all its grid columns', async () => {
+  const start = '<table:table><table:table-column table:number-columns-repeated="3"/>'
+  const rows =
+    '<table:table-row><table:table-cell table:number-columns-spanned="2" table:number-rows-spanned="2"><text:p>Merged</text:p></table:table-cell><table:covered-table-cell/><table:table-cell><text:p>Right</text:p></table:table-cell></table:table-row>' +
+    '<table:table-row><table:covered-table-cell/><table:covered-table-cell/><table:table-cell><text:p>Below</text:p></table:table-cell></table:table-row>'
+  const xml = await convert(start + rows + '</table:table>')
+  const originW =
+    /<w:tcW w:w="(\d+)" w:type="dxa"\/><w:gridSpan w:val="2"\/><w:vMerge w:val="restart"\/>/.exec(
+      xml,
+    )?.[1]
+  const contW = /<w:tcW w:w="(\d+)" w:type="dxa"\/><w:gridSpan w:val="2"\/><w:vMerge\/>/.exec(
+    xml,
+  )?.[1]
+  expect(originW).toBeTruthy()
+  // the continuation cell spans the same two grid columns, so its tcW must
+  // match the origin's summed width, not just its first column
+  expect(contW).toBe(originW)
+})
