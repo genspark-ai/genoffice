@@ -1,6 +1,9 @@
 import type { CustomScheme } from 'electron'
 import { resolve, sep } from 'node:path'
 
+import { GENERATED_IMAGE_DIR } from './generated-images'
+import { GENERATED_IMAGE_FILE_RE, GENERATED_IMAGE_URL_PREFIX } from './generated-image-url'
+
 /** Origin the built renderers are served from (`genoffice-app://<module>/index.html`). */
 export const RENDERER_SCHEME = 'genoffice-app'
 
@@ -74,6 +77,32 @@ export function rendererUrl(
     url.searchParams.set(key, value)
   }
   return url.toString()
+}
+
+/**
+ * Same-origin path for a BYOK-generated image preview: a secure renderer page
+ * cannot load the store's file:// URL, so the protocol serves that one folder
+ * under `/generated-images/<name>` instead. Only the store's own UUID-shaped
+ * names are accepted, so the route cannot reach any other file.
+ */
+export function resolveGeneratedImageFile(requestUrl: string): string | null {
+  let url: URL
+  try {
+    url = new URL(requestUrl)
+  } catch {
+    return null
+  }
+  if (url.protocol !== `${RENDERER_SCHEME}:`) return null
+  if (!url.pathname.startsWith(GENERATED_IMAGE_URL_PREFIX)) return null
+  let name: string
+  try {
+    name = decodeURIComponent(url.pathname.slice(GENERATED_IMAGE_URL_PREFIX.length))
+  } catch {
+    return null
+  }
+  if (!GENERATED_IMAGE_FILE_RE.test(name)) return null
+  const file = resolve(GENERATED_IMAGE_DIR, name)
+  return file.startsWith(GENERATED_IMAGE_DIR + sep) ? file : null
 }
 
 /** Map a scheme request onto a file under the host's renderer directory; null

@@ -13,6 +13,7 @@
     "./drop-open": "./src/drop-open.ts",
     "./font-catalog": "./src/font-catalog.ts",
     "./font-store": "./src/font-store.ts",
+    "./generated-image-url": "./src/generated-image-url.ts",
     "./generated-images": "./src/generated-images.ts",
     "./headless-export": "./src/headless-export.ts",
     "./main-proxy": "./src/main-proxy.ts",

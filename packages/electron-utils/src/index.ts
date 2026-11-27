@@ -119,6 +119,11 @@ export {
 } from './remote-table'
 export { GENERATED_IMAGE_DIR, readGeneratedImage, storeGeneratedImage } from './generated-images'
 export {
+  GENERATED_IMAGE_FILE_RE,
+  GENERATED_IMAGE_URL_PREFIX,
+  generatedImageDisplayUrl,
+} from './generated-image-url'
+export {
   buildPrintableHtml,
   printHtmlToPdf,
   sanitizePrintableBody,
@@ -150,6 +155,7 @@ export {
   SLIDE_MEDIA_SCHEME_PRIVILEGE,
   RENDERER_SCHEME_PRIVILEGE,
   rendererUrl,
+  resolveGeneratedImageFile,
   resolveRendererFile,
   type RendererHost,
 } from './renderer-scheme'
