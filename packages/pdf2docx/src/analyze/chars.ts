@@ -204,6 +204,10 @@ export function normalizeRegionalFontArtifacts(chars: ExtractedPage['chars']): v
   let sc = 0
   let tc = 0
   for (const c of chars) {
+    // extraction can surface sentinels above Unicode's ceiling (0xFFFFFFFF,
+    // 0x110000) for malformed PDFs; skip them like other malformed chars —
+    // fromCodePoint would throw RangeError on them
+    if (c.code > 0x10ffff) continue
     const ch = String.fromCodePoint(c.code)
     if (SC_INDICATORS.includes(ch)) sc++
     else if (TC_INDICATORS.includes(ch)) tc++
