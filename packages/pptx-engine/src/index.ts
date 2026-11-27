@@ -4398,6 +4398,8 @@ export function groupElements(
  *   so child coordinates are directly slide coordinates; groups from old files
  *   get the generic conversion too.
  * - Conversion: slideX = childX - chOff.x + group.off.x (plus * ext/chExt when scaled)
+ * - Group rot: quarter turns (90/180/270) rotate each child box about the group
+ *   centre (extents swap for 90/270) and add to the child's own rot
  *
  * Old-file groups pass their bytes through wholesale; after ungrouping they take
  * the rebuild path (structureDirty=true). Passthrough children (charts etc.)
@@ -4426,6 +4428,14 @@ export function ungroupElement(
   const scaleX = chOff.cx > 0 ? gOff.cx / chOff.cx : 1
   const scaleY = chOff.cy > 0 ? gOff.cy / chOff.cy : 1
 
+  // The group's rot turns the scaled result about the group centre (rot applies
+  // after the chOff/chExt scale). Only quarter turns keep boxes axis-aligned, so
+  // only they are representable as a plain off/ext/rot: extents swap for 90/270
+  // and each child inherits the group's rotation on top of its own. Other angles
+  // are not expressible and keep the unrotated mapping.
+  const gRot = ((grp.transform.rot % 21600000) + 21600000) % 21600000
+  const quarter = gRot % 5400000 === 0 ? Math.round(gRot / 5400000) % 4 : 0
+
   // Direct child fragments in document order — same order as grp.children (parseGroup
   // sorts by source offset), so index i on both sides refers to the same child
   const childXmls = sliceGroupChildXmls(grp.anchor.originalXml)
@@ -4441,17 +4451,38 @@ export function ungroupElement(
       continue
     }
     const co = child.transform.offset
-    const slideX = Math.round((co.x - chOff.x) * scaleX + gOff.x)
-    const slideY = Math.round((co.y - chOff.y) * scaleY + gOff.y)
-    const slideCx = Math.round(co.cx * scaleX)
-    const slideCy = Math.round(co.cy * scaleY)
+    // Child box mapped into the group's slide-space extent (pre-rotation)
+    const gx = (co.x - chOff.x) * scaleX
+    const gy = (co.y - chOff.y) * scaleY
+    const gcx = co.cx * scaleX
+    const gcy = co.cy * scaleY
+    let slideX = gx + gOff.x
+    let slideY = gy + gOff.y
+    let slideCx = gcx
+    let slideCy = gcy
+    if (quarter !== 0) {
+      // Rotate the box about the group centre; extents swap for 90/270
+      const dx = gx + gcx / 2 - gOff.cx / 2
+      const dy = gy + gcy / 2 - gOff.cy / 2
+      const ndx = quarter === 1 ? -dy : quarter === 2 ? -dx : dy
+      const ndy = quarter === 1 ? dx : quarter === 2 ? -dy : -dx
+      if (quarter !== 2) {
+        slideCx = gcy
+        slideCy = gcx
+      }
+      slideX = gOff.x + gOff.cx / 2 + ndx - slideCx / 2
+      slideY = gOff.y + gOff.cy / 2 + ndy - slideCy / 2
+    }
+    const rot = quarter
+      ? (((child.transform.rot + gRot) % 21600000) + 21600000) % 21600000
+      : child.transform.rot
     const newXml = patchElementXfrmDirect(
       childXml,
-      slideX,
-      slideY,
-      slideCx,
-      slideCy,
-      child.transform.rot,
+      Math.round(slideX),
+      Math.round(slideY),
+      Math.round(slideCx),
+      Math.round(slideCy),
+      rot,
     )
     liftedXmls.push(newXml)
   }

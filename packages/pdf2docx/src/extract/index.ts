@@ -452,7 +452,10 @@ function readChars(m: PdfiumModule, textPage: number): PdfChar[] {
       const info = font ?? lastFont
       chars.push({
         code,
-        text: code > 0 ? String.fromCodePoint(code) : '',
+        // malformed/crafted PDFs surface sentinels above Unicode's ceiling
+        // (0xFFFFFFFF, 0x110000); degrade to '' like other malformed chars —
+        // fromCodePoint would throw RangeError on them
+        text: code > 0 && code <= 0x10ffff ? String.fromCodePoint(code) : '',
         box,
         looseBox,
         originX,
