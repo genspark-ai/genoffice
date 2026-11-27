@@ -68,11 +68,20 @@ function parseCmap(buf: Buffer): { format: 4 | 12; sub: Buffer } | null {
 function glyphOf(face: ParsedFace, cp: number): number {
   const sub = face.cmap
   if (face.cmapFormat === 12) {
+    // nGroups lives at offset 12 of the 16-byte header; parseCmap accepts
+    // subtables down to 4 bytes, so a shorter declared subtable would throw
+    // out of the caller here (glyphOf runs outside any try/catch)
+    if (sub.length < 16) return 0
     const nGroups = sub.readUInt32BE(12)
     let lo = 0
     let hi = nGroups - 1
     while (lo <= hi) {
-      const mid = (lo + hi) >> 1
+      // nGroups is an untrusted uint32, so hi can sit where (lo + hi) >> 1
+      // wraps ToInt32 negative — mid = -1 re-reads the header bytes as a
+      // group record (garbage glyph or a hang), mid <= -2 reads at a negative
+      // offset. The unsigned half-distance keeps mid inside [lo, hi] for any
+      // uint32 span.
+      const mid = lo + ((hi - lo) >>> 1)
       const g = 16 + 12 * mid
       if (g + 12 > sub.length) return 0
       const start = sub.readUInt32BE(g)
