@@ -7,7 +7,7 @@ import { hasPermRanges, permRangeMap } from './perm-ranges'
 import { parseCustGeom } from '@genoffice/pptx-engine/custgeom'
 import { parseChartPartXml } from './chart'
 import { findInkRuns, stripInkRuns } from './ink'
-import { isMetafileMime, metafileToDataUrl } from './metafile'
+import { isMetafileMime, MAX_METAFILE_RASTER_PX, metafileToDataUrl } from './metafile'
 import { isTiffMime, tiffToDataUrlAsync } from './tiff'
 import { readKeyCustomizations } from './key-customizations'
 import { ommlEndsWithBreak, ommlFragmentsOf, ommlToLatex, ommlToMathML } from './math'
@@ -9383,7 +9383,10 @@ async function readMediaPartDataUrl(zip: JSZip, partPath: string): Promise<strin
   if (!file) return null
   const mime = await imagePartMime(zip, partPath)
   if (!mime) return null
-  if (isMetafileMime(mime)) return metafileToDataUrl(await file.async('arraybuffer'), mime)
+  if (isMetafileMime(mime))
+    return metafileToDataUrl(await file.async('arraybuffer'), mime, {
+      maxSidePx: MAX_METAFILE_RASTER_PX,
+    })
   if (isTiffMime(mime)) return tiffToDataUrlAsync(await file.async('arraybuffer'))
   return mediaPartSrc(zip, file, partPath, mime)
 }
@@ -9917,7 +9920,10 @@ async function extractDiagramDrawing(
     if (!f) return null
     const mime = await imagePartMime(ctx.zip, path)
     if (!mime) return null
-    if (isMetafileMime(mime)) return metafileToDataUrl(await f.async('arraybuffer'), mime)
+    if (isMetafileMime(mime))
+      return metafileToDataUrl(await f.async('arraybuffer'), mime, {
+        maxSidePx: MAX_METAFILE_RASTER_PX,
+      })
     return mediaPartSrc(ctx.zip, f, path, mime)
   }
   const sps: XNode[] = []
@@ -10090,7 +10096,9 @@ async function oleDisplay(
   if (file && path) {
     const mime = await imagePartMime(ctx.zip, path)
     if (isMetafileMime(mime)) {
-      const converted = await metafileToDataUrl(await file.async('arraybuffer'), mime)
+      const converted = await metafileToDataUrl(await file.async('arraybuffer'), mime, {
+        maxSidePx: MAX_METAFILE_RASTER_PX,
+      })
       if (converted) out.imageDataUrl = converted
     } else if (mime) {
       out.imageDataUrl = await mediaPartSrc(ctx.zip, file, path, mime)

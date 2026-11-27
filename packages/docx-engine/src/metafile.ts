@@ -88,6 +88,14 @@ export interface MetafileRasterOptions {
   maxSidePx?: number
 }
 
+/**
+ * Longest side of a metafile rasterized during DOCX parse. EMF device bounds
+ * can be thousands of px; uncapped, each image takes up to the converter's
+ * 8192x8192 canvas (~256 MB) and a 56-picture file holds gigabytes of PNG
+ * data URLs in the parsed model. Matches the cap already used by Slides.
+ */
+export const MAX_METAFILE_RASTER_PX = 2048
+
 export async function metafileToDataUrl(
   bytes: ArrayBuffer | Uint8Array,
   mime: string,
