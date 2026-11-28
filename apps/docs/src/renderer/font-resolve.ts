@@ -30,14 +30,24 @@ const resolved = new Map<string, ResolvedFace | null>()
 
 function fromVertical(key: string, m: FaceVerticalMetrics): StoredFace {
   const u = m.unitsPerEm
+  const eastAsian = ((m.codePageRange1 ?? 0) & EA_CODE_PAGES) !== 0
+  const hheaTotal = (m.hheaAscender - m.hheaDescender + m.hheaLineGap) / u
+  // Word on Windows meters Latin faces without OS/2 USE_TYPO_METRICS (fsSelection bit 7)
+  // by OS/2 usWinAscent + usWinDescent when that exceeds the hhea box (e.g. Book Antiqua
+  // Regular: win 2545/2048 = 1.2427 vs hhea 2469/2048 = 1.2056).
+  const winTotal =
+    !eastAsian && !m.useTypoMetrics && m.winAscent != null && m.winDescent != null
+      ? (m.winAscent + m.winDescent) / u
+      : 0
+  const useWin = winTotal > hheaTotal
   return {
     family: key,
     source: 'installed',
-    hheaTotal: (m.hheaAscender - m.hheaDescender + m.hheaLineGap) / u,
-    ascent: m.hheaAscender / u,
-    descent: -m.hheaDescender / u,
+    hheaTotal: useWin ? winTotal : hheaTotal,
+    ascent: (useWin ? m.winAscent! : m.hheaAscender) / u,
+    descent: (useWin ? m.winDescent! : -m.hheaDescender) / u,
     xAvg: m.xAvgCharWidth == null ? null : m.xAvgCharWidth / u,
-    eastAsian: ((m.codePageRange1 ?? 0) & EA_CODE_PAGES) !== 0,
+    eastAsian,
   }
 }
 
