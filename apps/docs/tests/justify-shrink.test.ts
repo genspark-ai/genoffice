@@ -189,6 +189,14 @@ describe('decideLineShrinks — Word compat15 pull rule', () => {
     }
     expect(decideLineShrinks([l])[0]).toBeNull()
   })
+
+  it('skips lines with a mid-line tab while still shrinking tab-free lines in the same paragraph', () => {
+    const tabFree = line(10, 5.89, 13.21)
+    const tabbed: ShrinkLine = { ...line(10, 5.89, 13.21), hasMidTab: true }
+    const [d1, d2] = decideLineShrinks([tabFree, tabbed])
+    expect(d1).not.toBeNull()
+    expect(d2).toBeNull()
+  })
 })
 
 describe('sameLine — rendered-line grouping of word boxes', () => {
@@ -286,9 +294,10 @@ describe('isShrinkCandidate', () => {
     expect(isShrinkCandidate(para('two words', 'center'))).toBe(false)
   })
 
-  it('drops single-word, tabbed and CJK paragraphs', () => {
+  it('drops single-word and CJK paragraphs while keeping tabbed paragraphs for per-line gating', () => {
     expect(isShrinkCandidate(para('word'))).toBe(false)
-    expect(isShrinkCandidate(para('a b\tc'))).toBe(false)
+    expect(isShrinkCandidate(para('a b\tc'))).toBe(true)
+    expect(isShrinkCandidate(para('line one words.\t'))).toBe(true)
     expect(isShrinkCandidate(para('\tfirst line indent'))).toBe(true)
     expect(isShrinkCandidate(para('\u4e2d\u6587 text'))).toBe(false)
   })

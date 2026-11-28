@@ -49,6 +49,8 @@ export interface ShrinkLine {
   nextFragmentWidth?: number | null
   /** the line ends in a line break (w:br / w:cr), not at the paragraph end */
   hardBreak?: boolean
+  /** the line contains a non-leading tab stop, which re-anchors the segment after it */
+  hasMidTab?: boolean
 }
 
 export interface ShrinkDecision {
@@ -87,6 +89,7 @@ export function decideLineShrinks(
   const shrink = opts.shrink !== false
   const expandBreaks = opts.expandBreaks === true
   return lines.map((line) => {
+    if (line.hasMidTab) return null
     const spaceW = line.gaps.reduce((s, g) => s + g.width, 0)
     const spaceChars = line.gaps.reduce((s, g) => s + g.chars, 0)
     const natural = line.wordWidths.reduce((s, w) => s + w, 0) + spaceW
@@ -178,10 +181,8 @@ export function isShrinkCandidate(node: {
   if (align != null && align !== 'justify') return false
   const text = node.textContent
   if (!text.includes(' ') || SKIP_SCRIPT_RE.test(text)) return false
-  // a tab after the first space absorbs any shrink of the spaces before it
-  // (the segment re-anchors at its stop), so the word model only holds for
-  // leading tabs ("5.<tab>The claim...", "<tab>First line indent")
-  if (text.lastIndexOf('\t') > text.indexOf(' ')) return false
+  // Non-leading tabs are gated per-line in measureParagraph so a trailing tab
+  // or a tab on another line does not disable shrinking on tab-free lines.
   return true
 }
 
@@ -197,6 +198,7 @@ interface MeasuredShrink {
 type Token =
   | { kind: 'word'; from: number; to: number; atom: boolean; text?: string }
   | { kind: 'space'; from: number; to: number; chars: number }
+  | { kind: 'tab'; from: number; to: number }
   | { kind: 'break'; expand: boolean }
 
 interface WordBox {
@@ -222,6 +224,7 @@ interface LineAcc {
   gaps: ShrinkGap[]
   boundary: ShrinkGap | null
   hardBreak: boolean
+  hasMidTab: boolean
   left: number
   right: number
 }
@@ -453,7 +456,7 @@ class JustifyShrinkView {
     node.forEach((child, offset) => {
       const base = pos + 1 + offset
       if (child.isText && child.text) {
-        const re = /( +)|[^ ]+/g
+        const re = /( +)|(\t)|[^ \t]+/g
         let m: RegExpExecArray | null
         while ((m = re.exec(child.text))) {
           if (m[1])
@@ -462,6 +465,12 @@ class JustifyShrinkView {
               from: base + m.index,
               to: base + m.index + m[1].length,
               chars: m[1].length,
+            })
+          else if (m[2])
+            tokens.push({
+              kind: 'tab',
+              from: base + m.index,
+              to: base + m.index + 1,
             })
           else
             tokens.push({
@@ -604,6 +613,7 @@ class JustifyShrinkView {
           gaps: [],
           boundary: null,
           hardBreak: false,
+          hasMidTab: false,
           left: w.left,
           right: w.right,
         }
@@ -643,6 +653,43 @@ class JustifyShrinkView {
       if (t.kind === 'space') {
         flushWord()
         pendingSpaces.push(t)
+      } else if (t.kind === 'tab') {
+        flushWord()
+        const rects = rangeRects(t.from, t.to)
+        if (!rects || rects.length === 0) {
+          if (cur && (cur.gaps.length > 0 || pendingSpaces.length > 0)) cur.hasMidTab = true
+          pendingSpaces = []
+          continue
+        }
+        const w = boxOf(rects)
+        if (cur && lastWord && sameLine(w, lastWord) && !pendingBreak && !pendingHyphen) {
+          if (cur.gaps.length > 0 || pendingSpaces.length > 0) cur.hasMidTab = true
+          cur.gaps.push(mergedGap() ?? HYPHEN_GAP)
+          cur.words.push(w)
+          cur.left = Math.min(cur.left, w.left)
+          cur.right = Math.max(cur.right, w.right)
+        } else {
+          // Never pull a tab token from the start of the next line.
+          if (cur) {
+            cur.boundary = null
+            cur.hardBreak = pendingExpandBreak
+          }
+          cur = {
+            words: [w],
+            gaps: [],
+            boundary: null,
+            hardBreak: false,
+            hasMidTab: false,
+            left: w.left,
+            right: w.right,
+          }
+          lines.push(cur)
+        }
+        lastWord = w
+        pendingSpaces = []
+        pendingBreak = false
+        pendingExpandBreak = false
+        pendingHyphen = false
       } else if (t.kind === 'break') {
         flushWord()
         pendingBreak = true
@@ -685,6 +732,7 @@ class JustifyShrinkView {
       nextWordWidth: l.boundary ? (lines[k + 1]?.words[0]?.width ?? null) : null,
       nextFragmentWidth: l.boundary ? (lines[k + 1]?.words[0]?.frag ?? null) : null,
       ...(l.hardBreak ? { hardBreak: true } : {}),
+      ...(l.hasMidTab ? { hasMidTab: true } : {}),
     }))
 
     const out: MeasuredShrink[] = []
