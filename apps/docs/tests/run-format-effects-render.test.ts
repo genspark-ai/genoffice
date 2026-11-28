@@ -91,6 +91,7 @@ describe('editor run rendering', () => {
   it('scales a single glyph with w:w instead of letter-spacing it', async () => {
     const spans = await renderSpans(
       '<w:p><w:r><w:rPr><w:w w:val="33"/></w:rPr><w:t>x</w:t></w:r>' +
+        '<w:r><w:t xml:space="preserve"> </w:t></w:r>' +
         '<w:r><w:rPr><w:w w:val="50"/></w:rPr><w:t xml:space="preserve">two words</w:t></w:r></w:p>',
     )
     const single = spans.find((s) => s.textContent === 'x')!
@@ -100,6 +101,19 @@ describe('editor run rendering', () => {
     const spaced = spans.find((s) => s.textContent === 'two words')!
     expect(spaced.style.letterSpacing).not.toBe('')
     expect(spaced.style.transform).toBe('')
+  })
+
+  it('falls back to letter-spacing when w:w runs split a Latin word across runs', async () => {
+    const spans = await renderSpans(
+      '<w:p><w:r><w:rPr><w:w w:val="105"/></w:rPr><w:t>de</w:t></w:r>' +
+        '<w:r><w:rPr><w:w w:val="111"/></w:rPr><w:t>rmatosis</w:t></w:r></w:p>',
+    )
+    expect(spans).toHaveLength(2)
+    for (const span of spans) {
+      expect(span.style.display).toBe('')
+      expect(span.style.transform).toBe('')
+      expect(span.style.letterSpacing).not.toBe('')
+    }
   })
 
   it('letter-spaces a scaled East Asian run long enough to wrap', async () => {
