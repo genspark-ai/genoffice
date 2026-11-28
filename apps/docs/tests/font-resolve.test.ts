@@ -157,3 +157,56 @@ describe('installed Noto Han regional face', () => {
     expect(cjkDeclaredLineFactor('Noto Sans SC')).toBe(1.3)
   })
 })
+
+describe('installed Latin OS/2 win metrics', () => {
+  // Book Antiqua Regular (BKANT.TTF): hhea 1891/-578/0 (1.2056), win 1967/578 (1.2427)
+  const bookAntiqua = {
+    unitsPerEm: 2048,
+    hheaAscender: 1891,
+    hheaDescender: -578,
+    hheaLineGap: 0,
+    typoAscender: 1621,
+    typoDescender: -570,
+    typoLineGap: 0,
+    winAscent: 1967,
+    winDescent: 578,
+    useTypoMetrics: false,
+    xAvgCharWidth: 912,
+    codePageRange1: 0x0000001f,
+  }
+
+  it('uses OS/2 win metrics when USE_TYPO_METRICS is off and win exceeds hhea', async () => {
+    setFontMetricsProvider((f) => Promise.resolve(f === 'book antiqua' ? bookAntiqua : null))
+    await prefetchFaces(['Book Antiqua'])
+    expect(lineHeightFactor('Book Antiqua')).toBe(1.2427)
+  })
+
+  it('keeps hhea metrics when USE_TYPO_METRICS is set', async () => {
+    setFontMetricsProvider((f) =>
+      Promise.resolve(f === 'book antiqua' ? { ...bookAntiqua, useTypoMetrics: true } : null),
+    )
+    await prefetchFaces(['Book Antiqua'])
+    expect(lineHeightFactor('Book Antiqua')).toBe(1.2056)
+  })
+
+  it('keeps hhea metrics when hhea already equals or exceeds win', async () => {
+    // Times New Roman: hhea (1825 + 443 + 87) / 2048 = 1.1499 > win (1825 + 443) / 2048 = 1.1074
+    const tnr = {
+      unitsPerEm: 2048,
+      hheaAscender: 1825,
+      hheaDescender: -443,
+      hheaLineGap: 87,
+      typoAscender: 1491,
+      typoDescender: -431,
+      typoLineGap: 307,
+      winAscent: 1825,
+      winDescent: 443,
+      useTypoMetrics: false,
+      xAvgCharWidth: 821,
+      codePageRange1: 0x0000001f,
+    }
+    setFontMetricsProvider((f) => Promise.resolve(f === 'times new roman' ? tnr : null))
+    await prefetchFaces(['Times New Roman'])
+    expect(lineHeightFactor('Times New Roman')).toBe(1.1499)
+  })
+})
