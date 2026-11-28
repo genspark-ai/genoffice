@@ -76,7 +76,7 @@ import {
 import { t } from '../i18n/locale'
 import { defaultNoteNumFmt } from '../note-format'
 import { symbolFontCovers } from '../font-check'
-import { charScaleEm, textHasComplexScript, wordKerns } from '../line-metrics'
+import { charScaleEm, textHasCjk, textHasComplexScript, wordKerns } from '../line-metrics'
 import { blockFingerprint } from './carried-nodes'
 import type { SeqRenumber } from './field-results'
 import { inferredBidi } from './direction'
@@ -1594,6 +1594,43 @@ export function pmTableToModel(table: PmNode): TableModel {
   }
 }
 
+const isScaleXBoundaryChar = (ch: string): boolean =>
+  /\s/.test(ch) || ch === '\u001e' || textHasCjk(ch)
+
+const isInlineAtomRun = (r: Run): boolean =>
+  Boolean(r.math || r.eqLayout || r.ruby || r.noteRef || r.image)
+
+/**
+ * `charScaleX` uses `display: inline-block`, which creates a soft wrap
+ * opportunity on both sides in CSS. Only allow it on CJK runs or Latin runs
+ * bounded by whitespace / breaks / atoms so split-word runs (e.g. letter-by-
+ * letter `w:w` from PDF conversions) fall back to `letter-spacing` instead of
+ * breaking mid-word.
+ */
+function isWordBoundedScaleX(runs: Run[], index: number): boolean {
+  const run = runs[index]
+  if (!run.charScalePct || isInlineAtomRun(run)) return true
+  const text = symDisplayText(run)
+  if (!text || textHasCjk(text)) return true
+  for (let i = index - 1; i >= 0; i--) {
+    const prev = runs[i]
+    if (isInlineAtomRun(prev)) break
+    const prevText = symDisplayText(prev)
+    if (!prevText) continue
+    if (!isScaleXBoundaryChar(prevText[prevText.length - 1])) return false
+    break
+  }
+  for (let i = index + 1; i < runs.length; i++) {
+    const next = runs[i]
+    if (isInlineAtomRun(next)) break
+    const nextText = symDisplayText(next)
+    if (!nextText) continue
+    if (!isScaleXBoundaryChar(nextText[0])) return false
+    break
+  }
+  return true
+}
+
 export function runsToInline(runs: Run[]): PmNode[] {
   const nodes: PmNode[] = []
   let noted = 0
@@ -1606,10 +1643,11 @@ export function runsToInline(runs: Run[]): PmNode[] {
     rangeShutting = []
     rangeOpening = []
   }
-  for (const run of runs) {
+  for (let i = 0; i < runs.length; i++) {
+    const run = runs[i]
     noteRangeEnds()
     noted = nodes.length
-    const marks = runMarks(run)
+    const marks = runMarks(run, isWordBoundedScaleX(runs, i))
     const atomMarks = marks.length > 0 ? { marks } : {}
     if (run.math) {
       // MathType OLE equations carry a negative w:position on the run only to
@@ -1806,7 +1844,7 @@ function styleXorValue(run: Run, key: 'bold' | 'italic'): boolean | null {
   return eff?.styleXor?.includes(key) ? eff[key] : null
 }
 
-function runMarks(run: Run): PmMark[] {
+function runMarks(run: Run, allowScaleX = true): PmMark[] {
   const marks: PmMark[] = []
   const cs = run.effective?.cs ? run.effective : undefined
   if (run.bold) marks.push({ type: 'bold' })
@@ -1952,7 +1990,12 @@ function runMarks(run: Run): PmMark[] {
     // unbreakable, undecorated runs get the real glyph compression
     const scaleEm = run.charScalePct ? charScaleEm(run.text, run.charScalePct, run) : 0
     const scaleX =
-      run.charScalePct && charScaleXFits(run.text) && !run.underline && !run.strike && !run.link
+      allowScaleX &&
+      run.charScalePct &&
+      charScaleXFits(run.text) &&
+      !run.underline &&
+      !run.strike &&
+      !run.link
         ? charScaleXAttr(run.text, run.charScalePct, scaleEm)
         : null
     // A run whose rPr carries our element came back from a file this editor
